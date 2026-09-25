@@ -5,7 +5,7 @@ import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMes
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
-import { conversationCommand } from './conversation-command'
+import { conversationCommand, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import type { ProjectRegistry } from './project-registry'
@@ -185,7 +185,7 @@ export class ConversationService {
       this.store.setProviderSession(stage.id, input.providerSessionId)
     }
     const text = input.text.trim()
-    if (!text) return
+    if (!text || (input.role === 'user' && this.isHandoffPrompt(input.id, text))) return
     const saved = this.store.addMessage({
       conversationId: input.id, stageId: stage.id, role: input.role, agent: input.agent,
       text, eventKey: input.eventKey, complete: input.complete
@@ -251,6 +251,12 @@ export class ConversationService {
       this.store.update(conversation.id, { outputOffset: attached.endOffset })
     }
     if (attached.exited) this.handleExit(conversation.sessionId, attached.exitCode ?? 0)
+  }
+
+  // Kando's own instruction, not something the user said: kept out of the title, search and later handoffs.
+  private isHandoffPrompt(id: string, text: string): boolean {
+    const handoffPath = handoffPromptPath(text)
+    return handoffPath !== null && path.dirname(handoffPath) === path.join(this.sessionsRoot, id, 'handoffs')
   }
 
   private changed(value: Conversation): Conversation {

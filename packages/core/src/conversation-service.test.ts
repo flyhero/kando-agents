@@ -165,6 +165,17 @@ describe('ConversationService', () => {
     expect(readFileSync(handoffFile, 'utf8')).toContain('Fix the build')
   })
 
+  it('keeps the handoff prompt the agent echoes back out of the messages and the title', async () => {
+    const created = await service.create('codex', [root])
+    await service.handoff(created.id, 'claude', '', true)
+    const stage = service.stages(created.id).at(-1)!
+    event(created.id, stage.id, 'claude', 'user', daemon.spawns.at(-1)?.args.at(-1) ?? '', 'user-1')
+    expect(service.messages(created.id)).toEqual([])
+    expect(service.get(created.id).title).toBe('新会话')
+    event(created.id, stage.id, 'claude', 'user', 'Fix the build', 'user-2')
+    expect(service.get(created.id).title).toBe('Fix the build')
+  })
+
   it('reports how the agent last stopped: exited, stopped, or never ended', async () => {
     const created = await service.create('claude', [root])
     expect(created.lastExit).toBeNull()
