@@ -14,6 +14,19 @@ describe('provider conversation events', () => {
     ] })
   })
 
+  it('drops the title turn Codex runs in its own thread, thread id included', () => {
+    const prompt = 'Generate a concise, single-line task title of at most 36 characters and under five words where possible. ' +
+      'Start with an imperative verb. Do not answer the request.\n\nUser prompt:\n评价本项目'
+    expect(parseConversationEvent('codex', {
+      type: 'agent-turn-complete', 'thread-id': 'title-thread', 'turn-id': 'turn-2',
+      'input-messages': [prompt], 'last-assistant-message': '{"title":"评估项目"}'
+    })).toEqual({ providerSessionId: null, messages: [] })
+    expect(parseConversationEvent('codex', {
+      type: 'agent-turn-complete', 'thread-id': 'thread-1', 'turn-id': 'turn-3',
+      'input-messages': ['Generate a concise title for this PR'], 'last-assistant-message': 'Fix login'
+    }).messages).toHaveLength(2)
+  })
+
   it('captures submitted Claude prompts before completion and completed replies separately', () => {
     const prompt = parseConversationEvent('claude', { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'Question' })
     const answer = parseConversationEvent('claude', { hook_event_name: 'Stop', session_id: 's1', last_assistant_message: 'Answer' })
