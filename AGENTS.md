@@ -33,3 +33,29 @@ Task-first multi-agent manager. See README.md for the architecture diagram.
 ## Verify
 
 `pnpm typecheck && pnpm test`, plus `pnpm build` for desktop changes.
+
+## Commits
+
+A trimmed version of Angular's [commit message format](https://github.com/angular/angular/blob/main/contributing-docs/commit-message-guidelines.md).
+
+```
+<type>(<scope>): <summary>
+
+<body>
+
+<footer>
+```
+
+- **type**: `feat` (new feature), `fix` (bug fix), `refactor` (neither), `perf`, `test`, `docs`, `build` (build, dependencies, scripts), or `chore` (repo housekeeping that fits nothing else, like `.gitignore`).
+- **scope**: the package: `protocol`, `core`, `daemon`, `cli` or `desktop`. Leave it out when the change spans packages.
+- **summary**: imperative, present tense, lowercase first letter, no trailing period, under 72 characters.
+- **body**: why the change is needed, and how behavior differs from before. Required except for `docs` and `chore`.
+- **footer**: `BREAKING CHANGE: <summary>` plus migration steps for anything that bumps `PROTOCOL_VERSION` or `DAEMON_PROTOCOL_VERSION`. `Fixes #<issue>` when there is one.
+- One self-contained change per commit, with its tests. No `Co-Authored-By` trailers for agents.
+
+```
+refactor(protocol): drop the ~/.ripen fallback
+
+The only install has moved to ~/.kando, so RIPEN_HOME and the ripen.db
+lookup are branches nothing reaches.
+```
