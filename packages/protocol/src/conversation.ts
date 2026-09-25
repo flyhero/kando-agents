@@ -45,3 +45,8 @@ export type ConversationMessage = z.infer<typeof ConversationMessage>
 // A conversation whose messages contain a search query, with the text around the latest match.
 export const ConversationSearchHit = z.object({ conversationId: z.string().uuid(), snippet: z.string() })
 export type ConversationSearchHit = z.infer<typeof ConversationSearchHit>
+
+// What a project folder has checked out: a branch, or a short commit id when HEAD is detached.
+// branch is null when the folder is not in a git repo.
+export const ProjectHead = z.object({ path: z.string(), branch: z.string().nullable(), detached: z.boolean() })
+export type ProjectHead = z.infer<typeof ProjectHead>

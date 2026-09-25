@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
@@ -11,7 +11,7 @@ import { buildHandoff } from './conversation-handoff'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { TerminalTranscript } from './terminal-transcript'
-import { normalizeRepoPath } from './workspace'
+import { normalizeRepoPath, projectHead } from './workspace'
 
 type ConversationEvent = { type: 'changed'; conversation: Conversation } | { type: 'deleted'; id: string }
 
@@ -38,6 +38,9 @@ export class ConversationService {
   }
   messages(id: string): ConversationMessage[] { this.get(id); return this.store.messages(id) }
   stages(id: string): ConversationStage[] { this.get(id); return this.store.stages(id) }
+  branches(id: string): Promise<ProjectHead[]> {
+    return Promise.all(this.get(id).projectPaths.map(async (projectPath) => ({ path: projectPath, ...await projectHead(projectPath) })))
+  }
   search(query: string): ConversationSearchHit[] {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }

@@ -68,6 +68,21 @@ async function gitTopLevel(dir: string): Promise<string | null> {
   }
 }
 
+// Branch first; a detached HEAD falls back to its short commit id.
+export async function projectHead(dir: string): Promise<{ branch: string | null; detached: boolean }> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', dir, 'symbolic-ref', '--quiet', '--short', 'HEAD'])
+    return { branch: stdout.trim(), detached: false }
+  } catch {
+    try {
+      const { stdout } = await execFileAsync('git', ['-C', dir, 'rev-parse', '--short', 'HEAD'])
+      return { branch: stdout.trim(), detached: true }
+    } catch {
+      return { branch: null, detached: false }
+    }
+  }
+}
+
 async function branchExists(repo: string, branch: string): Promise<boolean> {
   try {
     await execFileAsync('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])

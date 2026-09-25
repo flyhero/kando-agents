@@ -3,7 +3,7 @@ import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, Task, TaskSession, TaskS
 import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
-import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage } from './conversation'
+import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 6
@@ -82,6 +82,9 @@ export const rpcMethods = {
   'conversations.messages': { params: ConversationRef, result: z.array(ConversationMessage) },
   'conversations.stages': { params: ConversationRef, result: z.array(ConversationStage) },
   // Messages only: clients match titles and projects themselves. Older cores lack it.
+  // Read on every call: the agent works in the project folders themselves, so either it or
+  // the user can switch branches at any time. Older cores lack it.
+  'conversations.branches': { params: ConversationRef, result: z.array(ProjectHead) },
   'conversations.search': { params: z.object({ query: z.string().trim().min(1).max(200) }), result: z.array(ConversationSearchHit) },
   'conversations.event': {
     params: ConversationRef.extend({
