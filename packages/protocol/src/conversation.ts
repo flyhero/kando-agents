@@ -12,7 +12,10 @@ export const Conversation = z.object({
   managedWorkspace: z.boolean(),
   sessionId: z.string().nullable(),
   createdAt: z.number(),
-  updatedAt: z.number()
+  updatedAt: z.number(),
+  // How the agent last stopped: code is null when it was stopped rather than exiting on its own.
+  // null before any run has ended. Older cores leave it out.
+  lastExit: z.object({ code: z.number().int().nullable(), at: z.number() }).nullable().optional()
 })
 export type Conversation = z.infer<typeof Conversation>
 

@@ -149,6 +149,19 @@ describe('ConversationService', () => {
     expect(() => event(created.id, firstStage.id, 'codex', 'user', 'Wrong agent', 'wrong')).toThrow('conversation-event-invalid')
   })
 
+  it('reports how the agent last stopped: exited, stopped, or never ended', async () => {
+    const created = await service.create('claude', [root])
+    expect(created.lastExit).toBeNull()
+    service.handleExit(created.sessionId ?? '', 0)
+    expect(service.get(created.id).lastExit).toMatchObject({ code: 0 })
+    const resumed = await service.continue(created.id)
+    expect(resumed.lastExit).toMatchObject({ code: 0 })
+    service.handleExit(resumed.sessionId ?? '', 1)
+    expect(service.get(created.id).lastExit).toMatchObject({ code: 1 })
+    await service.continue(created.id)
+    expect((await service.stop(created.id)).lastExit).toMatchObject({ code: null })
+  })
+
   it('finds conversations by message text, once each, with the latest match', async () => {
     const first = await service.create('claude', [root])
     const second = await service.create('codex', [root])

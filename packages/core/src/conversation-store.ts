@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { Conversation, ConversationMessage, ConversationStage, type AgentKind } from '@kando/protocol'
 
+const lastEnded = (column: string) => `(SELECT ${column} FROM conversation_stages
+  WHERE conversation_id = conversations.id AND ended_at IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1)`
 const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_path AS workspacePath,
   project_paths AS projectPaths,
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
-  updated_at AS updatedAt FROM conversations`
+  updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt
+  FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
   ended_at AS endedAt, exit_code AS exitCode FROM conversation_stages`
@@ -13,8 +16,10 @@ const MESSAGE_SELECT = `SELECT sequence, conversation_id AS conversationId, stag
   role, agent, text, event_key AS eventKey, complete, created_at AS createdAt FROM conversation_messages`
 
 function conversation(row: Record<string, unknown>): Conversation {
-  return Conversation.parse({ ...row, projectPaths: JSON.parse(String(row.projectPaths)),
-    titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace) })
+  const { lastExitCode, lastExitAt, ...rest } = row
+  return Conversation.parse({ ...rest, projectPaths: JSON.parse(String(row.projectPaths)),
+    titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace),
+    lastExit: lastExitAt === null ? null : { code: lastExitCode, at: lastExitAt } })
 }
 function message(row: Record<string, unknown>): ConversationMessage {
   return ConversationMessage.parse({ ...row, complete: Boolean(row.complete) })

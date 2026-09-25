@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AGENT_KINDS, type Conversation } from '@kando/protocol'
 import { selectConversation, setNewConversationOpen, useCore } from '../core-store'
+import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { CONVERSATION_GROUPS, CONVERSATION_SORTS, setPreference, usePreferences, type Preferences } from '../preferences'
 import { ConversationContextMenu, renameConversation } from './ConversationActions'
@@ -33,7 +34,7 @@ function groupOf(conversation: Conversation, by: Exclude<GroupBy, 'none'>): { la
     case 'agent':
       return { label: AGENT_LABEL[conversation.agent], rank: AGENT_KINDS.indexOf(conversation.agent) }
     case 'status':
-      return conversation.sessionId ? { label: '运行中', rank: 0 } : { label: '未运行', rank: 1 }
+      return conversation.sessionId ? { label: '运行中', rank: 0 } : { label: '已停止', rank: 1 }
   }
 }
 
@@ -98,7 +99,7 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 }
 
 function conversationMeta(conversation: Conversation): string {
-  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversation.sessionId ? '运行中' : '未运行'}`
+  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversationState(conversation).label}`
 }
 
 function ViewMenu({ at, trigger, onClose }: { at: MenuPoint; trigger: HTMLElement | null; onClose: () => void }) {
@@ -169,10 +170,11 @@ export function ConversationList() {
 
   const row = (conversation: Conversation) => {
     const snippet = searching ? snippets?.get(conversation.id) : undefined
+    const state = conversationState(conversation)
     return <li key={conversation.id}>
       {renamingId === conversation.id
         ? <div className="task-row conversation-row" data-renaming>
-          <span className="conversation-status" data-running={conversation.sessionId !== null} />
+          <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} />
           <TitleEditor title={conversation.title} label="会话标题" onSave={(title) => void renameConversation(conversation.id, title)} onDone={() => setRenamingId(null)} />
           <span className="task-row-meta">{conversationMeta(conversation)}</span>
         </div>
@@ -187,7 +189,7 @@ export function ConversationList() {
             setMenu({ id: conversation.id, at: menuPoint(event) })
           }}
         >
-          <span className="conversation-status" data-running={conversation.sessionId !== null} aria-label={conversation.sessionId ? '运行中' : '未运行'} />
+          <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} aria-label={state.label} title={state.detail ?? undefined} />
           <span className="task-row-title">{conversation.title}</span>
           <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation)}</span>
           {snippet && <span className="conversation-snippet"><Highlighted text={snippet} query={needle} /></span>}
