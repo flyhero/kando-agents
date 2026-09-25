@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { AgentKind, connectRpc, coreUrl } from '@kando/protocol'
 import { readCoreEndpoint } from '@kando/protocol/node'
+import { isCodexTitleTurn } from './codex-title-turn'
 
 type Forwarded = {
   providerSessionId: string | null
@@ -13,10 +14,6 @@ function field(value: unknown, key: string): unknown {
 }
 function string(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value : null }
 function key(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 32) }
-
-// Codex's TUI names a thread by running this prompt in a separate, unsaved thread whose turn also
-// fires notify. The payload has no field that marks it, so the prompt is the only tell.
-const CODEX_TITLE_PROMPT = /^Generate a concise, single-line task title of at most \d+ characters/
 
 function claudeEventKey(input: unknown): string {
   const transcript = string(field(input, 'transcript_path'))
@@ -30,13 +27,13 @@ function claudeEventKey(input: unknown): string {
 export function parseConversationEvent(agent: AgentKind, input: unknown): Forwarded {
   if (agent === 'codex') {
     if (field(input, 'type') !== 'agent-turn-complete') return { providerSessionId: null, messages: [] }
+    // Drop its thread id too: adopting it would bind the stage to a thread `codex resume` cannot find
+    // and reject every real turn after it as another thread's.
+    if (isCodexTitleTurn(input)) return { providerSessionId: null, messages: [] }
     const providerSessionId = string(field(input, 'thread-id'))
     const turn = string(field(input, 'turn-id')) ?? key(input)
     const inputs = field(input, 'input-messages')
     const texts = Array.isArray(inputs) ? inputs.filter((value): value is string => typeof value === 'string' && value.trim() !== '') : []
-    // Drop its thread id too: adopting it would bind the stage to a thread `codex resume` cannot find
-    // and reject every real turn after it as another thread's.
-    if (texts.length === 1 && CODEX_TITLE_PROMPT.test(texts[0] ?? '')) return { providerSessionId: null, messages: [] }
     const reply = string(field(input, 'last-assistant-message'))
     return {
       providerSessionId,

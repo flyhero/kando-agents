@@ -1,5 +1,6 @@
 import { connectRpc, coreUrl, type AgentKind, type TaskSession } from '@kando/protocol'
 import { readCoreEndpoint } from '@kando/protocol/node'
+import { isCodexTitleTurn } from './codex-title-turn'
 
 function field(value: unknown, key: string): unknown {
   return value && typeof value === 'object' ? Reflect.get(value, key) : undefined
@@ -9,6 +10,8 @@ function field(value: unknown, key: string): unknown {
 // ended, or it asks for permission), false when a new turn began, null when it says nothing.
 export function parseTaskEvent(agent: AgentKind, input: unknown): boolean | null {
   if (agent === 'codex') {
+    // The title turn ends seconds into the task's first turn, while the agent is still working.
+    if (isCodexTitleTurn(input)) return null
     return field(input, 'type') === 'agent-turn-complete' ? true : null
   }
   switch (field(input, 'hook_event_name')) {
