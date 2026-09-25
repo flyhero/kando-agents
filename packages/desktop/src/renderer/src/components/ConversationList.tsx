@@ -7,8 +7,9 @@ import { ConversationContextMenu, renameConversation } from './ConversationActio
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
 import { SlidersIcon } from './icons'
-import { projectNames } from './ProjectPicker'
+import { projectName, projectNames } from './ProjectPicker'
 import { SidebarCollapseButton } from './SidebarCollapseButton'
+import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
 import { TitleEditor } from './TitleEditor'
 
 type GroupBy = Preferences['conversationGroup']
@@ -49,6 +50,12 @@ function arrange(conversations: Conversation[], by: GroupBy, sort: SortBy): Grou
     groups.set(label, group)
   }
   return [...groups.values()].sort((a, b) => a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '', 'zh-CN'))
+}
+
+// By title or project name, ignoring case.
+function matches(conversation: Conversation, query: string): boolean {
+  const needle = query.toLowerCase()
+  return [conversation.title, ...conversation.projectPaths.map(projectName)].some((text) => text.toLowerCase().includes(needle))
 }
 
 function conversationMeta(conversation: Conversation): string {
@@ -100,7 +107,11 @@ export function ConversationList() {
   const groupBy = usePreferences((p) => p.conversationGroup)
   const sortBy = usePreferences((p) => p.conversationSort)
   const all = Object.values(conversations)
-  const groups = arrange(all, groupBy, sortBy)
+  // Null while the search box is closed. Groups left empty by a search drop out.
+  const [query, setQuery] = useState<string | null>(null)
+  const searching = query !== null && query.trim() !== ''
+  const visible = searching ? all.filter((conversation) => matches(conversation, query.trim())) : all
+  const groups = arrange(visible, groupBy, sortBy)
   const [menu, setMenu] = useState<{ id: string; at: MenuPoint } | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
   const [viewAt, setViewAt] = useState<MenuPoint | null>(null)
@@ -140,7 +151,15 @@ export function ConversationList() {
   return (
     <nav className="conversation-list" data-collapsed={collapsed} aria-label="自由会话列表">
       <header className="task-list-header">
-        <SidebarCollapseButton label="自由会话" count={all.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
+        <SidebarCollapseButton label="自由会话" count={visible.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
+        <SidebarSearchToggle
+          label="搜索会话"
+          query={query}
+          onToggle={() => {
+            setQuery((current) => (current === null ? '' : null))
+            setCollapsed(false)
+          }}
+        />
         <button
           ref={viewButton}
           type="button"
@@ -158,8 +177,12 @@ export function ConversationList() {
         </button>
         <button type="button" className="icon-button task-list-add" aria-label="新建会话" onClick={() => setNewConversationOpen(true)}>＋</button>
       </header>
+      {query !== null && !collapsed && (
+        <SidebarSearchField label="搜索会话" placeholder="标题或项目名" query={query} onChange={setQuery} />
+      )}
       <div id="sidebar-conversations" className="sidebar-section-content" hidden={collapsed}>
       {all.length === 0 ? <p className="task-list-empty">还没有会话，点右上角的 ＋ 新建。</p> :
+        visible.length === 0 ? <p className="task-list-empty">没有找到匹配「{query?.trim()}」的会话。</p> :
         groups.map((group) => group.label === null
           ? <ul key="all">{group.items.map(row)}</ul>
           : <section key={group.label} className="conversation-group" aria-label={group.label}>
