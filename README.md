@@ -40,7 +40,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 | `packages/cli` | 命令行客户端 |
 | `packages/desktop` | Electron 桌面端：看板、详情编辑、内嵌终端 |
 
-运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`。项目改名前的 `~/.ripen/`（含 `ripen.db`）在 `~/.kando/` 不存在时会被继续使用，里面的 worktree 不用迁移；`RIPEN_HOME` 也仍然生效。
+运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`。
 
 ## 快速开始
 

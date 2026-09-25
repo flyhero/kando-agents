@@ -1,17 +1,10 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { DAEMON_PROTOCOL_VERSION } from './daemon-protocol'
 
-// The project shipped as Ripen first. An existing ~/.ripen keeps being used so the
-// worktrees registered under it stay valid; fresh installs get ~/.kando.
 export function kandoHome(env: NodeJS.ProcessEnv = process.env, homedir: string = os.homedir()): string {
-  if (env.KANDO_HOME) return path.resolve(env.KANDO_HOME)
-  if (env.RIPEN_HOME) return path.resolve(env.RIPEN_HOME)
-  const home = path.join(homedir, '.kando')
-  const legacy = path.join(homedir, '.ripen')
-  return !existsSync(home) && existsSync(legacy) ? legacy : home
+  return env.KANDO_HOME ? path.resolve(env.KANDO_HOME) : path.join(homedir, '.kando')
 }
 
 // sun_path is 104 bytes on macOS and 108 on Linux; leave headroom.
@@ -37,7 +30,7 @@ export type KandoPaths = {
 export function kandoPaths(home: string = kandoHome()): KandoPaths {
   return {
     home,
-    database: databasePath(home),
+    database: path.join(home, 'kando.db'),
     coreEndpoint: path.join(home, 'core.json'),
     worktrees: path.join(home, 'worktrees'),
     daemonSocket: daemonSocketPath(home),
@@ -47,13 +40,6 @@ export function kandoPaths(home: string = kandoHome()): KandoPaths {
     attachments: path.join(home, 'attachments'),
     sessions: path.join(home, 'sessions')
   }
-}
-
-// A home created under the old name still holds ripen.db; keep opening it.
-function databasePath(home: string): string {
-  const current = path.join(home, 'kando.db')
-  const legacy = path.join(home, 'ripen.db')
-  return !existsSync(current) && existsSync(legacy) ? legacy : current
 }
 
 // Versioned name lets an old daemon keep serving its PTYs while a new one starts.
