@@ -7,6 +7,7 @@ import type {
   DaemonResult,
   SessionInfo
 } from '@kando/protocol/node'
+import { commandExists } from './command-lookup'
 
 // Enough for a reattaching UI to repaint recent output; not a full history.
 const MAX_SCROLLBACK_CHARS = 512 * 1024
@@ -41,13 +42,11 @@ export function createPtyHost(emit: (event: DaemonEvent) => void): {
 
   const handlers: DaemonHandlers = {
     spawn({ command, args, cwd, env, cols, rows }) {
-      const proc = pty.spawn(command, args, {
-        name: 'xterm-256color',
-        cwd,
-        cols,
-        rows,
-        env: { ...process.env, ...env, TERM: 'xterm-256color' }
-      })
+      const fullEnv = { ...process.env, ...env, TERM: 'xterm-256color' }
+      if (!commandExists(command, cwd, fullEnv)) {
+        throw new Error('command-not-found')
+      }
+      const proc = pty.spawn(command, args, { name: 'xterm-256color', cwd, cols, rows, env: fullEnv })
       const session: Session = { id: randomUUID(), proc, buffer: '', bufferStart: 0, endOffset: 0, exitCode: null }
       sessions.set(session.id, session)
       proc.onData((data) => {

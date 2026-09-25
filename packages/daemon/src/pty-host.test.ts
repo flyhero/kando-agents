@@ -20,7 +20,7 @@ describe('PTY output offsets', () => {
   it('reports monotonic offsets and the bounded attach range', () => {
     const events: DaemonEvent[] = []
     const host = createPtyHost((event) => events.push(event))
-    const { sessionId } = host.handlers.spawn({ command: 'agent', args: [], cwd: '/tmp', env: {}, cols: 80, rows: 24 })
+    const { sessionId } = host.handlers.spawn({ command: process.execPath, args: [], cwd: '/tmp', env: {}, cols: 80, rows: 24 })
     callbacks.data('abc')
     callbacks.data('def')
     expect(events).toEqual([
@@ -35,5 +35,11 @@ describe('PTY output offsets', () => {
     expect(attached.bufferStart).toBe(attached.endOffset - attached.buffer.length)
     callbacks.exit({ exitCode: 7 })
     expect(host.handlers.attach({ sessionId }).exitCode).toBe(7)
+  })
+
+  it('refuses a command it cannot find instead of reporting a silent exit', () => {
+    const host = createPtyHost(() => {})
+    expect(() => host.handlers.spawn({ command: 'claude-not-installed', args: [], cwd: '/tmp', env: { PATH: '/nowhere' }, cols: 80, rows: 24 }))
+      .toThrow('command-not-found')
   })
 })

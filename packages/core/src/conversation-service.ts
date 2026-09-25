@@ -127,7 +127,9 @@ export class ConversationService {
         sessionId = spawned.sessionId
       } catch (error) {
         this.store.deleteStage(stage.id)
-        this.transcript.marker(id, `${agent} 启动失败`)
+        this.transcript.marker(id, error instanceof Rejection && error.reason === 'command-not-found'
+          ? `${agent} 启动失败：找不到 ${command.command} 命令，请先安装并确认它在 PATH 里`
+          : `${agent} 启动失败`)
         throw error
       }
       this.store.attachStage(stage.id, sessionId)

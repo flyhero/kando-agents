@@ -72,6 +72,7 @@ const REASON_TEXT: Record<string, string> = {
   'nothing-to-restore': '没有可以撤销的替换',
   'worktree-failed': '创建 git worktree 失败',
   'daemon-unavailable': '终端守护进程没有运行（pnpm dev:daemon）',
+  'command-not-found': '找不到 agent 命令（claude 或 codex），请先安装并确认它在 PATH 里',
   'run-in-progress': '任务正在启动，请稍候',
   'task-not-found': '任务不存在',
   'session-not-found': '会话已不存在',
