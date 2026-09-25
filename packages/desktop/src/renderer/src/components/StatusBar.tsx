@@ -10,9 +10,9 @@ const CONNECTION_LABEL: Record<ConnectionState, string> = {
 }
 
 const CONNECTION_HINT: Record<ConnectionState, string> = {
-  connected: '已连接到 Ripen core',
-  connecting: '正在连接 Ripen core，断开后会自动重连',
-  'waiting-for-core': '没有找到正在运行的 Ripen core，先启动 pnpm dev:core'
+  connected: '已连接到 Kando core',
+  connecting: '正在连接 Kando core，断开后会自动重连',
+  'waiting-for-core': '没有找到正在运行的 Kando core，先启动 pnpm dev:core'
 }
 
 // Healthy is the common case, so it shrinks to a dot; only trouble earns words.

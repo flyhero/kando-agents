@@ -28,7 +28,7 @@ export async function claimEndpoint(socketPath: string): Promise<void> {
   }
   const state = await probe(socketPath)
   if (state === 'live') {
-    throw new Error(`another Ripen daemon is already serving ${socketPath}`)
+    throw new Error(`another Kando daemon is already serving ${socketPath}`)
   }
   if (state === 'unknown') {
     throw new Error(`cannot tell whether ${socketPath} is in use; refusing to replace it`)

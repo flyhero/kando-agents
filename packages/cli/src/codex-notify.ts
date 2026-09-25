@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-// Codex's `notify` is one argv command. Our per-run override calls Ripen, which then
+// Codex's `notify` is one argv command. Our per-run override calls Kando, which then
 // invokes the user's original command with the same event instead of replacing it.
 export function parseCodexNotify(config: string): string[] | null {
   config = config.replace(/\r\n/g, '\n')

@@ -1,4 +1,4 @@
-# Ripen
+# Kando
 
 Task-first multi-agent manager. See README.md for the architecture diagram.
 

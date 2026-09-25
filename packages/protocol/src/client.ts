@@ -111,7 +111,7 @@ export function connectRpc(url: string): Promise<RpcConnection> {
       client.failAll(new Error('connection closed'))
       markClosed()
       if (!opened) {
-        reject(new Error(`cannot connect to Ripen core`))
+        reject(new Error(`cannot connect to Kando core`))
       }
     }
     socket.onopen = async () => {
