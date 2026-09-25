@@ -70,7 +70,7 @@ export function ConversationTerminal({ id }: { id: string }) {
         : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
       <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
       <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{projectNames(conversation.projectPaths)}</span>
-      <BranchStatus id={id} updatedAt={conversation.updatedAt} />
+      <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
       <span className="muted">{conversation.sessionId ? '运行中' : '未运行'}</span>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>

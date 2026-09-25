@@ -8,6 +8,7 @@ import {
   imageLabel,
   MAX_TASK_IMAGES,
   type AgentKind,
+  type ProjectHead,
   type RpcParsedParams,
   type SourceSnapshot,
   type Task,
@@ -24,7 +25,7 @@ import type { SessionHost } from './daemon-client'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { TaskPatch, TaskStore } from './task-store'
-import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, withKnownWorktrees } from './workspace'
+import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees } from './workspace'
 
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
@@ -63,6 +64,13 @@ export class TaskService {
       throw new Rejection('task-not-found', `no task "${idOrPrefix}"`)
     }
     return match
+  }
+
+  // The worktree is where this task's agent works; the picked folder is shared with everything else.
+  branches(id: string): Promise<ProjectHead[]> {
+    return Promise.all(this.get(id).repos.map(async (repo) => repo.worktreePath
+      ? { path: repo.path, ...await projectHead(repo.worktreePath) }
+      : { path: repo.path, branch: null, detached: false }))
   }
 
   create({ title, details, repos, dependsOn, agent }: RpcParsedParams<'tasks.create'>): Task {

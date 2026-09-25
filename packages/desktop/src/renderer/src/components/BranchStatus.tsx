@@ -4,11 +4,14 @@ import { useCore } from '../core-store'
 import { Popover } from './Popover'
 import { projectName } from './ProjectPicker'
 
-// Asked again on open, when the window regains focus, whenever the conversation changes (every
-// agent turn and exit) and when the panel opens. An older core without the method shows nothing.
-function useProjectHeads(id: string, updatedAt: number, opened: number): ProjectHead[] {
+export type BranchTarget = { kind: 'task' | 'conversation'; id: string }
+
+// Asked again on open, when the window regains focus, whenever the task or conversation changes
+// (every agent turn and exit) and when the panel opens. An older core without the method shows nothing.
+function useProjectHeads(target: BranchTarget, updatedAt: number, opened: number): ProjectHead[] {
   const rpc = useCore((state) => state.rpc)
-  const [heads, setHeads] = useState<{ id: string; heads: ProjectHead[] }>({ id: '', heads: [] })
+  const key = `${target.kind}:${target.id}`
+  const [heads, setHeads] = useState<{ key: string; heads: ProjectHead[] }>({ key: '', heads: [] })
   const [focusCount, setFocusCount] = useState(0)
   useEffect(() => {
     const onFocus = () => setFocusCount((count) => count + 1)
@@ -18,16 +21,18 @@ function useProjectHeads(id: string, updatedAt: number, opened: number): Project
   useEffect(() => {
     if (!rpc) return
     let current = true
-    void rpc.call('conversations.branches', { id })
+    const { kind, id } = target
+    const request = kind === 'task' ? rpc.call('tasks.branches', { id }) : rpc.call('conversations.branches', { id })
+    void request
       .catch(() => [])
       .then((found) => {
-        if (current) setHeads({ id, heads: found })
+        if (current) setHeads({ key, heads: found })
       })
     return () => {
       current = false
     }
-  }, [rpc, id, updatedAt, focusCount, opened])
-  return heads.id === id ? heads.heads : []
+  }, [rpc, key, updatedAt, focusCount, opened])
+  return heads.key === key ? heads.heads : []
 }
 
 function headLabel(head: ProjectHead): string {
@@ -67,13 +72,14 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// The first project is the agent's working directory, so its branch is the one on the chip.
-export function BranchStatus({ id, updatedAt }: { id: string; updatedAt: number }) {
+// The chip shows the first project that has a branch: a conversation's working directory, or a
+// task's first worktree. The panel lists every project.
+export function BranchStatus({ target, updatedAt }: { target: BranchTarget; updatedAt: number }) {
   const [opened, setOpened] = useState(0)
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
-  const heads = useProjectHeads(id, updatedAt, opened)
-  const head = heads[0]
+  const heads = useProjectHeads(target, updatedAt, opened)
+  const head = heads.find((each) => each.branch)
   if (!head?.branch) return null
   const dirty = heads.some((each) => (each.changes ?? 0) > 0)
   return (

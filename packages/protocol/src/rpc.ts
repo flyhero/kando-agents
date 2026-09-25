@@ -65,6 +65,8 @@ export const rpcMethods = {
   'tasks.addImages': { params: TaskRef.extend({ images: z.array(ImageRef).min(1).max(MAX_TASK_IMAGES) }), result: Task },
   'tasks.updateImage': { params: TaskRef.extend({ attachmentId: AttachmentId, name: ImageRef.shape.name }), result: Task },
   'tasks.removeImage': { params: TaskRef.extend({ attachmentId: AttachmentId }), result: Task },
+  // Each repo's worktree, read on every call. A repo without one yet has no branch. Older cores lack it.
+  'tasks.branches': { params: TaskRef, result: z.array(ProjectHead) },
   'conversations.list': { params: z.object({}), result: z.array(Conversation) },
   'conversations.get': { params: ConversationRef, result: Conversation },
   'conversations.create': { params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS) }), result: Conversation },

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { shortTaskId, type TaskProposal } from '@kando/protocol'
 import { perform, useCore } from '../core-store'
-import { STATUS_LABEL } from '../labels'
+import { AGENT_LABEL, STATUS_LABEL } from '../labels'
+import { BranchStatus } from './BranchStatus'
+import { projectNames } from './ProjectPicker'
 import { ProposalPanel } from './ProposalCard'
 import { SessionTerminal } from './SessionTerminal'
 import { SourceLink } from './SourceLink'
@@ -54,15 +56,23 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
 
   return (
     <section className="detail terminal-view" aria-label={`${task.title} 的终端`}>
-      <header className="detail-header">
-        <span className="status-pill" data-status={task.status}>
-          <StatusIcon status={task.status} decorative />
-          {STATUS_LABEL[task.status]}
-        </span>
-        <TaskAlerts task={task} />
+      {/* Laid out like a conversation's header: what runs where first, then this task's own state. */}
+      <header className="detail-header task-terminal-header">
+        <StatusIcon status={task.status} decorative />
         <span className="terminal-view-title" title={task.title}>
           {task.title}
         </span>
+        {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
+        {task.repos.length > 0 && (
+          <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
+            {projectNames(task.repos.map((repo) => repo.path))}
+          </span>
+        )}
+        <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
+        <span className="status-pill" data-status={task.status}>
+          {STATUS_LABEL[task.status]}
+        </span>
+        <TaskAlerts task={task} />
         <span className="muted mono">{shortTaskId(task.id)}</span>
         <SourceLink task={task} />
         {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}

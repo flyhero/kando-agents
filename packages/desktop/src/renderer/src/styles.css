@@ -152,7 +152,8 @@ textarea {
 }
 .conversation-snippet mark { border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
 .conversation-status[data-running='true'] { background: var(--status-running); }
-.conversation-header { flex-wrap: wrap; }
+.conversation-header, .task-terminal-header { flex-wrap: wrap; }
+.task-terminal-header > .status-icon { flex-shrink: 0; }
 /* The list row's top offset lines the dot up with the first line; the header already centers it. */
 .conversation-header .conversation-status { margin-top: 0; flex-shrink: 0; }
 .conversation-header .title-editor { width: auto; flex: 0 1 320px; min-width: 120px; font-weight: 600; }

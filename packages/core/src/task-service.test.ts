@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -144,6 +144,17 @@ describe('TaskService', () => {
 
     service.handleSessionExit(running.sessionId ?? '', 0)
     expect(service.get(task.id).status).toBe('done')
+  })
+
+  it('reads branches from the task\'s worktrees only, once a run has made them', async () => {
+    const repo = initRepo('app')
+    const task = readyTask('Add dark mode', [repo])
+    expect(await service.branches(task.id)).toEqual([{ path: repo, branch: null, detached: false }])
+    const running = await service.run(task.id)
+    writeFileSync(path.join(running.repos[0]!.worktreePath!, 'theme.css'), '')
+    expect(await service.branches(task.id)).toEqual([
+      { path: repo, branch: running.repos[0]!.branch, detached: false, upstream: null, ahead: 0, behind: 0, changes: 1 }
+    ])
   })
 
   it('attaches images in order, checks each file, and carries them into a redo', async () => {
