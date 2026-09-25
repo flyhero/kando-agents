@@ -1,0 +1,26 @@
+{
+  "name": "kando",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "postinstall": "node scripts/fix-node-pty-spawn-helper.mjs",
+    "dev": "pnpm --parallel --filter @kando/daemon --filter @kando/core --filter @kando/desktop run dev",
+    "dev:daemon": "pnpm --filter @kando/daemon run dev",
+    "dev:core": "pnpm --filter @kando/core run dev",
+    "dev:desktop": "pnpm --filter @kando/desktop run dev",
+    "kando": "tsx packages/cli/src/main.ts",
+    "build": "pnpm --filter @kando/desktop run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

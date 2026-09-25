@@ -1,0 +1,18 @@
+packages:
+  - packages/*
+
+catalog:
+  '@types/node': 26.6.2
+  '@types/ws': 8.18.1
+  tsx: 4.23.15
+  typescript: 7.0.2
+  vitest: 5.0.1
+  ws: 8.21.3
+  zod: 4.6.5
+
+# Native modules only load in plain-Node processes (daemon), never in Electron,
+# so nothing here needs electron-rebuild. Electron downloads its binary lazily, but electron-vite
+# reads path.txt without triggering that, so desktop's dev script runs install-electron first.
+allowBuilds:
+  esbuild: true
+  node-pty: true
