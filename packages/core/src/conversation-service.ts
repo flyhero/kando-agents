@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
 import { conversationCommand } from './conversation-command'
+import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
@@ -37,6 +38,9 @@ export class ConversationService {
   }
   messages(id: string): ConversationMessage[] { this.get(id); return this.store.messages(id) }
   stages(id: string): ConversationStage[] { this.get(id); return this.store.stages(id) }
+  search(query: string): ConversationSearchHit[] {
+    return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
+  }
 
   async create(agent: AgentKind, projectPaths: readonly string[]): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')

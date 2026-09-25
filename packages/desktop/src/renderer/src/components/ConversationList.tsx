@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AGENT_KINDS, type Conversation } from '@kando/protocol'
 import { selectConversation, setNewConversationOpen, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
@@ -52,10 +52,49 @@ function arrange(conversations: Conversation[], by: GroupBy, sort: SortBy): Grou
   return [...groups.values()].sort((a, b) => a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '', 'zh-CN'))
 }
 
-// By title or project name, ignoring case.
+// By title or project name, ignoring case. Message text is searched by core.
 function matches(conversation: Conversation, query: string): boolean {
   const needle = query.toLowerCase()
   return [conversation.title, ...conversation.projectPaths.map(projectName)].some((text) => text.toLowerCase().includes(needle))
+}
+
+const SEARCH_DELAY_MS = 200
+
+// Snippets by conversation id, kept with the query they answer so a slow reply for an older
+// query cannot label rows for a newer one.
+type MessageHits = { query: string; snippets: Map<string, string> }
+
+// Asks core once typing pauses. An older core without the method answers with no hits,
+// which leaves title and project matches.
+function useMessageHits(query: string): MessageHits {
+  const rpc = useCore((s) => s.rpc)
+  const [hits, setHits] = useState<MessageHits>({ query: '', snippets: new Map() })
+  useEffect(() => {
+    if (!query) return
+    if (!rpc) {
+      setHits({ query, snippets: new Map() })
+      return
+    }
+    let current = true
+    const timer = setTimeout(() => {
+      void rpc.call('conversations.search', { query: query.slice(0, 200) })
+        .catch(() => [])
+        .then((found) => {
+          if (current) setHits({ query, snippets: new Map(found.map((hit) => [hit.conversationId, hit.snippet])) })
+        })
+    }, SEARCH_DELAY_MS)
+    return () => {
+      current = false
+      clearTimeout(timer)
+    }
+  }, [rpc, query])
+  return hits
+}
+
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const at = text.toLowerCase().indexOf(query.toLowerCase())
+  if (at < 0) return <>{text}</>
+  return <>{text.slice(0, at)}<mark>{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>
 }
 
 function conversationMeta(conversation: Conversation): string {
@@ -109,8 +148,14 @@ export function ConversationList() {
   const all = Object.values(conversations)
   // Null while the search box is closed. Groups left empty by a search drop out.
   const [query, setQuery] = useState<string | null>(null)
-  const searching = query !== null && query.trim() !== ''
-  const visible = searching ? all.filter((conversation) => matches(conversation, query.trim())) : all
+  const needle = query?.trim() ?? ''
+  const searching = needle !== ''
+  const messageHits = useMessageHits(needle)
+  // Null until core has answered this query.
+  const snippets = messageHits.query === needle ? messageHits.snippets : null
+  const visible = searching
+    ? all.filter((conversation) => matches(conversation, needle) || snippets?.has(conversation.id))
+    : all
   const groups = arrange(visible, groupBy, sortBy)
   const [menu, setMenu] = useState<{ id: string; at: MenuPoint } | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
@@ -122,8 +167,9 @@ export function ConversationList() {
   const menuConversation = menu ? conversations[menu.id] : undefined
   const handoffConversation = handoffId ? conversations[handoffId] : undefined
 
-  const row = (conversation: Conversation) => (
-    <li key={conversation.id}>
+  const row = (conversation: Conversation) => {
+    const snippet = searching ? snippets?.get(conversation.id) : undefined
+    return <li key={conversation.id}>
       {renamingId === conversation.id
         ? <div className="task-row conversation-row" data-renaming>
           <span className="conversation-status" data-running={conversation.sessionId !== null} />
@@ -144,9 +190,10 @@ export function ConversationList() {
           <span className="conversation-status" data-running={conversation.sessionId !== null} aria-label={conversation.sessionId ? '运行中' : '未运行'} />
           <span className="task-row-title">{conversation.title}</span>
           <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation)}</span>
+          {snippet && <span className="conversation-snippet"><Highlighted text={snippet} query={needle} /></span>}
         </button>}
     </li>
-  )
+  }
 
   return (
     <nav className="conversation-list" data-collapsed={collapsed} aria-label="自由会话列表">
@@ -178,11 +225,11 @@ export function ConversationList() {
         <button type="button" className="icon-button task-list-add" aria-label="新建会话" onClick={() => setNewConversationOpen(true)}>＋</button>
       </header>
       {query !== null && !collapsed && (
-        <SidebarSearchField label="搜索会话" placeholder="标题或项目名" query={query} onChange={setQuery} />
+        <SidebarSearchField label="搜索会话" placeholder="标题、项目名或聊天内容" query={query} onChange={setQuery} />
       )}
       <div id="sidebar-conversations" className="sidebar-section-content" hidden={collapsed}>
       {all.length === 0 ? <p className="task-list-empty">还没有会话，点右上角的 ＋ 新建。</p> :
-        visible.length === 0 ? <p className="task-list-empty">没有找到匹配「{query?.trim()}」的会话。</p> :
+        visible.length === 0 ? snippets && <p className="task-list-empty">没有找到匹配「{needle}」的会话。</p> :
         groups.map((group) => group.label === null
           ? <ul key="all">{group.items.map(row)}</ul>
           : <section key={group.label} className="conversation-group" aria-label={group.label}>

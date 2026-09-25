@@ -41,3 +41,7 @@ export const ConversationMessage = z.object({
   createdAt: z.number()
 })
 export type ConversationMessage = z.infer<typeof ConversationMessage>
+
+// A conversation whose messages contain a search query, with the text around the latest match.
+export const ConversationSearchHit = z.object({ conversationId: z.string().uuid(), snippet: z.string() })
+export type ConversationSearchHit = z.infer<typeof ConversationSearchHit>

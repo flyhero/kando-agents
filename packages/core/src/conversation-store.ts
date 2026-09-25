@@ -124,6 +124,14 @@ export class ConversationStore {
     return this.db.prepare(`${MESSAGE_SELECT} WHERE conversation_id = ? AND sequence > ? ORDER BY sequence`).all(id, after).map(message)
   }
 
+  // The latest matching message per conversation: SQLite takes the bare text column from the
+  // row holding MAX(sequence). lower() folds only ASCII, which CJK text does not need.
+  searchMessages(query: string): Array<{ conversationId: string; text: string }> {
+    return this.db.prepare(`SELECT conversation_id AS conversationId, text, MAX(sequence) AS sequence
+      FROM conversation_messages WHERE instr(lower(text), lower(?)) > 0 GROUP BY conversation_id`)
+      .all(query).map((row) => ({ conversationId: String(row.conversationId), text: String(row.text) }))
+  }
+
   maxSequence(id: string): number {
     return Number(this.db.prepare('SELECT MAX(sequence) AS sequence FROM conversation_messages WHERE conversation_id = ?').get(id)?.sequence ?? 0)
   }

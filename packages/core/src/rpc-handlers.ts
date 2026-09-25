@@ -58,6 +58,7 @@ export function createRpcHandlers(
     'conversations.history': ({ id, offset, length }) => conversations.history(id, offset, length),
     'conversations.messages': ({ id }) => conversations.messages(id),
     'conversations.stages': ({ id }) => conversations.stages(id),
+    'conversations.search': ({ query }) => conversations.search(query),
     'conversations.event': (input) => { conversations.recordEvent(input); return OK },
     'attachments.begin': ({ size }, connection) => ({ uploadId: attachments.uploads.begin(connection, size) }),
     'attachments.append': ({ uploadId, offset, data }, connection) => {

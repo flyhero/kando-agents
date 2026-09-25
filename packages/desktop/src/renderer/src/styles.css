@@ -138,6 +138,19 @@ textarea {
 .conversation-group-title { display: flex; gap: 6px; margin: 0; padding: 4px 20px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
 /* Centered in the row's 16px icon column, on the title's first line, like a task's status icon. */
 .conversation-status { justify-self: center; width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: var(--text-muted); }
+/* The message a search matched, under the row's meta line. */
+.conversation-snippet {
+  grid-column: 2;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.conversation-snippet mark { border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
 .conversation-status[data-running='true'] { background: var(--status-running); }
 .conversation-header { flex-wrap: wrap; }
 /* The list row's top offset lines the dot up with the first line; the header already centers it. */

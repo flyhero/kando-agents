@@ -149,6 +149,18 @@ describe('ConversationService', () => {
     expect(() => event(created.id, firstStage.id, 'codex', 'user', 'Wrong agent', 'wrong')).toThrow('conversation-event-invalid')
   })
 
+  it('finds conversations by message text, once each, with the latest match', async () => {
+    const first = await service.create('claude', [root])
+    const second = await service.create('codex', [root])
+    const stage = (id: string) => service.stages(id)[0]!.id
+    event(first.id, stage(first.id), 'claude', 'user', 'Fix the Login redirect', 'user-1')
+    event(first.id, stage(first.id), 'claude', 'assistant', 'The login page now redirects home', 'assistant-1')
+    event(second.id, stage(second.id), 'codex', 'user', '整理这周的周报', 'user-1')
+    expect(service.search('LOGIN')).toEqual([{ conversationId: first.id, snippet: 'The login page now redirects home' }])
+    expect(service.search('周报')).toEqual([{ conversationId: second.id, snippet: '整理这周的周报' }])
+    expect(service.search('nothing like it')).toEqual([])
+  })
+
   it('recovers daemon output once and preserves workspaces on deletion', async () => {
     const created = await service.create('codex', [])
     const sessionId = created.sessionId!
