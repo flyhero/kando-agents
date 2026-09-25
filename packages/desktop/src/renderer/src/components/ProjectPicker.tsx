@@ -94,7 +94,7 @@ function ProjectMenu({
   )
 }
 
-type ProjectEntry = Pick<TaskRepo, 'path' | 'branch' | 'worktreePath'>
+type ProjectEntry = Pick<TaskRepo, 'path' | 'worktreePath'>
 
 // Controlled: shows `projects` and reports the new path list through `onChange`.
 export function ProjectPicker({
@@ -154,7 +154,6 @@ export function ProjectPicker({
         >
           <span className="chip-main chip-static">
             <span className="project-name">{projectName(project.path)}</span>
-            {project.branch && <span className="project-branch mono">{project.branch}</span>}
           </span>
           {!locked && (
             <button

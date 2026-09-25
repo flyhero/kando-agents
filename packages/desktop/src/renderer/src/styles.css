@@ -885,6 +885,13 @@ button.task-tag:hover {
   font-weight: 600;
 }
 
+/* A long name ends in an ellipsis rather than breaking at a hyphen; the chip's title has the path. */
+.project-chip .project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-branch {
   max-width: 200px;
   padding: 0 6px;

@@ -171,7 +171,7 @@ export function NewTaskDialog() {
         <div className="modal-field">
           <span className="modal-label">项目</span>
           <ProjectPicker
-            projects={repos.map((repoPath) => ({ path: repoPath, branch: null, worktreePath: null }))}
+            projects={repos.map((repoPath) => ({ path: repoPath, worktreePath: null }))}
             onChange={setRepos}
           />
         </div>

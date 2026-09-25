@@ -35,7 +35,7 @@ export function NewConversationDialog() {
       </label>
       <div className="modal-field"><span className="modal-label">项目 <span className="modal-optional">[可选]</span></span>
         <ProjectPicker
-          projects={projectPaths.map((projectPath) => ({ path: projectPath, branch: null, worktreePath: null }))}
+          projects={projectPaths.map((projectPath) => ({ path: projectPath, worktreePath: null }))}
           onChange={setProjectPaths}
         />
         <span className="muted">{projectPaths.length === 0 ? '不选项目时，使用 Kando 持久工作目录' : '第一个项目是终端当前目录；其他项目可由 agent 直接访问'}</span>
