@@ -47,6 +47,16 @@ export const ConversationSearchHit = z.object({ conversationId: z.string().uuid(
 export type ConversationSearchHit = z.infer<typeof ConversationSearchHit>
 
 // What a project folder has checked out: a branch, or a short commit id when HEAD is detached.
-// branch is null when the folder is not in a git repo.
-export const ProjectHead = z.object({ path: z.string(), branch: z.string().nullable(), detached: z.boolean() })
+// branch is null when the folder is not in a git repo. Older cores send no status fields.
+export const ProjectHead = z.object({
+  path: z.string(),
+  branch: z.string().nullable(),
+  detached: z.boolean(),
+  // The tracked remote branch, null when there is none; ahead and behind count against it.
+  upstream: z.string().nullable().optional(),
+  ahead: z.number().int().nonnegative().optional(),
+  behind: z.number().int().nonnegative().optional(),
+  // Uncommitted entries, untracked files included.
+  changes: z.number().int().nonnegative().optional()
+})
 export type ProjectHead = z.infer<typeof ProjectHead>

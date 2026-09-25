@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { ProjectHead } from '@kando/protocol'
+import { useCallback, useState } from 'react'
 import { selectConversation, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
-import { projectName, projectNames } from './ProjectPicker'
+import { projectNames } from './ProjectPicker'
+import { BranchStatus } from './BranchStatus'
 import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { continueConversation, deleteConversation, renameConversation, stopConversation } from './ConversationActions'
@@ -46,42 +46,8 @@ function MoreMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => v
   )
 }
 
-// Asked again on open, when the window regains focus, and whenever the conversation changes,
-// which covers every agent turn and exit. An older core without the method shows no branch.
-function useProjectHeads(id: string, updatedAt: number | undefined): ProjectHead[] {
-  const rpc = useCore((state) => state.rpc)
-  const [heads, setHeads] = useState<{ id: string; heads: ProjectHead[] }>({ id: '', heads: [] })
-  const [focusCount, setFocusCount] = useState(0)
-  useEffect(() => {
-    const onFocus = () => setFocusCount((count) => count + 1)
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
-  useEffect(() => {
-    if (!rpc) return
-    let current = true
-    void rpc.call('conversations.branches', { id })
-      .catch(() => [])
-      .then((found) => {
-        if (current) setHeads({ id, heads: found })
-      })
-    return () => {
-      current = false
-    }
-  }, [rpc, id, updatedAt, focusCount])
-  return heads.id === id ? heads.heads : []
-}
-
-function headLabel(head: ProjectHead): string {
-  if (!head.branch) return '不是 git 仓库'
-  return head.detached ? `${head.branch}（分离 HEAD）` : head.branch
-}
-
 export function ConversationTerminal({ id }: { id: string }) {
   const conversation = useCore((state) => state.conversations[id])
-  // The first project is the agent's working directory; the rest go in the tooltip.
-  const heads = useProjectHeads(id, conversation?.updatedAt)
-  const head = heads[0]
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -104,11 +70,7 @@ export function ConversationTerminal({ id }: { id: string }) {
         : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
       <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
       <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{projectNames(conversation.projectPaths)}</span>
-      {head?.branch && (
-        <span className="project-branch mono" title={heads.map((each) => `${projectName(each.path)}：${headLabel(each)}`).join('\n')}>
-          {headLabel(head)}
-        </span>
-      )}
+      <BranchStatus id={id} updatedAt={conversation.updatedAt} />
       <span className="muted">{conversation.sessionId ? '运行中' : '未运行'}</span>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>

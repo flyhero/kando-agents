@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -28,24 +28,44 @@ describe('normalizeRepoPath', () => {
 })
 
 describe('projectHead', () => {
-  let dir: string
-  afterEach(() => rmSync(dir, { recursive: true, force: true }))
-  const git = (...args: string[]) =>
+  const dirs: string[] = []
+  afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })))
+  const tempDir = () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'kando-head-'))
+    dirs.push(dir)
+    return dir
+  }
+  const git = (dir: string, ...args: string[]) =>
     execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim()
 
   it('reads the branch, even before the first commit, and a detached commit', async () => {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'kando-head-'))
-    git('init', '-q', '-b', 'main')
-    expect(await projectHead(dir)).toEqual({ branch: 'main', detached: false })
-    git('commit', '-q', '--allow-empty', '-m', 'init')
-    git('checkout', '-q', '-b', 'feature/login')
-    expect(await projectHead(dir)).toEqual({ branch: 'feature/login', detached: false })
-    git('checkout', '-q', '--detach')
-    expect(await projectHead(dir)).toEqual({ branch: git('rev-parse', '--short', 'HEAD'), detached: true })
+    const dir = tempDir()
+    git(dir, 'init', '-q', '-b', 'main')
+    expect(await projectHead(dir)).toMatchObject({ branch: 'main', detached: false, upstream: null, changes: 0 })
+    git(dir, 'commit', '-q', '--allow-empty', '-m', 'init')
+    git(dir, 'checkout', '-q', '-b', 'feature/login')
+    expect(await projectHead(dir)).toMatchObject({ branch: 'feature/login', detached: false })
+    git(dir, 'checkout', '-q', '--detach')
+    expect(await projectHead(dir)).toMatchObject({ branch: git(dir, 'rev-parse', 'HEAD').slice(0, 7), detached: true })
+  })
+
+  it('counts uncommitted changes, untracked files included, and commits against the upstream', async () => {
+    const remote = tempDir()
+    git(remote, 'init', '-q', '--bare', '-b', 'main')
+    const dir = tempDir()
+    git(dir, 'init', '-q', '-b', 'main')
+    writeFileSync(path.join(dir, 'a.txt'), 'a')
+    git(dir, 'add', 'a.txt')
+    git(dir, 'commit', '-q', '-m', 'a')
+    git(dir, 'remote', 'add', 'origin', remote)
+    git(dir, 'push', '-q', '-u', 'origin', 'main')
+    git(dir, 'commit', '-q', '--allow-empty', '-m', 'local')
+    writeFileSync(path.join(dir, 'a.txt'), 'changed')
+    writeFileSync(path.join(dir, 'new.txt'), 'new')
+    expect(await projectHead(dir)).toEqual({ branch: 'main', detached: false, upstream: 'origin/main', ahead: 1, behind: 0, changes: 2 })
   })
 
   it('has no branch outside a git repo', async () => {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'kando-head-'))
-    expect(await projectHead(dir)).toEqual({ branch: null, detached: false })
+    expect(await projectHead(tempDir())).toMatchObject({ branch: null, detached: false })
   })
 })

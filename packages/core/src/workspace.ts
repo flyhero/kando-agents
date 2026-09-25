@@ -68,18 +68,38 @@ async function gitTopLevel(dir: string): Promise<string | null> {
   }
 }
 
-// Branch first; a detached HEAD falls back to its short commit id.
-export async function projectHead(dir: string): Promise<{ branch: string | null; detached: boolean }> {
+export type ProjectStatus = {
+  branch: string | null
+  detached: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+  changes: number
+}
+
+const NOT_A_REPO: ProjectStatus = { branch: null, detached: false, upstream: null, ahead: 0, behind: 0, changes: 0 }
+
+// One status call gives the branch, its upstream and the uncommitted count. --no-optional-locks
+// keeps it off index.lock, which the agent's own git commands in the same folder would trip on.
+export async function projectHead(dir: string): Promise<ProjectStatus> {
+  let stdout: string
   try {
-    const { stdout } = await execFileAsync('git', ['-C', dir, 'symbolic-ref', '--quiet', '--short', 'HEAD'])
-    return { branch: stdout.trim(), detached: false }
+    ({ stdout } = await execFileAsync('git', ['--no-optional-locks', '-C', dir, 'status', '--porcelain=v2', '--branch']))
   } catch {
-    try {
-      const { stdout } = await execFileAsync('git', ['-C', dir, 'rev-parse', '--short', 'HEAD'])
-      return { branch: stdout.trim(), detached: true }
-    } catch {
-      return { branch: null, detached: false }
-    }
+    return NOT_A_REPO
+  }
+  const lines = stdout.split('\n').filter(Boolean)
+  const header = (key: string) => lines.find((line) => line.startsWith(`# branch.${key} `))?.slice(`# branch.${key} `.length) ?? null
+  const head = header('head')
+  const detached = head === '(detached)'
+  const counts = header('ab')?.match(/^\+(\d+) -(\d+)$/)
+  return {
+    branch: detached ? header('oid')?.slice(0, 7) ?? null : head,
+    detached,
+    upstream: header('upstream'),
+    ahead: Number(counts?.[1] ?? 0),
+    behind: Number(counts?.[2] ?? 0),
+    changes: lines.filter((line) => !line.startsWith('#')).length
   }
 }
 
