@@ -178,7 +178,7 @@ textarea {
   height: 16px;
 }
 
-/* Icon buttons beside a sidebar section's ＋: the task filter, the conversations' view menu. */
+/* Icon buttons beside a sidebar section's ＋: search, the task filter, the conversations' view menu. */
 .sidebar-tool {
   margin-right: 4px;
   display: grid;
@@ -190,12 +190,12 @@ textarea {
   height: 15px;
 }
 
-.task-search {
+.sidebar-search {
   position: relative;
   padding: 0 8px 8px;
 }
 
-.task-search svg {
+.sidebar-search svg {
   position: absolute;
   top: calc(50% - 4px);
   left: 18px;
@@ -206,13 +206,13 @@ textarea {
   pointer-events: none;
 }
 
-.task-search .input {
+.sidebar-search .input {
   padding: 5px 10px 5px 30px;
   font-size: 13px;
 }
 
 /* Once the box is open the label would only cover it. */
-.task-search-toggle[aria-pressed='true']::after {
+.sidebar-search-toggle[aria-pressed='true']::after {
   display: none;
 }
 

@@ -6,11 +6,12 @@ import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { setPreference, usePreferences } from '../preferences'
 import { saveTaskText } from '../unsaved-edits'
 import { menuPoint, type MenuPoint } from './ContextMenu'
-import { FilterIcon, InboxIcon, SearchIcon } from './icons'
+import { FilterIcon, InboxIcon } from './icons'
 import { StatusIcon } from './StatusIcon'
 import { hasTaskAlerts, TaskAlerts } from './TaskAlerts'
 import { projectNames } from './ProjectPicker'
 import { SidebarCollapseButton } from './SidebarCollapseButton'
+import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
 import { TaskContextMenu } from './TaskActions'
 import { TitleEditor } from './TitleEditor'
 
@@ -78,19 +79,14 @@ export function TaskList() {
     <nav className="task-list" data-collapsed={collapsed} aria-label="任务列表">
       <header className="task-list-header">
         <SidebarCollapseButton label="任务" count={visible.length} collapsed={collapsed} controls="sidebar-tasks" onToggle={() => setCollapsed((value) => !value)} />
-        <button
-          type="button"
-          className="icon-button sidebar-tool task-search-toggle"
-          aria-label="搜索任务"
-          aria-pressed={query !== null}
-          data-tooltip="搜索任务"
-          onClick={() => {
+        <SidebarSearchToggle
+          label="搜索任务"
+          query={query}
+          onToggle={() => {
             setQuery((current) => (current === null ? '' : null))
             setCollapsed(false)
           }}
-        >
-          <SearchIcon />
-        </button>
+        />
         <button
           type="button"
           className="icon-button sidebar-tool"
@@ -114,20 +110,7 @@ export function TaskList() {
         </button>
       </header>
       {query !== null && !collapsed && (
-        <div className="task-search">
-          <SearchIcon />
-          <input
-            className="input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery(null)
-            }}
-            placeholder="标题、Jira 编号或任务 id"
-            aria-label="搜索任务"
-            autoFocus
-          />
-        </div>
+        <SidebarSearchField label="搜索任务" placeholder="标题、Jira 编号或任务 id" query={query} onChange={setQuery} />
       )}
       <div id="sidebar-tasks" className="sidebar-section-content" hidden={collapsed}>
       {!searching && activeInboxes.length > 0 && (
