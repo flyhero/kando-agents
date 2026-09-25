@@ -83,6 +83,7 @@ describe('ConversationService', () => {
     const providerId = service.stages(created.id)[0]?.providerSessionId
     expect(daemon.spawns[0]?.args).toContain('--session-id')
     await expect(service.continue(created.id)).rejects.toThrow('conversation-running')
+    event(created.id, service.stages(created.id)[0]!.id, 'claude', 'user', 'Hello', 'user-1')
     await service.stop(created.id)
     await service.continue(created.id)
     expect(daemon.spawns[1]?.args).toEqual(expect.arrayContaining(['--resume', providerId]))
@@ -149,6 +150,21 @@ describe('ConversationService', () => {
     expect(() => event(created.id, firstStage.id, 'codex', 'user', 'Wrong agent', 'wrong')).toThrow('conversation-event-invalid')
   })
 
+  it('starts Claude afresh, with the whole conversation, when the session id it picked was never saved', async () => {
+    const created = await service.create('codex', [root])
+    event(created.id, service.stages(created.id)[0]!.id, 'codex', 'user', 'Fix the build', 'user-1')
+    await service.handoff(created.id, 'claude', '', true)
+    const unsaved = service.stages(created.id)[1]!.providerSessionId
+    service.handleExit(service.get(created.id).sessionId ?? '', 1)
+    await service.handoff(created.id, 'codex', '', false)
+    await service.handoff(created.id, 'claude', '', true)
+    const args = daemon.spawns.at(-1)?.args ?? []
+    expect(args).not.toContain('--resume')
+    expect(args[args.indexOf('--session-id') + 1]).not.toBe(unsaved)
+    const handoffFile = args.at(-1)?.match(/移交文件 (\S+)，/)?.[1] ?? ''
+    expect(readFileSync(handoffFile, 'utf8')).toContain('Fix the build')
+  })
+
   it('reports how the agent last stopped: exited, stopped, or never ended', async () => {
     const created = await service.create('claude', [root])
     expect(created.lastExit).toBeNull()
@@ -200,6 +216,7 @@ describe('ConversationService', () => {
   it('does not advance provider history or keep a phantom stage when handoff spawn fails', async () => {
     const created = await service.create('claude', [])
     const original = service.stages(created.id)[0]!
+    event(created.id, original.id, 'claude', 'user', 'Hello', 'user-1')
     await service.stop(created.id)
     daemon.failNextSpawn = true
     await expect(service.handoff(created.id, 'codex', 'Try again', false)).rejects.toThrow('spawn failed')

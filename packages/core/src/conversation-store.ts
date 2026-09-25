@@ -137,6 +137,11 @@ export class ConversationStore {
       .all(query).map((row) => ({ conversationId: String(row.conversationId), text: String(row.text) }))
   }
 
+  hasProviderMessages(conversationId: string, providerSessionId: string): boolean {
+    return this.db.prepare(`SELECT 1 FROM conversation_messages m JOIN conversation_stages s ON s.id = m.stage_id
+      WHERE m.conversation_id = ? AND s.provider_session_id = ? LIMIT 1`).get(conversationId, providerSessionId) !== undefined
+  }
+
   maxSequence(id: string): number {
     return Number(this.db.prepare('SELECT MAX(sequence) AS sequence FROM conversation_messages WHERE conversation_id = ?').get(id)?.sequence ?? 0)
   }

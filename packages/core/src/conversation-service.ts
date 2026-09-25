@@ -101,8 +101,12 @@ export class ConversationService {
       const current = this.get(id)
       if (current.sessionId) throw new Rejection('conversation-running')
       const previous = this.store.latestStage(id, agent)
-      const providerSessionId = agent === 'claude' ? previous?.providerSessionId ?? randomUUID() : previous?.providerSessionId ?? null
-      const missingNativeSession = previous !== null && previous.providerSessionId === null
+      // Kando picks a Claude session id before launch, so a run that died before its first prompt
+      // left an id Claude never saved. Only a session that recorded messages can be resumed.
+      const saved = previous?.providerSessionId && (agent !== 'claude' || this.store.hasProviderMessages(id, previous.providerSessionId))
+        ? previous.providerSessionId : null
+      const providerSessionId = saved ?? (agent === 'claude' ? randomUUID() : null)
+      const missingNativeSession = previous !== null && saved === null
       const messages = missingNativeSession ? this.store.messages(id) :
         handoff ? this.store.messages(id, previous?.receivedSequence ?? 0) : []
       const needsHandoff = handoff || (missingNativeSession && messages.length > 0)
@@ -116,7 +120,7 @@ export class ConversationService {
       const stageId = randomUUID()
       const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId)
       const callback = this.callbackCommand(id, stage.id, agent)
-      const command = conversationCommand(agent, providerSessionId, previous?.providerSessionId !== undefined && previous.providerSessionId !== null, callback, handoffPath, current.projectPaths.slice(1))
+      const command = conversationCommand(agent, providerSessionId, saved !== null, callback, handoffPath, current.projectPaths.slice(1))
       const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : previous ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
       this.transcript.marker(id, marker)
       let sessionId: string
