@@ -5,6 +5,7 @@ import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, Sour
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
+import { Terminal } from './terminal'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 7
@@ -122,6 +123,10 @@ export const rpcMethods = {
     }),
     result: z.object({ data: z.string() })
   },
+  // Shells in the app's own terminal panel; their output flows through sessions.* like an agent's.
+  'terminals.list': { params: z.object({}), result: z.array(Terminal) },
+  'terminals.open': { params: z.object({ cwd: z.string().optional() }), result: Terminal },
+  'terminals.close': { params: z.object({ id: z.string().uuid() }), result: Ok },
   'sessions.attach': {
     params: SessionRef.extend({ fromOffset: z.number().int().nonnegative().optional() }),
     result: z.object({ buffer: z.string(), bufferStart: z.number().int(), endOffset: z.number().int(), exited: z.boolean() })
@@ -178,6 +183,7 @@ export const rpcNotifications = {
   'sessions.data': z.object({ sessionId: z.string(), data: z.string(), offset: z.number().int() }),
   'sessions.exit': z.object({ sessionId: z.string(), exitCode: z.number() }),
   'usage.changed': z.object({ usage: AgentUsage }),
+  'terminals.changed': z.object({ terminals: z.array(Terminal) }),
   'sources.listChanged': z.object({ sources: z.array(SourceDescriptor) }),
   'sources.inboxChanged': z.object({ inbox: SourceInbox }),
   // Sent only to the connection that started the flow.

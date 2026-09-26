@@ -1,5 +1,6 @@
 export * from './task'
 export * from './changes'
+export * from './terminal'
 export * from './conversation'
 export * from './dependencies'
 export * from './rpc'

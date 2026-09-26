@@ -54,6 +54,30 @@ export function CloseIcon() {
   )
 }
 
+export function PlusIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M10 4.5v11M4.5 10h11" />
+    </svg>
+  )
+}
+
+export function MaximizeIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M11.5 4h4.5v4.5M8.5 16H4v-4.5M16 4l-5 5M4 16l5-5" />
+    </svg>
+  )
+}
+
+export function RestoreIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M15.5 9H11V4.5M4.5 11H9v4.5M11 9l5-5M9 11l-5 5" />
+    </svg>
+  )
+}
+
 export function ChevronDownIcon() {
   return (
     <svg {...stroked}>

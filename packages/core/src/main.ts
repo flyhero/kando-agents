@@ -23,6 +23,7 @@ import { migrateLegacyJira } from './source-migration'
 import { SourceService } from './source-service'
 import { ConversationStore } from './conversation-store'
 import { ConversationService } from './conversation-service'
+import { TerminalService } from './terminal-service'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
@@ -84,6 +85,8 @@ const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage 
   server?.broadcast('usage.changed', { usage: entry })
 )
 
+const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
+
 daemon.onEvent((event) => {
   const { sessionId } = event
   const attached = [...(server?.connections ?? [])].filter((c) => c.attached.has(sessionId))
@@ -94,6 +97,7 @@ daemon.onEvent((event) => {
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
     service.handleSessionExit(sessionId, event.exitCode)
     conversations.handleExit(sessionId, event.exitCode)
+    terminals.handleExit(sessionId)
     // A finished run is when the numbers most likely moved.
     void usage.refresh()
   }
@@ -105,6 +109,7 @@ daemon.onConnect(() => {
     .then(async ({ sessions }) => {
       service.reconcile(sessions)
       await conversations.reconcile(sessions)
+      terminals.reconcile(sessions)
     })
     .catch((error) => console.error('[kando-core] reconcile failed', error))
 })
@@ -116,7 +121,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  })
+  }, terminals)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION })
 daemon.start()

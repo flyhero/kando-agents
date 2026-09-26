@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { dismissError, setNewTaskOpen, setSettingsOpen, useCore } from './core-store'
+import { dismissError, setNewTaskOpen, setSettingsOpen, toggleTerminalPanel, useCore } from './core-store'
 import { NewTaskDialog } from './components/NewTaskDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { SourceInboxView } from './components/SourceInboxView'
@@ -12,6 +12,7 @@ import { ConversationTerminal } from './components/ConversationTerminal'
 import { NewConversationDialog } from './components/NewConversationDialog'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
+import { TerminalPanel } from './components/TerminalPanel'
 
 export function App() {
   const selectedId = useCore((s) => s.selectedId)
@@ -24,6 +25,8 @@ export function App() {
   const settingsOpen = useCore((s) => s.settingsOpen)
   const inboxOpen = useCore((s) => s.inboxOpen)
   const loginOpen = useCore((s) => s.login !== null)
+  const terminalPanelOpen = useCore((s) => s.terminalPanelOpen)
+  const terminalMaximized = useCore((s) => s.terminalMaximized)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -40,6 +43,20 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // Ctrl+` everywhere, as in VS Code. Caught before the focused terminal sees it, which would
+  // otherwise send the shell a NUL.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.key === '`') {
+        event.preventDefault()
+        event.stopPropagation()
+        void toggleTerminalPanel()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [])
 
   // Files dragged anywhere but a drop target are swallowed here rather than opened by the window.
@@ -59,7 +76,7 @@ export function App() {
 
   return (
     <div className="app">
-      <main className="workspace">
+      <main className="workspace" data-terminal-maximized={(terminalPanelOpen && terminalMaximized) || undefined}>
         {settingsOpen ? (
           <SettingsPage />
         ) : (
@@ -82,6 +99,7 @@ export function App() {
             )}
           </>
         )}
+        {terminalPanelOpen && <TerminalPanel />}
       </main>
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}

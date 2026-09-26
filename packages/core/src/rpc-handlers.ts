@@ -10,6 +10,7 @@ import type { RpcHandlers } from './rpc-server'
 import type { TaskService } from './task-service'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
+import type { TerminalService } from './terminal-service'
 
 const OK = { ok: true } as const
 
@@ -20,7 +21,8 @@ export function createRpcHandlers(
   sessions: SessionHost,
   usage: UsageService,
   sources: SourceService,
-  attachments: { store: AttachmentStore; uploads: AttachmentUploads }
+  attachments: { store: AttachmentStore; uploads: AttachmentUploads },
+  terminals: TerminalService
 ): RpcHandlers {
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version }),
@@ -82,6 +84,12 @@ export function createRpcHandlers(
     'attachments.read': async ({ id, offset, length }) => ({
       data: Buffer.from(await attachments.store.read(id, offset, length)).toString('base64')
     }),
+    'terminals.list': () => terminals.list(),
+    'terminals.open': ({ cwd }) => terminals.open(cwd),
+    'terminals.close': async ({ id }) => {
+      await terminals.kill(id)
+      return OK
+    },
     'sessions.attach': async ({ sessionId, fromOffset }, connection) => {
       connection.attached.add(sessionId)
       try {

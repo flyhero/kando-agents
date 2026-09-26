@@ -1,6 +1,6 @@
-import { setSettingsOpen, useCore, type ConnectionState } from '../core-store'
+import { setSettingsOpen, toggleTerminalPanel, useCore, type ConnectionState } from '../core-store'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { GearIcon } from './icons'
+import { GearIcon, TerminalIcon } from './icons'
 import { UsageBar } from './UsageBar'
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
@@ -49,12 +49,32 @@ function SettingsButton() {
   )
 }
 
+function TerminalButton() {
+  const open = useCore((s) => s.terminalPanelOpen)
+  const count = useCore((s) => s.terminals.length)
+  return (
+    <button
+      type="button"
+      className="tool-button statusbar-terminal"
+      aria-label="终端"
+      aria-pressed={open}
+      data-tooltip={open ? '隐藏终端 Ctrl+`' : '终端 Ctrl+`'}
+      data-tooltip-side="top-end"
+      onClick={() => void toggleTerminalPanel()}
+    >
+      <TerminalIcon />
+      {count > 0 && <span className="count">{count}</span>}
+    </button>
+  )
+}
+
 export function StatusBar() {
   return (
     <footer className="statusbar">
       <SettingsButton />
       <ConnectionStatus />
       <UsageBar />
+      <TerminalButton />
     </footer>
   )
 }

@@ -112,7 +112,11 @@ export const MIGRATIONS = [
   `ALTER TABLE tasks ADD COLUMN last_exit TEXT;
    ALTER TABLE tasks ADD COLUMN awaiting_input INTEGER NOT NULL DEFAULT 0;`,
   // Each project's HEAD when a conversation started, keyed by path: its later commits are its own.
-  `ALTER TABLE conversations ADD COLUMN project_starts TEXT NOT NULL DEFAULT '{}';`
+  `ALTER TABLE conversations ADD COLUMN project_starts TEXT NOT NULL DEFAULT '{}';`,
+  // Shells in the app's terminal panel, which the daemon keeps running across core restarts.
+  `CREATE TABLE terminals (
+     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, cwd TEXT NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL
+   );`
 ]
 
 

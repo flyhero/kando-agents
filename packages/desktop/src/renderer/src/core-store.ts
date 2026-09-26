@@ -13,6 +13,7 @@ import {
   type SourceInbox,
   type SourceProblem,
   type Task,
+  type Terminal,
   type Conversation
 } from '@kando/protocol'
 import { resolveCoreEndpoint } from './core-endpoint'
@@ -64,6 +65,11 @@ type CoreState = {
   // null until core answers sources.list.
   sources: SourceDescriptor[] | null
   inboxes: Record<string, SourceInbox>
+  // Shells in the app's terminal panel, oldest first. The panel only hides them; they keep running.
+  terminals: Terminal[]
+  terminalPanelOpen: boolean
+  terminalMaximized: boolean
+  activeTerminalId: string | null
   login: LoginState | null
 }
 
@@ -87,6 +93,10 @@ export const useCore = create<CoreState>()(() => ({
   usage: null,
   sources: null,
   inboxes: {},
+  terminals: [],
+  terminalPanelOpen: false,
+  terminalMaximized: false,
+  activeTerminalId: null,
   login: null
 }))
 
@@ -112,6 +122,54 @@ export function setInspectorOpen(open: boolean): void {
 
 export function setConversationInspectorOpen(open: boolean): void {
   useCore.setState({ conversationInspectorOpen: open })
+}
+
+// A new terminal starts in the folder of whatever the user is looking at: a task's worktree, a
+// conversation's project. Core falls back to home.
+function contextFolder(s: CoreState): string | undefined {
+  if (s.section === 'conversations') {
+    const conversation = s.selectedConversationId ? s.conversations[s.selectedConversationId] : undefined
+    return conversation && !conversation.managedWorkspace ? conversation.workspacePath : undefined
+  }
+  const repo = (s.selectedId ? s.tasks[s.selectedId] : undefined)?.repos[0]
+  return repo ? repo.worktreePath ?? repo.path : undefined
+}
+
+// Keeps the tab the user was on while it exists, else the newest one.
+function activeAmong(id: string | null, terminals: readonly Terminal[]): string | null {
+  return terminals.some((terminal) => terminal.id === id) ? id : terminals.at(-1)?.id ?? null
+}
+
+export async function openTerminal(): Promise<void> {
+  const cwd = contextFolder(useCore.getState())
+  const terminal = await perform((rpc) => rpc.call('terminals.open', { cwd }))
+  if (terminal) {
+    useCore.setState((s) => ({
+      terminals: s.terminals.some((each) => each.id === terminal.id) ? s.terminals : [...s.terminals, terminal],
+      activeTerminalId: terminal.id,
+      terminalPanelOpen: true
+    }))
+  }
+}
+
+// The list updates when core says so, through terminals.changed.
+export function closeTerminal(id: string): void {
+  void perform((rpc) => rpc.call('terminals.close', { id }))
+}
+
+export function selectTerminal(id: string): void {
+  useCore.setState({ activeTerminalId: id })
+}
+
+// Opening the panel with nothing in it starts a shell right away.
+export async function toggleTerminalPanel(): Promise<void> {
+  const { terminalPanelOpen, terminals } = useCore.getState()
+  useCore.setState({ terminalPanelOpen: !terminalPanelOpen })
+  if (!terminalPanelOpen && terminals.length === 0) await openTerminal()
+}
+
+export function setTerminalMaximized(maximized: boolean): void {
+  useCore.setState({ terminalMaximized: maximized })
 }
 
 export function selectConversation(id: string | null): void {
@@ -251,6 +309,15 @@ export function startCoreConnection(): void {
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))
         )
         rpc.on('sources.listChanged', ({ sources }) => useCore.setState({ sources }))
+        // The last shell exiting puts the panel away, as closing the last tab would.
+        rpc.on('terminals.changed', ({ terminals }) =>
+          useCore.setState((s) => ({
+            terminals,
+            activeTerminalId: activeAmong(s.activeTerminalId, terminals),
+            terminalPanelOpen: s.terminalPanelOpen && terminals.length > 0,
+            terminalMaximized: s.terminalMaximized && terminals.length > 0
+          }))
+        )
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
         )
@@ -264,6 +331,7 @@ export function startCoreConnection(): void {
         const usage = await rpc.call('usage.list', {}).catch(() => null)
         const sources = await rpc.call('sources.list', {})
         const inboxes = await rpc.call('sources.inbox', {})
+        const terminals = await rpc.call('terminals.list', {}).catch(() => [])
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',
@@ -272,6 +340,8 @@ export function startCoreConnection(): void {
           usage: usage && byAgent(usage),
           sources,
           inboxes: Object.fromEntries(inboxes.map((inbox) => [inboxKey(inbox), inbox])),
+          terminals,
+          activeTerminalId: activeAmong(s.activeTerminalId, terminals),
           inboxOpen: s.inboxOpen && inboxes.some((inbox) => inbox.active)
         }))
         await rpc.closed
