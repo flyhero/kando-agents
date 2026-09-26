@@ -22,7 +22,8 @@ function newestFirst(tasks: Record<string, Task>): Task[] {
   return Object.values(tasks).sort((a, b) => abandoned(a) - abandoned(b) || b.createdAt - a.createdAt)
 }
 
-const isOpen = (task: Task) => task.status === 'pending' || task.status === 'running'
+// Under review still needs the user, so it stays in the unfinished list.
+const isOpen = (task: Task) => task.status === 'pending' || task.status === 'running' || task.status === 'review'
 
 // By title, issue key or the start of the task id, ignoring case.
 function matches(task: Task, query: string): boolean {
@@ -92,7 +93,7 @@ export function TaskList() {
           className="icon-button sidebar-tool"
           aria-label="显示全部任务"
           aria-pressed={showAll}
-          data-tooltip={showAll ? '只显示未执行和执行中的任务' : '显示全部任务'}
+          data-tooltip={showAll ? '只显示未完成的任务' : '显示全部任务'}
           onClick={() => setPreference('showAllTasks', !showAll)}
         >
           <FilterIcon />
@@ -132,7 +133,7 @@ export function TaskList() {
         <p className="task-list-empty">没有找到匹配「{query.trim()}」的任务。</p>
       ) : visible.length === 0 ? (
         <p className="task-list-empty">
-          没有未执行或执行中的任务。
+          没有未完成的任务。
           <button type="button" className="link-button" onClick={() => setPreference('showAllTasks', true)}>
             显示全部
           </button>

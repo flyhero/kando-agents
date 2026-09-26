@@ -6,7 +6,7 @@ import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
 
 // Bump only for breaking changes; additive optional fields keep the version.
-export const PROTOCOL_VERSION = 6
+export const PROTOCOL_VERSION = 7
 
 const TaskRef = z.object({ id: z.string().min(1) })
 const TaskTitle = z.string().trim().min(1).max(200)
@@ -44,7 +44,8 @@ export const rpcMethods = {
   'tasks.move': { params: TaskRef.extend({ status: TaskStatus }), result: Task },
   'tasks.run': { params: TaskRef, result: Task },
   // Runs a done task again in its own worktree, starting a fresh agent session.
-  'tasks.continue': { params: TaskRef, result: Task },
+  // What the user found wrong under review, handed to the continuing agent.
+  'tasks.continue': { params: TaskRef.extend({ note: z.string().trim().max(2000).optional() }), result: Task },
   // Abandons a done task and returns the new pending task that takes over from it.
   'tasks.redo': { params: TaskRef.extend({ reason: z.string().trim().max(500).optional() }), result: Task },
   // Opens a read-only session to talk the task through; the agent answers via tasks.propose.

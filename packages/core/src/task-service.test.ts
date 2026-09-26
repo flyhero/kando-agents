@@ -125,7 +125,7 @@ describe('TaskService', () => {
     expect(() => service.get('ffffffff')).toThrow(/no task/)
   })
 
-  it('runs a single repo inside its own worktree and finishes when the session exits', async () => {
+  it('runs a single repo inside its own worktree and waits for review when the session exits', async () => {
     const repo = initRepo('app')
     const task = service.create({ title: 'Add dark mode' })
     service.update({ id: task.id, details: 'Use CSS tokens', repos: [repo], agent: 'claude' })
@@ -143,7 +143,8 @@ describe('TaskService', () => {
     })
 
     service.handleSessionExit(running.sessionId ?? '', 0)
-    expect(service.get(task.id).status).toBe('done')
+    expect(service.get(task.id).status).toBe('review')
+    expect(service.move(task.id, 'done').status).toBe('done')
   })
 
   it('reads branches from the task\'s worktrees only, once a run has made them', async () => {
@@ -246,15 +247,15 @@ describe('TaskService', () => {
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'task-running' }))
   })
 
-  it('marks running tasks done when the daemon no longer has their session', async () => {
+  it('sends running tasks to review when the daemon no longer has their session', async () => {
     const task = readyTask('Ghost', [dir])
     await service.run(task.id)
 
     service.reconcile([])
-    expect(service.get(task.id).status).toBe('done')
+    expect(service.get(task.id).status).toBe('review')
   })
 
-  it('continues a done task on its own worktree and branch', async () => {
+  it('continues a finished task on its own worktree and branch', async () => {
     const task = readyTask('Retry', [initRepo('app')])
     const run = await service.run(task.id)
     service.handleSessionExit(run.sessionId ?? '', 0)
@@ -265,7 +266,19 @@ describe('TaskService', () => {
     expect(sessions.spawns[1]).toMatchObject({ cwd: run.repos[0]?.worktreePath })
     expect(sessions.spawns[1]?.args.at(-1)).toContain('这个任务之前已经执行过一次')
     service.handleSessionExit(continued.sessionId ?? '', 0)
-    expect(service.get(task.id).status).toBe('done')
+    expect(service.get(task.id).status).toBe('review')
+  })
+
+  it('hands what the review found wrong to the continuing agent', async () => {
+    const task = readyTask('Retry', [initRepo('app')])
+    const run = await service.run(task.id)
+    service.handleSessionExit(run.sessionId ?? '', 0)
+
+    await service.continue(task.id, '登录后没有跳回原页面')
+    const prompt = sessions.spawns[1]?.args.at(-1) ?? ''
+    expect(prompt).toContain('验收时发现要改的地方：\n登录后没有跳回原页面')
+    expect(prompt).toContain('然后按这些意见修改')
+    expect(prompt).not.toContain('等我告诉你接下来要改什么')
   })
 
   it('redoes a done task as a fresh pending one and moves its dependents over', async () => {
@@ -319,6 +332,9 @@ describe('TaskService', () => {
     const firstRepo = firstRun.repos[0]
     git(firstRepo?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', 'api from first')
     service.handleSessionExit(firstRun.sessionId ?? '', 0)
+    // Under review the first task may still have failed; only accepting it lets the second go.
+    await expect(service.run(second.id)).rejects.toMatchObject({ reason: 'blocked' })
+    service.move(first.id, 'done')
 
     const secondRun = await service.run(second.id)
     expect(git(secondRun.repos[0]?.worktreePath ?? '', 'log', '--format=%s')).toContain('api from first')
@@ -332,6 +348,7 @@ describe('TaskService', () => {
       const run = await service.run(task.id)
       git(run.repos[0]?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', `from ${title}`)
       service.handleSessionExit(run.sessionId ?? '', 0)
+      service.move(task.id, 'done')
       return run
     }
     const first = await done('first')
@@ -418,6 +435,7 @@ describe('TaskService', () => {
     const second = service.update({ id: readyTask('Use api', [repo]).id, dependsOn: [first.id] })
 
     await service.refine(second.id)
+    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('已执行但还没验收，结果可能还要改')
     expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('上的改动还没进当前代码')
     service.handleSessionExit(service.get(second.id).refineSessionId ?? '', 0)
 
@@ -472,7 +490,7 @@ describe('TaskService', () => {
     const task = readyTask('Exit', [initRepo('exit')])
     const run = await service.run(task.id)
     service.handleSessionExit(run.sessionId ?? '', 2)
-    expect(service.get(task.id)).toMatchObject({ status: 'done', lastExit: { code: 2 } })
+    expect(service.get(task.id)).toMatchObject({ status: 'review', lastExit: { code: 2 } })
     expect(await service.continue(task.id)).toMatchObject({ status: 'running', lastExit: null })
   })
 
@@ -480,8 +498,8 @@ describe('TaskService', () => {
     const lost = await service.run(readyTask('Lost', [initRepo('lost')]).id)
     const exited = await service.run(readyTask('Exited', [initRepo('exited')]).id)
     service.reconcile([{ sessionId: exited.sessionId ?? '', exited: true, exitCode: 1 }])
-    expect(service.get(lost.id)).toMatchObject({ status: 'done', lastExit: { code: null } })
-    expect(service.get(exited.id)).toMatchObject({ status: 'done', lastExit: { code: 1 } })
+    expect(service.get(lost.id)).toMatchObject({ status: 'review', lastExit: { code: null } })
+    expect(service.get(exited.id)).toMatchObject({ status: 'review', lastExit: { code: 1 } })
   })
 
   it('tracks when the agent waits for the user, but only while its session is open', async () => {

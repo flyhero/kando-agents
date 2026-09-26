@@ -1,5 +1,6 @@
 import path from 'node:path'
 import {
+  isFinished,
   PROPOSE_DETAILS_TOOL,
   READ_TASK_TOOL,
   shortTaskId,
@@ -32,7 +33,7 @@ function workspaceSection(workspace: Workspace): string | null {
 
 type Dependency = Pick<Task, 'id' | 'title' | 'repos' | 'status' | 'details'>
 
-const STATUS_TEXT: Record<TaskStatus, string> = { pending: '未执行', running: '执行中', done: '已执行', abandoned: '已废弃' }
+const STATUS_TEXT: Record<TaskStatus, string> = { pending: '未执行', running: '执行中', review: '待验收', done: '已完成', abandoned: '已废弃' }
 
 // Plans of unfinished dependencies go inline up to this much each; the agent reads the
 // rest (and anything else it wants) through the read tool.
@@ -63,13 +64,14 @@ function dependencySection(workspace: Workspace, dependencies: readonly Pick<Tas
 // whether that code is in front of it. An unfinished one has only its plan.
 function dependencyLine(landed: ReadonlySet<string>, dependency: Dependency): string {
   const label = `${shortTaskId(dependency.id)}「${dependency.title}」`
-  if (dependency.status !== 'done') {
+  if (!isFinished(dependency.status)) {
     return `- ${label}：${STATUS_TEXT[dependency.status]}，还没有代码，只有下面的计划`
   }
+  const state = dependency.status === 'review' ? '已执行但还没验收，结果可能还要改' : '已完成'
   const branches = dependency.repos.flatMap((repo) => (repo.branch ? [repo.branch] : []))
   if (branches.length === 0) {
     const folders = dependency.repos.map((repo) => repo.path).join('、')
-    return `- ${label}：已执行，直接改在了 ${folders} 里，读那里的代码即可`
+    return `- ${label}：${state}，直接改在了 ${folders} 里，读那里的代码即可`
   }
   const here = branches.filter((branch) => landed.has(branch))
   const elsewhere = branches.filter((branch) => !landed.has(branch))
@@ -79,7 +81,7 @@ function dependencyLine(landed: ReadonlySet<string>, dependency: Dependency): st
       ? [`分支 ${elsewhere.join('、')} 上的改动还没进当前代码，可以用 git log / git diff / git show 查看`]
       : [])
   ]
-  return `- ${label}：已执行，${notes.join('；')}`
+  return `- ${label}：${state}，${notes.join('；')}`
 }
 
 // Refining reads the repos where they are, so give the agent every path.
@@ -145,7 +147,7 @@ function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: read
     return null
   }
   const plans = dependencies
-    .filter((dependency) => dependency.status !== 'done')
+    .filter((dependency) => !isFinished(dependency.status))
     .map((dependency) => {
       const attributes = `id="${shortTaskId(dependency.id)}" title="${dependency.title.replaceAll('"', "'")}" status="${STATUS_TEXT[dependency.status]}"`
       return `<dependency ${attributes}>\n${planExcerpt(dependency)}\n</dependency>`
@@ -186,7 +188,8 @@ export function continuePrompt(
   task: Pick<Task, 'title' | 'details' | 'repos' | 'source' | 'sourceSnapshot'>,
   workspace: Workspace,
   dependencies: readonly Pick<Task, 'id' | 'title' | 'repos'>[],
-  images: PromptImages = NO_IMAGES
+  images: PromptImages = NO_IMAGES,
+  note: string | null = null
 ): string {
   const branches = task.repos.flatMap((repo) => (repo.branch ? [repo.branch] : []))
   const sections = [
@@ -201,7 +204,10 @@ export function continuePrompt(
     sourceSection(task, images),
     workspaceSection(workspace),
     dependencySection(workspace, dependencies),
-    '请先用几句话总结上次已经完成了什么、还有什么没做完，然后等我告诉你接下来要改什么，不要自己开始改。'
+    note ? `验收时发现要改的地方：\n${note}` : null,
+    note
+      ? '请先用几句话说明上次做到了哪里、打算怎么改上面这些问题，然后按这些意见修改。'
+      : '请先用几句话总结上次已经完成了什么、还有什么没做完，然后等我告诉你接下来要改什么，不要自己开始改。'
   ]
   return sections.filter((section) => section !== null).join('\n\n')
 }

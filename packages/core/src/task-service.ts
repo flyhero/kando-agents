@@ -230,7 +230,7 @@ export class TaskService {
   }
 
   // A fresh session on the task's own worktree and branch: for "nearly right, change this".
-  async continue(id: string): Promise<Task> {
+  async continue(id: string, note?: string): Promise<Task> {
     const task = this.get(id)
     const dependencies = this.dependenciesOf(task)
     const blocker = checkContinue(task, dependencies)
@@ -246,7 +246,7 @@ export class TaskService {
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       const images = await this.images(task)
-      const prompt = continuePrompt(task, workspace, dependencies, images.prompt)
+      const prompt = continuePrompt(task, workspace, dependencies, images.prompt, note || null)
       return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent)) }
     })
     return this.changed(this.store.update(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
@@ -378,12 +378,12 @@ export class TaskService {
     })
   }
 
-  // A run that ends is done, whatever its exit code: an interactive agent exits 0 whether it
-  // finished or was stopped halfway, so the code is kept for the user to see, not to judge by.
+  // A run that ends waits for review, whatever its exit code: an interactive agent exits 0 whether
+  // it finished or was stopped halfway, so the code is kept for the user to see, not to judge by.
   handleSessionExit(sessionId: string, exitCode: number): void {
     const task = this.store.findBySession(sessionId)
     if (task?.status === 'running') {
-      this.changed(this.store.update(task.id, { status: 'done', lastExit: { code: exitCode }, awaitingInput: false }))
+      this.changed(this.store.update(task.id, { status: 'review', lastExit: { code: exitCode }, awaitingInput: false }))
     }
     // Ending a refining session leaves the task as it was, proposal and all.
     const refining = this.store.findByRefineSession(sessionId)
@@ -400,7 +400,7 @@ export class TaskService {
     this.store.list('running').forEach((task) => {
       if (!task.sessionId || !live.has(task.sessionId)) {
         const code = task.sessionId ? (exitCodes.get(task.sessionId) ?? null) : null
-        this.changed(this.store.update(task.id, { status: 'done', lastExit: { code }, awaitingInput: false }))
+        this.changed(this.store.update(task.id, { status: 'review', lastExit: { code }, awaitingInput: false }))
       }
     })
     this.store.refining().forEach((task) => {

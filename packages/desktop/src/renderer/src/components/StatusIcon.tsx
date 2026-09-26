@@ -19,6 +19,14 @@ function Shape({ status }: { status: TaskStatus }) {
           strokeDasharray="26 12"
         />
       )
+    // Half full: the work is there, the user has not taken it yet.
+    case 'review':
+      return (
+        <>
+          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+        </>
+      )
     case 'abandoned':
       return (
         <>

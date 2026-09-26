@@ -39,6 +39,12 @@ describe('checkMove', () => {
     expect(checkMove(task({ status: 'running' }), 'running')).toBe('invalid-transition')
   })
 
+  it('accepts a task under review, and moves it nowhere else', () => {
+    expect(checkMove(task({ status: 'review' }), 'done')).toBeNull()
+    expect(checkMove(task({ status: 'review' }), 'pending')).toBe('invalid-transition')
+    expect(checkMove(task({ status: 'review' }), 'running')).toBe('invalid-transition')
+  })
+
   it('lets a pending task be closed without running, unless it is being refined', () => {
     expect(checkMove(task(), 'done')).toBeNull()
     expect(checkMove(task({ refineSessionId: 'session-1' }), 'done')).toBe('refining')
@@ -64,9 +70,10 @@ describe('checkRun', () => {
     expect(checkRun(task({ repos, agent: 'claude', refineSessionId: 's1' }), [])).toBe('refining')
   })
 
-  it('waits until every dependency is done', () => {
+  it('waits until every dependency is accepted, not just finished', () => {
     const ready = task({ repos, agent: 'codex' })
     expect(checkRun(ready, [{ status: 'done' }, { status: 'running' }])).toBe('blocked')
+    expect(checkRun(ready, [{ status: 'done' }, { status: 'review' }])).toBe('blocked')
     expect(checkRun(ready, [{ status: 'done' }, { status: 'done' }])).toBeNull()
   })
 })
@@ -89,15 +96,18 @@ describe('checkRefine', () => {
 describe('checkContinue and checkRedo', () => {
   const repos = [{ path: '/repo', worktreePath: '/wt', branch: 'kando/x' }]
 
-  it('continues only done tasks whose dependencies are still done', () => {
+  it('continues only finished tasks, under review or accepted, whose dependencies are still accepted', () => {
     const done = task({ status: 'done', repos, agent: 'claude' })
     expect(checkContinue(done, [])).toBeNull()
+    expect(checkContinue(task({ status: 'review', repos, agent: 'claude' }), [])).toBeNull()
     expect(checkContinue(done, [{ status: 'running' }])).toBe('blocked')
     expect(checkContinue(task({ repos, agent: 'claude' }), [])).toBe('not-done')
   })
 
-  it('redoes only done tasks', () => {
+  it('redoes only finished tasks', () => {
     expect(checkRedo(task({ status: 'done' }))).toBeNull()
+    expect(checkRedo(task({ status: 'review' }))).toBeNull()
+    expect(checkRedo(task({ status: 'running' }))).toBe('not-done')
     expect(checkRedo(task({ status: 'abandoned' }))).toBe('not-done')
   })
 })

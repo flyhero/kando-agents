@@ -3,7 +3,7 @@ import { mkdir, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { shortTaskId, type Task, type TaskRepo } from '@kando/protocol'
+import { isFinished, shortTaskId, type Task, type TaskRepo } from '@kando/protocol'
 import { Rejection } from './rejection'
 
 const execFileAsync = promisify(execFile)
@@ -257,7 +257,7 @@ export async function prepareRefineWorkspace(
   }
   const landed = new Set<string>()
   const branches = dependencies
-    .filter((dependency) => dependency.status === 'done')
+    .filter((dependency) => isFinished(dependency.status))
     .flatMap((dependency) => dependency.repos.flatMap((repo) => (repo.branch ? [repo.branch] : [])))
   for (const branch of new Set(branches)) {
     for (const dir of dirs) {

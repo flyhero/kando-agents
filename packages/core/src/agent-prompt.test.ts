@@ -58,7 +58,7 @@ describe('refinePrompt', () => {
 
   it('points at the code for a finished dependency whose branch has landed', () => {
     const prompt = refinePrompt({ title: 'Use token API', details: '', source: null, sourceSnapshot: null }, 'claude', refining(['kando/a-add']), [dependency()])
-    expect(prompt).toContain('- aaaaaaaa「Add "token" API」：已执行，改动已在当前代码里，直接读代码即可')
+    expect(prompt).toContain('- aaaaaaaa「Add "token" API」：已完成，改动已在当前代码里，直接读代码即可')
     expect(prompt).not.toContain('新增 TokenService')
     expect(prompt).toContain('read_task_details')
   })

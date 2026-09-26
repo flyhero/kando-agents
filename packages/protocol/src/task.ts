@@ -3,8 +3,9 @@ import { TaskImage } from './attachments'
 import { SourceSnapshot, TaskSource } from './source'
 
 // pending: not handed to an agent yet · running: an agent session owns it
-// done: the session finished or the user closed it · abandoned: redone as a new task
-export const TASK_STATUSES = ['pending', 'running', 'done', 'abandoned'] as const
+// review: the session ended and the user has not judged the result · done: the user accepted it,
+// or closed the task themselves · abandoned: redone as a new task
+export const TASK_STATUSES = ['pending', 'running', 'review', 'done', 'abandoned'] as const
 export const TaskStatus = z.enum(TASK_STATUSES)
 export type TaskStatus = z.infer<typeof TaskStatus>
 
@@ -75,12 +76,14 @@ export const Task = z.object({
 })
 export type Task = z.infer<typeof Task>
 
-// `running` is entered only by running or continuing, `abandoned` only by redoing. A done
-// task never goes back to pending: it continues in place, or is redone from scratch.
-// A pending task can be closed without running, for work finished some other way.
+// `running` is entered only by running or continuing, `review` only by a session ending, and
+// `abandoned` only by redoing. A finished task never goes back to pending: it continues in place,
+// or is redone from scratch. Moving to done is the user's say-so: accepting a result under review,
+// or closing a task whose work was finished some other way.
 const MANUAL_MOVES: Record<TaskStatus, readonly TaskStatus[]> = {
   pending: ['done'],
   running: ['done'],
+  review: ['done'],
   done: [],
   abandoned: []
 }
@@ -101,8 +104,8 @@ export function checkMove(task: Task, to: TaskStatus): MoveBlocker | null {
 
 export type RunBlocker = 'not-pending' | 'refining' | 'missing-repo' | 'missing-agent' | 'blocked'
 
-// `dependencies` are the tasks listed in `task.dependsOn`.
-// A done task runs again only after it is moved back to pending.
+// `dependencies` are the tasks listed in `task.dependsOn`. Only an accepted (done) dependency lets
+// its dependents run: one under review may have failed.
 export function checkRun(task: Task, dependencies: readonly Pick<Task, 'status'>[]): RunBlocker | null {
   if (task.status !== 'pending') {
     return 'not-pending'
@@ -129,9 +132,10 @@ export type RefineBlocker = 'not-pending' | 'refine-in-progress' | 'missing-repo
 // dependencies do not matter yet.
 export type ContinueBlocker = 'not-done' | 'missing-repo' | 'missing-agent' | 'blocked'
 
-// Continuing picks the finished work up again in its own worktree.
+// Continuing picks the finished work up again in its own worktree: under review, to change what
+// the user found wrong; once accepted, to reopen it.
 export function checkContinue(task: Task, dependencies: readonly Pick<Task, 'status'>[]): ContinueBlocker | null {
-  if (task.status !== 'done') {
+  if (!isFinished(task.status)) {
     return 'not-done'
   }
   if (task.repos.length === 0) {
@@ -146,7 +150,12 @@ export function checkContinue(task: Task, dependencies: readonly Pick<Task, 'sta
 export type RedoBlocker = 'not-done'
 
 export function checkRedo(task: Task): RedoBlocker | null {
-  return task.status === 'done' ? null : 'not-done'
+  return isFinished(task.status) ? null : 'not-done'
+}
+
+// A session has ended and left work behind, accepted or not.
+export function isFinished(status: TaskStatus): boolean {
+  return status === 'review' || status === 'done'
 }
 
 export function checkRefine(task: Task): RefineBlocker | null {

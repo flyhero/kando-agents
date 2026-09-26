@@ -26,16 +26,17 @@ const USAGE = `kando <command>
 
   add <title...> [--details d] [--agent a] [--repo path]... [--dep id]... [--image file]...
                                          新建任务，可以直接带上项目、agent、依赖和图片
-  ls [--status <s>]                      列出任务
+  ls [--status <s>]                      列出任务；--status review 列出待验收的
   show <id>                              查看任务详情
   edit <id> [--title t] [--details d] [--agent claude|codex]
             [--repo path]... [--clear-repos]    项目，可重复；给出即替换原列表
             [--dep id]... [--clear-deps]        依赖的任务，可重复；给出即替换原列表
             [--image file]...                   追加图片（png/jpg/gif/webp），可重复
-  move <id> done                         把未执行或执行中的任务标记为已执行
+  move <id> done                         接受待验收的任务，或把未执行、执行中的任务标记为已完成
   run <id>                               在 worktree 中启动 agent 执行
-  continue <id>                          已执行的任务：在原来的 worktree 上开新会话继续做
-  redo <id> [--reason r]                 已执行的任务：废弃这次结果，新建一个继承它的任务
+  continue <id> [--note n]               待验收或已完成的任务：在原来的 worktree 上开新会话继续做，
+                                         --note 写验收时发现要改的地方
+  redo <id> [--reason r]                 待验收或已完成的任务：废弃这次结果，新建一个继承它的任务
   rm <id>                                删除任务（保留 worktree）
   source ls                              各个任务来源的连接状态和收件箱
   source set <source> key=value...       保存来源的设置，例如 source set jira site=team.atlassian.net
@@ -199,6 +200,7 @@ async function main(argv: string[]): Promise<void> {
       'clear-deps': { type: 'boolean' },
       task: { type: 'string' },
       reason: { type: 'string' },
+      note: { type: 'string' },
       home: { type: 'string' },
       agent: { type: 'string' },
       image: { type: 'string', multiple: true },
@@ -267,7 +269,7 @@ async function main(argv: string[]): Promise<void> {
         break
       }
       case 'continue': {
-        const task = await rpc.call('tasks.continue', { id: required(rest[0], 'id') })
+        const task = await rpc.call('tasks.continue', { id: required(rest[0], 'id'), note: values.note })
         const dirs = task.repos.map((repo) => repo.worktreePath ?? repo.path).join('、')
         console.log(`${formatRow(task)}\n已在 ${dirs} 继续`)
         break

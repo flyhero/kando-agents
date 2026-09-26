@@ -1,8 +1,8 @@
 import type { Task } from '@kando/protocol'
 
-// A run's exit only matters once it has ended, and a clean exit needs no word.
+// A run's exit matters while its result is under review, and a clean exit needs no word.
 function oddExit(task: Task): Task['lastExit'] {
-  const exit = task.status === 'done' ? task.lastExit : null
+  const exit = task.status === 'review' ? task.lastExit : null
   return exit && exit.code !== 0 ? exit : null
 }
 

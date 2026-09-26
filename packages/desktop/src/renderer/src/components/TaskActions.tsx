@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactElement } from 'react'
-import { checkContinue, checkMove, checkRefine, checkRun, manualMoves, shortTaskId, type Task, type TaskStatus } from '@kando/protocol'
+import { checkContinue, checkMove, checkRefine, checkRun, isFinished, manualMoves, shortTaskId, type Task, type TaskStatus } from '@kando/protocol'
 import { perform, selectTask, showView, updateTask, useCore, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
@@ -10,14 +10,18 @@ import { Popover } from './Popover'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
   if (blocker === 'blocked' && waitingOn.length > 0) {
-    return `等待${waitingOn.map((dependency) => `「${dependency.title}」`).join('')}执行完`
+    return `等待${waitingOn.map((dependency) => `「${dependency.title}」${dependency.status === 'review' ? '验收通过' : '完成'}`).join('、')}`
   }
   return reasonText(blocker, blocker)
 }
 
+type MoveAction = { label: string; Icon: () => ReactElement; className?: string }
+
 // Manual moves only ever close a task; continuing and redoing have their own buttons.
-const MOVE_ACTION: Partial<Record<TaskStatus, { label: string; Icon: () => ReactElement }>> = {
-  done: { label: '标记完成', Icon: CheckIcon }
+// Closing a task under review is accepting its result, the step that frees its dependents.
+function moveAction(from: TaskStatus, to: TaskStatus): MoveAction | null {
+  if (to !== 'done') return null
+  return from === 'review' ? { label: '接受', Icon: CheckIcon, className: 'run-button' } : { label: '标记完成', Icon: CheckIcon }
 }
 
 async function moveTask(taskId: string, status: TaskStatus): Promise<void> {
@@ -97,12 +101,15 @@ async function runTask(taskId: string): Promise<void> {
   }
 }
 
-async function continueTask(taskId: string): Promise<void> {
-  const started = await perform((rpc) => rpc.call('tasks.continue', { id: taskId }))
+async function continueTask(taskId: string, note?: string): Promise<boolean> {
+  const started = await perform((rpc) => rpc.call('tasks.continue', { id: taskId, note }))
   if (started && usePreferences.getState().openTerminalOnRun) {
     showTerminalFor(taskId)
   }
+  return started !== null
 }
+
+const continueLabel = (task: Task) => (task.status === 'review' ? '继续修改' : '继续执行')
 
 // Deleting stops a live agent, so it asks first. Worktrees stay on disk either way.
 async function deleteTask(task: Task): Promise<void> {
@@ -133,16 +140,74 @@ function RunButton({ task, dependencies }: { task: Task; dependencies: readonly 
   )
 }
 
+// Continuing asks for an optional note: under review, what the user found wrong. Under review
+// accepting is the main action, so continuing steps back from the run colour.
 function ContinueButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
   const blocker = checkContinue(task, dependencies)
+  const [open, setOpen] = useState(false)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const label = continueLabel(task)
+  const className = task.status === 'review' ? '' : 'run-button'
+  if (blocker) {
+    return (
+      <LaunchButton
+        label={label}
+        className={className}
+        Icon={PlayIcon}
+        reason={blockerText(blocker, unfinished(dependencies))}
+        launch={async () => {}}
+      />
+    )
+  }
+  const submit = async () => {
+    setBusy(true)
+    const started = await continueTask(task.id, note.trim() || undefined)
+    setBusy(false)
+    if (started) {
+      setNote('')
+      close()
+    }
+  }
   return (
-    <LaunchButton
-      label="继续执行"
-      className="run-button"
-      Icon={PlayIcon}
-      reason={blocker && blockerText(blocker, unfinished(dependencies))}
-      launch={() => continueTask(task.id)}
-    />
+    <span className="menu-anchor">
+      <button
+        type="button"
+        className={`tool-button launch-button ${className}`}
+        aria-label={label}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-tooltip={`${label}：在原来的 worktree 和分支上开一个新会话`}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <PlayIcon />
+      </button>
+      {open && (
+        <Popover label={label} onClose={close}>
+          <div className="note-form">
+            <p className="note-form-title">{label}</p>
+            <p className="menu-note">在原来的 worktree 和分支上开一个新会话，agent 能看到上次的改动。</p>
+            <textarea
+              className="input note-form-input"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={task.status === 'review' ? '验收时发现哪里要改？（可选，会告诉继续执行的 agent）' : '这次要改什么？（可选，会告诉继续执行的 agent）'}
+              maxLength={2000}
+              rows={3}
+            />
+            <div className="note-form-actions">
+              <button type="button" className="button ghost" onClick={close}>
+                取消
+              </button>
+              <button type="button" className="button primary" disabled={busy} onClick={() => void submit()}>
+                {label}
+              </button>
+            </div>
+          </div>
+        </Popover>
+      )}
+    </span>
   )
 }
 
@@ -176,20 +241,20 @@ function RedoButton({ task }: { task: Task }) {
       </button>
       {open && (
         <Popover label="重做任务" onClose={close}>
-          <div className="redo-form">
-            <p className="redo-title">废弃这次结果，从头重做</p>
+          <div className="note-form">
+            <p className="note-form-title">废弃这次结果，从头重做</p>
             <p className="menu-note">
               会新建一个继承标题、详情、项目和依赖的任务，从干净的分支开始。这次的 worktree 会保留，依赖本任务的任务改为依赖新任务。
             </p>
             <textarea
-              className="input redo-reason"
+              className="input note-form-input"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="为什么废弃？（可选，会告诉重做的 agent）"
               maxLength={500}
               rows={3}
             />
-            <div className="redo-actions">
+            <div className="note-form-actions">
               <button type="button" className="button ghost" onClick={close}>
                 取消
               </button>
@@ -306,15 +371,14 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       />
       {task.status === 'pending' && <RefineButton task={task} />}
       {task.status === 'pending' && <RunButton task={task} dependencies={dependencies} />}
-      {task.status === 'done' && <ContinueButton task={task} dependencies={dependencies} />}
-      {task.status === 'done' && <RedoButton task={task} />}
       {manualMoves(task.status).map((status) => {
-        const action = MOVE_ACTION[status]
+        const action = moveAction(task.status, status)
         return (
           action && (
             <LaunchButton
               key={status}
               label={action.label}
+              className={action.className}
               Icon={action.Icon}
               reason={moveBlocker(task, status)}
               launch={() => moveTask(task.id, status)}
@@ -322,6 +386,8 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
           )
         )
       })}
+      {isFinished(task.status) && <ContinueButton task={task} dependencies={dependencies} />}
+      {isFinished(task.status) && <RedoButton task={task} />}
       {(task.sessionId || task.refineSessionId) && <ViewToggle view={view} />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />
@@ -347,26 +413,26 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
   }
   const hint = (blocker: string | null) => blocker && blockerText(blocker, unfinished(dependencies))
   const runBlocker = task.status === 'pending' ? checkRun(task, dependencies) : null
-  const continueBlocker = task.status === 'done' ? checkContinue(task, dependencies) : null
+  const continueBlocker = isFinished(task.status) ? checkContinue(task, dependencies) : null
   const actions: ReactElement[] = []
   if (task.status === 'pending') {
     actions.push(
       <MenuItem key="run" label="交给 agent 执行" hint={hint(runBlocker)} disabled={runBlocker !== null} onSelect={pick(() => void runTask(task.id))} />
     )
   }
-  if (task.status === 'done') {
-    actions.push(
-      <MenuItem key="continue" label="继续执行" hint={hint(continueBlocker)} disabled={continueBlocker !== null} onSelect={pick(() => void continueTask(task.id))} />
-    )
-  }
   for (const status of manualMoves(task.status)) {
-    const action = MOVE_ACTION[status]
+    const action = moveAction(task.status, status)
     const blocker = moveBlocker(task, status)
     if (action) {
       actions.push(
         <MenuItem key={status} label={action.label} hint={blocker} disabled={blocker !== null} onSelect={pick(() => void moveTask(task.id, status))} />
       )
     }
+  }
+  if (isFinished(task.status)) {
+    actions.push(
+      <MenuItem key="continue" label={continueLabel(task)} hint={hint(continueBlocker)} disabled={continueBlocker !== null} onSelect={pick(() => void continueTask(task.id))} />
+    )
   }
   if (task.sessionId || task.refineSessionId) {
     actions.push(

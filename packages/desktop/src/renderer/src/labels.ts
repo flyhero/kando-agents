@@ -3,14 +3,16 @@ import type { AgentKind, SourceFailure, SourceProblem, TaskStatus } from '@kando
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: '未执行',
   running: '执行中',
-  done: '已执行',
+  review: '待验收',
+  done: '已完成',
   abandoned: '已废弃'
 }
 
 export const STATUS_HINT: Record<TaskStatus, string> = {
   pending: '还没交给 agent',
   running: 'agent 正在执行',
-  done: 'agent 已结束，等待验收',
+  review: 'agent 已结束，等你看过结果后接受、继续修改或重做',
+  done: '结果已接受，依赖它的任务可以执行了',
   abandoned: '已废弃，由继承它的新任务接着做'
 }
 
@@ -55,8 +57,8 @@ const REASON_TEXT: Record<string, string> = {
   'source-login-not-found': '登录已经结束',
   'source-login-stale': '这个问题已经过期，请重新登录',
   'invalid-transition': '当前状态不能这样移动',
-  'not-pending': '只有未执行的任务可以执行；已执行的任务可以继续或重做',
-  'not-done': '只有已执行的任务可以继续或重做',
+  'not-pending': '只有未执行的任务可以执行；执行过的任务可以继续或重做',
+  'not-done': '只有待验收或已完成的任务可以继续或重做',
   'missing-repo': '请先添加项目',
   'missing-agent': '请先选择执行的 agent',
   'repo-not-found': '项目路径不存在',
@@ -64,7 +66,7 @@ const REASON_TEXT: Record<string, string> = {
   'repo-not-git': '涉及多个项目时，每个目录都必须是 Git 仓库',
   'repo-duplicate': '有两个项目路径指向同一个 Git 仓库',
   'task-running': '执行中不能修改项目',
-  blocked: '依赖的任务还没执行完',
+  blocked: '依赖的任务还没完成（执行完并验收通过）',
   'dependency-cycle': '不能形成循环依赖',
   refining: '细化会话还在进行，先在终端里退出 agent 结束它',
   'refine-in-progress': '细化会话已经在进行',

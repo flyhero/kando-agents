@@ -17,6 +17,7 @@
   --status-abandoned: #b5b0a3;
   --status-running: #2f6fdb;
   --status-done: #3b8a4f;
+  --status-review: var(--warning);
 
   --radius: 8px;
   --radius-sm: 6px;
@@ -392,6 +393,7 @@ button.task-tag:hover {
 [data-status='pending'] { --status-color: var(--status-pending); }
 [data-status='abandoned'] { --status-color: var(--status-abandoned); }
 [data-status='running'] { --status-color: var(--status-running); }
+[data-status='review'] { --status-color: var(--status-review); }
 [data-status='done'] { --status-color: var(--status-done); }
 
 .status-icon {
@@ -1420,7 +1422,7 @@ button.task-tag:hover {
   color: var(--text);
 }
 
-.redo-form {
+.note-form {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1428,20 +1430,20 @@ button.task-tag:hover {
   padding: 6px;
 }
 
-.redo-title {
+.note-form-title {
   margin: 0;
   font-weight: 600;
 }
 
-.redo-form .menu-note {
+.note-form .menu-note {
   padding: 0;
 }
 
-.redo-reason {
+.note-form-input {
   resize: vertical;
 }
 
-.redo-actions {
+.note-form-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
