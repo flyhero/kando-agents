@@ -1487,7 +1487,7 @@ button.task-tag:hover {
 }
 
 .terminal-body {
-  --proposal-panel-separator-size: 12px;
+  --side-panel-separator-size: 12px;
   flex: 1;
   display: flex;
   min-height: 0;
@@ -1497,17 +1497,17 @@ button.task-tag:hover {
   min-width: 0;
 }
 
-.proposal-panel-separator {
+.side-panel-separator {
   position: relative;
-  width: var(--proposal-panel-separator-size);
-  flex: 0 0 var(--proposal-panel-separator-size);
+  width: var(--side-panel-separator-size);
+  flex: 0 0 var(--side-panel-separator-size);
   cursor: col-resize;
   touch-action: none;
   user-select: none;
   outline: none;
 }
 
-.proposal-panel-separator::after {
+.side-panel-separator::after {
   content: '';
   position: absolute;
   top: 4px;
@@ -1520,45 +1520,50 @@ button.task-tag:hover {
   transition: background 0.12s ease, width 0.12s ease;
 }
 
-.proposal-panel-separator:hover::after,
-.proposal-panel-separator:focus-visible::after,
-.proposal-panel-separator[data-dragging='true']::after {
+.side-panel-separator:hover::after,
+.side-panel-separator:focus-visible::after,
+.side-panel-separator[data-dragging='true']::after {
   width: 3px;
   background: var(--accent);
 }
 
-.proposal-panel-separator:focus-visible {
+.side-panel-separator:focus-visible {
   border-radius: var(--radius);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-.proposal-panel-separator[data-closing='true'] {
+.side-panel-separator[data-closing='true'] {
   pointer-events: none;
 }
 
-body.proposal-panel-resizing,
-body.proposal-panel-resizing * {
+body.side-panel-resizing,
+body.side-panel-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
 
-/* Opening reserves the panel width immediately; the slide animation is visual only. */
-.proposal-panel {
+/* A panel beside the terminal: the proposal, the inspector. Opening reserves its width
+   immediately; the slide animation is visual only. */
+.side-panel {
   min-width: 0;
   flex-grow: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
   animation: panel-in 0.22s ease-out;
 }
 
-.proposal-panel[data-closing='true'] {
+.side-panel[data-closing='true'] {
   animation: panel-out 0.18s ease-in forwards;
+}
+
+.proposal-panel {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 @keyframes panel-in {
@@ -1577,8 +1582,8 @@ body.proposal-panel-resizing * {
 
 /* Still end the animation (almost at once): the panel unmounts on animationend. */
 @media (prefers-reduced-motion: reduce) {
-  .proposal-panel,
-  .proposal-panel[data-closing='true'] {
+  .side-panel,
+  .side-panel[data-closing='true'] {
     animation-duration: 1ms;
   }
 }

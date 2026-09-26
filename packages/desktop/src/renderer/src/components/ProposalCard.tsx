@@ -1,15 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useState } from 'react'
 import type { Task, TaskProposal } from '@kando/protocol'
 import { perform } from '../core-store'
 import { AGENT_LABEL } from '../labels'
 import { CloseIcon, SparkIcon } from './icons'
 import { MarkdownEditor } from './MarkdownEditor'
-import {
-  MAX_PROPOSAL_PANEL_RATIO,
-  MIN_PROPOSAL_PANEL_RATIO,
-  clampProposalPanelRatio,
-  proposalPanelRatioAtPointer
-} from './proposal-panel-size'
+import { PanelSeparator } from './PanelSeparator'
 
 const ignore = () => {}
 
@@ -116,76 +111,14 @@ export function ProposalPanel({
   onClose: () => void
   onClosed: () => void
 }) {
-  const separator = useRef<HTMLDivElement>(null)
-  const [dragging, setDragging] = useState(false)
-
-  useEffect(() => {
-    if (!dragging) {
-      return
-    }
-    document.body.classList.add('proposal-panel-resizing')
-    return () => document.body.classList.remove('proposal-panel-resizing')
-  }, [dragging])
-
-  const resizeAtPointer = (event: PointerEvent<HTMLDivElement>) => {
-    const element = separator.current
-    const container = element?.parentElement
-    if (!element || !container) {
-      return
-    }
-    const bounds = container.getBoundingClientRect()
-    onWidthRatioChange(proposalPanelRatioAtPointer(event.clientX, bounds.left, bounds.width, element.offsetWidth))
-  }
-  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    setDragging(false)
-  }
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const direction = event.key === 'ArrowLeft' ? 1 : event.key === 'ArrowRight' ? -1 : 0
-    if (direction === 0) {
-      return
-    }
-    event.preventDefault()
-    onWidthRatioChange(clampProposalPanelRatio(widthRatio + direction * 0.02))
-  }
-
   return (
     <>
-      <div
-        ref={separator}
-        className="proposal-panel-separator"
-        data-dragging={dragging}
-        data-closing={closing}
-        role="separator"
-        aria-label="调整终端与方案面板宽度"
-        aria-orientation="vertical"
-        aria-valuemin={MIN_PROPOSAL_PANEL_RATIO * 100}
-        aria-valuemax={MAX_PROPOSAL_PANEL_RATIO * 100}
-        aria-valuenow={Math.round(widthRatio * 100)}
-        aria-valuetext={`方案面板占 ${Math.round(widthRatio * 100)}%`}
-        tabIndex={closing ? -1 : 0}
-        onKeyDown={handleKeyDown}
-        onPointerDown={(event) => {
-          if (closing || event.button !== 0) {
-            return
-          }
-          event.preventDefault()
-          event.currentTarget.setPointerCapture(event.pointerId)
-          setDragging(true)
-          resizeAtPointer(event)
-        }}
-        onPointerMove={(event) => dragging && resizeAtPointer(event)}
-        onPointerUp={stopDragging}
-        onPointerCancel={stopDragging}
-        onLostPointerCapture={() => setDragging(false)}
-      />
+      <PanelSeparator panelName="方案面板" ratio={widthRatio} onRatioChange={onWidthRatioChange} disabled={closing} />
       <aside
-        className="proposal-panel"
+        className="side-panel proposal-panel"
         data-closing={closing}
         aria-label={`${author(proposal)} 提交的方案`}
-        style={{ flexBasis: `calc((100% - var(--proposal-panel-separator-size)) * ${widthRatio})` }}
+        style={{ flexBasis: `calc((100% - var(--side-panel-separator-size)) * ${widthRatio})` }}
         // animationend bubbles; only the panel's own slide-out means it is gone.
         onAnimationEnd={(event) => closing && event.target === event.currentTarget && onClosed()}
       >

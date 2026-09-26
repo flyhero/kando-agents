@@ -10,7 +10,7 @@ import { SourceLink } from './SourceLink'
 import { StatusIcon } from './StatusIcon'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskToolbar } from './TaskActions'
-import { DEFAULT_PROPOSAL_PANEL_RATIO } from './proposal-panel-size'
+import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 
 type PanelState = 'open' | 'closing' | 'closed'
 
@@ -34,7 +34,7 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
   const proposal = task?.proposal ?? null
   const [panel, setPanel] = useState<PanelState>(proposal ? 'open' : 'closed')
   const [shown, setShown] = useState<TaskProposal | null>(proposal)
-  const [proposalPanelRatio, setProposalPanelRatio] = useState(DEFAULT_PROPOSAL_PANEL_RATIO)
+  const [sidePanelRatio, setSidePanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   useEffect(() => {
     if (proposal) {
       setShown(proposal)
@@ -46,7 +46,7 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
 
   const finishClosingPanel = useCallback(() => {
     setPanel('closed')
-    setProposalPanelRatio(DEFAULT_PROPOSAL_PANEL_RATIO)
+    setSidePanelRatio(DEFAULT_SIDE_PANEL_RATIO)
   }, [])
 
   if (!task) {
@@ -99,8 +99,8 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
             task={task}
             proposal={shown}
             closing={panel === 'closing'}
-            widthRatio={proposalPanelRatio}
-            onWidthRatioChange={setProposalPanelRatio}
+            widthRatio={sidePanelRatio}
+            onWidthRatioChange={setSidePanelRatio}
             onClose={() => setPanel('closing')}
             onClosed={finishClosingPanel}
           />

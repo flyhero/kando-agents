@@ -8,7 +8,7 @@ export type BranchTarget = { kind: 'task' | 'conversation'; id: string }
 
 // Asked again on open, when the window regains focus, whenever the task or conversation changes
 // (every agent turn and exit) and when the panel opens. An older core without the method shows nothing.
-function useProjectHeads(target: BranchTarget, updatedAt: number, opened: number): ProjectHead[] {
+export function useProjectHeads(target: BranchTarget, updatedAt: number, opened: number): ProjectHead[] {
   const rpc = useCore((state) => state.rpc)
   const key = `${target.kind}:${target.id}`
   const [heads, setHeads] = useState<{ key: string; heads: ProjectHead[] }>({ key: '', heads: [] })
@@ -72,6 +72,25 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+// Every project's branch, uncommitted changes and distance from its upstream.
+export function BranchStatusDetails({ heads }: { heads: readonly ProjectHead[] }) {
+  return (
+    <div className="branch-status">
+      {heads.map((each) => (
+        <section key={each.path} className="branch-status-project" aria-label={projectName(each.path)}>
+          {heads.length > 1 && <div className="branch-status-name">{projectName(each.path)}</div>}
+          <div className="branch-status-head">
+            <span className="mono">{headLabel(each)}</span>
+            {each.branch && <CopyButton text={each.branch} />}
+          </div>
+          {each.branch && statusLines(each).map((line) => <div key={line} className="muted">{line}</div>)}
+        </section>
+      ))}
+      {heads.some((each) => each.upstream) && <p className="branch-status-note">领先和落后按上次 fetch 到的远程计算。</p>}
+    </div>
+  )
+}
+
 // The chip shows the first project that has a branch: a conversation's working directory, or a
 // task's first worktree. The panel lists every project.
 export function BranchStatus({ target, updatedAt }: { target: BranchTarget; updatedAt: number }) {
@@ -100,19 +119,7 @@ export function BranchStatus({ target, updatedAt }: { target: BranchTarget; upda
       </button>
       {open && (
         <Popover label="git 状态" onClose={close}>
-          <div className="branch-status">
-            {heads.map((each) => (
-              <section key={each.path} className="branch-status-project" aria-label={projectName(each.path)}>
-                {heads.length > 1 && <div className="branch-status-name">{projectName(each.path)}</div>}
-                <div className="branch-status-head">
-                  <span className="mono">{headLabel(each)}</span>
-                  {each.branch && <CopyButton text={each.branch} />}
-                </div>
-                {each.branch && statusLines(each).map((line) => <div key={line} className="muted">{line}</div>)}
-              </section>
-            ))}
-            {heads.some((each) => each.upstream) && <p className="branch-status-note">领先和落后按上次 fetch 到的远程计算。</p>}
-          </div>
+          <BranchStatusDetails heads={heads} />
         </Popover>
       )}
     </span>
