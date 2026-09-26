@@ -14,13 +14,16 @@ export const ChangedFile = z.object({
 })
 export type ChangedFile = z.infer<typeof ChangedFile>
 
+export const Commit = z.object({ sha: z.string(), subject: z.string() })
+export type Commit = z.infer<typeof Commit>
+
 export const RepoChanges = z.object({
   // The repo as the user picked it; the changes themselves are in its worktree.
   path: z.string(),
   branch: z.string().nullable(),
   // Short id of the commit the branch started from; null without a worktree to compare.
   base: z.string().nullable(),
-  commits: z.array(z.object({ sha: z.string(), subject: z.string() })),
+  commits: z.array(Commit),
   files: z.array(ChangedFile)
 })
 export type RepoChanges = z.infer<typeof RepoChanges>
