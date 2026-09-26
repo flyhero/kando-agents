@@ -4,7 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
-import { FileDiff, RepoChanges } from './changes'
+import { FileDiff, FolderChanges, RepoChanges } from './changes'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 7
@@ -93,6 +93,9 @@ export const rpcMethods = {
   // Read on every call: the agent works in the project folders themselves, so either it or
   // the user can switch branches at any time. Older cores lack it.
   'conversations.branches': { params: ConversationRef, result: z.array(ProjectHead) },
+  // Each project's uncommitted changes and the commits since the conversation started.
+  'conversations.changes': { params: ConversationRef, result: z.array(FolderChanges) },
+  'conversations.diff': { params: ConversationRef.extend({ project: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
   'conversations.search': { params: z.object({ query: z.string().trim().min(1).max(200) }), result: z.array(ConversationSearchHit) },
   'conversations.event': {
     params: ConversationRef.extend({

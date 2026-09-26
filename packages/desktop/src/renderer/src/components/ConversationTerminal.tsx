@@ -1,14 +1,16 @@
 import { useCallback, useState } from 'react'
-import { selectConversation, useCore } from '../core-store'
+import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { projectNames } from './ProjectPicker'
 import { BranchStatus } from './BranchStatus'
+import { ConversationInspector } from './ConversationInspector'
 import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { continueConversation, deleteConversation, renameConversation, stopConversation } from './ConversationActions'
-import { CloseIcon, HandoffIcon, MoreIcon, PencilIcon, PlayIcon, StopIcon } from './icons'
+import { CloseIcon, HandoffIcon, InspectorIcon, MoreIcon, PencilIcon, PlayIcon, StopIcon } from './icons'
 import { Popover } from './Popover'
+import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
 
 // Deleting sits a click away from the everyday buttons, as a task's does.
@@ -52,7 +54,11 @@ export function ConversationTerminal({ id }: { id: string }) {
   const [handoffOpen, setHandoffOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [busy, setBusy] = useState(false)
+  const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
+  const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   if (!conversation) return null
+  // A managed workspace is Kando's own scratch folder: nothing of the user's to compare.
+  const inspectable = conversation.projectPaths.length > 0
   const state = conversationState(conversation)
   const action = async (run: () => Promise<unknown>) => {
     if (busy) return
@@ -79,12 +85,27 @@ export function ConversationTerminal({ id }: { id: string }) {
         {!conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}
         <button type="button" className="tool-button" aria-label="移交给其他智能体" data-tooltip="移交给其他智能体" disabled={busy} onClick={() => setHandoffOpen(true)}><HandoffIcon /></button>
         {conversation.sessionId && <button type="button" className="tool-button" aria-label="停止会话" data-tooltip="停止会话" disabled={busy} onClick={() => void action(() => stopConversation(id))}><StopIcon /></button>}
+        {inspectable && (
+          <button
+            type="button"
+            className="tool-button"
+            aria-label="检查器"
+            aria-pressed={inspectorOpen}
+            data-tooltip={inspectorOpen ? '收起检查器' : '查看改动'}
+            onClick={() => setConversationInspectorOpen(!inspectorOpen)}
+          >
+            <InspectorIcon />
+          </button>
+        )}
         <MoreMenu disabled={busy} onDelete={remove} />
         <span className="toolbar-separator" aria-hidden="true" />
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectConversation(null)}><CloseIcon /></button>
       </div>
     </header>
-    <div className="terminal-body"><ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} /></div>
+    <div className="terminal-body">
+      <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />
+      {inspectable && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
+    </div>
     {handoffOpen && <ConversationHandoffDialog conversation={conversation} onClose={() => setHandoffOpen(false)} />}
   </section>
 }

@@ -28,5 +28,18 @@ export const RepoChanges = z.object({
 })
 export type RepoChanges = z.infer<typeof RepoChanges>
 
+// A conversation's project folder, which it shares with the user: no branch of its own to compare.
+export const FolderChanges = z.object({
+  path: z.string(),
+  branch: z.string().nullable(),
+  // Short id of HEAD; null when the folder is not in a git repo, or the repo has no commit yet.
+  head: z.string().nullable(),
+  // Commits since the conversation started; null when it began before Kando recorded where.
+  commits: z.array(Commit).nullable(),
+  // Uncommitted against HEAD, untracked included; the user's own edits land here too.
+  files: z.array(ChangedFile)
+})
+export type FolderChanges = z.infer<typeof FolderChanges>
+
 export const FileDiff = z.object({ diff: z.string(), truncated: z.boolean() })
 export type FileDiff = z.infer<typeof FileDiff>

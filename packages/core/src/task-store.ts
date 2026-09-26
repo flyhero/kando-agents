@@ -110,7 +110,9 @@ export const MIGRATIONS = [
    UPDATE conversations SET project_paths = json_array(workspace_path) WHERE managed_workspace = 0;`,
   // How the last run ended, and whether its agent is waiting for the user.
   `ALTER TABLE tasks ADD COLUMN last_exit TEXT;
-   ALTER TABLE tasks ADD COLUMN awaiting_input INTEGER NOT NULL DEFAULT 0;`
+   ALTER TABLE tasks ADD COLUMN awaiting_input INTEGER NOT NULL DEFAULT 0;`,
+  // Each project's HEAD when a conversation started, keyed by path: its later commits are its own.
+  `ALTER TABLE conversations ADD COLUMN project_starts TEXT NOT NULL DEFAULT '{}';`
 ]
 
 

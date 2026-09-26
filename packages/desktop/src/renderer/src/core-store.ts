@@ -50,6 +50,8 @@ type CoreState = {
   view: TaskView
   // The inspector beside a task's terminal, kept open from one task to the next.
   inspectorOpen: boolean
+  // A conversation's, which only the user opens.
+  conversationInspectorOpen: boolean
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -76,6 +78,7 @@ export const useCore = create<CoreState>()(() => ({
   selectedId: null,
   view: 'detail',
   inspectorOpen: false,
+  conversationInspectorOpen: false,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -105,6 +108,10 @@ export function selectTask(id: string | null): void {
 
 export function setInspectorOpen(open: boolean): void {
   useCore.setState({ inspectorOpen: open })
+}
+
+export function setConversationInspectorOpen(open: boolean): void {
+  useCore.setState({ conversationInspectorOpen: open })
 }
 
 export function selectConversation(id: string | null): void {

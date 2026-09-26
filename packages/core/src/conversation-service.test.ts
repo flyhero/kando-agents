@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -174,6 +175,21 @@ describe('ConversationService', () => {
     expect(service.get(created.id).title).toBe('新会话')
     event(created.id, stage.id, 'claude', 'user', 'Fix the build', 'user-2')
     expect(service.get(created.id).title).toBe('Fix the build')
+  })
+
+  it('remembers where each project stood when the conversation started, and diffs only its projects', async () => {
+    const repo = path.join(root, 'app')
+    execFileSync('git', ['init', '-q', '-b', 'main', repo])
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args])
+    git('commit', '-q', '--allow-empty', '-m', 'before')
+    const created = await service.create('claude', [repo])
+    git('commit', '-q', '--allow-empty', '-m', 'during')
+    writeFileSync(path.join(repo, 'notes.md'), 'draft\n')
+    const [changes] = await service.changes(created.id)
+    expect(changes?.commits?.map((commit) => commit.subject)).toEqual(['during'])
+    expect(changes?.files.map((file) => file.path)).toEqual(['notes.md'])
+    expect((await service.diff(created.id, created.projectPaths[0] ?? '', 'notes.md')).diff).toContain('+draft')
+    await expect(service.diff(created.id, root, 'notes.md')).rejects.toMatchObject({ reason: 'repo-not-found' })
   })
 
   it('reports how the agent last stopped: exited, stopped, or never ended', async () => {

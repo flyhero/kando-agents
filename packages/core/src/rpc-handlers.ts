@@ -63,6 +63,8 @@ export function createRpcHandlers(
     'conversations.stages': ({ id }) => conversations.stages(id),
     'conversations.branches': ({ id }) => conversations.branches(id),
     'conversations.search': ({ query }) => conversations.search(query),
+    'conversations.changes': ({ id }) => conversations.changes(id),
+    'conversations.diff': ({ id, project, file }) => conversations.diff(id, project, file),
     'conversations.event': (input) => { conversations.recordEvent(input); return OK },
     'attachments.begin': ({ size }, connection) => ({ uploadId: attachments.uploads.begin(connection, size) }),
     'attachments.append': ({ uploadId, offset, data }, connection) => {

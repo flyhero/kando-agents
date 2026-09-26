@@ -44,12 +44,21 @@ export class ConversationStore {
     return row ? conversation(row) : null
   }
 
-  create(agent: AgentKind, workspacePath: string, projectPaths: readonly string[], id = randomUUID()): Conversation {
+  create(agent: AgentKind, workspacePath: string, projectPaths: readonly string[], id = randomUUID(), projectStarts: Record<string, string> = {}): Conversation {
     const now = this.now()
     this.db.prepare(`INSERT INTO conversations
-      (id, title, title_locked, agent, workspace_path, project_paths, managed_workspace, created_at, updated_at)
-      VALUES (?, '新会话', 0, ?, ?, ?, ?, ?, ?)`).run(id, agent, workspacePath, JSON.stringify(projectPaths), Number(projectPaths.length === 0), now, now)
+      (id, title, title_locked, agent, workspace_path, project_paths, project_starts, managed_workspace, created_at, updated_at)
+      VALUES (?, '新会话', 0, ?, ?, ?, ?, ?, ?, ?)`).run(id, agent, workspacePath, JSON.stringify(projectPaths), JSON.stringify(projectStarts), Number(projectPaths.length === 0), now, now)
     return this.get(id)!
+  }
+
+  // Empty for a conversation created before these were recorded.
+  projectStarts(id: string): Record<string, string> {
+    const row = this.db.prepare('SELECT project_starts FROM conversations WHERE id = ?').get(id)
+    const parsed: unknown = JSON.parse(String(row?.project_starts ?? '{}'))
+    return typeof parsed === 'object' && parsed !== null
+      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+      : {}
   }
 
   update(id: string, patch: { title?: string; titleLocked?: boolean; agent?: AgentKind; sessionId?: string | null; outputOffset?: number }): Conversation {

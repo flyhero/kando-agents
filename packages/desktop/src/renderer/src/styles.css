@@ -1690,6 +1690,16 @@ body.side-panel-resizing * {
   font-size: 13px;
 }
 
+.inspector-section-title {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inspector-section-title:first-of-type {
+  margin-top: 0;
+}
+
 .inspector-summary {
   margin: 0 0 8px;
   font-size: 12px;

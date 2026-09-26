@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type ProjectHead } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
+import { folderChanges, folderDiff, folderHead } from './conversation-changes'
 import { conversationCommand, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
@@ -41,6 +42,14 @@ export class ConversationService {
   branches(id: string): Promise<ProjectHead[]> {
     return Promise.all(this.get(id).projectPaths.map(async (projectPath) => ({ path: projectPath, ...await projectHead(projectPath) })))
   }
+  changes(id: string): Promise<FolderChanges[]> {
+    const starts = this.store.projectStarts(id)
+    return Promise.all(this.get(id).projectPaths.map((project) => folderChanges(project, starts[project] ?? null)))
+  }
+  async diff(id: string, project: string, file: string): Promise<FileDiff> {
+    if (!this.get(id).projectPaths.includes(project)) throw new Rejection('repo-not-found', `${project} is not one of the conversation's projects`)
+    return folderDiff(project, file)
+  }
   search(query: string): ConversationSearchHit[] {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
@@ -67,7 +76,12 @@ export class ConversationService {
     } else {
       workspace = projects[0]!
     }
-    const created = this.store.create(agent, workspace, projects, id)
+    const starts: Record<string, string> = {}
+    for (const project of projects) {
+      const head = await folderHead(project)
+      if (head) starts[project] = head
+    }
+    const created = this.store.create(agent, workspace, projects, id, starts)
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)
