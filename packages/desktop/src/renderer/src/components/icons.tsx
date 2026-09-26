@@ -100,6 +100,15 @@ export function AgentIcon({ agent }: { agent: AgentKind | null }) {
   }
 }
 
+export function InspectorIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" />
+      <path d="M11.5 3.5v13M13.8 7.5h1.7M13.8 10h1.7" />
+    </svg>
+  )
+}
+
 export function TerminalIcon() {
   return (
     <svg {...stroked}>

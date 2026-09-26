@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { shortTaskId, type TaskProposal } from '@kando/protocol'
-import { perform, useCore } from '../core-store'
+import { perform, setInspectorOpen, useCore } from '../core-store'
 import { AGENT_LABEL, STATUS_LABEL } from '../labels'
 import { BranchStatus } from './BranchStatus'
 import { projectNames } from './ProjectPicker'
@@ -8,6 +8,7 @@ import { ProposalPanel } from './ProposalCard'
 import { SessionTerminal } from './SessionTerminal'
 import { SourceLink } from './SourceLink'
 import { StatusIcon } from './StatusIcon'
+import { TaskInspector } from './TaskInspector'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskToolbar } from './TaskActions'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
@@ -39,6 +40,7 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
     if (proposal) {
       setShown(proposal)
       setPanel('open')
+      setInspectorOpen(false)
     } else {
       setPanel((current) => (current === 'open' ? 'closing' : current))
     }
@@ -49,9 +51,20 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
     setSidePanelRatio(DEFAULT_SIDE_PANEL_RATIO)
   }, [])
 
+  // One side panel at a time: opening the inspector sends the proposal away, and a run that
+  // just ended opens the inspector on what it changed.
+  const inspectorOpen = useCore((s) => s.inspectorOpen)
+  useEffect(() => {
+    if (inspectorOpen) setPanel((current) => (current === 'open' ? 'closing' : current))
+  }, [inspectorOpen])
+  useEffect(() => {
+    if (task?.status === 'review') setInspectorOpen(true)
+  }, [task?.status])
+
   if (!task) {
     return null
   }
+  const showInspector = inspectorOpen && panel === 'closed' && task.repos.some((repo) => repo.worktreePath !== null)
   const restore = () => void perform((rpc) => rpc.call('tasks.restoreDetails', { id: task.id }))
 
   return (
@@ -77,7 +90,14 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
         <SourceLink task={task} />
         {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
         {task.proposal && panel !== 'open' && (
-          <button type="button" className="task-tag task-tag-proposal" onClick={() => setPanel('open')}>
+          <button
+            type="button"
+            className="task-tag task-tag-proposal"
+            onClick={() => {
+              setInspectorOpen(false)
+              setPanel('open')
+            }}
+          >
             查看方案
           </button>
         )}
@@ -94,6 +114,7 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
         ) : (
           <p className="terminal-view-empty muted">正在启动 agent…</p>
         )}
+        {showInspector && <TaskInspector task={task} widthRatio={sidePanelRatio} onWidthRatioChange={setSidePanelRatio} />}
         {panel !== 'closed' && shown && (
           <ProposalPanel
             task={task}

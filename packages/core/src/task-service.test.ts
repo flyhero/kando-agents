@@ -147,6 +147,19 @@ describe('TaskService', () => {
     expect(service.move(task.id, 'done').status).toBe('done')
   })
 
+  it('reads a run\'s changes from its worktree, and diffs only the task\'s own repos', async () => {
+    const repo = initRepo('app')
+    const task = readyTask('Add theme', [repo])
+    expect((await service.changes(task.id))[0]).toMatchObject({ base: null, files: [] })
+    const running = await service.run(task.id)
+    writeFileSync(path.join(running.repos[0]!.worktreePath!, 'theme.css'), 'body {}\n')
+    expect((await service.changes(task.id))[0]?.files).toEqual([
+      { path: 'theme.css', oldPath: null, kind: 'untracked', additions: null, deletions: null }
+    ])
+    expect((await service.diff(task.id, repo, 'theme.css')).diff).toContain('+body {}')
+    await expect(service.diff(task.id, dir, 'theme.css')).rejects.toMatchObject({ reason: 'repo-not-found' })
+  })
+
   it('reads branches from the task\'s worktrees only, once a run has made them', async () => {
     const repo = initRepo('app')
     const task = readyTask('Add dark mode', [repo])

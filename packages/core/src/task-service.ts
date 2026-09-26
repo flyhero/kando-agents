@@ -8,7 +8,9 @@ import {
   imageLabel,
   MAX_TASK_IMAGES,
   type AgentKind,
+  type FileDiff,
   type ProjectHead,
+  type RepoChanges,
   type RpcParsedParams,
   type SourceSnapshot,
   type Task,
@@ -24,6 +26,7 @@ import type { AttachmentStore } from './attachment-store'
 import type { SessionHost } from './daemon-client'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
+import { fileDiff, repoChanges } from './task-changes'
 import type { TaskPatch, TaskStore } from './task-store'
 import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees } from './workspace'
 
@@ -71,6 +74,16 @@ export class TaskService {
     return Promise.all(this.get(id).repos.map(async (repo) => repo.worktreePath
       ? { path: repo.path, ...await projectHead(repo.worktreePath) }
       : { path: repo.path, branch: null, detached: false }))
+  }
+
+  changes(id: string): Promise<RepoChanges[]> {
+    return Promise.all(this.get(id).repos.map(repoChanges))
+  }
+
+  async diff(id: string, repoPath: string, file: string): Promise<FileDiff> {
+    const repo = this.get(id).repos.find((each) => each.path === repoPath)
+    if (!repo) throw new Rejection('repo-not-found', `${repoPath} is not one of the task's repos`)
+    return fileDiff(repo, file)
   }
 
   create({ title, details, repos, dependsOn, agent }: RpcParsedParams<'tasks.create'>): Task {

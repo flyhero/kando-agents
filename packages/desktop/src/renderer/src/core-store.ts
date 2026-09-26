@@ -48,6 +48,8 @@ type CoreState = {
   newConversationOpen: boolean
   selectedId: string | null
   view: TaskView
+  // The inspector beside a task's terminal, kept open from one task to the next.
+  inspectorOpen: boolean
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -73,6 +75,7 @@ export const useCore = create<CoreState>()(() => ({
   newConversationOpen: false,
   selectedId: null,
   view: 'detail',
+  inspectorOpen: false,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -84,17 +87,24 @@ export const useCore = create<CoreState>()(() => ({
   login: null
 }))
 
-// A task with a live agent opens on its terminal: that is where the work is happening.
+// A task with a live agent opens on its terminal: that is where the work is happening. One under
+// review opens there too, with the inspector showing what the agent changed.
 export function selectTask(id: string | null): void {
   useCore.setState((s) => {
     const task = id ? s.tasks[id] : undefined
+    const review = task?.status === 'review' && task.sessionId !== null
     return {
       selectedId: id,
       section: 'tasks',
       inboxOpen: false,
-      view: task && (task.status === 'running' || task.refineSessionId) ? 'terminal' : 'detail'
+      view: task && (task.status === 'running' || task.refineSessionId || review) ? 'terminal' : 'detail',
+      inspectorOpen: review || s.inspectorOpen
     }
   })
+}
+
+export function setInspectorOpen(open: boolean): void {
+  useCore.setState({ inspectorOpen: open })
 }
 
 export function selectConversation(id: string | null): void {

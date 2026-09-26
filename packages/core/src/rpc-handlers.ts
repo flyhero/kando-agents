@@ -48,6 +48,8 @@ export function createRpcHandlers(
     'tasks.updateImage': ({ id, attachmentId, name }) => service.updateImage(id, attachmentId, name),
     'tasks.removeImage': ({ id, attachmentId }) => service.removeImage(id, attachmentId),
     'tasks.branches': ({ id }) => service.branches(id),
+    'tasks.changes': ({ id }) => service.changes(id),
+    'tasks.diff': ({ id, repo, file }) => service.diff(id, repo, file),
     'conversations.list': () => conversations.list(),
     'conversations.get': ({ id }) => conversations.get(id),
     'conversations.create': ({ agent, projectPaths }) => conversations.create(agent, projectPaths),

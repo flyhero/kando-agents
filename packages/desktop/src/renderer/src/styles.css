@@ -1634,6 +1634,197 @@ body.side-panel-resizing * {
   margin-left: 0;
 }
 
+/* The task inspector: what the agent changed, next to its terminal. */
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 6px 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-tabs {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+}
+
+.inspector-tabs [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.inspector-tabs [role='tab'][aria-selected='true'] {
+  background: var(--surface-muted);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+  font-size: 13px;
+}
+
+.inspector-empty {
+  margin: 12px 2px;
+}
+
+.inspector-repo + .inspector-repo {
+  margin-top: 16px;
+}
+
+.inspector-repo-name {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.inspector-summary {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.inspector-commits {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.inspector-commits summary {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.inspector-commits ul {
+  margin: 6px 0 0;
+  padding-left: 4px;
+  list-style: none;
+}
+
+.inspector-commits li {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.changed-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.changed-file {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.changed-file:hover {
+  background: var(--surface-muted);
+}
+
+.change-kind {
+  flex-shrink: 0;
+  width: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.change-kind[data-kind='added'],
+.change-kind[data-kind='untracked'] {
+  color: var(--status-done);
+}
+
+.change-kind[data-kind='deleted'] {
+  color: var(--danger);
+}
+
+.change-kind[data-kind='modified'],
+.change-kind[data-kind='renamed'] {
+  color: var(--warning);
+}
+
+.changed-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changed-file-counts {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.file-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 8px -4px;
+}
+
+.file-diff-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-view {
+  margin: 0;
+  padding: 6px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-view > div {
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.diff-add {
+  background: color-mix(in srgb, var(--status-done) 14%, transparent);
+}
+
+.diff-del {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.diff-hunk {
+  color: var(--status-running);
+}
+
+.diff-meta {
+  color: var(--text-muted);
+}
+
 .task-tag-updated {
   background: color-mix(in srgb, var(--status-done) 14%, transparent);
   color: var(--status-done);

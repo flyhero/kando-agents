@@ -1,11 +1,11 @@
 import { useCallback, useState, type ReactElement } from 'react'
 import { checkContinue, checkMove, checkRefine, checkRun, isFinished, manualMoves, shortTaskId, type Task, type TaskStatus } from '@kando/protocol'
-import { perform, selectTask, showView, updateTask, useCore, type TaskView } from '../core-store'
+import { perform, selectTask, setInspectorOpen, showView, updateTask, useCore, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
-import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, MoreIcon, PlayIcon, ReopenIcon, TerminalIcon } from './icons'
+import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, TerminalIcon } from './icons'
 import { Popover } from './Popover'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
@@ -358,6 +358,27 @@ function ViewToggle({ view }: { view: TaskView }) {
   )
 }
 
+// The inspector sits beside the terminal, so from the details the button switches over to open it.
+function InspectorToggle({ view }: { view: TaskView }) {
+  const open = useCore((s) => s.inspectorOpen)
+  const pressed = view === 'terminal' && open
+  return (
+    <button
+      type="button"
+      className="tool-button"
+      aria-label="检查器"
+      aria-pressed={pressed}
+      data-tooltip={pressed ? '收起检查器' : '查看改动'}
+      onClick={() => {
+        setInspectorOpen(!pressed)
+        if (view !== 'terminal') showView('terminal')
+      }}
+    >
+      <InspectorIcon />
+    </button>
+  )
+}
+
 // One toolbar for both panes of a task, so its controls never move when switching.
 export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const tasks = useCore((s) => s.tasks)
@@ -388,6 +409,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       })}
       {isFinished(task.status) && <ContinueButton task={task} dependencies={dependencies} />}
       {isFinished(task.status) && <RedoButton task={task} />}
+      {task.sessionId && task.repos.some((repo) => repo.worktreePath !== null) && <InspectorToggle view={view} />}
       {(task.sessionId || task.refineSessionId) && <ViewToggle view={view} />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />

@@ -4,6 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
+import { FileDiff, RepoChanges } from './changes'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 7
@@ -68,6 +69,10 @@ export const rpcMethods = {
   'tasks.removeImage': { params: TaskRef.extend({ attachmentId: AttachmentId }), result: Task },
   // Each repo's worktree, read on every call. A repo without one yet has no branch. Older cores lack it.
   'tasks.branches': { params: TaskRef, result: z.array(ProjectHead) },
+  // What the agent changed in each worktree since its branch started, read on every call.
+  'tasks.changes': { params: TaskRef, result: z.array(RepoChanges) },
+  // One file of those changes; `repo` is the path the user picked, `file` a path from the change list.
+  'tasks.diff': { params: TaskRef.extend({ repo: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
   'conversations.list': { params: z.object({}), result: z.array(Conversation) },
   'conversations.get': { params: ConversationRef, result: Conversation },
   'conversations.create': { params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS) }), result: Conversation },
