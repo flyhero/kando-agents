@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem, Conversation, ConversationMessage, ConversationStage } from '@kando/protocol'
-import { dropChat, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
+import { dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
 import { perform, useCore } from '../core-store'
 import { AGENT_LABEL, dayAndTime } from '../labels'
 import { ChatDock } from './ChatDock'
@@ -59,7 +59,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
 }
 
 function entryKey(entry: TimelineEntry): string {
-  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${entry.item.id}` : `message:${entry.message.sequence}`
+  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
 }
 
 // The user's own messages are what ↑ steps back through.

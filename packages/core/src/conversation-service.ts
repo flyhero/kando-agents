@@ -21,7 +21,7 @@ export type ConversationEvent =
   | { type: 'changed'; conversation: Conversation }
   | { type: 'deleted'; id: string }
   | { type: 'chatItems'; conversationId: string; items: ChatItem[] }
-  | { type: 'chatDelta'; conversationId: string; itemId: string; append: string }
+  | { type: 'chatDelta'; conversationId: string; stageId: string; itemId: string; append: string }
 
 // A chat page stops adding older stages once it holds this many items.
 const CHAT_PAGE_ITEMS = 1000
@@ -59,7 +59,7 @@ export class ConversationService {
     this.transcript = new TerminalTranscript(sessionsRoot)
     this.chats = new ChatHost(daemon, sessionsRoot, {
       items: (conversationId, items) => this.emit({ type: 'chatItems', conversationId, items }),
-      delta: (conversationId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, itemId, append }),
+      delta: (conversationId, stageId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, stageId, itemId, append }),
       messages: (stage, messages) => messages.forEach((message) => this.recordChatMessage(stage, message)),
       provider: (stage, providerSessionId) => this.store.setProviderSession(stage.stageId, providerSessionId),
       activity: (conversationId) => {

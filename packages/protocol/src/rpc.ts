@@ -213,8 +213,9 @@ export const rpcNotifications = {
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.
   'conversations.chatItems': z.object({ conversationId: z.string(), items: ChatItemList }),
-  // Text streamed onto an assistant or reasoning item the client already holds.
-  'conversations.chatDelta': z.object({ conversationId: z.string(), itemId: z.string(), append: z.string() }),
+  // Text streamed onto an assistant or reasoning item the client already holds. Item ids are
+  // unique within a stage only; an older core leaves the stage out.
+  'conversations.chatDelta': z.object({ conversationId: z.string(), stageId: z.string().optional(), itemId: z.string(), append: z.string() }),
   'tasks.changed': z.object({ task: Task }),
   'tasks.deleted': z.object({ id: z.string() }),
   'sessions.data': z.object({ sessionId: z.string(), data: z.string(), offset: z.number().int() }),

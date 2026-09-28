@@ -1,5 +1,6 @@
 import type { ChatItem, Conversation } from '@kando/protocol'
 import { setConversationInspectorOpen } from '../core-store'
+import { itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { useFolderChanges } from './ConversationInspector'
@@ -51,8 +52,8 @@ export function ChatDock({ conversation, pending, tools, finishedCalls, onPrevio
         <div className="chat-dock-requests">
           {pending.map((item) =>
             item.kind === 'approval'
-              ? <ChatApprovalCard key={item.id} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
-              : <ChatQuestionCard key={item.id} conversationId={conversation.id} item={item} />
+              ? <ChatApprovalCard key={itemKey(item)} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
+              : <ChatQuestionCard key={itemKey(item)} conversationId={conversation.id} item={item} />
           )}
         </div>
       )}

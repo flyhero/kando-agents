@@ -312,7 +312,7 @@ export function startCoreConnection(): void {
           })
         )
         rpc.on('conversations.chatItems', ({ conversationId, items }) => receiveChatItems(conversationId, items))
-        rpc.on('conversations.chatDelta', ({ conversationId, itemId, append }) => receiveChatDelta(conversationId, itemId, append))
+        rpc.on('conversations.chatDelta', ({ conversationId, stageId, itemId, append }) => receiveChatDelta(conversationId, stageId, itemId, append))
         rpc.on('usage.changed', ({ usage }) =>
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))
         )

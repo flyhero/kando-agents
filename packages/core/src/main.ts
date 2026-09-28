@@ -69,8 +69,8 @@ const conversations = new ConversationService(
     else if (event.type === 'chatItems') {
       watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
     } else {
-      const { conversationId, itemId, append } = event
-      watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, itemId, append }))
+      const { conversationId, stageId, itemId, append } = event
+      watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, stageId, itemId, append }))
     }
   },
   projects

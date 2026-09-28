@@ -18,7 +18,7 @@ export type ChatStage = { conversationId: string; stageId: string; agent: AgentK
 // Where a chat stage's news goes: to the clients watching it, and into the conversation's records.
 export type ChatSink = {
   items(conversationId: string, items: ChatItem[]): void
-  delta(conversationId: string, itemId: string, append: string): void
+  delta(conversationId: string, stageId: string, itemId: string, append: string): void
   messages(stage: ChatStage, messages: StageMessage[]): void
   // The provider session (Claude session, Codex thread) the stage turned out to run.
   provider(stage: ChatStage, providerSessionId: string): void
@@ -260,7 +260,7 @@ export class ChatHost {
   private flush(live: Live): void {
     const { items, deltas } = live.driver.items.drain()
     if (items.length) this.sink.items(live.conversationId, items)
-    deltas.forEach((delta) => this.sink.delta(live.conversationId, delta.itemId, delta.append))
+    deltas.forEach((delta) => this.sink.delta(live.conversationId, live.stageId, delta.itemId, delta.append))
     const provider = live.driver.providerSessionId()
     if (provider && provider !== live.provider) {
       live.provider = provider

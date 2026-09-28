@@ -8,14 +8,19 @@ export type ChatPage = { items: ChatItem[]; before: string | null }
 // Only conversations a view is watching are here; core sends updates for those alone.
 export const useChat = create<Record<string, ChatPage>>()(() => ({}))
 
+// Item ids are unique within their stage only: each stage numbers its notices and requests afresh.
+export function itemKey(item: Pick<ChatItem, 'stageId' | 'id'>): string {
+  return `${item.stageId}/${item.id}`
+}
+
 // A known item is replaced where it stands, a new one goes last: core sends items in order.
 export function mergeItems(current: readonly ChatItem[], incoming: readonly ChatItem[]): ChatItem[] {
   const next = [...current]
-  const index = new Map(next.map((item, position) => [item.id, position]))
+  const index = new Map(next.map((item, position) => [itemKey(item), position]))
   for (const item of incoming) {
-    const position = index.get(item.id)
+    const position = index.get(itemKey(item))
     if (position === undefined) {
-      index.set(item.id, next.length)
+      index.set(itemKey(item), next.length)
       next.push(item)
     } else {
       next[position] = item
@@ -24,9 +29,12 @@ export function mergeItems(current: readonly ChatItem[], incoming: readonly Chat
   return next
 }
 
-export function appendText(items: readonly ChatItem[], itemId: string, text: string): ChatItem[] {
+// Without a stage (an older core), the id alone decides; streamed items carry provider-unique ids.
+export function appendText(items: readonly ChatItem[], stageId: string | undefined, itemId: string, text: string): ChatItem[] {
   return items.map((item) =>
-    item.id === itemId && (item.kind === 'assistant' || item.kind === 'reasoning') ? { ...item, text: item.text + text } : item
+    item.id === itemId && (stageId === undefined || item.stageId === stageId) && (item.kind === 'assistant' || item.kind === 'reasoning')
+      ? { ...item, text: item.text + text }
+      : item
   )
 }
 
@@ -39,8 +47,8 @@ export function prependChatPage(conversationId: string, page: ChatPage): void {
   useChat.setState((state) => {
     const current = state[conversationId]
     if (!current) return {}
-    const shown = new Set(current.items.map((item) => item.id))
-    return { [conversationId]: { items: [...page.items.filter((item) => !shown.has(item.id)), ...current.items], before: page.before } }
+    const shown = new Set(current.items.map(itemKey))
+    return { [conversationId]: { items: [...page.items.filter((item) => !shown.has(itemKey(item))), ...current.items], before: page.before } }
   })
 }
 
@@ -51,10 +59,10 @@ export function receiveChatItems(conversationId: string, items: readonly ChatIte
   })
 }
 
-export function receiveChatDelta(conversationId: string, itemId: string, append: string): void {
+export function receiveChatDelta(conversationId: string, stageId: string | undefined, itemId: string, append: string): void {
   useChat.setState((state) => {
     const current = state[conversationId]
-    return current ? { [conversationId]: { ...current, items: appendText(current.items, itemId, append) } } : {}
+    return current ? { [conversationId]: { ...current, items: appendText(current.items, stageId, itemId, append) } } : {}
   })
 }
 

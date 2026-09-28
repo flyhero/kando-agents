@@ -31,15 +31,22 @@ describe('chat items', () => {
   })
 
   it('streams text onto the item it names and ignores one it does not hold', () => {
-    expect(appendText([text('a', 'he')], 'a', 'llo')).toEqual([text('a', 'hello')])
-    expect(appendText([text('a', 'he')], 'missing', 'x')).toEqual([text('a', 'he')])
+    expect(appendText([text('a', 'he')], 'chat-stage', 'a', 'llo')).toEqual([text('a', 'hello')])
+    expect(appendText([text('a', 'he')], undefined, 'a', 'llo')).toEqual([text('a', 'hello')])
+    expect(appendText([text('a', 'he')], 'chat-stage', 'missing', 'x')).toEqual([text('a', 'he')])
+    expect(appendText([text('a', 'he')], 'other-stage', 'a', 'x')).toEqual([text('a', 'he')])
+  })
+
+  it('keeps apart items two stages gave the same id', () => {
+    const merged = mergeItems([text('n:1', 'first stage', 'stage-1')], [text('n:1', 'second stage', 'stage-2')])
+    expect(merged.map((item) => item.kind === 'assistant' && item.text)).toEqual(['first stage', 'second stage'])
   })
 
   it('keeps only conversations a view watches, and puts an older page in front', () => {
     receiveChatItems('c', [text('a', 'ignored')])
     expect(useChat.getState().c).toBeUndefined()
     setChatPage('c', { items: [text('b', 'new')], before: 'stage-0' })
-    receiveChatDelta('c', 'b', '!')
+    receiveChatDelta('c', 'chat-stage', 'b', '!')
     prependChatPage('c', { items: [text('a', 'old'), text('b', 'stale')], before: null })
     expect(useChat.getState().c).toEqual({ items: [text('a', 'old'), text('b', 'new!')], before: null })
   })
