@@ -215,6 +215,8 @@ export class ClaudeStream implements ChatDriver {
   // Control requests Kando does not handle, still owed an error reply.
   private readonly unanswered = new Set<string>()
   private readonly denied = new Set<string>()
+  // AskUserQuestion calls, which their question item shows instead of a tool card.
+  private readonly questionCalls = new Set<string>()
   // Blocks of each API message seen as complete frames, and the streamed text items they finish.
   private readonly blockCounts = new Map<string, number>()
   private readonly streaming = new Map<string, string[]>()
@@ -455,6 +457,10 @@ export class ClaudeStream implements ChatDriver {
   private toolUse(block: Block, at: number): void {
     const id = `t:${block.id}`
     const name = block.name ?? 'tool'
+    if (name === 'AskUserQuestion') {
+      this.questionCalls.add(id)
+      return
+    }
     const input = Input.parse(block.input ?? {})
     const previous = this.items.get(id)
     const earlier = previous?.kind === 'tool' ? previous : null
@@ -478,6 +484,7 @@ export class ClaudeStream implements ChatDriver {
     for (const block of content) {
       if (block.type !== 'tool_result' || !block.tool_use_id) continue
       const id = `t:${block.tool_use_id}`
+      if (this.questionCalls.has(id)) continue
       const previous = this.items.get(id)
       const tool = previous?.kind === 'tool'
         ? previous

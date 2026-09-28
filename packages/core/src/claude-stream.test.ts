@@ -119,6 +119,7 @@ describe('ClaudeStream', () => {
     expect(write).toMatchObject({ name: 'Write', status: 'denied' })
     const [approval] = ofKind(items, 'approval')
     expect(approval?.resolution).toBe('denied')
+    expect(ofKind(items, 'tool').map((tool) => tool.name)).toEqual(['Write'])
     const [question] = ofKind(items, 'question')
     expect(question?.questions[0]).toMatchObject({ question: 'Which beverage do you prefer?', multiSelect: false })
     expect(question?.questions[0]?.options.map((option) => option.label)).toEqual(['Tea', 'Coffee'])
