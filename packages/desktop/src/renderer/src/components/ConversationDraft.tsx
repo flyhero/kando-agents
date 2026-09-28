@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ConversationMode } from '@kando/protocol'
+import { useEffect, useState } from 'react'
+import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog, type ConversationMode } from '@kando/protocol'
 import { closeConversationDraft, perform, selectConversation, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
 import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
-import { modeLabel, START_MODES } from './ChatOptionsBar'
+import { effortLabel, modeLabel, START_MODES } from './ChatOptionsBar'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
 
@@ -24,14 +24,39 @@ export function ConversationDraft() {
   const [busy, setBusy] = useState(false)
   // Kept per agent, so switching back finds the mode picked for it.
   const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: START_MODES.claude[0]!, codex: START_MODES.codex[0]! })
+  // A model or effort left unpicked is the agent's own default, which the start does not pass.
+  const [picks, setPicks] = useState<Record<AgentKind, { model?: string; effort?: string }>>({ claude: {}, codex: {} })
+  // Each agent's models, asked for once it is picked; absent while asking, null when core cannot say.
+  const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
+  const rpc = useCore((s) => s.rpc)
   const optionsSupported = useChatOptionsSupported()
   const allowBypass = usePreferences((s) => s.allowBypass)
   const canSend = agent !== null && !busy && text.trim() !== ''
 
+  useEffect(() => {
+    if (!agent || !rpc || !optionsSupported || agent in catalogs) return
+    let current = true
+    const settle = (catalog: ChatCatalog | null) => current && setCatalogs((known) => ({ ...known, [agent]: catalog }))
+    // Not through perform: an older core without the method just offers no models.
+    rpc.call('conversations.chatCatalog', { agent }).then(settle, () => settle(null))
+    return () => { current = false }
+  }, [agent, rpc, optionsSupported, catalogs])
+
+  const catalog = agent ? catalogs[agent] : null
+  const pick = agent ? picks[agent] : {}
+  const modelId = pick.model ?? catalog?.models.find((each) => each.isDefault)?.id ?? null
+  const efforts = catalog?.models.find((each) => each.id === modelId)?.efforts ?? []
+  const effort = pick.effort && efforts.includes(pick.effort) ? pick.effort : null
+  const choose = (next: { model?: string; effort?: string }) => {
+    if (agent) setPicks({ ...picks, [agent]: next })
+  }
+
   const create = (mode: ConversationMode) => {
     if (!agent) return Promise.resolve(null)
-    const permissionMode = mode === 'chat' && optionsSupported ? { permissionMode: modes[agent] } : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(mode), ...permissionMode }))
+    const chosen = mode === 'chat' && optionsSupported
+      ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
+      : {}
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(mode), ...chosen }))
   }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
@@ -138,6 +163,37 @@ export function ConversationDraft() {
                     <option key={mode} value={mode}>{modeLabel(agent, mode)}</option>
                   ))}
                 </select>
+                <span className="chat-dock-spacer" />
+                {catalog === undefined && <span className="chat-options-note muted">正在读取模型…</span>}
+                {catalog && (
+                  <select
+                    className="chat-select"
+                    aria-label="模型"
+                    title={catalog.models.find((each) => each.id === modelId)?.description ?? undefined}
+                    disabled={busy}
+                    value={modelId ?? ''}
+                    onChange={(event) => {
+                      const next = catalog.models.find((each) => each.id === event.target.value)
+                      // An effort the new model does not take goes with the old one.
+                      if (next) choose({ model: next.id, effort: pick.effort && next.efforts.includes(pick.effort) ? pick.effort : undefined })
+                    }}
+                  >
+                    {!modelId && <option value="" disabled>默认模型</option>}
+                    {catalog.models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
+                  </select>
+                )}
+                {efforts.length > 0 && (
+                  <select
+                    className="chat-select"
+                    aria-label="推理强度"
+                    disabled={busy}
+                    value={effort ?? ''}
+                    onChange={(event) => choose({ ...pick, effort: event.target.value })}
+                  >
+                    {!effort && <option value="" disabled>默认强度</option>}
+                    {efforts.map((each) => <option key={each} value={each}>{effortLabel(each)}</option>)}
+                  </select>
+                )}
               </div>
             )}
           </div>

@@ -50,6 +50,10 @@ export const ChatModel = z.object({
 })
 export type ChatModel = z.infer<typeof ChatModel>
 
+// What an agent offers a chat before one starts: the models it lists, its default among them.
+export const ChatCatalog = z.object({ models: z.array(ChatModel) })
+export type ChatCatalog = z.infer<typeof ChatCatalog>
+
 // How much of the model's context the conversation fills, in tokens; window is null until known.
 export const ChatContextUse = z.object({ used: z.number(), window: z.number().nullable() })
 export type ChatContextUse = z.infer<typeof ChatContextUse>

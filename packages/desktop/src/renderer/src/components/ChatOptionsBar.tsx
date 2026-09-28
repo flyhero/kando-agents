@@ -31,6 +31,10 @@ const EFFORT_LABEL: Record<string, string> = {
   ultra: '超高'
 }
 
+export function effortLabel(effort: string): string {
+  return EFFORT_LABEL[effort] ?? effort
+}
+
 function tokens(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
   return count >= 1000 ? `${Math.round(count / 1000)}k` : String(count)
@@ -131,7 +135,7 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
           onChange={(event) => set('effort', event.target.value)}
         >
           {!effort && <option value="" disabled>默认强度</option>}
-          {efforts.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>)}
+          {efforts.map((effort) => <option key={effort} value={effort}>{effortLabel(effort)}</option>)}
         </select>
       )}
       {state.context && <ContextRing context={state.context} />}

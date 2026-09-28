@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { ChatAnswer, StageMessage } from './chat-driver'
-import { ChatHost, type ChatStage } from './chat-host'
+import { catalogOf, probeChatCatalog } from './chat-catalog'
+import { ChatHost, createDriver, type ChatStage } from './chat-host'
 import { ChatLog } from './chat-log'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
@@ -46,6 +47,7 @@ function settles(promise: Promise<void>, ms: number): Promise<boolean> {
 
 export class ConversationService {
   private readonly launching = new Set<string>()
+  private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
   private readonly transcript: TerminalTranscript
   private readonly chats: ChatHost
   // Sessions being stopped on purpose: their exit reads as a stop, not a crash.
@@ -64,6 +66,7 @@ export class ConversationService {
     this.chats = new ChatHost(daemon, sessionsRoot, {
       items: (conversationId, items) => {
         this.rememberMode(conversationId, items)
+        this.rememberCatalog(conversationId, items)
         this.emit({ type: 'chatItems', conversationId, items })
       },
       delta: (conversationId, stageId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, stageId, itemId, append }),
@@ -100,11 +103,24 @@ export class ConversationService {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
 
-  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui', allowBypass?: boolean, permissionMode?: string): Promise<Conversation> {
+  async create(
+    agent: AgentKind,
+    projectPaths: readonly string[],
+    mode: ConversationMode = 'tui',
+    allowBypass?: boolean,
+    start: { permissionMode?: string; model?: string; effort?: string } = {}
+  ): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
+    const { permissionMode, model, effort } = start
     // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
     if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : CODEX_MODES))) {
       throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
+    }
+    if (model || effort) {
+      const models = (await this.chatCatalog(agent))?.models ?? []
+      const picked = models.find((each) => each.id === (model ?? models.find((one) => one.isDefault)?.id))
+      if (model && !picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${model}`)
+      if (effort && !picked?.efforts.includes(effort)) throw new Rejection('chat-option-invalid', `the model takes no effort ${effort}`)
     }
     const projects: string[] = []
     const picked: string[] = []
@@ -134,6 +150,7 @@ export class ConversationService {
     const created = this.store.create(agent, workspace, projects, id, starts)
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (permissionMode) this.store.setChatOptions(id, { permissionMode })
+    if (model || effort) this.store.setChatOptions(id, { [agent]: { model, effort } })
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)
@@ -324,6 +341,38 @@ export class ConversationService {
       this.store.setChatOptions(id, { [agent]: { ...current, effort: value } })
     }
     this.changed(conversation)
+  }
+
+  // What a new chat can pick from before its agent starts: the models the agent listed last,
+  // kept as each chat stage reports them, read back from the newest stage after a restart, and
+  // asked of the CLI only when it never ran a chat.
+  chatCatalog(agent: AgentKind): Promise<ChatCatalog | null> {
+    const known = this.catalogs.get(agent)
+    if (known) return known
+    const found = this.catalogFromStages(agent)
+    const catalog = found ? Promise.resolve(found) : probeChatCatalog(
+      createDriver({ conversationId: '', stageId: 'catalog', agent, options: { cwd: this.sessionsRoot, extraDirs: [], resume: null } }),
+      chatCommand(agent, null, false, null),
+      this.sessionsRoot
+    )
+    this.catalogs.set(agent, catalog)
+    // A probe that failed is tried again next time rather than remembered.
+    void catalog.then((result) => {
+      if (!result && this.catalogs.get(agent) === catalog) this.catalogs.delete(agent)
+    })
+    return catalog
+  }
+
+  private catalogFromStages(agent: AgentKind): ChatCatalog | null {
+    const stage = this.store.latestChatStage(agent)
+    const conversation = stage ? this.store.get(stage.conversationId) : null
+    return stage && conversation ? catalogOf(this.chats.items(this.chatStage(this.withChat(conversation), stage))) : null
+  }
+
+  private rememberCatalog(conversationId: string, items: readonly ChatItem[]): void {
+    const catalog = catalogOf(items)
+    const agent = this.store.get(conversationId)?.agent
+    if (catalog && agent) this.catalogs.set(agent, Promise.resolve(catalog))
   }
 
   // An idle chat agent goes after a while, so the ones open all day do not pile up; the next

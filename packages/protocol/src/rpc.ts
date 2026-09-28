@@ -4,7 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
-import { ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
+import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 
@@ -91,10 +91,21 @@ export const rpcMethods = {
   'conversations.get': { params: ConversationRef, result: Conversation },
   // mode defaults to tui, which is all an older core knows; check CORE_FEATURES before asking for chat.
   'conversations.create': {
-    // permissionMode: the mode a chat-mode start begins in, one the agent has.
-    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional(), allowBypass: AllowBypass, permissionMode: ChatPermissionMode.optional() }),
+    // permissionMode, model and effort: what a chat-mode start begins with, from what the agent has.
+    params: z.object({
+      agent: AgentKind,
+      projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS),
+      mode: ConversationMode.optional(),
+      allowBypass: AllowBypass,
+      permissionMode: ChatPermissionMode.optional(),
+      model: z.string().trim().min(1).max(200).optional(),
+      effort: z.string().trim().min(1).max(200).optional()
+    }),
     result: Conversation
   },
+  // What the agent offers a new chat: the models its latest chat stage listed, or, when it never
+  // ran one, what it lists when asked. null when it cannot be asked.
+  'conversations.chatCatalog': { params: z.object({ agent: AgentKind }), result: ChatCatalog.nullable() },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
   'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional(), allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {

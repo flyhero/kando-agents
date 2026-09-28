@@ -130,6 +130,12 @@ export class ConversationStore {
     return row ? ConversationStage.parse(row) : null
   }
 
+  // The agent's newest chat stage in any conversation.
+  latestChatStage(agent: AgentKind): ConversationStage | null {
+    const row = this.db.prepare(`${STAGE_SELECT} WHERE agent = ? AND mode = 'chat' ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(agent)
+    return row ? ConversationStage.parse(row) : null
+  }
+
   stage(id: string): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE id = ?`).get(id)
     return row ? ConversationStage.parse(row) : null

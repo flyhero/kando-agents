@@ -3900,3 +3900,4 @@ button.task-tag-updated:hover {
 .chat-draft-projects { flex-wrap: wrap; font-size: 12px; }
 /* Opens into the page: below it is only the input and the window's edge. */
 .chat-draft-projects .menu { top: auto; bottom: calc(100% + 4px); }
+.chat-options-note { font-size: 12px; }

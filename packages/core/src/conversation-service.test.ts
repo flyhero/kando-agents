@@ -415,11 +415,27 @@ describe('ConversationService in chat mode', () => {
   })
 
   it('starts a new chat in the permission mode picked for it, one the agent has', async () => {
-    const created = await service.create('claude', [], 'chat', false, 'plan')
+    const created = await service.create('claude', [], 'chat', false, { permissionMode: 'plan' })
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan']))
     expect(service.get(created.id).chatOptions?.permissionMode).toBe('plan')
-    await expect(service.create('claude', [], 'chat', false, 'readOnly')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    await expect(service.create('claude', [], 'chat', false, { permissionMode: 'readOnly' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
     expect(service.list()).toHaveLength(1)
+  })
+
+  it('offers a new chat the models the agent listed last, after a restart too, and starts with one picked', async () => {
+    const created = await service.create('claude', [], 'chat')
+    const ids = async () => (await service.chatCatalog('claude'))?.models.map((model) => model.id)
+    expect(await ids()).toEqual(['sonnet', 'haiku'])
+    await service.stop(created.id)
+    service = serve()
+    expect(await ids()).toEqual(['sonnet', 'haiku'])
+    await service.create('claude', [], 'chat', false, { model: 'haiku' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--model', 'haiku']))
+    // An effort alone goes with the default model, Sonnet here.
+    await service.create('claude', [], 'chat', false, { effort: 'high' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--effort', 'high']))
+    await expect(service.create('claude', [], 'chat', false, { model: 'opus' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    await expect(service.create('claude', [], 'chat', false, { model: 'haiku', effort: 'low' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
   })
 
   it('takes options for the next start while no agent runs, from what the last stage offered', async () => {
