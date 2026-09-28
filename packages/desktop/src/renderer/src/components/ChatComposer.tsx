@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ChatItem, Conversation } from '@kando/protocol'
 import { perform, useChatOptionsSupported } from '../core-store'
+import { AGENT_LABEL } from '../labels'
 import { continueConversation } from './ConversationActions'
 import { EnterIcon, StopIcon } from './icons'
 
@@ -22,7 +23,8 @@ function QueuedMessage({ queued, onEdit, onSend, onCancel }: { queued: Queued; o
 }
 
 // Enter sends when the agent is idle; while it works, Enter queues the message for when the turn
-// ends (a second one joins the first). The corner button sends, or stops the turn.
+// ends (a second one joins the first). A stopped conversation continues in chat mode first, since
+// typing here is continuing it. The corner button sends, or stops the turn.
 export function ChatComposer({ conversation, queued }: { conversation: Conversation; queued: Queued | null }) {
   const { id } = conversation
   const [text, setText] = useState('')
@@ -33,12 +35,16 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
   const working = running && (turn === 'running' || turn === 'awaiting')
   // An older core takes a message only between turns.
   const queueable = useChatOptionsSupported() && working
-  const canSend = (idle || queueable) && !busy && text.trim() !== ''
+  const stopped = !running
+  const starting = stopped && busy
+  const canSend = (idle || queueable || stopped) && !busy && text.trim() !== ''
   const send = async () => {
     if (!canSend) return
     setBusy(true)
-    const message = idle || !queued ? text.trim() : `${queued.text}\n\n${text.trim()}`
-    const sent = await perform((rpc) => rpc.call('conversations.send', { id, text: message, ...(queueable ? { queue: true } : {}) }))
+    const message = !queueable || !queued ? text.trim() : `${queued.text}\n\n${text.trim()}`
+    // Continuing resolves once the agent is ready; if it fails, the text stays to try again.
+    const ready = stopped ? await continueConversation(id, 'chat') : true
+    const sent = ready && await perform((rpc) => rpc.call('conversations.send', { id, text: message, ...(queueable ? { queue: true } : {}) }))
     setBusy(false)
     if (sent) setText('')
   }
@@ -49,14 +55,6 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
     if (await cancelQueued()) setText((current) => (current.trim() ? `${pulled}\n\n${current}` : pulled))
   }
   const interrupt = () => void perform((rpc) => rpc.call('conversations.interrupt', { id }))
-  if (!running) {
-    return (
-      <div className="chat-composer-stopped">
-        <span className="muted">agent 没有在运行</span>
-        <button type="button" className="button primary" onClick={() => void continueConversation(id, 'chat')}>以聊天界面继续</button>
-      </div>
-    )
-  }
   return (
     <>
     {queued && (
@@ -67,14 +65,16 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
         onCancel={() => void cancelQueued()}
       />
     )}
-    <div className="chat-input-card" data-working={working || undefined} data-awaiting={turn === 'awaiting' || undefined}>
+    <div className="chat-input-card" data-working={working || starting || undefined} data-awaiting={turn === 'awaiting' || undefined}>
       <textarea
         className="chat-input"
         rows={3}
         value={text}
         aria-label="给 agent 的消息"
+        readOnly={starting}
         placeholder={
-          idle ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
+          stopped ? `agent 已停止，发消息会接着这个会话重新启动 ${AGENT_LABEL[conversation.agent]}；Enter 发送，Shift+Enter 换行`
+            : idle ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送；Esc 中断`
             : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断'
         }
@@ -95,7 +95,7 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
           <StopIcon />
         </button>
       ) : (
-        <button type="button" className="chat-input-button" aria-label="发送（Enter）" data-tooltip="发送（Enter）" disabled={!canSend} onClick={() => void send()}>
+        <button type="button" className="chat-input-button" aria-label="发送（Enter）" data-tooltip={starting ? '正在启动 agent…' : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
           <EnterIcon />
         </button>
       )}

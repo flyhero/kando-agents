@@ -3759,12 +3759,6 @@ button.task-tag-updated:hover {
 .chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
 .chat-input-button[data-stop] { background: var(--text); color: var(--surface); }
 
-.chat-composer-stopped {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
 
 /* Below the input: plain text that reads as a setting until hovered, like the agents' own CLIs. */
 .chat-options {
