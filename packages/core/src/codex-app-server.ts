@@ -144,6 +144,7 @@ export const CODEX_MODES: Record<string, { approvalPolicy: string; sandbox: Sand
   plan: { approvalPolicy: 'on-request', sandbox: 'read-only' }
 }
 const PLAN_MODE = 'plan'
+const PLAN_SAVED = '计划已保存到任务里，等它依赖的任务完成后再执行。现在不要实现，也不要再修改计划，回复一句确认即可。'
 
 // The protocol spells a sandbox in kebab case on a thread and as a tagged object in a policy.
 function sandboxName(type: string | undefined): Sandbox | null {
@@ -266,7 +267,8 @@ export class CodexAppServer implements ChatDriver {
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
     this.state = new StageState(this.items)
-    this.chosen = { ...options.preferred }
+    // A stage that only plans runs every turn in plan mode, whatever was remembered.
+    this.chosen = { ...options.preferred, ...(options.planOnly ? { permissionMode: PLAN_MODE } : {}) }
   }
 
   apply(record: ChatRecord): void {
@@ -382,10 +384,13 @@ export class CodexAppServer implements ChatDriver {
     if (pending.kind === 'plan') {
       if (!this.threadId || this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
       // Carrying the plan out is the next turn, out of plan mode, in the mode picked for it; sending
-      // it back is one more plan-mode turn with the user's note.
+      // it back is one more plan-mode turn with the user's note, and so is keeping it for later.
+      if (answer.saved) return [this.turnStart(this.threadId, PLAN_SAVED, PLAN_MODE)]
       if (answer.decision === 'deny') {
         return [this.turnStart(this.threadId, answer.message ? `继续规划：${answer.message}` : '继续规划：请完善这个计划后再给我。', PLAN_MODE)]
       }
+      // Its checkout stays read-only however the plan is answered.
+      if (this.options.planOnly) throw new Rejection('plan-only', 'this stage may only plan')
       return [this.turnStart(this.threadId, '按这个计划开始执行。', answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')]
     }
     return [{ id: pending.rawId, result: this.answerBody(pending, answer) }]
@@ -477,7 +482,7 @@ export class CodexAppServer implements ChatDriver {
       // A thread on its model's default effort reports none.
       effort: this.effort ?? current?.defaultReasoningEffort ?? null,
       permissionMode: this.planning ? PLAN_MODE : codexMode(this.approvalPolicy, this.sandbox),
-      permissionModes: ['ask', 'acceptEdits', PLAN_MODE, 'readOnly', ...(this.options.allowBypass ? ['bypass'] : [])]
+      permissionModes: this.options.planOnly ? [PLAN_MODE] : ['ask', 'acceptEdits', PLAN_MODE, 'readOnly', ...(this.options.allowBypass ? ['bypass'] : [])]
     })
   }
 

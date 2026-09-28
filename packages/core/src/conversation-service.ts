@@ -248,7 +248,11 @@ export class ConversationService {
     const { id } = current
     const { agent } = stage
     const { options } = this.chatStage(current, stage)
-    const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, current.projectPaths.slice(1), options)
+    const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, options.extraDirs, {
+      preferred: options.preferred,
+      allowBypass: options.allowBypass,
+      planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined
+    })
     let sessionId: string
     try {
       ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
@@ -296,7 +300,9 @@ export class ConversationService {
         cwd: conversation.workspacePath,
         extraDirs: conversation.projectPaths.slice(1),
         resume: stage.providerSessionId,
-        allowBypass: chosen.allowBypass ?? false,
+        // Read off the stage, so a stage taken back after a restart still only plans.
+        planOnly: stage.planOnly ?? false,
+        allowBypass: !stage.planOnly && (chosen.allowBypass ?? false),
         preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] }
       }
     }

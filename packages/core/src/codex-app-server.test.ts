@@ -198,6 +198,25 @@ describe('CodexAppServer commands', () => {
   }
   const modeOf = (driver: CodexAppServer) => ofKind(driver.items.list(), 'state')[0]?.permissionMode
 
+  it('keeps a stage that may only plan in plan mode and read-only, and keeps its plan when asked', () => {
+    const driver = new CodexAppServer('stage-1', { ...OPTIONS, planOnly: true, allowBypass: true, preferred: { permissionMode: 'acceptEdits' } })
+    const { open } = handshake(driver, 'thread-1', { model: 'gpt-x' })
+    expect(open).toMatchObject({ params: { approvalPolicy: 'on-request', sandbox: 'read-only' } })
+    expect(ofKind(driver.items.list(), 'state')[0]).toMatchObject({ permissionMode: 'plan', permissionModes: ['plan'] })
+    expect(() => driver.setOption('permissionMode', 'acceptEdits')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    const turn = driver.send('Plan a README').wire
+    expect(turn).toMatchObject({ params: { sandboxPolicy: { type: 'readOnly' }, collaborationMode: { mode: 'plan' } } })
+    driver.apply({ dir: 'out', at, frame: turn, ref: 'ref-1' })
+    driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: { type: 'plan', id: 'p1', text: '1. Write README.md' } } } })
+    driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed', error: null } } } })
+    expect(() => driver.respond('plan:p1', { decision: 'allowForSession' })).toThrow(expect.objectContaining({ reason: 'plan-only' }))
+    const [kept] = driver.respond('plan:p1', { decision: 'deny', saved: true })
+    expect(kept).toMatchObject({ params: { input: [{ text: expect.stringContaining('计划已保存') }], sandboxPolicy: { type: 'readOnly' }, collaborationMode: { mode: 'plan' } } })
+    driver.apply({ dir: 'out', at, frame: kept, ref: 'ref-2' })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: 'denied' })
+    expect(modeOf(driver)).toBe('plan')
+  })
+
   it('takes the model config.toml names as the default, keeping only that of the config', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)

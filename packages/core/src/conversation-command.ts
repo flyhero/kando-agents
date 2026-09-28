@@ -1,5 +1,5 @@
 import type { AgentKind } from '@kando/protocol'
-import { claudeHookArgs, codexNotifyArgs, type AgentCommand } from './agent-command'
+import { claudeEditDenials, claudeHookArgs, claudeReadRules, codexNotifyArgs, GIT_READ_TOOLS, type AgentCommand } from './agent-command'
 import type { ChatPreferences } from './chat-driver'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 
@@ -25,14 +25,30 @@ export function chatCommand(
   resume: boolean,
   handoffPath: string | null,
   extraProjects: readonly string[] = [],
-  launch: { preferred?: ChatPreferences; allowBypass?: boolean } = {}
+  launch: {
+    preferred?: ChatPreferences
+    allowBypass?: boolean
+    // Plans only, read-only in these folders: plan mode, their files never editable, no bypass.
+    planOnly?: { dirs: readonly string[] }
+    // Files the agent may read without asking, such as a task's images.
+    readable?: readonly string[]
+  } = {}
 ): AgentCommand {
   if (agent === 'claude') {
-    const { preferred = {}, allowBypass = false } = launch
+    const { preferred = {}, planOnly, readable = [] } = launch
+    const allowBypass = (launch.allowBypass ?? false) && !planOnly
     // A remembered bypass needs the user's say-so for this start too. Asking goes by manual on
     // the command line, and is passed too, so Claude Code's own default mode cannot override it.
-    const allowed = preferred.permissionMode && (preferred.permissionMode !== 'bypass' || allowBypass) ? preferred.permissionMode : undefined
+    const chosen = preferred.permissionMode && (preferred.permissionMode !== 'bypass' || allowBypass) ? preferred.permissionMode : undefined
+    const allowed = planOnly ? 'plan' : chosen
     const wanted = allowed === 'ask' ? 'manual' : allowed ? CLAUDE_MODE_NAMES[allowed] : undefined
+    const reads = [
+      ...(handoffPath ? [`Read(/${handoffPath})`] : []),
+      ...claudeReadRules(readable),
+      // Planning around what dependencies left on their branches means reading git history.
+      ...(planOnly ? GIT_READ_TOOLS : [])
+    ]
+    const denials = planOnly ? claudeEditDenials(planOnly.dirs) : []
     return { command: 'claude', args: [
       '-p', '--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json',
       '--include-partial-messages', '--permission-prompt-tool', 'stdio',
@@ -43,7 +59,8 @@ export function chatCommand(
       ...(preferred.effort ? ['--effort', preferred.effort] : []),
       ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
       ...extraProjects.flatMap((project) => ['--add-dir', project]),
-      ...(handoffPath ? ['--allowedTools', `Read(/${handoffPath})`] : [])
+      ...(denials.length ? ['--disallowedTools', denials.join(',')] : []),
+      ...(reads.length ? ['--allowedTools', reads.join(',')] : [])
     ] }
   }
   // app-server takes the thread, sandbox and extra roots over the protocol instead.

@@ -19,6 +19,8 @@ const MAX_PATCH = 50_000
 // The API's limit for one image; the store takes twice that.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 // Calls that are Claude Code's own machinery, or that another item already shows: no tool card.
+// A plan kept for later: the tasks it builds on are unfinished, so it is not to be carried out now.
+const PLAN_SAVED = 'The plan is saved to the task for later: the tasks it builds on are not done yet. Do not implement it or revise it now. Reply with one short line and end your turn.'
 const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion', 'ToolSearch', ...CLAUDE_TASK_TOOLS])
 const FILE_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'MultiEdit'])
 // Plan mode drafts its plan in a file of its own (~/.claude/plans/<name>.md) before proposing it.
@@ -519,7 +521,7 @@ export class ClaudeStream implements ChatDriver {
       model: current?.value ?? this.reportedModel,
       effort: this.effort,
       permissionMode: this.permissionMode,
-      permissionModes: [
+      permissionModes: this.options.planOnly ? ['plan'] : [
         'ask',
         'acceptEdits',
         'plan',
@@ -551,9 +553,12 @@ export class ClaudeStream implements ChatDriver {
       return { behavior: 'allow', updatedInput: { ...pending.input, answers } }
     }
     if (pending.tool === 'ExitPlanMode') {
+      if (answer.saved) return { behavior: 'deny', message: PLAN_SAVED }
       if (answer.decision === 'deny') {
         return { behavior: 'deny', message: answer.message ? `Keep planning. ${answer.message}` : 'Keep planning: revise the plan and present it again.' }
       }
+      // Its checkout stays read-only however the plan is answered.
+      if (this.options.planOnly) throw new Rejection('plan-only', 'this stage may only plan')
       const mode = answer.decision === 'allowForSession' ? 'acceptEdits' : 'default'
       return { behavior: 'allow', updatedInput: pending.input, updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] }
     }

@@ -12,10 +12,22 @@ const usable = (paths: readonly string[]) => paths.filter((file) => !file.includ
 
 // Claude may read exactly these files without asking; nothing else in the attachment folder.
 // `//` starts an absolute path in Claude's permission rules.
-function claudeImageRules(images: CommandImages): string[] {
-  return usable(images.all)
+export function claudeReadRules(files: readonly string[]): string[] {
+  return usable(files)
     .filter((file) => file.startsWith('/'))
     .map((file) => `Read(/${file})`)
+}
+
+function claudeImageRules(images: CommandImages): string[] {
+  return claudeReadRules(images.all)
+}
+
+// Claude may edit nothing under these folders, whatever mode it is switched to. Its plan drafts go
+// to ~/.claude/plans instead, so plan mode still works; an Edit rule covers every editing tool.
+export function claudeEditDenials(dirs: readonly string[]): string[] {
+  return usable(dirs)
+    .filter((dir) => dir.startsWith('/'))
+    .map((dir) => `Edit(/${dir}/**)`)
 }
 
 // Only the user's images go into Codex's first message: an issue's images would land there as
@@ -69,7 +81,7 @@ export function agentCommand(
 }
 
 // Read-only git lets the agent look at a dependency's branch without a prompt.
-const GIT_READ_TOOLS = ['Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git show:*)']
+export const GIT_READ_TOOLS = ['Bash(git log:*)', 'Bash(git diff:*)', 'Bash(git show:*)']
 // Plan mode alone gives way once the user approves a plan; with the file tools denied,
 // refining cannot write to the user's own checkout even then.
 const CLAUDE_WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']

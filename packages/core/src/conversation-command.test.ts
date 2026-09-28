@@ -39,4 +39,18 @@ describe('chatCommand', () => {
     expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'ask' } }).args).toEqual(expect.arrayContaining(['--permission-mode', 'manual']))
     expect(chatCommand('claude', 's', false, null, []).args).not.toContain('--permission-mode')
   })
+
+  it('starts a Claude stage that may only plan in plan mode, its folders not editable and no bypass', () => {
+    const args = chatCommand('claude', 's', false, null, ['/code/web'], {
+      preferred: { permissionMode: 'acceptEdits' },
+      allowBypass: true,
+      planOnly: { dirs: ['/code/app', '/code/web'] },
+      readable: ['/kando/attachments/a.png']
+    }).args
+    expect(args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--disallowedTools', 'Edit(//code/app/**),Edit(//code/web/**)']))
+    expect(args).not.toContain('--allow-dangerously-skip-permissions')
+    // One list of what it may read: its images and git history.
+    expect(args.filter((arg) => arg === '--allowedTools')).toHaveLength(1)
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('Read(//kando/attachments/a.png),Bash(git log:*),Bash(git diff:*),Bash(git show:*)')
+  })
 })

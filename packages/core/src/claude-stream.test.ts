@@ -261,8 +261,8 @@ describe('ClaudeStream options', () => {
 
 describe('ClaudeStream commands', () => {
   const at = 1
-  const started = () => {
-    const driver = new ClaudeStream('stage-1', OPTIONS)
+  const started = (options = OPTIONS) => {
+    const driver = new ClaudeStream('stage-1', options)
     const [init] = driver.due()
     driver.apply({ dir: 'out', at, frame: init })
     driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } } })
@@ -313,6 +313,21 @@ describe('ClaudeStream commands', () => {
     expect(driver.activity()).toBe('running')
     expect(driver.items.get('a:req-1')).toMatchObject({ resolution: 'allowedForSession' })
     expect(() => driver.respond('req-1', { decision: 'deny' })).toThrow(expect.objectContaining({ reason: 'chat-request-gone' }))
+  })
+
+  it('keeps a stage that may only plan from carrying its plan out, and keeps the plan when asked', () => {
+    const driver = started({ ...OPTIONS, planOnly: true, allowBypass: true })
+    expect(ofKind(driver.items.list(), 'state')[0]?.permissionModes).toEqual(['plan'])
+    expect(() => driver.setOption('permissionMode', 'acceptEdits')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    driver.apply({ dir: 'out', at, frame: driver.send('plan it').wire, ref: 'ref-1' })
+    const plan = { type: 'control_request', request_id: 'req-p', request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: 'toolu_p' } }
+    driver.apply({ dir: 'in', at, frame: plan })
+    expect(() => driver.respond('req-p', { decision: 'allowForSession' })).toThrow(expect.objectContaining({ reason: 'plan-only' }))
+    expect(() => driver.respond('req-p', { decision: 'allow' })).toThrow(expect.objectContaining({ reason: 'plan-only' }))
+    const [kept] = driver.respond('req-p', { decision: 'deny', saved: true })
+    expect(kept).toMatchObject({ response: { response: { behavior: 'deny', message: expect.stringContaining('saved to the task') } } })
+    driver.apply({ dir: 'out', at, frame: kept })
+    expect(driver.items.get('a:req-p')).toMatchObject({ resolution: 'denied' })
   })
 
   it('interrupts by denying what waits and asking the agent to stop', () => {

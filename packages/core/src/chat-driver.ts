@@ -34,7 +34,8 @@ export type ChatImageFile = ChatImage & AttachmentFile
 // an image's bytes, which the log leaves out for the record's images.
 export type ChatOutgoing = { wire: unknown; logged: unknown }
 
-export type ChatAnswer = { decision: ChatDecision; message?: string; answers?: Record<string, string[]> }
+// saved: a plan kept for later rather than carried out. Core's own answer, never a client's.
+export type ChatAnswer = { decision: ChatDecision; message?: string; answers?: Record<string, string[]>; saved?: boolean }
 
 // Where and how a chat stage's agent works; the driver speaks for Kando within these bounds.
 export type ChatStageOptions = {
@@ -47,6 +48,9 @@ export type ChatStageOptions = {
   allowBypass?: boolean
   // What the conversation last chose, for a stage that starts with it.
   preferred?: ChatPreferences
+  // The stage may only plan: read-only in its folders, and its plan kept rather than carried out,
+  // whatever the agent or a client asks.
+  planOnly?: boolean
 }
 
 export type ChatPreferences = { permissionMode?: string; model?: string; effort?: string }
