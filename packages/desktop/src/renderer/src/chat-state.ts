@@ -9,15 +9,22 @@ export type ChatPage = { items: ChatItem[]; before: string | null }
 // Only conversations a view is watching are here; core sends updates for those alone.
 export const useChat = create<Record<string, ChatPage>>()(() => ({}))
 
-// A plan Claude proposed from plan mode is the approval of its ExitPlanMode call.
+// A plan from plan mode waits as an approval: Claude's ExitPlanMode call, or the plan a Codex
+// plan-mode turn ended with.
 export type PlanItem = Extract<ChatItem, { kind: 'approval' }>
 const NO_PLANS: PlanItem[] = []
+const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])
+
+// A plain check rather than a type guard: a plan has the approval type of any other approval.
+export function isPlan(item: ChatItem): boolean {
+  return item.kind === 'approval' && PLAN_TOOLS.has(item.tool)
+}
 
 // The conversation's plans, oldest first, while a view watches it.
 export function usePlans(conversationId: string): PlanItem[] {
   const items = useChat((s) => s[conversationId]?.items)
   return useMemo(
-    () => items?.filter((item): item is PlanItem => item.kind === 'approval' && item.tool === 'ExitPlanMode') ?? NO_PLANS,
+    () => items?.filter((item): item is PlanItem => item.kind === 'approval' && isPlan(item)) ?? NO_PLANS,
     [items]
   )
 }

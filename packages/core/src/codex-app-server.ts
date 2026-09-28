@@ -57,12 +57,15 @@ const TurnEvent = z.looseObject({
 const ThreadEvent = z.looseObject({ thread: z.looseObject({ id: z.string() }) })
 const SandboxShape = z.looseObject({ type: z.string() })
 // What a thread was opened with, from the thread/start or thread/resume answer.
+// Codex's plan mode is a collaboration mode, set per turn beside the approval policy and sandbox.
+const Collaboration = z.looseObject({ mode: z.string() }).nullish().catch(undefined)
 const ThreadOpened = z.looseObject({
   thread: z.looseObject({ id: z.string() }),
   model: z.string().nullish(),
   reasoningEffort: z.string().nullish(),
   approvalPolicy: z.unknown().optional(),
-  sandbox: SandboxShape.optional().catch(undefined)
+  sandbox: SandboxShape.optional().catch(undefined),
+  collaborationMode: Collaboration
 })
 // What the thread runs with after a turn's overrides took effect.
 const SettingsUpdated = z.looseObject({
@@ -70,8 +73,14 @@ const SettingsUpdated = z.looseObject({
     approvalPolicy: z.unknown().optional(),
     sandboxPolicy: SandboxShape.optional().catch(undefined),
     model: z.string().nullish(),
-    effort: z.string().nullish()
+    effort: z.string().nullish(),
+    collaborationMode: Collaboration
   })
+})
+const TurnParams = z.looseObject({
+  approvalPolicy: z.unknown().optional(),
+  sandboxPolicy: SandboxShape.optional().catch(undefined),
+  collaborationMode: Collaboration
 })
 const TokenUsage = z.looseObject({
   tokenUsage: z.looseObject({ last: z.looseObject({ totalTokens: z.number() }), modelContextWindow: z.number().nullish() })
@@ -109,7 +118,8 @@ const Decision = z.looseObject({ decision: z.unknown().optional(), answers: z.re
 const Answers = z.looseObject({ answers: z.array(z.string()).catch([]) })
 
 type Pending = {
-  kind: 'approval' | 'question'
+  // A plan is Codex's last word on a plan-mode turn: it waits past the turn for the next one.
+  kind: 'approval' | 'question' | 'plan'
   itemId: string
   // The JSON-RPC id exactly as the server sent it, number or string.
   rawId: string | number
@@ -126,8 +136,12 @@ export const CODEX_MODES: Record<string, { approvalPolicy: string; sandbox: Sand
   ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
   acceptEdits: DEFAULT_MODE,
   readOnly: { approvalPolicy: 'on-request', sandbox: 'read-only' },
-  bypass: { approvalPolicy: 'never', sandbox: 'danger-full-access' }
+  bypass: { approvalPolicy: 'never', sandbox: 'danger-full-access' },
+  // Plan mode keeps Codex to reading, with the sandbox to back it up. Last, so the policy and
+  // sandbox alone read as readOnly (see codexMode).
+  plan: { approvalPolicy: 'on-request', sandbox: 'read-only' }
 }
+const PLAN_MODE = 'plan'
 
 // The protocol spells a sandbox in kebab case on a thread and as a tagged object in a policy.
 function sandboxName(type: string | undefined): Sandbox | null {
@@ -239,6 +253,8 @@ export class CodexAppServer implements ChatDriver {
   private effort: string | null = null
   private approvalPolicy: unknown = null
   private sandbox: Sandbox | null = null
+  // Whether the thread runs in Codex's plan mode, as the last turn set it or the thread reports.
+  private planning = false
   // What the user chose, sent with every turn: Codex takes options per turn, not in between.
   private readonly chosen: ChatPreferences
 
@@ -304,7 +320,7 @@ export class CodexAppServer implements ChatDriver {
   }
 
   activity(): ChatTurnActivity {
-    if (!this.turn) return 'idle'
+    if (!this.turn) return [...this.pending.values()].some((pending) => pending.kind === 'plan') ? 'awaiting' : 'idle'
     return this.pending.size > 0 ? 'awaiting' : 'running'
   }
 
@@ -312,17 +328,18 @@ export class CodexAppServer implements ChatDriver {
     return this.threadId
   }
 
+  // A message while a plan waits carries on planning, in plan mode as before.
   send(text: string): unknown {
     if (!this.ready() || !this.threadId) throw new Rejection('chat-starting', 'the agent is still starting')
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
+    return this.turnStart(this.threadId, text, this.chosen.permissionMode)
+  }
+
+  private turnStart(threadId: string, text: string, permissionMode: string | undefined): unknown {
     return {
       id: `kando-turn-${this.turns + 1}`,
       method: 'turn/start',
-      params: {
-        threadId: this.threadId,
-        input: [{ type: 'text', text, text_elements: [] }],
-        ...this.turnOptions()
-      }
+      params: { threadId, input: [{ type: 'text', text, text_elements: [] }], ...this.turnOptions(permissionMode) }
     }
   }
 
@@ -350,13 +367,22 @@ export class CodexAppServer implements ChatDriver {
   respond(requestId: string, answer: ChatAnswer): unknown[] {
     const pending = this.pending.get(requestId)
     if (!pending) throw new Rejection('chat-request-gone', 'this request is no longer waiting for an answer')
+    if (pending.kind === 'plan') {
+      if (!this.threadId || this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
+      // Carrying the plan out is the next turn, out of plan mode, in the mode picked for it; sending
+      // it back is one more plan-mode turn with the user's note.
+      if (answer.decision === 'deny') {
+        return [this.turnStart(this.threadId, answer.message ? `继续规划：${answer.message}` : '继续规划：请完善这个计划后再给我。', PLAN_MODE)]
+      }
+      return [this.turnStart(this.threadId, '按这个计划开始执行。', answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')]
+    }
     return [{ id: pending.rawId, result: this.answerBody(pending, answer) }]
   }
 
   interrupt(): unknown[] {
     if (!this.turn || !this.threadId) throw new Rejection('chat-idle', 'no turn is running')
     if (!this.turn.turnId) throw new Rejection('chat-busy', 'the turn has not started yet')
-    const cancels = [...this.pending.values()].map((pending) => ({
+    const cancels = [...this.pending.values()].filter((pending) => pending.kind !== 'plan').map((pending) => ({
       id: pending.rawId,
       result: pending.kind === 'question' ? { answers: {} } : { decision: 'cancel' }
     }))
@@ -374,8 +400,9 @@ export class CodexAppServer implements ChatDriver {
     if (method === 'thread/settings/updated') {
       const update = SettingsUpdated.safeParse(parsed.data.params)
       if (!update.success) return null
-      const { approvalPolicy, sandboxPolicy, model, effort } = update.data.threadSettings
-      return { method, params: { threadSettings: { approvalPolicy, sandboxPolicy: sandboxPolicy ? { type: sandboxPolicy.type } : undefined, model, effort } } }
+      const { approvalPolicy, sandboxPolicy, model, effort, collaborationMode } = update.data.threadSettings
+      const collaboration = collaborationMode ? { mode: collaborationMode.mode } : undefined
+      return { method, params: { threadSettings: { approvalPolicy, sandboxPolicy: sandboxPolicy ? { type: sandboxPolicy.type } : undefined, model, effort, collaborationMode: collaboration } } }
     }
     if (method === 'thread/tokenUsage/updated') {
       const usage = TokenUsage.safeParse(parsed.data.params)
@@ -398,8 +425,9 @@ export class CodexAppServer implements ChatDriver {
     const method = this.requests.get(String(frame.id))
     const thread = ThreadOpened.safeParse(frame.result)
     if ((method === 'thread/start' || method === 'thread/resume') && thread.success) {
-      const { model, reasoningEffort, approvalPolicy, sandbox } = thread.data
-      return { id: frame.id, result: { thread: { id: thread.data.thread.id }, model, reasoningEffort, approvalPolicy, sandbox: sandbox ? { type: sandbox.type } : undefined } }
+      const { model, reasoningEffort, approvalPolicy, sandbox, collaborationMode } = thread.data
+      const collaboration = collaborationMode ? { mode: collaborationMode.mode } : undefined
+      return { id: frame.id, result: { thread: { id: thread.data.thread.id }, model, reasoningEffort, approvalPolicy, sandbox: sandbox ? { type: sandbox.type } : undefined, collaborationMode: collaboration } }
     }
     if (method === 'model/list') {
       const list = ModelList.safeParse(frame.result)
@@ -434,27 +462,34 @@ export class CodexAppServer implements ChatDriver {
       model: this.model,
       // A thread on its model's default effort reports none.
       effort: this.effort ?? current?.defaultReasoningEffort ?? null,
-      permissionMode: codexMode(this.approvalPolicy, this.sandbox),
-      permissionModes: ['ask', 'acceptEdits', 'readOnly', ...(this.options.allowBypass ? ['bypass'] : [])]
+      permissionMode: this.planning ? PLAN_MODE : codexMode(this.approvalPolicy, this.sandbox),
+      permissionModes: ['ask', 'acceptEdits', PLAN_MODE, 'readOnly', ...(this.options.allowBypass ? ['bypass'] : [])]
     })
   }
 
   // The mode a turn runs in: what the user chose, if this stage may run it, else the TUI's default.
   // It is always stated outright: left out, a thread takes whatever config.toml says.
-  private mode(): { approvalPolicy: string; sandbox: Sandbox } {
-    const chosen = this.chosen.permissionMode
+  private mode(chosen = this.chosen.permissionMode): { approvalPolicy: string; sandbox: Sandbox } {
     const allowed = chosen !== 'bypass' || this.options.allowBypass
     return (chosen && allowed ? CODEX_MODES[chosen] : undefined) ?? DEFAULT_MODE
   }
 
-  private turnOptions(): Record<string, unknown> {
-    const { approvalPolicy, sandbox } = this.mode()
+  private turnOptions(permissionMode = this.chosen.permissionMode): Record<string, unknown> {
+    const { approvalPolicy, sandbox } = this.mode(permissionMode)
+    const plan = permissionMode === PLAN_MODE
+    // Plan mode is set on each turn in it, and left once on the next turn out of it. Its settings
+    // name the model outright, which the mode then takes over the turn's own.
+    const model = this.chosen.model ?? this.model ?? this.catalog.find((entry) => entry.isDefault)?.id
+    const collaboration = (plan || this.planning) && model
+      ? { collaborationMode: { mode: plan ? PLAN_MODE : 'default', settings: { model, reasoning_effort: this.chosen.effort ?? this.effort ?? null, developer_instructions: null } } }
+      : {}
     return {
       approvalPolicy,
       // The conversation's other projects are writable too, as --add-dir makes them in the TUI.
       sandboxPolicy: sandboxPolicy(sandbox, this.options.extraDirs),
       ...(this.chosen.model ? { model: this.chosen.model } : {}),
-      ...(this.chosen.effort ? { effort: this.chosen.effort } : {})
+      ...(this.chosen.effort ? { effort: this.chosen.effort } : {}),
+      ...collaboration
     }
   }
 
@@ -463,11 +498,14 @@ export class CodexAppServer implements ChatDriver {
     this.chosen[option] = value
     if (option === 'model') this.model = value
     if (option === 'effort') this.effort = value
-    if (option === 'permissionMode') {
-      const { approvalPolicy, sandbox } = this.mode()
-      this.approvalPolicy = approvalPolicy
-      this.sandbox = sandbox
-    }
+    if (option === 'permissionMode') this.showMode(value)
+  }
+
+  private showMode(permissionMode: string): void {
+    const { approvalPolicy, sandbox } = this.mode(permissionMode)
+    this.approvalPolicy = approvalPolicy
+    this.sandbox = sandbox
+    this.planning = permissionMode === PLAN_MODE
   }
 
   private openThread(): unknown {
@@ -511,6 +549,8 @@ export class CodexAppServer implements ChatDriver {
         this.effort = thread.data.reasoningEffort ?? this.effort
         this.approvalPolicy = thread.data.approvalPolicy ?? this.approvalPolicy
         this.sandbox = sandboxName(thread.data.sandbox?.type) ?? this.sandbox
+        // A thread opened for a plan-mode start is not in plan mode until its first turn says so.
+        this.planning = thread.data.collaborationMode ? thread.data.collaborationMode.mode === PLAN_MODE : this.chosen.permissionMode === PLAN_MODE
       } else {
         this.startError = error ?? 'Codex did not open a thread'
       }
@@ -562,11 +602,12 @@ export class CodexAppServer implements ChatDriver {
       case 'thread/settings/updated': {
         const update = SettingsUpdated.safeParse(params)
         if (!update.success) return
-        const { approvalPolicy, sandboxPolicy, model, effort } = update.data.threadSettings
+        const { approvalPolicy, sandboxPolicy, model, effort, collaborationMode } = update.data.threadSettings
         if (approvalPolicy !== undefined) this.approvalPolicy = approvalPolicy
         this.sandbox = sandboxName(sandboxPolicy?.type) ?? this.sandbox
         if (model) this.model = model
         if (effort !== undefined) this.effort = effort
+        if (collaborationMode) this.planning = collaborationMode.mode === PLAN_MODE
         return
       }
       case 'thread/tokenUsage/updated': {
@@ -651,6 +692,23 @@ export class CodexAppServer implements ChatDriver {
           output: completed ? mcpOutput(item) : null,
           diffs: []
         }, at)
+        return
+      }
+      case 'plan': {
+        if (!completed || !item.text?.trim()) return
+        const requestId = `plan:${item.id}`
+        this.items.put({
+          id: `a:${requestId}`,
+          kind: 'approval',
+          requestId,
+          tool: PLAN_MODE,
+          title: '计划',
+          detail: item.text,
+          toolItemId: null,
+          decisions: ['allow', 'allowForSession', 'deny'],
+          resolution: null
+        }, at)
+        this.pending.set(requestId, { kind: 'plan', itemId: `a:${requestId}`, rawId: requestId, denial: 'decline' })
         return
       }
       case 'webSearch': {
@@ -751,6 +809,8 @@ export class CodexAppServer implements ChatDriver {
 
   private startTurn(frame: Frame, at: number, ref: string | undefined): void {
     this.turns++
+    const params = TurnParams.safeParse(frame.params)
+    if (params.success) this.turnMode(params.data, at)
     const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(frame.params)
     const text = input.success ? input.data.input.map((part) => part.text ?? '').join('\n') : ''
     const id = ref ?? `turn-${this.turns}`
@@ -758,6 +818,22 @@ export class CodexAppServer implements ChatDriver {
     this.queue.sent(ref)
     this.turn = { ref: id, turnId: null, assistant: null }
     this.messages.push({ role: 'user', text, eventKey: `chat:${id}:user`, complete: false })
+  }
+
+  // A turn answers a waiting plan by the mode it runs in: plan mode keeps planning, any other
+  // carries the plan out, and the conversation goes on in that mode. Read off the frame, so a
+  // stage rebuilt from its log comes out the same.
+  private turnMode(params: z.infer<typeof TurnParams>, at: number): void {
+    if (params.collaborationMode) this.planning = params.collaborationMode.mode === PLAN_MODE
+    const plans = [...this.pending].filter(([, pending]) => pending.kind === 'plan').map(([requestId]) => requestId)
+    if (plans.length === 0) return
+    const mode = this.planning ? PLAN_MODE : codexMode(params.approvalPolicy, sandboxName(params.sandboxPolicy?.type))
+    if (mode && mode in CODEX_MODES) {
+      this.chosen.permissionMode = mode
+      this.showMode(mode)
+    }
+    const resolution = this.planning ? 'denied' : mode === 'acceptEdits' ? 'allowedForSession' : 'allowed'
+    plans.forEach((requestId) => this.resolve(requestId, resolution, null, at))
   }
 
   private resolve(
@@ -789,7 +865,9 @@ export class CodexAppServer implements ChatDriver {
     for (const item of this.items.list()) {
       if (item.kind === 'assistant' && item.streaming) this.items.put({ ...item, streaming: false }, at)
     }
-    for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
+    for (const [requestId, pending] of [...this.pending]) {
+      if (pending.kind !== 'plan') this.resolve(requestId, 'cancelled', null, at)
+    }
     const turn = this.turn
     this.items.put({ id: turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`, kind: 'turn', state, error, durationMs }, at)
     if (turn?.assistant) {
@@ -801,6 +879,10 @@ export class CodexAppServer implements ChatDriver {
   private ended(stderr: string, at: number): void {
     if (this.exited) return
     if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
+    // A plan left waiting goes with the agent; the next stage starts from its own messages.
+    for (const [requestId, pending] of [...this.pending]) {
+      if (pending.kind === 'plan') this.resolve(requestId, 'cancelled', null, at)
+    }
     this.exited = true
     const tail = stderr.trim().split('\n').slice(-20).join('\n')
     if (this.threadId) return

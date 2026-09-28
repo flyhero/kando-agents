@@ -1,6 +1,6 @@
 import type { ChatItem, Conversation } from '@kando/protocol'
 import { showConversationChanges, useChatOptionsSupported } from '../core-store'
-import { itemKey } from '../chat-state'
+import { isPlan, itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
 import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChatPlanCard } from './ChatPlan'
@@ -61,7 +61,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
           {pending.map((item) =>
             item.kind === 'question'
               ? <ChatQuestionCard key={itemKey(item)} conversationId={conversation.id} item={item} />
-              : item.tool === 'ExitPlanMode'
+              : isPlan(item)
                 ? <ChatPlanCard key={itemKey(item)} conversationId={conversation.id} item={item} />
                 : <ChatApprovalCard key={itemKey(item)} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
           )}

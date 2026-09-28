@@ -92,7 +92,7 @@ describe('CodexAppServer state', () => {
 
   it('reports the mode, model, effort and context the thread runs with', () => {
     const state = stateOf(replay(records))
-    expect(state).toMatchObject({ permissionMode: 'ask', model: 'gpt-6-luna', effort: 'medium', permissionModes: ['ask', 'acceptEdits', 'readOnly'] })
+    expect(state).toMatchObject({ permissionMode: 'ask', model: 'gpt-6-luna', effort: 'medium', permissionModes: ['ask', 'acceptEdits', 'plan', 'readOnly'] })
     expect(state?.models.find((model) => model.id === 'gpt-6-sol')).toMatchObject({ label: 'GPT-6-Sol', isDefault: true })
     expect(state?.models.find((model) => model.id === 'gpt-6-luna')?.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
     expect(state?.context).toEqual({ used: 22_525, window: 258_400 })
@@ -170,15 +170,77 @@ describe('CodexAppServer options', () => {
 
 describe('CodexAppServer commands', () => {
   const at = 1
-  const handshake = (driver: CodexAppServer, threadId = 'thread-1') => {
+  const handshake = (driver: CodexAppServer, threadId = 'thread-1', thread: Record<string, unknown> = {}) => {
     driver.due().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
     driver.apply({ dir: 'in', at, frame: { id: 'kando-init', result: {} } })
     const [initialized, open, models] = driver.due()
     expect(models).toEqual({ id: 'kando-models', method: 'model/list', params: {} })
     for (const frame of [initialized, open, models]) driver.apply({ dir: 'out', at, frame })
-    driver.apply({ dir: 'in', at, frame: { id: 'kando-thread', result: { thread: { id: threadId } } } })
+    driver.apply({ dir: 'in', at, frame: { id: 'kando-thread', result: { thread: { id: threadId }, ...thread } } })
     return { initialized, open }
   }
+
+  // A thread in plan mode whose first turn ended with a plan.
+  const planned = () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver, 'thread-1', { model: 'gpt-x', reasoningEffort: 'low' })
+    expect(driver.setOption('permissionMode', 'plan')).toEqual([])
+    driver.apply({ dir: 'option', at, option: 'permissionMode', value: 'plan' })
+    const turn = driver.send('Plan a README')
+    driver.apply({ dir: 'out', at, frame: turn, ref: 'ref-1' })
+    const plan = (id: string, text: string) => {
+      driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: { type: 'plan', id, text } } } })
+      driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: `turn-${id}`, status: 'completed', error: null } } } })
+    }
+    plan('p1', '1. Write README.md')
+    return { driver, turn, plan }
+  }
+  const modeOf = (driver: CodexAppServer) => ofKind(driver.items.list(), 'state')[0]?.permissionMode
+
+  it('plans in Codex plan mode, and carries the plan out in the mode picked', () => {
+    const { driver, turn } = planned()
+    expect(turn).toMatchObject({
+      method: 'turn/start',
+      params: {
+        approvalPolicy: 'on-request',
+        sandboxPolicy: { type: 'readOnly' },
+        collaborationMode: { mode: 'plan', settings: { model: 'gpt-x', reasoning_effort: 'low', developer_instructions: null } }
+      }
+    })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ kind: 'approval', tool: 'plan', detail: '1. Write README.md', resolution: null })
+    // The turn is over, yet the plan waits on the user.
+    expect(driver.activity()).toBe('awaiting')
+    const [execute] = driver.respond('plan:p1', { decision: 'allowForSession' })
+    expect(execute).toMatchObject({
+      method: 'turn/start',
+      params: { input: [{ text: '按这个计划开始执行。' }], approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' }, collaborationMode: { mode: 'default' } }
+    })
+    driver.apply({ dir: 'out', at, frame: execute, ref: 'ref-2' })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: 'allowedForSession' })
+    expect(modeOf(driver)).toBe('acceptEdits')
+    expect(driver.activity()).toBe('running')
+    driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: 'turn-2', status: 'completed', error: null } } } })
+    // Out of plan mode, later turns say nothing of it.
+    expect(driver.send('next')).not.toHaveProperty('params.collaborationMode')
+  })
+
+  it('sends a plan back with a note, takes a message as more planning, and lets it go on exit', () => {
+    const { driver, plan } = planned()
+    const [again] = driver.respond('plan:p1', { decision: 'deny', message: 'Add a usage section' })
+    expect(again).toMatchObject({ params: { input: [{ text: '继续规划：Add a usage section' }], collaborationMode: { mode: 'plan' } } })
+    driver.apply({ dir: 'out', at, frame: again, ref: 'ref-2' })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: 'denied' })
+    expect(modeOf(driver)).toBe('plan')
+    plan('p2', '1. Write README.md\n2. Add usage')
+    const typed = driver.send('Shorter, please')
+    expect(typed).toMatchObject({ params: { collaborationMode: { mode: 'plan' } } })
+    driver.apply({ dir: 'out', at, frame: typed, ref: 'ref-3' })
+    expect(driver.items.get('a:plan:p2')).toMatchObject({ resolution: 'denied' })
+    plan('p3', '1. README with usage')
+    driver.apply({ dir: 'exit', at, code: 0, stderr: '' })
+    expect(driver.items.get('a:plan:p3')).toMatchObject({ resolution: 'cancelled' })
+    expect(driver.activity()).toBe('idle')
+  })
 
   it('shakes hands, then opens a thread with its policy stated outright', () => {
     const driver = new CodexAppServer('stage-1', { ...OPTIONS, extraDirs: ['/work/web'] })
@@ -258,5 +320,34 @@ describe('CodexAppServer commands', () => {
     expect(unwrapShell("/bin/zsh -lc 'cat codex.txt'")).toBe('cat codex.txt')
     expect(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`)).toBe("echo 'hi'")
     expect(unwrapShell('git status')).toBe('git status')
+  })
+})
+
+describe('CodexAppServer plan mode, as recorded', () => {
+  // Codex 0.156.1: a plan-mode turn that ended with a plan, then the turn that carried it out with
+  // edits accepted, as Kando logged them.
+  const records = fixture('codex-plan.jsonl')
+
+  it('shows the plan as one approval, answered by the turn that carried it out', () => {
+    const items = replay(records).items.list()
+    const [plan] = ofKind(items, 'approval')
+    expect(plan).toMatchObject({ tool: 'plan', title: '计划', resolution: 'allowedForSession' })
+    expect(plan?.detail).toContain('codex-plan.txt')
+    expect(ofKind(items, 'user').map((item) => item.text)).toEqual([expect.stringContaining('Plan adding a file codex-plan.txt'), '按这个计划开始执行。'])
+    expect(ofKind(items, 'tool').map((tool) => [tool.name, tool.status])).toEqual([
+      ['commandExecution', 'done'],
+      ['fileChange', 'done'],
+      ['commandExecution', 'done']
+    ])
+    expect(ofKind(items, 'turn').map((turn) => turn.state)).toEqual(['completed', 'completed'])
+    expect(ofKind(items, 'state')[0]?.permissionMode).toBe('acceptEdits')
+  })
+
+  it('waits on the user between the plan and its answer', () => {
+    const answer = records.findIndex((record, index) => index > 0 && record.dir === 'out' && JSON.stringify(record.frame).includes('按这个计划开始执行'))
+    const driver = replay(records.slice(0, answer))
+    expect(driver.activity()).toBe('awaiting')
+    expect(ofKind(driver.items.list(), 'state')[0]?.permissionMode).toBe('plan')
+    expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBeNull()
   })
 })

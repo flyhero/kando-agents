@@ -7,7 +7,7 @@ type StateItem = Extract<ChatItem, { kind: 'state' }>
 // Kando's permission modes as each agent's users know them; the Codex default reads "auto".
 const MODE_LABEL: Record<AgentKind, Record<string, string>> = {
   claude: { ask: '逐项确认', acceptEdits: '自动接受编辑', plan: '规划', auto: '自动判断', bypass: '全部放行' },
-  codex: { ask: '逐项确认', acceptEdits: '自动', readOnly: '只读', bypass: '全部放行' }
+  codex: { ask: '逐项确认', acceptEdits: '自动', plan: '规划', readOnly: '只读', bypass: '全部放行' }
 }
 
 export function modeLabel(agent: AgentKind, mode: string): string {
@@ -18,7 +18,7 @@ export function modeLabel(agent: AgentKind, mode: string): string {
 // auto hangs on the model, so it waits for the agent. The first is where each starts by default.
 export const START_MODES: Record<AgentKind, readonly ChatPermissionMode[]> = {
   claude: ['ask', 'acceptEdits', 'plan'],
-  codex: ['acceptEdits', 'ask', 'readOnly']
+  codex: ['acceptEdits', 'ask', 'plan', 'readOnly']
 }
 
 const EFFORT_LABEL: Record<string, string> = {
