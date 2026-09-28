@@ -9,6 +9,7 @@ import {
   type AgentKind,
   type SnapshotImagePath,
   type Task,
+  type TaskPlan,
   type TaskStatus
 } from '@kando/protocol'
 import type { RefineWorkspace, Workspace } from './workspace'
@@ -31,13 +32,15 @@ function workspaceSection(workspace: Workspace): string | null {
   ].join('\n')
 }
 
-type Dependency = Pick<Task, 'id' | 'title' | 'repos' | 'status' | 'details'>
+type Dependency = Pick<Task, 'id' | 'title' | 'repos' | 'status' | 'details'> & { plan?: Task['plan'] }
 
 const STATUS_TEXT: Record<TaskStatus, string> = { pending: '未执行', running: '执行中', review: '待验收', done: '已完成', abandoned: '已废弃' }
 
 // Plans of unfinished dependencies go inline up to this much each; the agent reads the
 // rest (and anything else it wants) through the read tool.
 const PLAN_EXCERPT_LIMIT = 2_000
+// A chat stage has no read tool, so it gets more of each inline.
+const CHAT_PLAN_EXCERPT_LIMIT = 8_000
 
 function branchNotes(workspace: Workspace, dependency: Pick<Task, 'repos'>): string[] {
   const stackedOn = new Set(workspace.entries.flatMap((entry) => (entry.base ? [entry.base] : [])))
@@ -129,20 +132,28 @@ function predecessorSection(predecessor: Predecessor | null): string | null {
   ].join('')
 }
 
-function planExcerpt(dependency: Dependency): string {
-  const plan = dependency.details.trim()
+// An unfinished dependency's plan: its details, and the plan its chat kept, if any.
+function planText(dependency: Dependency): string {
+  const kept = dependency.plan?.markdown.trim()
+  return [dependency.details.trim(), kept ? `（在聊天里定下的计划）\n${kept}` : ''].filter(Boolean).join('\n\n')
+}
+
+function planExcerpt(dependency: Dependency, readTool: boolean): string {
+  const plan = planText(dependency)
+  const limit = readTool ? PLAN_EXCERPT_LIMIT : CHAT_PLAN_EXCERPT_LIMIT
   if (plan === '') {
     return '（还没有详情）'
   }
-  if (plan.length <= PLAN_EXCERPT_LIMIT) {
+  if (plan.length <= limit) {
     return plan
   }
-  const rest = plan.length - PLAN_EXCERPT_LIMIT
-  return `${plan.slice(0, PLAN_EXCERPT_LIMIT)}\n……（还有 ${rest} 字，用 ${READ_TASK_TOOL} 读取完整内容）`
+  const rest = plan.length - limit
+  return `${plan.slice(0, limit)}\n……（还有 ${rest} 字${readTool ? `，用 ${READ_TASK_TOOL} 读取完整内容` : '没有列出'}）`
 }
 
 // Tags keep an unfinished dependency's own headings from reading as part of this task.
-function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: readonly Dependency[]): string | null {
+// readTool: the agent has kando's read tool for the rest (a chat stage does not).
+function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: readonly Dependency[], readTool = true): string | null {
   if (dependencies.length === 0) {
     return null
   }
@@ -150,7 +161,7 @@ function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: read
     .filter((dependency) => !isFinished(dependency.status))
     .map((dependency) => {
       const attributes = `id="${shortTaskId(dependency.id)}" title="${dependency.title.replaceAll('"', "'")}" status="${STATUS_TEXT[dependency.status]}"`
-      return `<dependency ${attributes}>\n${planExcerpt(dependency)}\n</dependency>`
+      return `<dependency ${attributes}>\n${planExcerpt(dependency, readTool)}\n</dependency>`
     })
   return [
     [
@@ -158,7 +169,7 @@ function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: read
       ...dependencies.map((dependency) => dependencyLine(workspace.landed, dependency))
     ].join('\n'),
     ...plans,
-    `需要某个依赖任务（包括依赖的依赖）的完整详情时，调用 kando 的 ${READ_TASK_TOOL} 工具，传入任务 id。`
+    ...(readTool ? [`需要某个依赖任务（包括依赖的依赖）的完整详情时，调用 kando 的 ${READ_TASK_TOOL} 工具，传入任务 id。`] : [])
   ].join('\n\n')
 }
 
@@ -208,6 +219,55 @@ export function continuePrompt(
     note
       ? '请先用几句话说明上次做到了哪里、打算怎么改上面这些问题，然后按这些意见修改。'
       : '请先用几句话总结上次已经完成了什么、还有什么没做完，然后等我告诉你接下来要改什么，不要自己开始改。'
+  ]
+  return sections.filter((section) => section !== null).join('\n\n')
+}
+
+// A task's chat opens with what running it would be told, and asks for a plan first: the chat shows
+// it for the user to approve before any code changes. A plan kept while the task waited on its
+// dependencies comes along, to be checked against the code as it now is.
+export function chatStartPrompt(
+  task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
+  workspace: Workspace,
+  dependencies: readonly Pick<Task, 'id' | 'title' | 'repos'>[],
+  predecessor: Predecessor | null = null,
+  images: PromptImages = NO_IMAGES,
+  plan: Pick<TaskPlan, 'markdown'> | null = null
+): string {
+  const sections = [
+    agentPrompt(task, workspace, dependencies, predecessor, images),
+    plan
+      ? `依赖的任务完成之前，我们已经定下了下面的计划。先对照现在的代码核对一遍，需要调整的地方说明原因：\n<saved-plan>\n${plan.markdown.trim()}\n</saved-plan>`
+      : null,
+    '请先阅读相关代码，有不清楚的地方先问我，然后给出实现计划；我确认之后再开始修改代码。'
+  ]
+  return sections.filter((section) => section !== null).join('\n\n')
+}
+
+// Planning a task whose dependencies are unfinished: read-only in the projects as they are, the plan
+// kept on the task for when it can run. No kando tools here: the dependencies' plans go inline.
+export function chatPlanPrompt(
+  task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
+  workspace: RefineWorkspace,
+  dependencies: readonly Dependency[],
+  predecessor: Predecessor | null = null,
+  images: PromptImages = NO_IMAGES
+): string {
+  const sections = [
+    '这个任务依赖的任务还没完成，现在先一起规划，等它们完成后再执行。这次只读代码、讨论和规划，不要修改任何文件。',
+    `任务：${task.title}`,
+    `现在的详情：\n${task.details.trim() || '（还没有详情）'}`,
+    imageSection(images.attached),
+    sourceSection(task, images),
+    codeSection(workspace),
+    dependencyDetailsSection(workspace, dependencies, false),
+    predecessorSection(predecessor),
+    [
+      '请这样进行：',
+      '1. 先阅读相关代码，了解现状。',
+      '2. 有不清楚的地方先问我，每次问几个最关键的问题。',
+      '3. 我们达成一致后，给出完整的实现计划：目标、实现方案、涉及的文件、验收标准。我保存后，它会在依赖完成、开始执行时交给执行的 agent。'
+    ].join('\n')
   ]
   return sections.filter((section) => section !== null).join('\n\n')
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Task } from '@kando/protocol'
-import { agentPrompt, continuePrompt, refinePrompt } from './agent-prompt'
+import { agentPrompt, chatPlanPrompt, chatStartPrompt, continuePrompt, refinePrompt } from './agent-prompt'
 import type { RefineWorkspace, Workspace } from './workspace'
 
 const workspace: Workspace = {
@@ -107,5 +107,45 @@ describe('continuePrompt', () => {
     expect(prompt.startsWith('这个任务之前已经执行过一次，现在继续做。上次的改动就在当前目录的分支 kando/a-add 上')).toBe(true)
     expect(prompt).toContain('Add token API\n\n## 目标\n新增 TokenService')
     expect(prompt.endsWith('然后等我告诉你接下来要改什么，不要自己开始改。')).toBe(true)
+  })
+})
+
+describe('chatStartPrompt', () => {
+  const task = { title: 'Use token API', details: '接入 TokenService', source: null, sourceSnapshot: null }
+
+  it('opens with the task and asks for a plan before any change', () => {
+    const prompt = chatStartPrompt(task, workspace, [])
+    expect(prompt.startsWith('Use token API\n\n接入 TokenService')).toBe(true)
+    expect(prompt).toContain('然后给出实现计划；我确认之后再开始修改代码')
+    expect(prompt).not.toContain('saved-plan')
+  })
+
+  it('brings along the plan kept while the task waited, to be checked against the code', () => {
+    const prompt = chatStartPrompt(task, workspace, [], null, undefined, { markdown: '1. 调用 issue()\n' })
+    expect(prompt).toContain('先对照现在的代码核对一遍')
+    expect(prompt).toContain('<saved-plan>\n1. 调用 issue()\n</saved-plan>')
+  })
+})
+
+describe('chatPlanPrompt', () => {
+  const task = { title: 'Use token API', details: '', source: null, sourceSnapshot: null }
+
+  it('plans read-only and asks for a plan to keep, with no kando tools to call', () => {
+    const prompt = chatPlanPrompt(task, refining(), [])
+    expect(prompt).toContain('这次只读代码、讨论和规划，不要修改任何文件')
+    expect(prompt).toContain('我保存后，它会在依赖完成、开始执行时交给执行的 agent')
+    expect(prompt).not.toContain('propose_task_details')
+    expect(prompt).not.toContain('read_task_details')
+  })
+
+  it('inlines an unfinished dependency\'s details and kept plan, more of them than refining does', () => {
+    const plan = { markdown: '1. 先做 A', agent: 'claude' as const, approved: false, stageId: null, requestId: null, createdAt: 0 }
+    const planned = dependency({ status: 'pending', details: '计'.repeat(2_500), repos: [], plan })
+    const prompt = chatPlanPrompt(task, refining(), [planned])
+    expect(prompt).toContain('计'.repeat(2_500))
+    expect(prompt).toContain('（在聊天里定下的计划）\n1. 先做 A')
+    expect(prompt).not.toContain('read_task_details')
+    // Refining still clips it and points at the tool.
+    expect(refinePrompt(task, 'claude', refining(), [planned])).toContain('用 read_task_details 读取完整内容')
   })
 })
