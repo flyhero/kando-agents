@@ -237,7 +237,8 @@ export class ConversationService {
       this.transcript.marker(id, `${agent} 聊天界面启动失败`)
       throw error
     }
-    return this.get(id)
+    // Announced again now that the agent can take a message: clients learn it is idle.
+    return this.changed(this.store.touch(id))
   }
 
   private launchFailure(agent: AgentKind, command: string, error: unknown): string {

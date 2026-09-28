@@ -296,7 +296,18 @@ describe('ConversationService in chat mode', () => {
   })
 
   it('runs Claude over stream-json and keeps its messages like a terminal stage would', async () => {
+    const announced: unknown[] = []
+    service = new ConversationService(store, daemon, path.join(root, 'sessions'),
+      (id, stage, agent) => ['node', 'callback.js', id, stage, agent],
+      (event) => { if (event.type === 'changed') announced.push(event.conversation.chat) }, projects)
+    const next = service
+    daemon.deliver = (event) => {
+      if (event.event === 'data') next.handleData(event)
+      else if (event.event === 'exit') next.handleExit(event.sessionId, event.exitCode)
+    }
     const created = await service.create('claude', [], 'chat')
+    // Clients hear that the agent is ready, not only that the conversation exists.
+    expect(announced.at(-1)).toEqual({ turn: 'idle' })
     expect(created).toMatchObject({ mode: 'chat', chat: { turn: 'idle' } })
     const args = daemon.spawns[0]?.args ?? []
     expect(args).toEqual(expect.arrayContaining(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--session-id']))
