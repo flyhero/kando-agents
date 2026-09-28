@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -26,6 +26,23 @@ export type ConversationEvent =
   | { type: 'deleted'; id: string }
   | { type: 'chatItems'; conversationId: string; items: ChatItem[] }
   | { type: 'chatDelta'; conversationId: string; stageId: string; itemId: string; append: string }
+
+// How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
+// while it only plans), and whether it goes on with the last session or takes one of its own (a first
+// start, or planning giving way to carrying the plan out).
+export type TaskChatLaunch = {
+  cwd: string
+  extraDirs: readonly string[]
+  planOnly: boolean
+  session: 'new' | 'resume'
+  // Files the agent may read without asking, such as the task's images.
+  readable?: readonly string[]
+  allowBypass?: boolean
+}
+
+// What a stage's start takes beyond the agent: see TaskChatLaunch; moved says the agent works
+// somewhere else than its last stage did.
+type StageLaunch = { fresh?: boolean; moved?: boolean; planOnly?: boolean; readable?: readonly string[] }
 
 // A chat page stops adding older stages once it holds this many items.
 const CHAT_PAGE_ITEMS = 1000
@@ -82,7 +99,8 @@ export class ConversationService {
     })
   }
 
-  list(): Conversation[] { return this.store.list().map((conversation) => this.withChat(conversation)) }
+  // The free conversations; a task's own is reached through its task.
+  list(): Conversation[] { return this.store.list().filter((conversation) => !conversation.taskId).map((conversation) => this.withChat(conversation)) }
   get(id: string): Conversation {
     const found = this.store.get(id)
     if (!found) throw new Rejection('conversation-not-found', `no conversation ${id}`)
@@ -159,6 +177,57 @@ export class ConversationService {
     return this.start(id, agent, '', false, mode)
   }
 
+  // A task's chat is driven from its task, which checks what the task may do first.
+  private free(id: string): Conversation {
+    const conversation = this.get(id)
+    if (conversation.taskId) throw new Rejection('task-conversation', 'this conversation runs a task; go on from the task')
+    return conversation
+  }
+
+  // A task's chat: made on the task's first start, then moved to wherever its agent works next.
+  // Resolves once the agent can take a message, which the task then sends.
+  async startForTask(task: { id: string; title: string; agent: AgentKind }, launch: TaskChatLaunch): Promise<Conversation> {
+    const cwd = await realpath(launch.cwd)
+    const extraDirs = await Promise.all(launch.extraDirs.map((dir) => realpath(dir)))
+    const projectPaths = [cwd, ...extraDirs]
+    const conversation = this.store.byTask(task.id)
+      ?? this.store.create(task.agent, cwd, projectPaths, randomUUID(), {}, { id: task.id, title: task.title })
+    const { id } = conversation
+    if (this.launching.has(id)) throw new Rejection('conversation-running')
+    const moved = conversation.workspacePath !== cwd || conversation.projectPaths.join('\n') !== projectPaths.join('\n')
+    const live = conversation.sessionId !== null && this.chats.activity(id) !== null
+    const same = !moved && conversation.agent === task.agent && (conversation.planOnly ?? false) === launch.planOnly
+    if (live && launch.session === 'resume' && same) return this.withChat(conversation)
+    if (conversation.sessionId && !this.chats.idle(id)) throw new Rejection('chat-busy', 'the agent is still working')
+    if (conversation.sessionId) await this.stop(id)
+    if (moved) this.store.moveWorkspace(id, cwd, projectPaths)
+    if (conversation.title !== task.title) this.store.update(id, { title: task.title })
+    if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
+    // A stage of its own plans first; one going on keeps the mode it was left in.
+    if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: 'plan' })
+    return this.start(id, task.agent, '', false, 'chat', {
+      fresh: launch.session === 'new',
+      moved,
+      planOnly: launch.planOnly,
+      readable: launch.readable
+    })
+  }
+
+  // Keeps a plan-only stage's plan: answers it, if it still waits, so the agent does not carry it
+  // out, and gives what it said for the task to keep.
+  async savePlan(conversationId: string, stageId: string, requestId: string): Promise<{ markdown: string; agent: AgentKind }> {
+    const conversation = this.get(conversationId)
+    const stage = this.store.stages(conversationId).find((each) => each.id === stageId)
+    if (!stage) throw new Rejection('stage-not-found', `no stage ${stageId}`)
+    if (!stage.planOnly) throw new Rejection('not-planning', 'only a stage that may only plan keeps its plan for later')
+    const item = this.chats.items(this.chatStage(conversation, stage)).find((each) => each.kind === 'approval' && each.requestId === requestId)
+    if (item?.kind !== 'approval' || !isPlanApproval(item) || !item.detail) throw new Rejection('chat-request-gone', 'no such plan')
+    if (item.resolution === null && this.store.activeStage(conversationId)?.id === stageId) {
+      await this.chats.respond(conversationId, requestId, { decision: 'deny', saved: true })
+    }
+    return { markdown: item.detail, agent: stage.agent }
+  }
+
   rename(id: string, title: string): Conversation {
     this.get(id)
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
@@ -166,7 +235,7 @@ export class ConversationService {
 
   // An idle chat agent makes way for the terminal without the user stopping it first.
   async continue(id: string, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
-    const current = this.get(id)
+    const current = this.free(id)
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && mode === 'chat' && this.chats.activity(id) !== null) return current
     if (current.sessionId && !this.chats.idle(id)) throw new Rejection('conversation-running')
@@ -176,7 +245,7 @@ export class ConversationService {
   }
 
   async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
-    const current = this.get(id)
+    const current = this.free(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
@@ -185,16 +254,18 @@ export class ConversationService {
     return this.start(id, agent, note, true, mode)
   }
 
-  private async start(id: string, agent: AgentKind, note: string, handoff: boolean, mode: ConversationMode): Promise<Conversation> {
+  private async start(id: string, agent: AgentKind, note: string, handoff: boolean, mode: ConversationMode, launch: StageLaunch = {}): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     this.launching.add(id)
     try {
       const current = this.get(id)
       if (current.sessionId) throw new Rejection('conversation-running')
-      const previous = this.store.latestStage(id, agent)
+      const previous = launch.fresh ? null : this.store.latestStage(id, agent)
       // Kando picks a Claude session id before launch, so a run that died before its first prompt
-      // left an id Claude never saved. Only a session that recorded messages can be resumed.
-      const saved = previous?.providerSessionId && (agent !== 'claude' || this.store.hasProviderMessages(id, previous.providerSessionId))
+      // left an id Claude never saved. Only a session that recorded messages can be resumed, and
+      // only from the folder it ran in: moved elsewhere, Claude starts afresh from a handoff.
+      const resumable = !(launch.moved && agent === 'claude')
+      const saved = resumable && previous?.providerSessionId && (agent !== 'claude' || this.store.hasProviderMessages(id, previous.providerSessionId))
         ? previous.providerSessionId : null
       const providerSessionId = saved ?? (agent === 'claude' ? randomUUID() : null)
       const missingNativeSession = previous !== null && saved === null
@@ -209,8 +280,8 @@ export class ConversationService {
         await writeFile(handoffPath, buildHandoff(current, messages, note, current.agent, agent), { mode: 0o600 })
       }
       const stageId = randomUUID()
-      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, mode)
-      if (mode === 'chat') return await this.startChat(current, stage, saved !== null, handoffPath, handoff, previous !== null)
+      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, mode, launch.planOnly ?? false)
+      if (mode === 'chat') return await this.startChat(current, stage, saved !== null, handoffPath, handoff, previous !== null, launch.readable ?? [])
       const callback = this.callbackCommand(id, stage.id, agent)
       const command = conversationCommand(agent, providerSessionId, saved !== null, callback, handoffPath, current.projectPaths.slice(1))
       const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : previous ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
@@ -243,7 +314,8 @@ export class ConversationService {
     resume: boolean,
     handoffPath: string | null,
     handoff: boolean,
-    continued: boolean
+    continued: boolean,
+    readable: readonly string[]
   ): Promise<Conversation> {
     const { id } = current
     const { agent } = stage
@@ -251,7 +323,8 @@ export class ConversationService {
     const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, options.extraDirs, {
       preferred: options.preferred,
       allowBypass: options.allowBypass,
-      planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined
+      planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined,
+      readable
     })
     let sessionId: string
     try {
@@ -491,6 +564,23 @@ export class ConversationService {
   }
 
   async delete(id: string): Promise<void> {
+    this.free(id)
+    await this.remove(id)
+  }
+
+  // A task's chat goes with its task; the worktrees it worked in stay.
+  async deleteForTask(taskId: string): Promise<void> {
+    const conversation = this.store.byTask(taskId)
+    if (conversation) await this.remove(conversation.id)
+  }
+
+  // Lets a task's agent go, as a task given up or closed no longer needs it.
+  async stopForTask(taskId: string): Promise<void> {
+    const conversation = this.store.byTask(taskId)
+    if (conversation?.sessionId) await this.stop(conversation.id)
+  }
+
+  private async remove(id: string): Promise<void> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     const current = this.get(id)
     if (current.sessionId) await this.stop(id)

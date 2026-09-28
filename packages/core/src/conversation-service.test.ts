@@ -511,6 +511,74 @@ describe('ConversationService in chat mode', () => {
     await expect(service.continue(working.id, 'tui')).rejects.toMatchObject({ reason: 'conversation-running' })
   })
 
+  const task = { id: 'task-1', title: 'Chat me', agent: 'claude' as const }
+  const exitPlanMode = (requestId: string) => ({
+    type: 'control_request', request_id: requestId,
+    request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: `toolu_${requestId}` }
+  })
+  const sessionArg = (args: readonly string[]) => args[args.indexOf('--session-id') + 1]
+
+  it('starts a task\'s chat afresh in plan mode, then goes on with the same session in the same folder', async () => {
+    const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
+    expect(started).toMatchObject({ taskId: 'task-1', title: 'Chat me', titleLocked: true, mode: 'chat', workspacePath: realpathSync(root) })
+    const first = daemon.spawns.at(-1)!.args
+    expect(first).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--session-id']))
+    await service.send(started.id, 'go')
+    await settle()
+    // Going on with the live agent leaves it as it is.
+    await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'resume' })
+    expect(daemon.spawns).toHaveLength(1)
+    await service.stop(started.id)
+    await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'resume' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', sessionArg(first)]))
+    expect(service.list()).toEqual([])
+    await expect(service.continue(started.id, 'chat')).rejects.toMatchObject({ reason: 'task-conversation' })
+    await expect(service.handoff(started.id, 'codex', '', true, 'chat')).rejects.toMatchObject({ reason: 'task-conversation' })
+    await expect(service.delete(started.id)).rejects.toMatchObject({ reason: 'task-conversation' })
+  })
+
+  it('keeps a plan-only stage read-only across a core restart, and keeps its plan when asked', async () => {
+    const web = mkdtempSync(path.join(root, 'web-'))
+    const planning = await service.startForTask(task, { cwd: root, extraDirs: [web], planOnly: true, session: 'new', allowBypass: true })
+    const args = daemon.spawns.at(-1)!.args
+    expect(args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--disallowedTools', `Edit(/${realpathSync(root)}/**),Edit(/${realpathSync(web)}/**)`]))
+    expect(args).not.toContain('--allow-dangerously-skip-permissions')
+    const [stage] = service.stages(planning.id)
+    expect(stage?.planOnly).toBe(true)
+
+    service = serve()
+    await service.reconcile((await daemon.request('list', {})).sessions)
+    daemon.emit(planning.sessionId!, exitPlanMode('plan-1'))
+    await settle()
+    await expect(service.respond(planning.id, 'plan-1', { decision: 'allow' })).rejects.toMatchObject({ reason: 'plan-only' })
+    expect(await service.savePlan(planning.id, stage!.id, 'plan-1')).toEqual({ markdown: '# Plan', agent: 'claude' })
+    expect(daemon.written(planning.sessionId!).at(-1)).toMatchObject({ response: { request_id: 'plan-1', response: { behavior: 'deny' } } })
+  })
+
+  it('starts a Claude stage moved to another folder from a handoff rather than resuming it', async () => {
+    const worktree = mkdtempSync(path.join(root, 'wt-'))
+    const planning = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: true, session: 'new' })
+    await service.send(planning.id, 'hello')
+    await settle()
+    await service.stop(planning.id)
+    const moved = await service.startForTask(task, { cwd: worktree, extraDirs: [], planOnly: false, session: 'resume' })
+    expect(moved.workspacePath).toBe(realpathSync(worktree))
+    const args = daemon.spawns.at(-1)!.args
+    expect(args).not.toContain('--resume')
+    expect(args).toEqual(expect.arrayContaining(['--allowedTools', expect.stringContaining('handoffs')]))
+    const sessionId = service.get(moved.id).sessionId!
+    expect(JSON.stringify(daemon.written(sessionId))).toContain('请先阅读 Kando 移交文件')
+    expect(service.stages(moved.id).map((each) => each.planOnly)).toEqual([true, false])
+  })
+
+  it('deletes a task\'s chat with its task, logs and all', async () => {
+    const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
+    await service.deleteForTask(task.id)
+    expect(() => service.get(started.id)).toThrow(expect.objectContaining({ reason: 'conversation-not-found' }))
+    expect(existsSync(path.join(root, 'sessions', started.id, 'stages'))).toBe(false)
+    await service.deleteForTask('no-such-task')
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

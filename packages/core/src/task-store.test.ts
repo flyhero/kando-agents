@@ -83,8 +83,6 @@ describe('TaskStore migrations', () => {
     const conversation = conversations.create('claude', '/code/app', ['/code/app'], undefined, {}, { id: task.id, title: task.title })
     expect(conversation).toMatchObject({ taskId: task.id, title: 'Chat me', titleLocked: true, planOnly: false })
     expect(store.get(task.id)?.conversationId).toBe(conversation.id)
-    // A task's conversation is not a free one.
-    expect(conversations.list()).toEqual([])
     expect(conversations.byTask(task.id)?.id).toBe(conversation.id)
     const stage = conversations.startStage(conversation.id, 'claude', null, 0, undefined, 'chat', true)
     expect(stage.planOnly).toBe(true)

@@ -53,9 +53,8 @@ export class ConversationStore {
 
   close(): void { this.db.close() }
 
-  // The free conversations; a task's own is reached through its task (see byTask).
   list(): Conversation[] {
-    return this.db.prepare(`${SELECT} WHERE task_id IS NULL ORDER BY updated_at DESC`).all().map(conversation)
+    return this.db.prepare(`${SELECT} ORDER BY updated_at DESC`).all().map(conversation)
   }
 
   byTask(taskId: string): Conversation | null {
