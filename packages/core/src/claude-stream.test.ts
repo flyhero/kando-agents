@@ -152,6 +152,13 @@ describe('ClaudeStream state', () => {
     expect(modes).toEqual([null, 'ask', 'plan', 'acceptEdits'])
   })
 
+  it('knows the model before the first turn reports it', () => {
+    const init = records.findIndex((record) => record.dir === 'in' && JSON.stringify(record.frame).includes('"subtype":"init"'))
+    const before = records.slice(0, init)
+    expect(stateOf(replay(before))).toMatchObject({ model: 'opus', permissionModes: ['ask', 'acceptEdits', 'plan', 'auto'] })
+    expect(stateOf(replay(before, { ...OPTIONS, preferred: { model: 'sonnet' } }))?.model).toBe('sonnet')
+  })
+
   it('offers auto only for a model that has it, and bypass only when the user allows it', () => {
     const allowed = replay(records.map((record) => record), { ...OPTIONS, allowBypass: true })
     expect(stateOf(allowed)?.permissionModes).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])

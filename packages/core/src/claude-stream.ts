@@ -509,8 +509,9 @@ export class ClaudeStream implements ChatDriver {
   }
 
   // The catalog row for the model the CLI says it runs, by alias or by the id an alias resolves to.
+  // It says so only once a turn starts; until then, the model it was started with or its default.
   private currentModel(): ModelRow | undefined {
-    const reported = this.reportedModel
+    const reported = this.reportedModel ?? this.options.preferred?.model ?? this.catalog.find((row) => row.value === 'default')?.resolvedModel
     if (!reported) return undefined
     const rows = this.catalog.filter((row) => row.value !== 'default')
     return rows.find((row) => row.value === reported) ?? rows.find((row) => row.resolvedModel === reported)
