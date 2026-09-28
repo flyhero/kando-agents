@@ -221,6 +221,21 @@ describe('CodexAppServer commands', () => {
     ])
   })
 
+  it('marks calls the user stopped as interrupted rather than failed', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver)
+    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'in', at, frame: { id: 'kando-turn-1', result: { turn: { id: 'turn-9' } } } })
+    const command = (id: string, status: string) => ({ type: 'commandExecution', id, command: 'sleep 5', status, exitCode: status === 'inProgress' ? null : 1 })
+    driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: command('exec-1', 'failed') } } })
+    driver.apply({ dir: 'in', at, frame: { method: 'item/started', params: { item: command('exec-2', 'inProgress') } } })
+    driver.apply({ dir: 'in', at, frame: { method: 'item/started', params: { item: command('exec-3', 'inProgress') } } })
+    driver.interrupt().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
+    driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: command('exec-2', 'failed') } } })
+    driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: 'turn-9', status: 'interrupted', error: null } } } })
+    expect(ofKind(driver.items.list(), 'tool').map((tool) => tool.status)).toEqual(['failed', 'interrupted', 'interrupted'])
+  })
+
   it('answers a request it does not handle with an error, once', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)

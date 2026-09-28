@@ -32,7 +32,7 @@ export function toolLabel(name: string): string {
   return TOOL_LABEL[name] ?? name
 }
 
-const STATUS_TEXT: Record<ChatToolStatus, string> = { running: '进行中', done: '完成', failed: '失败', denied: '已拒绝' }
+const STATUS_TEXT: Record<ChatToolStatus, string> = { running: '进行中', done: '完成', failed: '失败', denied: '已拒绝', interrupted: '已中断' }
 
 export function ChatDiffs({ diffs }: { diffs: readonly ChatDiff[] }) {
   const shorten = useContext(ChatPaths)

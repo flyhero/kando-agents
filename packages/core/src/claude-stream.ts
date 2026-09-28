@@ -135,6 +135,8 @@ const ControlResponse = z.looseObject({
 const ControlCancel = z.looseObject({ request_id: z.string() })
 const Answered = z.looseObject({
   behavior: z.string(),
+  // A denial that also stops the turn.
+  interrupt: z.boolean().optional(),
   updatedInput: Input.optional(),
   updatedPermissions: z.array(z.unknown()).optional()
 })
@@ -281,6 +283,8 @@ export class ClaudeStream implements ChatDriver {
   private readonly denied = new Set<string>()
   // Calls with no tool card of their own (see HIDDEN_TOOLS).
   private readonly hiddenCalls = new Set<string>()
+  // The user asked the running turn to stop: calls that fail from here on were cut short.
+  private stopping = false
   // Blocks of each API message seen as complete frames, and the streamed text items they finish.
   private readonly blockCounts = new Map<string, number>()
   private readonly streaming = new Map<string, string[]>()
@@ -683,7 +687,7 @@ export class ClaudeStream implements ChatDriver {
       const tool = previous?.kind === 'tool'
         ? previous
         : { id, kind: 'tool' as const, name: 'tool', title: '', input: null, status: 'running' as const, output: null, diffs: [] }
-      const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : 'failed'
+      const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
       const output = resultText(block.content)
       this.items.put({
         id,
@@ -734,6 +738,8 @@ export class ClaudeStream implements ChatDriver {
 
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
     this.finishStreaming(at)
+    if (state !== 'completed') this.items.settleTools(state, at)
+    this.stopping = false
     this.state.endTurn()
     this.queue.turnEnded(state)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
@@ -860,7 +866,10 @@ export class ClaudeStream implements ChatDriver {
           this.optionRequests.set(request.data.request_id, { subtype: body.data.subtype, value })
         }
       }
-      if (request.data?.request_id.startsWith(INTERRUPT_PREFIX)) this.interrupts++
+      if (request.data?.request_id.startsWith(INTERRUPT_PREFIX)) {
+        this.interrupts++
+        if (this.turn) this.stopping = true
+      }
       return
     }
     if (head.data.type !== 'control_response') return
@@ -885,6 +894,10 @@ export class ClaudeStream implements ChatDriver {
       this.resolve(requestId, setsMode.some((update) => update.mode === 'acceptEdits') ? 'allowedForSession' : 'allowed', null, at)
     } else if (answered.data.behavior === 'allow') {
       this.resolve(requestId, answered.data.updatedPermissions?.length ? 'allowedForSession' : 'allowed', null, at)
+    } else if (answered.data.interrupt) {
+      // Denied only because the user stopped the turn: nothing was decided about the call itself.
+      if (this.turn) this.stopping = true
+      this.resolve(requestId, 'cancelled', null, at)
     } else {
       if (pending?.toolItemId) this.denied.add(pending.toolItemId)
       this.resolve(requestId, 'denied', null, at)

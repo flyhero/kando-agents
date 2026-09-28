@@ -316,6 +316,27 @@ describe('ClaudeStream commands', () => {
     ])
     frames.forEach((frame) => driver.apply({ dir: 'out', at, frame }))
     expect(driver.interrupt().at(-1)).toMatchObject({ request_id: 'kando-interrupt-2' })
+    // Stopping decided nothing about the call itself.
+    expect(driver.items.get('a:req-2')).toMatchObject({ resolution: 'cancelled' })
+  })
+
+  it('marks calls the user stopped as interrupted rather than failed', () => {
+    const driver = started()
+    const call = (id: string, command: string) => ({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg-${id}`, content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } })
+    const failed = (id: string) => ({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: 'Exit code 1' }] } })
+    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'in', at, frame: call('toolu_1', 'false') })
+    driver.apply({ dir: 'in', at, frame: failed('toolu_1') })
+    driver.apply({ dir: 'in', at, frame: call('toolu_2', 'sleep 4') })
+    driver.apply({ dir: 'in', at, frame: call('toolu_3', 'sleep 5') })
+    driver.interrupt().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
+    driver.apply({ dir: 'in', at, frame: failed('toolu_2') })
+    driver.apply({ dir: 'in', at, frame: { type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_tools' } })
+    expect(ofKind(driver.items.list(), 'tool').map((tool) => [tool.title, tool.status])).toEqual([
+      ['false', 'failed'],
+      ['sleep 4', 'interrupted'],
+      ['sleep 5', 'interrupted']
+    ])
   })
 
   it('answers a control request it does not handle with an error, once', () => {

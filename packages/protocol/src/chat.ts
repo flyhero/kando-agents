@@ -10,7 +10,8 @@ export type ConversationMode = z.infer<typeof ConversationMode>
 export const ChatTurnActivity = z.enum(['idle', 'running', 'awaiting'])
 export type ChatTurnActivity = z.infer<typeof ChatTurnActivity>
 
-export const ChatToolStatus = z.enum(['running', 'done', 'failed', 'denied'])
+// interrupted: the user stopped the turn while the call ran.
+export const ChatToolStatus = z.enum(['running', 'done', 'failed', 'denied', 'interrupted'])
 export type ChatToolStatus = z.infer<typeof ChatToolStatus>
 
 export const ChatTurnState = z.enum(['completed', 'interrupted', 'failed'])

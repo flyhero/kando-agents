@@ -227,6 +227,8 @@ export class CodexAppServer implements ChatDriver {
   private readonly unanswered = new Map<string, string | number>()
   private turns = 0
   private interrupts = 0
+  // The user asked the running turn to stop: calls that fail from here on were cut short.
+  private stopping = false
   private results = 0
   private messages: StageMessage[] = []
   private readonly state: StageState
@@ -616,7 +618,7 @@ export class CodexAppServer implements ChatDriver {
           name: 'commandExecution',
           title: unwrapShell(command),
           input: unwrapShell(command),
-          status: completed ? toolStatus(item.status, item.exitCode) : 'running',
+          status: completed ? this.settled(toolStatus(item.status, item.exitCode)) : 'running',
           output: item.aggregatedOutput ? clip(item.aggregatedOutput) : null,
           diffs: []
         }, at)
@@ -630,7 +632,7 @@ export class CodexAppServer implements ChatDriver {
           name: 'fileChange',
           title: changes.map((change) => change.path).join(', '),
           input: null,
-          status: completed ? toolStatus(item.status, null) : 'running',
+          status: completed ? this.settled(toolStatus(item.status, null)) : 'running',
           output: null,
           diffs: changes.map(diffOf)
         }, at)
@@ -645,7 +647,7 @@ export class CodexAppServer implements ChatDriver {
           name: `${item.server ?? 'mcp'}.${item.tool ?? 'tool'}`,
           title: typeof first === 'string' ? first.split('\n')[0]! : '',
           input: Object.keys(args).length ? clip(JSON.stringify(args, null, 2), 4000) : null,
-          status: completed ? (item.error ? 'failed' : toolStatus(item.status, null)) : 'running',
+          status: completed ? this.settled(item.error ? 'failed' : toolStatus(item.status, null)) : 'running',
           output: completed ? mcpOutput(item) : null,
           diffs: []
         }, at)
@@ -722,7 +724,10 @@ export class CodexAppServer implements ChatDriver {
       if (frame.method === 'initialize') this.initSent = true
       if (frame.method === 'thread/start' || frame.method === 'thread/resume') this.threadRequested = true
       if (frame.method === 'model/list') this.modelsRequested = true
-      if (frame.method === 'turn/interrupt') this.interrupts++
+      if (frame.method === 'turn/interrupt') {
+        this.interrupts++
+        if (this.turn) this.stopping = true
+      }
       if (frame.method === 'turn/start') this.startTurn(frame, at, ref)
       return
     }
@@ -772,7 +777,13 @@ export class CodexAppServer implements ChatDriver {
     }
   }
 
+  private settled(status: ChatToolStatus): ChatToolStatus {
+    return status === 'failed' && this.stopping ? 'interrupted' : status
+  }
+
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
+    if (state !== 'completed') this.items.settleTools(state, at)
+    this.stopping = false
     this.state.endTurn()
     this.queue.turnEnded(state)
     for (const item of this.items.list()) {

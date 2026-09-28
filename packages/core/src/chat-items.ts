@@ -51,6 +51,13 @@ export class ChatItems {
     this.deltas.set(id, (this.deltas.get(id) ?? '') + text)
   }
 
+  // Calls still running when their turn ends never finish: the turn stopped under them.
+  settleTools(status: 'interrupted' | 'failed', at: number): void {
+    for (const item of this.list()) {
+      if (item.kind === 'tool' && item.status === 'running') this.put({ ...item, status }, at)
+    }
+  }
+
   notice(level: 'info' | 'warning' | 'error', text: string, at: number): void {
     this.put({ id: `n:${++this.notices}`, kind: 'notice', level, text }, at)
   }
