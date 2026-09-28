@@ -18,6 +18,9 @@ const OPTION_PREFIX = 'kando-option-'
 const MAX_PATCH = 50_000
 // Calls that are Claude Code's own machinery, or that another item already shows: no tool card.
 const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion', 'ToolSearch', ...CLAUDE_TASK_TOOLS])
+const FILE_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'MultiEdit'])
+// Plan mode drafts its plan in a file of its own (~/.claude/plans/<name>.md) before proposing it.
+const PLAN_FILE = /\/plans\/[^/]+\.md$/
 // Claude Code's permission modes by Kando's names for them; manual is what newer versions call default.
 const PERMISSION_MODES: Record<string, string> = {
   default: 'ask',
@@ -281,8 +284,10 @@ export class ClaudeStream implements ChatDriver {
   // Control requests Kando does not handle, still owed an error reply.
   private readonly unanswered = new Set<string>()
   private readonly denied = new Set<string>()
-  // Calls with no tool card of their own (see HIDDEN_TOOLS).
+  // Calls with no tool card of their own (see HIDDEN_TOOLS), and plan mode's drafts of its plan,
+  // which the plan it proposes shows in full.
   private readonly hiddenCalls = new Set<string>()
+  private readonly planDrafts = new Set<string>()
   // The user asked the running turn to stop: calls that fail from here on were cut short.
   private stopping = false
   // Blocks of each API message seen as complete frames, and the streamed text items they finish.
@@ -656,6 +661,10 @@ export class ClaudeStream implements ChatDriver {
       return
     }
     const input = Input.parse(block.input ?? {})
+    if (this.permissionMode === 'plan' && FILE_TOOLS.has(name) && PLAN_FILE.test(str(input.file_path) ?? '')) {
+      this.planDrafts.add(id)
+      return
+    }
     const previous = this.items.get(id)
     const earlier = previous?.kind === 'tool' ? previous : null
     this.items.put({
@@ -678,6 +687,7 @@ export class ClaudeStream implements ChatDriver {
     for (const block of content) {
       if (block.type !== 'tool_result' || !block.tool_use_id) continue
       const id = `t:${block.tool_use_id}`
+      if (this.planDrafts.has(id)) continue
       if (this.hiddenCalls.has(id)) {
         this.tasks.result(block.tool_use_id, parsed.data.tool_use_result)
         this.state.setTodos(this.tasks.list(), this.turn?.ref ?? null, at)

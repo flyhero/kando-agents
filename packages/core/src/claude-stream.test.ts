@@ -176,10 +176,13 @@ describe('ClaudeStream state', () => {
     expect(ofKind(items, 'todos').map((item) => item.id)).toEqual(['todos:ref-1'])
   })
 
-  it('shows the plan an ExitPlanMode call proposes', () => {
-    const [plan] = ofKind(replay(records).items.list(), 'tool').filter((tool) => tool.name === 'ExitPlanMode')
+  it('shows the plan an ExitPlanMode call proposes, and not the draft it wrote first', () => {
+    const tools = ofKind(replay(records).items.list(), 'tool')
+    const [plan] = tools.filter((tool) => tool.name === 'ExitPlanMode')
     expect(plan).toMatchObject({ title: '计划', status: 'done' })
     expect(plan?.input).toContain('# Add notes.md')
+    expect(tools.map((tool) => tool.title)).not.toContainEqual(expect.stringContaining('/.claude/plans/'))
+    expect(tools.filter((tool) => tool.name === 'Write')).toHaveLength(1)
   })
 
   it('keeps no account details from initialize in what it logs', () => {
