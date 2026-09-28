@@ -173,9 +173,10 @@ describe('CodexAppServer commands', () => {
   const handshake = (driver: CodexAppServer, threadId = 'thread-1', thread: Record<string, unknown> = {}) => {
     driver.due().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
     driver.apply({ dir: 'in', at, frame: { id: 'kando-init', result: {} } })
-    const [initialized, open, models] = driver.due()
+    const [initialized, open, models, config] = driver.due()
     expect(models).toEqual({ id: 'kando-models', method: 'model/list', params: {} })
-    for (const frame of [initialized, open, models]) driver.apply({ dir: 'out', at, frame })
+    expect(config).toEqual({ id: 'kando-config', method: 'config/read', params: { cwd: '/work/repo' } })
+    for (const frame of [initialized, open, models, config]) driver.apply({ dir: 'out', at, frame })
     driver.apply({ dir: 'in', at, frame: { id: 'kando-thread', result: { thread: { id: threadId }, ...thread } } })
     return { initialized, open }
   }
@@ -196,6 +197,16 @@ describe('CodexAppServer commands', () => {
     return { driver, turn, plan }
   }
   const modeOf = (driver: CodexAppServer) => ofKind(driver.items.list(), 'state')[0]?.permissionMode
+
+  it('takes the model config.toml names as the default, keeping only that of the config', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver)
+    driver.apply({ dir: 'in', at, frame: { id: 'kando-models', result: { data: [{ id: 'gpt-x', isDefault: true }, { id: 'gpt-y', isDefault: false }] } } })
+    const reply = { id: 'kando-config', result: { config: { model: 'gpt-y', mcp_servers: { secret: { env: { TOKEN: 'x' } } } } } }
+    expect(driver.logged(reply)).toEqual({ id: 'kando-config', result: { config: { model: 'gpt-y' } } })
+    driver.apply({ dir: 'in', at, frame: reply })
+    expect(ofKind(driver.items.list(), 'state')[0]?.models.map((model) => [model.id, model.isDefault])).toEqual([['gpt-x', false], ['gpt-y', true]])
+  })
 
   it('plans in Codex plan mode, and carries the plan out in the mode picked', () => {
     const { driver, turn } = planned()

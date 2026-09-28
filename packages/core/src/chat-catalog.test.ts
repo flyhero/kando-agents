@@ -29,7 +29,11 @@ require('readline').createInterface({ input: process.stdin }).on('line', (line) 
   const reply = (result) => console.log(JSON.stringify({ id: frame.id, result }))
   if (frame.method === 'initialize') reply({})
   if (frame.method === 'thread/start') reply({ thread: { id: 'thread-1' } })
-  if (frame.method === 'model/list') reply({ data: [{ id: 'gpt-x', displayName: 'GPT X', isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }] })
+  if (frame.method === 'model/list') reply({ data: [
+    { id: 'gpt-x', displayName: 'GPT X', isDefault: true, supportedReasoningEfforts: [{ reasoningEffort: 'low' }] },
+    { id: 'gpt-y', displayName: 'GPT Y', isDefault: false }
+  ] })
+  if (frame.method === 'config/read') reply({ config: { model: 'gpt-y', mcp_servers: { secret: { env: { TOKEN: 'x' } } } } })
 })`
 
 describe('probeChatCatalog', () => {
@@ -45,11 +49,11 @@ describe('probeChatCatalog', () => {
     expect(catalog?.models).toEqual([{ id: 'sonnet', label: 'Sonnet', description: null, efforts: ['low', 'high'], isDefault: true }])
   })
 
-  it('asks Codex for its models without opening a thread', async () => {
+  it('asks Codex for its models without opening a thread, the one config.toml names as default', async () => {
     const log = path.join(root, 'methods')
     const catalog = await probeChatCatalog(driver('codex'), { command: process.execPath, args: ['-e', FAKE_CODEX, log] }, root)
-    expect(catalog?.models.map((model) => [model.id, model.efforts, model.isDefault])).toEqual([['gpt-x', ['low'], true]])
-    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['initialize', 'initialized', 'model/list'])
+    expect(catalog?.models.map((model) => [model.id, model.efforts, model.isDefault])).toEqual([['gpt-x', ['low'], false], ['gpt-y', [], true]])
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['initialize', 'initialized', 'model/list', 'config/read'])
   })
 
   it('gives nothing for a CLI that is not there or quits', async () => {

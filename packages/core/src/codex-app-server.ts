@@ -97,6 +97,8 @@ const ModelEntry = z.looseObject({
 })
 type ModelEntry = z.infer<typeof ModelEntry>
 const ModelList = z.looseObject({ data: z.array(z.unknown()).catch([]) })
+// Of the effective config, only the model: the rest may hold secrets and stays out of the log.
+const ConfigRead = z.looseObject({ config: z.looseObject({ model: z.string().nullish() }) })
 const ErrorEvent = z.looseObject({ error: z.looseObject({ message: z.string().optional() }).catch({}), willRetry: z.boolean().optional() })
 const Resolved = z.looseObject({ requestId: Id })
 const CommandApproval = z.looseObject({
@@ -248,7 +250,10 @@ export class CodexAppServer implements ChatDriver {
   private readonly state: StageState
   private readonly queue = new ChatQueue()
   private modelsRequested = false
+  private configRequested = false
   private catalog: ModelEntry[] = []
+  // The model config.toml names, which a thread runs when none is chosen, over the catalog's default.
+  private configModel: string | null = null
   private model: string | null = null
   private effort: string | null = null
   private approvalPolicy: unknown = null
@@ -307,6 +312,7 @@ export class CodexAppServer implements ChatDriver {
     if (!this.initializedSent) frames.push({ method: 'initialized' })
     if (!this.threadRequested) frames.push(this.openThread())
     if (!this.modelsRequested) frames.push({ id: 'kando-models', method: 'model/list', params: {} })
+    if (!this.configRequested) frames.push({ id: 'kando-config', method: 'config/read', params: { cwd: this.options.cwd } })
     return frames
   }
 
@@ -433,6 +439,7 @@ export class CodexAppServer implements ChatDriver {
       const list = ModelList.safeParse(frame.result)
       return { id: frame.id, result: { data: list.success ? this.modelEntries(list.data.data) : [] } }
     }
+    if (method === 'config/read') return { id: frame.id, result: { config: { model: ConfigRead.safeParse(frame.result).data?.config.model ?? null } } }
     const turn = TurnEvent.safeParse(frame.result)
     if (method === 'turn/start' && turn.success) return { id: frame.id, result: { turn: { id: turn.data.turn.id } } }
     return method === 'initialize' ? { id: frame.id, result: {} } : frame
@@ -448,12 +455,13 @@ export class CodexAppServer implements ChatDriver {
   }
 
   private refreshOptions(): void {
+    const configured = this.catalog.some((entry) => entry.id === this.configModel)
     const models: ChatModel[] = this.catalog.map((entry) => ({
       id: entry.id,
       label: entry.displayName ?? entry.id,
       description: entry.description ?? null,
       efforts: (entry.supportedReasoningEfforts ?? []).map((effort) => effort.reasoningEffort),
-      isDefault: entry.isDefault ?? false
+      isDefault: configured ? entry.id === this.configModel : (entry.isDefault ?? false)
     }))
     const current = this.catalog.find((entry) => entry.id === this.model)
     this.state.set({
@@ -557,6 +565,8 @@ export class CodexAppServer implements ChatDriver {
     } else if (method === 'model/list') {
       const list = ModelList.safeParse(frame.result)
       if (list.success) this.catalog = this.modelEntries(list.data.data)
+    } else if (method === 'config/read') {
+      this.configModel = ConfigRead.safeParse(frame.result).data?.config.model ?? null
     } else if (method === 'turn/start') {
       const turn = TurnEvent.safeParse(frame.result)
       if (turn.success && this.turn && !this.turn.turnId) this.turn.turnId = turn.data.turn.id
@@ -782,6 +792,7 @@ export class CodexAppServer implements ChatDriver {
       if (frame.method === 'initialize') this.initSent = true
       if (frame.method === 'thread/start' || frame.method === 'thread/resume') this.threadRequested = true
       if (frame.method === 'model/list') this.modelsRequested = true
+      if (frame.method === 'config/read') this.configRequested = true
       if (frame.method === 'turn/interrupt') {
         this.interrupts++
         if (this.turn) this.stopping = true
