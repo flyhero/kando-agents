@@ -25,7 +25,9 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
       return { ok: true }
     },
     attach: ({ sessionId }) => ({ sessionId, buffer: '', bufferStart: 0, endOffset: 0, exited: false, exitCode: null }),
-    list: () => ({ sessions: [] })
+    list: () => ({ sessions: [] }),
+    spawnPipe: () => { throw new Error('unused') },
+    release: () => ({ ok: true })
   }
   return { spawns, killed, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
 }

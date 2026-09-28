@@ -24,7 +24,9 @@ function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[] } {
     resize: () => ({ ok: true }),
     kill: () => ({ ok: true }),
     attach: ({ sessionId }) => ({ sessionId, exited: false, exitCode: null, buffer: '', bufferStart: 0, endOffset: 0 }),
-    list: () => ({ sessions: [] })
+    list: () => ({ sessions: [] }),
+    spawnPipe: () => { throw new Error('unused') },
+    release: () => ({ ok: true })
   }
   return {
     spawns,

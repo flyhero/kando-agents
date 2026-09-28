@@ -93,7 +93,7 @@ daemon.onEvent((event) => {
   if (event.event === 'data') {
     conversations.handleData(event)
     attached.forEach((c) => c.notify('sessions.data', { sessionId, data: event.data, offset: event.offset }))
-  } else {
+  } else if (event.event === 'exit') {
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
     service.handleSessionExit(sessionId, event.exitCode)
     conversations.handleExit(sessionId, event.exitCode)

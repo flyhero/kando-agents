@@ -10,14 +10,14 @@ import {
   type DaemonResult
 } from '@kando/protocol/node'
 import { claimEndpoint } from './endpoint-claim'
-import { createPtyHost } from './pty-host'
+import { createSessionHost } from './session-host'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
 await claimEndpoint(paths.daemonSocket)
 
 const clients = new Set<net.Socket>()
-const host = createPtyHost((event) => {
+const host = createSessionHost((event) => {
   const line = `${JSON.stringify(event)}\n`
   clients.forEach((client) => client.write(line))
 })
