@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { checkChatResume, isFinished, shortTaskId, type Task } from '@kando/protocol'
+import { checkChatResume, shortTaskId, type Task } from '@kando/protocol'
 import { usePlans, type PlanItem } from '../chat-state'
 import { loadConversation, perform, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
@@ -23,8 +23,9 @@ function planNote(task: Task, item: PlanItem): string | null {
   return kept && !plan.approved ? '已保存，依赖完成后执行' : null
 }
 
-// A message to a task's chat goes through the task first when its agent is gone or its work was
-// handed in: the task checks what it may do, lays its worktrees out and goes back to running.
+// A message to a task's chat goes through the task first unless its agent is at work: the task checks
+// what it may do, lays its worktrees out and goes back to running. A planning agent is checked every
+// time, as the task's projects may change while it plans and it should follow them.
 function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolean, bypassable: boolean): ChatSurface {
   const blocker = checkChatResume(task, dependencies)
   return {
@@ -33,7 +34,7 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
     changes: task.repos.some((repo) => repo.worktreePath !== null) ? { kind: 'task', id: task.id } : null,
     changesHint: '任务 worktree 里还没提交的改动；点开检查器看',
     prepareSend: async (stopped) => {
-      if (!stopped && !isFinished(task.status)) return true
+      if (!stopped && task.status === 'running') return true
       const allowBypass = bypassable ? { allowBypass: usePreferences.getState().allowBypass } : {}
       return Boolean(await perform((rpc) => rpc.call('tasks.resumeChat', { id: task.id, ...allowBypass })))
     },
