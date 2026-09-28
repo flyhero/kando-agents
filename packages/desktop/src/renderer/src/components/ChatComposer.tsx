@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import type { ChatItem, Conversation } from '@kando/protocol'
 import { perform, useChatOptionsSupported } from '../core-store'
 import { AGENT_LABEL } from '../labels'
 import { continueConversation } from './ConversationActions'
 import { EnterIcon, StopIcon } from './icons'
+
+// Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
+// candidate instead.
+export function sendsMessage(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  return event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing
+}
 
 type Queued = NonNullable<Extract<ChatItem, { kind: 'state' }>['queued']>
 
@@ -79,8 +85,7 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
         }
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          // Enter while an input method is composing picks a candidate; it is not a send.
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+          if (sendsMessage(event)) {
             event.preventDefault()
             void send()
           } else if (event.key === 'Escape' && working && !event.nativeEvent.isComposing) {

@@ -9,6 +9,7 @@ import { TaskList } from './components/TaskList'
 import { TaskTerminal } from './components/TaskTerminal'
 import { ConversationList } from './components/ConversationList'
 import { ConversationTerminal } from './components/ConversationTerminal'
+import { ConversationDraft } from './components/ConversationDraft'
 import { NewConversationDialog } from './components/NewConversationDialog'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
@@ -19,6 +20,7 @@ export function App() {
   const section = useCore((s) => s.section)
   const selectedConversationId = useCore((s) => s.selectedConversationId)
   const newConversationOpen = useCore((s) => s.newConversationOpen)
+  const conversationDraft = useCore((s) => s.conversationDraft)
   const view = useCore((s) => s.view)
   const error = useCore((s) => s.error)
   const newTaskOpen = useCore((s) => s.newTaskOpen)
@@ -87,6 +89,7 @@ export function App() {
             </div>
             {section === 'conversations' ? (
               selectedConversationId ? <ConversationTerminal key={selectedConversationId} id={selectedConversationId} /> :
+                conversationDraft ? <ConversationDraft /> :
                 <section className="detail-empty">选择或新建一条自由会话</section>
             ) : inboxOpen ? (
               <SourceInboxView />

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AGENT_KINDS, type Conversation } from '@kando/protocol'
-import { selectConversation, setNewConversationOpen, useCore } from '../core-store'
+import { selectConversation, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { CONVERSATION_GROUPS, CONVERSATION_SORTS, setPreference, usePreferences, type Preferences } from '../preferences'
-import { ConversationContextMenu, renameConversation } from './ConversationActions'
+import { ConversationContextMenu, newConversation, renameConversation } from './ConversationActions'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
 import { SlidersIcon } from './icons'
@@ -224,7 +224,7 @@ export function ConversationList() {
         >
           <SlidersIcon />
         </button>
-        <button type="button" className="icon-button task-list-add" aria-label="新建会话" onClick={() => setNewConversationOpen(true)}>＋</button>
+        <button type="button" className="icon-button task-list-add" aria-label="新建会话" onClick={newConversation}>＋</button>
       </header>
       {query !== null && !collapsed && (
         <SidebarSearchField label="搜索会话" placeholder="标题、项目名或聊天内容" query={query} onChange={setQuery} />

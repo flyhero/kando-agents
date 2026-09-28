@@ -49,6 +49,8 @@ type CoreState = {
   section: Section
   selectedConversationId: string | null
   newConversationOpen: boolean
+  // The page a new conversation starts from while chats are the default (see ConversationDraft).
+  conversationDraft: boolean
   selectedId: string | null
   view: TaskView
   // The inspector beside a task's terminal, kept open from one task to the next.
@@ -86,6 +88,7 @@ export const useCore = create<CoreState>()(() => ({
   section: 'tasks',
   selectedConversationId: null,
   newConversationOpen: false,
+  conversationDraft: false,
   selectedId: null,
   view: 'detail',
   inspectorOpen: false,
@@ -193,7 +196,15 @@ export function setTerminalMaximized(maximized: boolean): void {
 }
 
 export function selectConversation(id: string | null): void {
-  useCore.setState({ selectedConversationId: id, section: 'conversations', settingsOpen: false })
+  useCore.setState({ selectedConversationId: id, section: 'conversations', settingsOpen: false, conversationDraft: false })
+}
+
+export function openConversationDraft(): void {
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, conversationDraft: true })
+}
+
+export function closeConversationDraft(): void {
+  useCore.setState({ conversationDraft: false })
 }
 
 export function setNewConversationOpen(open: boolean): void {

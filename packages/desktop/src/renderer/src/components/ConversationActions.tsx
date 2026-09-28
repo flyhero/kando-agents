@@ -1,5 +1,5 @@
 import type { Conversation, ConversationMode } from '@kando/protocol'
-import { perform, useCore } from '../core-store'
+import { openConversationDraft, perform, setNewConversationOpen, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 
@@ -9,6 +9,13 @@ export const MODE_LABEL: Record<ConversationMode, string> = { tui: '终端（age
 export function defaultMode(): ConversationMode {
   const chat = useCore.getState().rpc?.features.includes('chat') ?? false
   return chat ? usePreferences.getState().agentView : 'tui'
+}
+
+// With chats the default a new conversation opens as a page its first message starts; otherwise
+// the dialog asks how to start it.
+export function newConversation(): void {
+  if (defaultMode() === 'chat') openConversationDraft()
+  else setNewConversationOpen(true)
 }
 
 // What a start tells core besides its mode: whether this user lets chat stages offer bypass.
