@@ -18,6 +18,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 ```
 ┌──────────── 客户端（可以有多个）────────────┐
 │  desktop  Electron + React + xterm.js     │
+│           终端界面 / 聊天界面                │
 │  cli      kando add / ls / edit / run ... │
 └────────────────┬───────────────────────────┘
                  │ JSON-RPC 2.0 over WebSocket（127.0.0.1 + token）
@@ -26,11 +27,13 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 │   ├─ TaskStore / ConversationStore  持久化 │
 │   ├─ TaskService   状态流转、worktree、启动 │
 │   ├─ ConversationService  会话与移交       │
+│   ├─ ChatHost  聊天界面的 agent 协议与记录    │
 │   └─ RpcServer     推送 changed 等          │
 └────────────────┬───────────────────────────┘
                  │ NDJSON over Unix socket / named pipe
 ┌────────────────▼───────────────────────────┐
-│  daemon  持有所有 PTY（node-pty）            │
+│  daemon  持有所有 agent 进程：PTY（node-pty） │
+│          和聊天界面用的 stdio 管道            │
 │          core / 桌面端重启，agent 不会断     │
 └────────────────────────────────────────────┘
 ```
@@ -39,9 +42,9 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 |---|---|
 | `packages/protocol` | 唯一的类型来源：Task / Conversation 模型、状态流转规则、RPC 方法与通知的 zod schema、客户端。`/node` 子入口放路径、端点发现、daemon 协议 |
 | `packages/core` | 独立的任务与自由会话存储及业务逻辑；任务创建 git worktree；通过 daemon 启动 agent CLI |
-| `packages/daemon` | PTY 宿主，独立进程，缓存最近输出，供重新连接时回放 |
+| `packages/daemon` | 进程宿主，独立进程：终端界面的 agent 和 shell 跑在 PTY 里，聊天界面的 agent 跑在 stdio 管道上；缓存最近输出，供重新连接时回放 |
 | `packages/cli` | 命令行客户端 |
-| `packages/desktop` | Electron 桌面端：看板、详情编辑、内嵌终端 |
+| `packages/desktop` | Electron 桌面端：看板、详情编辑、内嵌终端、聊天界面 |
 
 运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`。
 
@@ -108,7 +111,19 @@ agent 退出后，任务进入「待验收」，不管退出码是多少：交�
 
 「移交」会先在运行中时请你确认停止，然后启动另一种 agent。Kando 将已记录的可见用户消息、最终回复和本次补充说明写入 `sessions/<id>/handoffs/`，提示新 agent 阅读文件并检查当前目录、Git 状态和测试。切回曾用过的 agent 时，恢复它原来的 provider 对话，并补上它离开期间的结构化历史。隐藏推理、未暴露上下文及 provider 专属能力无法移交。Claude hooks 在提交时就保存用户消息；Codex `notify` 在 turn 完成后才提供输入与回复，因此 Codex 首次 turn 若在完成前失败，其未上报的输入可能不在结构化交接包中，仍可从终端记录核对。Kando 不从 ANSI 输出猜测消息，也不会改写你的全局 Codex `notify`；已有的根配置 `notify` 命令由本次回调继续转发。
 
-删除会话会删除数据库记录、结构化消息、交接文件和终端日志，但**无论外部还是 Kando 托管的工作目录都会保留**，因为其中可能有唯一的工作成果。
+删除会话会删除数据库记录、结构化消息、交接文件、终端日志和聊天记录，但**无论外部还是 Kando 托管的工作目录都会保留**，因为其中可能有唯一的工作成果。
+
+### 聊天界面
+
+自由会话可以用 agent 自己的终端界面（TUI），也可以用 Kando 的聊天界面。在 设置 → 智能体 →「自由会话的界面」里选默认的一种；新建会话和移交时可以另选，停止的会话可以在「更多操作」里选「以终端界面继续」或「以聊天界面继续」。运行中的会话不会切换，两种界面接着用的是同一个 Claude session / Codex thread，所以随时可以换回来。
+
+聊天界面下，Claude Code 以 `claude -p --input-format stream-json --output-format stream-json` 运行，Codex 以 `codex app-server` 运行。它们和终端一样由 daemon 托管：关闭窗口、重启 core 都不会中断 agent，core 重启后会接着读它的输出，没回答的确认请求也还在。
+
+- **显示**：Markdown 格式的回复；工具调用卡片，包括命令和输出、文件改动的 diff；需要你确认的操作，可以允许、本会话都允许或拒绝（可以附一句理由告诉 agent）；agent 向你提的问题；每个回合是完成、中断还是失败。一次发一条消息，agent 处理时可以中断这个回合。
+- **权限**：Claude Code 使用你设置的默认权限模式，原本要在终端里确认的工具调用变成确认卡片。Codex 每个线程和回合都明确使用 `on-request` 审批和 `workspace-write` 沙箱（和 Codex 终端界面的默认值一样），不继承 `config.toml` 里的设置；会话的其他项目作为可写目录。
+- **记录**：每个聊天阶段把收发的每一帧写进 `sessions/<id>/stages/<阶段 id>.jsonl`，聊天界面就是从它重建的。用户消息和最终回复也照常记进会话消息，所以标题、搜索和移交都和终端界面一样工作。流式增量不落盘：Codex 被中断的回合里只流式显示过的半截回复，重新打开后就没有了。
+- **和终端界面的区别**：没有 agent 自己的斜杠命令和快捷键。Claude Code 在 `-p` 模式下不会弹出「是否信任这个目录」的确认，请只在你信任的项目里用聊天界面。Codex 的 app-server 还在实验阶段，版本太旧、没有 app-server 时会明确提示改用终端。
+- **需要新的 daemon**：聊天界面依赖 daemon 的新方法。如果运行中的 daemon 是更早的版本，新建聊天会话会提示重启它（`pnpm dev:daemon`）；重启 daemon 会结束它正在托管的终端。
 
 ### 多项目与依赖
 
@@ -158,4 +173,6 @@ pnpm build        # 构建桌面端
 - **验收**：按项目配置的测试命令在 worktree 里跑，结果放进检查器；合并分支、清理 worktree
 - **打包**：桌面端启动时自动拉起 core 和 daemon，并用 electron-builder 打包
 - **SSH / WSL 执行宿主**：给 git、PTY 操作加上 `hostId`
-- **Windows**：`claude` / `codex` 的 `.cmd` shim 需要单独解析
+- **Windows**：`claude` / `codex` 的 `.cmd` shim 需要单独解析（聊天界面遇到时会明确报错）
+- **任务的聊天界面**：执行、继续和细化也能选聊天界面
+- **聊天界面的补充**：图片、选模型、斜杠命令、plan 模式、切换权限模式、回合进行中排队发送
