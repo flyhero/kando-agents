@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
@@ -597,6 +597,8 @@ export class ConversationService {
     await rm(path.join(directory, 'terminal.log'), { force: true })
     await rm(path.join(directory, 'handoffs'), { recursive: true, force: true })
     await rm(path.join(directory, 'stages'), { recursive: true, force: true })
+    // The folder goes too, unless it still holds the workspace Kando made, which stays.
+    await rmdir(directory).catch(() => {})
     this.store.delete(id)
     this.emit({ type: 'deleted', id })
   }

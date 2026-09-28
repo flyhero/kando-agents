@@ -575,7 +575,7 @@ describe('ConversationService in chat mode', () => {
     const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
     await service.deleteForTask(task.id)
     expect(() => service.get(started.id)).toThrow(expect.objectContaining({ reason: 'conversation-not-found' }))
-    expect(existsSync(path.join(root, 'sessions', started.id, 'stages'))).toBe(false)
+    expect(existsSync(path.join(root, 'sessions', started.id))).toBe(false)
     await service.deleteForTask('no-such-task')
   })
 
