@@ -17,6 +17,12 @@ describe('conversationState', () => {
     expect(label({ lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true, detail: 'agent 异常退出（code 1）' })
   })
 
+  it('tells a chat-mode agent that waits on the user from one that works', () => {
+    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'running' } }).label).toBe('运行中')
+    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } }).label).toBe('等待输入')
+    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'awaiting' } }).label).toBe('等待确认')
+  })
+
   it('says only "not running" to an older core that sends no exit', () => {
     expect(label({}).label).toBe('未运行')
   })

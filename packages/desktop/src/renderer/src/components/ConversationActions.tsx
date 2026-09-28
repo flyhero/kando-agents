@@ -1,9 +1,18 @@
-import type { Conversation } from '@kando/protocol'
-import { perform } from '../core-store'
+import type { Conversation, ConversationMode } from '@kando/protocol'
+import { perform, useCore } from '../core-store'
+import { usePreferences } from '../preferences'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 
-export function continueConversation(id: string) {
-  return perform((rpc) => rpc.call('conversations.continue', { id }))
+export const MODE_LABEL: Record<ConversationMode, string> = { tui: '终端（agent 自己的 TUI）', chat: '聊天界面' }
+
+// The mode a start takes when the user does not pick one: the setting, where core can run it.
+export function defaultMode(): ConversationMode {
+  const chat = useCore.getState().rpc?.features.includes('chat') ?? false
+  return chat ? usePreferences.getState().agentView : 'tui'
+}
+
+export function continueConversation(id: string, mode: ConversationMode = defaultMode()) {
+  return perform((rpc) => rpc.call('conversations.continue', { id, mode }))
 }
 
 export function stopConversation(id: string) {

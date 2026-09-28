@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { AGENT_KINDS, type AgentKind } from '@kando/protocol'
-import { dismissError, perform, selectConversation, setNewConversationOpen, useCore } from '../core-store'
+import { AGENT_KINDS, type AgentKind, type ConversationMode } from '@kando/protocol'
+import { dismissError, perform, selectConversation, setNewConversationOpen, useChatSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
+import { usePreferences } from '../preferences'
+import { MODE_LABEL } from './ConversationActions'
 import { ProjectPicker } from './ProjectPicker'
 
 export function NewConversationDialog() {
@@ -11,6 +13,8 @@ export function NewConversationDialog() {
   const error = useCore((s) => s.error)
   const [agent, setAgent] = useState<AgentKind>(() => defaultAgent(tasks) ?? 'codex')
   const [projectPaths, setProjectPaths] = useState<string[]>([])
+  const chatSupported = useChatSupported()
+  const [mode, setMode] = useState<ConversationMode>(() => usePreferences.getState().agentView)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     dialog.current?.showModal()
@@ -21,7 +25,7 @@ export function NewConversationDialog() {
   const create = async () => {
     if (busy) return
     setBusy(true)
-    const created = await perform((rpc) => rpc.call('conversations.create', { agent, projectPaths }))
+    const created = await perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, mode: chatSupported ? mode : 'tui' }))
     setBusy(false)
     if (created) { selectConversation(created.id); close() }
   }
@@ -33,6 +37,11 @@ export function NewConversationDialog() {
           {AGENT_KINDS.map((kind) => <option key={kind} value={kind}>{AGENT_LABEL[kind]}</option>)}
         </select>
       </label>
+      {chatSupported && <label className="modal-field"><span className="modal-label">界面</span>
+        <select className="input modal-input" value={mode} onChange={(event) => setMode(event.target.value === 'chat' ? 'chat' : 'tui')}>
+          {(['tui', 'chat'] as const).map((each) => <option key={each} value={each}>{MODE_LABEL[each]}</option>)}
+        </select>
+      </label>}
       <div className="modal-field"><span className="modal-label">项目 <span className="modal-optional">[可选]</span></span>
         <ProjectPicker
           projects={projectPaths.map((projectPath) => ({ path: projectPath, worktreePath: null }))}

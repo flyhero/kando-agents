@@ -92,8 +92,24 @@ function UsageSettings() {
 function AgentSettings() {
   const defaultAgent = usePreferences((s) => s.defaultAgent)
   const openTerminal = usePreferences((s) => s.openTerminalOnRun)
+  const agentView = usePreferences((s) => s.agentView)
   return (
     <>
+      <SettingsRow
+        label="自由会话的界面"
+        description="新建、继续和移交自由会话时默认用哪一种，每次也可以另选。聊天界面把 agent 的消息、工具调用和确认请求画成卡片；运行中的会话不会切换，下次继续时生效。Codex 的聊天界面依赖它还在实验阶段的 app-server。"
+        control={(labelId) => (
+          <Segmented
+            labelId={labelId}
+            value={agentView}
+            onChange={(next) => setPreference('agentView', next)}
+            options={[
+              { value: 'tui', label: '终端' },
+              { value: 'chat', label: '聊天界面' }
+            ]}
+          />
+        )}
+      />
       <SettingsRow
         label="新建任务的默认 agent"
         description="「最近用过的」会沿用最新一个任务选的 agent。"
@@ -226,8 +242,8 @@ const SECTIONS: readonly Section[] = [
     id: 'agents',
     group: '任务',
     title: '智能体',
-    description: '新建和执行任务时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端'],
+    description: '新建和执行任务、开始自由会话时 agent 的默认行为。',
+    keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话'],
     Icon: SparkIcon,
     Body: AgentSettings
   },

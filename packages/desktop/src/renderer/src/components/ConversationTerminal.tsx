@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react'
-import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
+import type { ConversationMode } from '@kando/protocol'
+import { selectConversation, setConversationInspectorOpen, useChatSupported, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { projectNames } from './ProjectPicker'
 import { BranchStatus } from './BranchStatus'
+import { ConversationChat } from './ConversationChat'
 import { ConversationInspector } from './ConversationInspector'
 import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
@@ -13,8 +15,15 @@ import { Popover } from './Popover'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
 
-// Deleting sits a click away from the everyday buttons, as a task's does.
-function MoreMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
+const MODE_ACTION: Record<ConversationMode, string> = { tui: '以终端界面继续', chat: '以聊天界面继续' }
+
+// Deleting sits a click away from the everyday buttons, as a task's does. A stopped conversation
+// can continue in either view here; the ▷ button uses the one settings name.
+function MoreMenu({ disabled, onDelete, onContinue }: {
+  disabled: boolean
+  onDelete: () => void
+  onContinue: ((mode: ConversationMode) => void) | null
+}) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   return (
@@ -33,6 +42,19 @@ function MoreMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => v
       </button>
       {open && (
         <Popover label="更多操作" onClose={close}>
+          {onContinue && (['tui', 'chat'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                close()
+                onContinue(mode)
+              }}
+            >
+              {MODE_ACTION[mode]}
+            </button>
+          ))}
           <button
             type="button"
             className="menu-item menu-item-danger"
@@ -56,7 +78,9 @@ export function ConversationTerminal({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
+  const chatSupported = useChatSupported()
   if (!conversation) return null
+  const chat = conversation.mode === 'chat'
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare.
   const inspectable = conversation.projectPaths.length > 0
   const state = conversationState(conversation)
@@ -97,13 +121,19 @@ export function ConversationTerminal({ id }: { id: string }) {
             <InspectorIcon />
           </button>
         )}
-        <MoreMenu disabled={busy} onDelete={remove} />
+        <MoreMenu
+          disabled={busy}
+          onDelete={remove}
+          onContinue={chatSupported && !conversation.sessionId ? (mode) => void action(() => continueConversation(id, mode)) : null}
+        />
         <span className="toolbar-separator" aria-hidden="true" />
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectConversation(null)}><CloseIcon /></button>
       </div>
     </header>
     <div className="terminal-body">
-      <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />
+      {chat
+        ? <ConversationChat conversation={conversation} />
+        : <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />}
       {inspectable && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
     </div>
     {handoffOpen && <ConversationHandoffDialog conversation={conversation} onClose={() => setHandoffOpen(false)} />}

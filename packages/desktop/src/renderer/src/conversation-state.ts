@@ -5,7 +5,10 @@ export type ConversationState = { label: string; running: boolean; failed: boole
 // One wording for the list, the header and grouping. "Not running" alone hid whether the agent
 // finished, was stopped, crashed at once or never started.
 export function conversationState(conversation: Conversation): ConversationState {
-  const { sessionId, lastExit } = conversation
+  const { sessionId, lastExit, chat } = conversation
+  // A chat-mode agent says whether it is working; a TUI's is only known to be up.
+  if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
+  if (sessionId && chat?.turn === 'idle') return { label: '等待输入', running: true, failed: false, detail: 'agent 在等你的下一条消息' }
   if (sessionId) return { label: '运行中', running: true, failed: false, detail: null }
   // An older core sends no lastExit, so there is nothing more to say than before.
   if (lastExit === undefined) return { label: '未运行', running: false, failed: false, detail: null }

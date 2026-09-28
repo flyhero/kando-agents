@@ -1,0 +1,160 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ChatItem, Conversation, ConversationMessage, ConversationStage } from '@kando/protocol'
+import { dropChat, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
+import { perform, useCore } from '../core-store'
+import { AGENT_LABEL, dayAndTime } from '../labels'
+import { ChatComposer } from './ChatComposer'
+import { ChatMarkdown } from './ChatMarkdown'
+import { ChatApprovalCard, ChatQuestionCard } from './ChatRequestCards'
+import { ChatPaths, ChatToolCard } from './ChatToolCard'
+
+type ToolItem = Extract<ChatItem, { kind: 'tool' }>
+const NO_ITEMS: ChatItem[] = []
+// Within this many pixels of the bottom, new output keeps the list scrolled to the end.
+const PINNED_SLACK = 48
+
+function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
+  const seconds = item.durationMs !== null ? ` · ${(item.durationMs / 1000).toFixed(1)} 秒` : ''
+  if (item.state === 'completed') return `完成${seconds}`
+  if (item.state === 'interrupted') return `已中断${item.error ? `：${item.error}` : ''}`
+  return `失败${item.error ? `：${item.error}` : ''}`
+}
+
+function StageDivider({ stage }: { stage: ConversationStage }) {
+  const where = stage.mode === 'chat' ? '聊天界面' : '终端，这里只有记下的消息，细节在终端记录里'
+  return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)} · {where}</div>
+}
+
+function TerminalMessage({ message }: { message: ConversationMessage }) {
+  return message.role === 'user'
+    ? <div className="chat-user">{message.text}</div>
+    : <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
+}
+
+function Item({ conversationId, item, tools }: { conversationId: string; item: ChatItem; tools: ReadonlyMap<string, ToolItem> }) {
+  switch (item.kind) {
+    case 'user':
+      return <div className="chat-user">{item.text}</div>
+    case 'assistant':
+      return <div className="chat-assistant" data-streaming={item.streaming || undefined}><ChatMarkdown text={item.text} /></div>
+    case 'reasoning':
+      return (
+        <details className="chat-reasoning">
+          <summary className="muted">思考过程</summary>
+          <div className="chat-reasoning-text">{item.text}</div>
+        </details>
+      )
+    case 'tool':
+      return <ChatToolCard item={item} />
+    case 'approval':
+      return <ChatApprovalCard conversationId={conversationId} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
+    case 'question':
+      return <ChatQuestionCard conversationId={conversationId} item={item} />
+    case 'turn':
+      return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
+    case 'notice':
+      return <div className="chat-notice" data-level={item.level}>{item.text}</div>
+  }
+}
+
+function entryKey(entry: TimelineEntry): string {
+  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${entry.item.id}` : `message:${entry.message.sequence}`
+}
+
+// A conversation whose latest stage runs in chat mode: every stage in order, then the composer.
+export function ConversationChat({ conversation }: { conversation: Conversation }) {
+  const { id } = conversation
+  const rpc = useCore((s) => s.rpc)
+  const page = useChat((s) => s[id])
+  const [stages, setStages] = useState<ConversationStage[]>([])
+  const [messages, setMessages] = useState<ConversationMessage[]>([])
+  const list = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+
+  // Watching makes core send this conversation's item changes to this window until it lets go.
+  useEffect(() => {
+    if (!rpc) return
+    let current = true
+    rpc.call('conversations.watchChat', { id }).then(
+      (result) => current && setChatPage(id, result),
+      () => {}
+    )
+    return () => {
+      current = false
+      dropChat(id)
+      void rpc.call('conversations.unwatchChat', { id }).catch(() => {})
+    }
+  }, [rpc, id])
+
+  // A new stage starts with a new session; earlier stages and their messages do not change.
+  useEffect(() => {
+    if (!rpc) return
+    let current = true
+    Promise.all([rpc.call('conversations.stages', { id }), rpc.call('conversations.messages', { id })]).then(
+      ([nextStages, nextMessages]) => {
+        if (!current) return
+        setStages(nextStages)
+        setMessages(nextMessages)
+      },
+      () => {}
+    )
+    return () => {
+      current = false
+    }
+  }, [rpc, id, conversation.sessionId])
+
+  const items = page?.items ?? NO_ITEMS
+  const entries = useMemo(() => timeline(stages, messages, items), [stages, messages, items])
+  const tools = useMemo(
+    () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
+    [items]
+  )
+
+  useLayoutEffect(() => {
+    const element = list.current
+    if (element && pinned.current) element.scrollTop = element.scrollHeight
+  }, [entries])
+
+  const loadOlder = async () => {
+    if (!page?.before) return
+    const before = page.before
+    const older = await perform((connection) => connection.call('conversations.chatItems', { id, before }))
+    if (older) {
+      pinned.current = false
+      prependChatPage(id, older)
+    }
+  }
+
+  const shorten = useMemo(
+    () => pathShortener(conversation.projectPaths.length ? conversation.projectPaths : [conversation.workspacePath]),
+    [conversation.projectPaths, conversation.workspacePath]
+  )
+  const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
+  return (
+    <ChatPaths.Provider value={shorten}>
+    <div className="chat-view">
+      <div
+        className="chat-list"
+        ref={list}
+        onScroll={(event) => {
+          const element = event.currentTarget
+          pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < PINNED_SLACK
+        }}
+      >
+        {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
+        {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
+        {entries.map((entry) => (
+          <div key={entryKey(entry)} className="chat-entry">
+            {entry.kind === 'stage' ? <StageDivider stage={entry.stage} />
+              : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
+              : <Item conversationId={id} item={entry.item} tools={tools} />}
+          </div>
+        ))}
+        {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理…</div>}
+        {turn === 'awaiting' && <div className="chat-working muted">等你回答上面的请求</div>}
+      </div>
+      <ChatComposer conversation={conversation} />
+    </div>
+    </ChatPaths.Provider>
+  )
+}

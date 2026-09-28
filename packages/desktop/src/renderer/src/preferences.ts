@@ -14,6 +14,9 @@ const Preferences = z.object({
   // 'recent' reuses whichever agent the newest task picked.
   defaultAgent: z.enum(['recent', 'claude', 'codex', 'none']).catch('recent'),
   openTerminalOnRun: z.boolean().catch(true),
+  // How a conversation's agent starts unless the user picks otherwise: its own TUI in a terminal,
+  // or Kando's chat view of its structured output.
+  agentView: z.enum(['tui', 'chat']).catch('tui'),
   // Off, the sidebar lists only pending and running tasks.
   showAllTasks: z.boolean().catch(false),
   conversationGroup: z.enum(CONVERSATION_GROUPS).catch('none'),

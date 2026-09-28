@@ -16,6 +16,7 @@ import {
   type Terminal,
   type Conversation
 } from '@kando/protocol'
+import { receiveChatDelta, receiveChatItems } from './chat-state'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
 
@@ -242,6 +243,11 @@ export function closeLogin(): void {
   }
 }
 
+// Whether the core this window talks to can run a conversation in chat mode.
+export function useChatSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('chat') ?? false)
+}
+
 export function dismissError(): void {
   useCore.setState({ error: null })
 }
@@ -305,6 +311,8 @@ export function startCoreConnection(): void {
             return { conversations, selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId }
           })
         )
+        rpc.on('conversations.chatItems', ({ conversationId, items }) => receiveChatItems(conversationId, items))
+        rpc.on('conversations.chatDelta', ({ conversationId, itemId, append }) => receiveChatDelta(conversationId, itemId, append))
         rpc.on('usage.changed', ({ usage }) =>
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))
         )

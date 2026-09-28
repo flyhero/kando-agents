@@ -84,10 +84,26 @@ const REASON_TEXT: Record<string, string> = {
   'conversation-event-invalid': '会话事件与当前阶段不匹配',
   'invalid-workspace': '项目必须是已存在的绝对目录',
   'too-many-projects': '一条会话最多选择 10 个项目',
-  'duplicate-project': '不能重复选择同一个项目目录'
+  'duplicate-project': '不能重复选择同一个项目目录',
+  'chat-starting': 'agent 还在启动，稍等再发',
+  'chat-busy': 'agent 还在处理上一条消息',
+  'chat-idle': '现在没有进行中的回合',
+  'chat-request-gone': '这个请求已经不再等待回答',
+  'chat-not-running': '这条会话的 agent 没有以聊天界面运行',
+  'chat-session': '这条会话运行在聊天界面，没有终端可以连接',
+  'chat-start-timeout': 'agent 太久没有完成启动',
+  'daemon-outdated': '正在运行的终端守护进程版本太旧，不支持聊天界面，请重启它（pnpm dev:daemon）',
+  'stage-not-found': '找不到更早的聊天记录'
+}
+
+// Reasons whose message says what went wrong in the agent's own words, kept after the summary.
+const REASON_WITH_DETAIL: Record<string, string> = {
+  'chat-start-failed': 'agent 没能以聊天界面启动'
 }
 
 export function reasonText(reason: string, fallback: string): string {
+  const summary = REASON_WITH_DETAIL[reason]
+  if (summary) return fallback && fallback !== reason ? `${summary}：${fallback}` : summary
   return REASON_TEXT[reason] ?? fallback
 }
 

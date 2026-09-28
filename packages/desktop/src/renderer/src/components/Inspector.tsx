@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { RpcError, type ChangedFile, type Commit, type FileDiff } from '@kando/protocol'
+import { DiffLines } from './DiffLines'
 import { ArrowLeftIcon, CloseIcon, RefreshIcon } from './icons'
 import { PanelSeparator } from './PanelSeparator'
 
@@ -122,14 +123,6 @@ export function FileList({ files, onOpen }: { files: readonly ChangedFile[]; onO
   )
 }
 
-function lineClass(line: string): string {
-  if (line.startsWith('+++') || line.startsWith('---')) return 'diff-meta'
-  if (line.startsWith('+')) return 'diff-add'
-  if (line.startsWith('-')) return 'diff-del'
-  if (line.startsWith('@@')) return 'diff-hunk'
-  return /^(diff |index |new file|deleted file|similarity|rename |old mode|new mode|Binary)/.test(line) ? 'diff-meta' : 'diff-context'
-}
-
 // `load` is asked again whenever `loadKey` changes; a stale answer never replaces a newer one.
 export function FileDiffView({ file, loadKey, load, onBack }: {
   file: string
@@ -163,11 +156,7 @@ export function FileDiffView({ file, loadKey, load, onBack }: {
         <p className="inspector-empty muted">{shown.gone ? '这个文件已经不在改动里了，可能已经被还原或提交。' : '读取 diff 失败。'}</p>
       ) : (
         <>
-          <pre className="diff-view">
-            {shown.diff.diff.split('\n').map((line, index) => (
-              <div key={index} className={lineClass(line)}>{line || ' '}</div>
-            ))}
-          </pre>
+          <DiffLines patch={shown.diff.diff} />
           {shown.diff.truncated && <p className="inspector-empty muted">diff 太长，只显示了前 256KB。</p>}
         </>
       )}
