@@ -51,8 +51,9 @@ function withCurrent(values: readonly string[], current: string | null): string[
   return current && !values.includes(current) ? [current, ...values] : [...values]
 }
 
-// Below the composer: how freely the agent may act, and the model and effort it runs, all of
-// which a click switches. The model and effort change between turns; the mode at any time.
+// Below the composer: how freely the agent may act on the left; on the right, the model and effort
+// it runs beside how full its context is. A click switches each; the model and effort change
+// between turns, the mode at any time.
 export function ChatOptionsBar({ conversation, state }: { conversation: Conversation; state: StateItem }) {
   const { id, agent } = conversation
   const idle = conversation.chat?.turn === 'idle'
@@ -81,6 +82,7 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
           ))}
         </select>
       )}
+      <span className="chat-dock-spacer" />
       {models.length > 0 && (
         <select
           className="chat-select"
@@ -107,7 +109,6 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
           {efforts.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>)}
         </select>
       )}
-      <span className="chat-dock-spacer" />
       {state.context && <ContextRing context={state.context} />}
     </div>
   )
