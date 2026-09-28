@@ -1,9 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { lstatSync, readFileSync } from 'node:fs'
 import { chmod, lstat, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { ATTACHMENT_ID_PATTERN, MAX_ATTACHMENT_BYTES, type AttachmentInfo } from '@kando/protocol'
 import { IMAGE_MIME, ImageError, inspectImage, type ImageFacts } from './image-file'
 import { Rejection } from './rejection'
+
+// A stored image as an agent takes it: by path, or by its bytes read when asked for.
+export type AttachmentFile = { id: string; mime: AttachmentInfo['mime']; path: string; read(): Uint8Array }
 
 // Images by content: the file name is the sha256 of the (metadata-stripped) bytes, so the same
 // picture is stored once however many tasks show it, and a name can never point outside the folder.
@@ -84,6 +88,23 @@ export class AttachmentStore {
   async pathOf(id: string): Promise<string | null> {
     const file = this.file(id)
     return (await this.isFile(file)) ? file : null
+  }
+
+  // Whether the image is there is for info() to say first: this only names it. The format is in
+  // the id, which was given from the bytes, so the type needs no reading.
+  fileOf(id: string): AttachmentFile {
+    const file = this.file(id)
+    const mime = Object.entries(IMAGE_MIME).find(([format]) => id.endsWith(`.${format}`))?.[1]
+    if (!mime) throw new Rejection('attachment-not-found', `not an image id: ${id}`)
+    return {
+      id,
+      mime,
+      path: file,
+      read: () => {
+        if (!lstatSync(file).isFile()) throw new Rejection('attachment-not-found', `no image ${id}`)
+        return readFileSync(file)
+      }
+    }
   }
 
   private file(id: string): string {

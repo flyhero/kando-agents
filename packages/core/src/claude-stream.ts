@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { ChatDiff, ChatModel, ChatOption, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
-import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
+import type { ChatDiff, ChatImage, ChatModel, ChatOption, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
@@ -16,6 +16,8 @@ const SETTINGS_ID = 'kando-settings'
 const INTERRUPT_PREFIX = 'kando-interrupt-'
 const OPTION_PREFIX = 'kando-option-'
 const MAX_PATCH = 50_000
+// The API's limit for one image; the store takes twice that.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 // Calls that are Claude Code's own machinery, or that another item already shows: no tool card.
 const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion', 'ToolSearch', ...CLAUDE_TASK_TOOLS])
 const FILE_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'MultiEdit'])
@@ -323,13 +325,13 @@ export class ClaudeStream implements ChatDriver {
         this.receive(record.frame, record.at)
         break
       case 'out':
-        this.sent(record.frame, record.at, record.ref)
+        this.sent(record.frame, record.at, record.ref, record.images ?? [])
         break
       case 'note':
         this.items.notice(record.level, record.text, record.at)
         break
       case 'queue':
-        this.queue.set(record.text, record.ref)
+        this.queue.set(record.text, record.ref, record.images)
         break
       case 'option':
         // Claude Code takes options through its own control requests, which the log also holds.
@@ -375,10 +377,20 @@ export class ClaudeStream implements ChatDriver {
     return this.sessionId
   }
 
-  send(text: string): unknown {
+  // The API takes an image's bytes in the message, before the text it asks about; the log keeps
+  // the text alone, since the record names the images.
+  send(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
     if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
-    return { type: 'user', message: { role: 'user', content: text } }
+    const logged = { type: 'user', message: { role: 'user', content: text } }
+    if (images.length === 0) return { wire: logged, logged }
+    const blocks = images.map((image) => {
+      const bytes = image.read()
+      if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Rejection('chat-image-too-large', `Claude takes an image up to ${MAX_IMAGE_BYTES} bytes`)
+      return { type: 'image', source: { type: 'base64', media_type: image.mime, data: Buffer.from(bytes).toString('base64') } }
+    })
+    const content = text ? [...blocks, { type: 'text', text }] : blocks
+    return { wire: { type: 'user', message: { role: 'user', content } }, logged }
   }
 
   respond(requestId: string, answer: ChatAnswer): unknown[] {
@@ -397,7 +409,7 @@ export class ClaudeStream implements ChatDriver {
     return [...denials, request]
   }
 
-  queuedToSend(): { text: string; ref: string } | null {
+  queuedToSend(): { text: string; images: ChatImage[]; ref: string } | null {
     return this.ready() && !this.turn ? this.queue.next() : null
   }
 
@@ -852,17 +864,17 @@ export class ClaudeStream implements ChatDriver {
     if (mode) this.permissionMode = PERMISSION_MODES[mode] ?? mode
   }
 
-  private sent(frame: unknown, at: number, ref: string | undefined): void {
+  private sent(frame: unknown, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
     const head = Head.safeParse(frame)
     if (!head.success) return
     if (head.data.type === 'user') {
       const user = OutgoingUser.safeParse(frame)
       if (!user.success || !ref) return
       const text = user.data.message.content
-      this.items.put({ id: `u:${ref}`, kind: 'user', text }, at)
+      this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images] }, at)
       this.queue.sent(ref)
       this.turn = { ref, assistant: null }
-      this.messages.push({ role: 'user', text, eventKey: `chat:${ref}:user`, complete: false })
+      this.messages.push({ role: 'user', text: messageText(text, images), eventKey: `chat:${ref}:user`, complete: false })
       return
     }
     if (head.data.type === 'control_request') {

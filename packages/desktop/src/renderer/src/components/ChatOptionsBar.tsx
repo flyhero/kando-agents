@@ -67,10 +67,11 @@ function withCurrent(values: readonly string[], current: string | null): string[
   return current && !values.includes(current) ? [current, ...values] : [...values]
 }
 
-// Below the composer: how freely the agent may act on the left; on the right, the model and effort
-// it runs beside how full its context is. A click switches each; the model and effort change
-// between turns, the mode at any time. With no agent running, the choices are for the next start,
-// from what the last stage offered: as chosen since, or as that stage left them.
+// The row under the composer's input, after its ＋: how freely the agent may act on the left; on
+// the right, the model and effort it runs beside how full its context is. A click switches each;
+// the model and effort change between turns, the mode at any time. With no agent running, the
+// choices are for the next start, from what the last stage offered: as chosen since, or as that
+// stage left them.
 export function ChatOptionsBar({ conversation, state }: { conversation: Conversation; state: StateItem }) {
   const { id, agent, chatOptions: next } = conversation
   const running = conversation.sessionId !== null
@@ -93,7 +94,7 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
     : [{ id: modelId, label: modelId, description: null, efforts: [], isDefault: false }, ...state.models]
   const later = running ? null : '发下一条消息时按这个启动'
   return (
-    <div className="chat-options">
+    <>
       {modes.length > 0 && (
         <select
           className="chat-select"
@@ -139,6 +140,6 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
         </select>
       )}
       {state.context && <ContextRing context={state.context} />}
-    </div>
+    </>
   )
 }

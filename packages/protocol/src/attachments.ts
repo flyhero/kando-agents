@@ -11,6 +11,8 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 export const ATTACHMENT_CHUNK_BYTES = 512 * 1024
 const MAX_CHUNK_BASE64 = Math.ceil(ATTACHMENT_CHUNK_BYTES / 3) * 4
 export const MAX_TASK_IMAGES = 20
+// Per chat message; Codex takes no more than this in one turn.
+export const MAX_CHAT_IMAGES = 10
 export const MAX_IMAGE_NAME_LENGTH = 120
 
 export const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const

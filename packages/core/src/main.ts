@@ -73,7 +73,8 @@ const conversations = new ConversationService(
       watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, stageId, itemId, append }))
     }
   },
-  projects
+  projects,
+  attachments
 )
 
 const sourceConfig = new SourceConfigStore(paths.sourcesConfig)

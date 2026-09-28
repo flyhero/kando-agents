@@ -8,7 +8,9 @@ import type { DaemonMethod, DaemonParams, DaemonResult } from '@kando/protocol/n
 import type { SessionHost } from './daemon-client'
 import { ConversationService } from './conversation-service'
 import { ConversationStore } from './conversation-store'
+import { AttachmentStore } from './attachment-store'
 import { fakeChatDaemon } from './fake-chat-agent'
+import { pngBytes } from './image-fixtures'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 
@@ -50,6 +52,13 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
   return daemon
 }
 
+// The store an image a message names is looked up in; made on the way in.
+function attachmentsAt(root: string): AttachmentStore {
+  const dir = path.join(root, 'attachments')
+  mkdirSync(dir, { recursive: true })
+  return new AttachmentStore(dir)
+}
+
 describe('ConversationService', () => {
   let root: string
   let tasks: TaskStore
@@ -66,7 +75,7 @@ describe('ConversationService', () => {
     projects = new ProjectRegistry(database)
     daemon = fakeDaemon()
     service = new ConversationService(store, daemon, path.join(root, 'sessions'),
-      (id, stage, agent) => ['node', 'callback.js', id, stage, agent], () => {}, projects)
+      (id, stage, agent) => ['node', 'callback.js', id, stage, agent], () => {}, projects, attachmentsAt(root))
   })
 
   afterEach(() => {
@@ -268,7 +277,7 @@ describe('ConversationService in chat mode', () => {
 
   function serve(): ConversationService {
     const next = new ConversationService(store, daemon, path.join(root, 'sessions'),
-      (id, stage, agent) => ['node', 'callback.js', id, stage, agent], () => {}, projects)
+      (id, stage, agent) => ['node', 'callback.js', id, stage, agent], () => {}, projects, attachmentsAt(root))
     daemon.deliver = (event) => {
       if (event.event === 'data') next.handleData(event)
       else if (event.event === 'exit') next.handleExit(event.sessionId, event.exitCode)
@@ -299,7 +308,7 @@ describe('ConversationService in chat mode', () => {
     const announced: unknown[] = []
     service = new ConversationService(store, daemon, path.join(root, 'sessions'),
       (id, stage, agent) => ['node', 'callback.js', id, stage, agent],
-      (event) => { if (event.type === 'changed') announced.push(event.conversation.chat) }, projects)
+      (event) => { if (event.type === 'changed') announced.push(event.conversation.chat) }, projects, attachmentsAt(root))
     const next = service
     daemon.deliver = (event) => {
       if (event.event === 'data') next.handleData(event)
@@ -503,5 +512,15 @@ describe('ConversationService in chat mode', () => {
     await settle()
     expect(service.messages(created.id).map((message) => message.text))
       .toEqual(['first', 'echo: first', 'second', 'echo: second'])
+  })
+  it('sends only images the store holds, each once, and notes them in the message it keeps', async () => {
+    const created = await service.create('claude', [], 'chat')
+    await expect(service.send(created.id, 'see', [`${'b'.repeat(64)}.png`])).rejects.toMatchObject({ reason: 'attachment-not-found' })
+    const stored = await attachmentsAt(root).put(pngBytes(4, 3))
+    await service.send(created.id, 'see', [stored.id, stored.id])
+    await settle()
+    expect(daemon.written(created.sessionId!).at(-1)).toMatchObject({ message: { content: [{ type: 'image' }, { type: 'text', text: 'see' }] } })
+    expect(service.chatPage(created.id).items.find((item) => item.kind === 'user')).toMatchObject({ images: [{ id: stored.id, width: 4, height: 3 }] })
+    expect(service.messages(created.id)[0]?.text).toBe('see\n\n（附了 1 张图片）')
   })
 })

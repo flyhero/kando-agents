@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, Task, TaskSession, TaskStatus } from './task'
-import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_TASK_IMAGES } from './attachments'
+import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_CHAT_IMAGES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
@@ -30,7 +30,8 @@ const Ok = z.object({ ok: z.literal(true) })
 const ConversationRef = z.object({ id: z.string().uuid() })
 // What core can do beyond this protocol version's baseline; an older core sends none.
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
-export const CORE_FEATURES = ['chat', 'chat-options'] as const
+// chat-images: conversations.send takes images; an older core would drop them unnoticed.
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -112,9 +113,17 @@ export const rpcMethods = {
     params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
     result: Conversation
   },
-  // Chat mode only: a message for the agent. With queue, one sent while a turn runs waits for the
-  // turn to end (replacing any that already waited); without it, the agent must be idle.
-  'conversations.send': { params: ConversationRef.extend({ text: z.string().trim().min(1).max(100000), queue: z.boolean().optional() }), result: Ok },
+  // Chat mode only: a message for the agent, text and/or images already uploaded (attachments.commit),
+  // in the order they show. With queue, one sent while a turn runs waits for the turn to end
+  // (replacing any that already waited); without it, the agent must be idle.
+  'conversations.send': {
+    params: ConversationRef.extend({
+      text: z.string().trim().max(100000),
+      images: z.array(AttachmentId).max(MAX_CHAT_IMAGES).optional(),
+      queue: z.boolean().optional()
+    }).refine((params) => params.text !== '' || (params.images?.length ?? 0) > 0, { message: 'a message needs text or an image' }),
+    result: Ok
+  },
   // Drops the waiting message, or sends one an interrupted or failed turn left held.
   'conversations.cancelQueued': { params: ConversationRef, result: Ok },
   'conversations.sendQueued': { params: ConversationRef, result: Ok },

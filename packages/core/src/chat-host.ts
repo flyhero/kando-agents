@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentKind, ChatItem, ChatOption, ChatTurnActivity } from '@kando/protocol'
-import type { ChatAnswer, ChatDriver, ChatStageOptions, StageMessage } from './chat-driver'
+import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatTurnActivity } from '@kando/protocol'
+import type { AttachmentStore } from './attachment-store'
+import type { ChatAnswer, ChatDriver, ChatImageFile, ChatOutgoing, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
 import { ClaudeStream } from './claude-stream'
 import { CodexAppServer } from './codex-app-server'
@@ -64,6 +65,8 @@ export class ChatHost {
   constructor(
     private readonly daemon: SessionHost,
     private readonly sessionsRoot: string,
+    // Where a message's images are read from; the caller has checked they are there.
+    private readonly attachments: Pick<AttachmentStore, 'fileOf'>,
     private readonly sink: ChatSink,
     private readonly now: () => number = Date.now
   ) {}
@@ -180,7 +183,7 @@ export class ChatHost {
   }
 
   private isIdle(live: Live): boolean {
-    return live.attached && live.driver.ready() && live.driver.activity() === 'idle' && this.queuedText(live) === null
+    return live.attached && live.driver.ready() && live.driver.activity() === 'idle' && this.queuedMessage(live) === null
   }
 
   // A running stage's items, or an ended one's rebuilt from its log.
@@ -200,13 +203,13 @@ export class ChatHost {
   }
 
   // With queue, a message sent while a turn runs waits for the turn to end.
-  async send(conversationId: string, text: string, queue = false): Promise<void> {
+  async send(conversationId: string, text: string, images: readonly ChatImage[] = [], queue = false): Promise<void> {
     const live = this.running(conversationId)
     if (queue && live.driver.activity() !== 'idle') {
-      this.enqueue(live, text)
+      this.enqueue(live, text, images)
       return
     }
-    const sent = this.write(live, live.driver.send(text), randomUUID())
+    const sent = this.dispatch(live, live.driver.send(text, this.files(images)), randomUUID(), images)
     this.flush(live)
     await sent
   }
@@ -220,20 +223,24 @@ export class ChatHost {
   // Queued again, so a message an interrupted turn held goes out now if the agent is idle.
   sendQueued(conversationId: string): void {
     const live = this.running(conversationId)
-    const text = this.queuedText(live)
-    if (text === null) throw new Rejection('chat-nothing-queued', 'no message is waiting')
-    this.enqueue(live, text)
+    const queued = this.queuedMessage(live)
+    if (queued === null) throw new Rejection('chat-nothing-queued', 'no message is waiting')
+    this.enqueue(live, queued.text, queued.images)
   }
 
-  private enqueue(live: Live, text: string): void {
-    this.record(live, { dir: 'queue', at: this.now(), text, ref: randomUUID() })
+  private enqueue(live: Live, text: string, images: readonly ChatImage[]): void {
+    this.record(live, { dir: 'queue', at: this.now(), text, ref: randomUUID(), ...(images.length ? { images: [...images] } : {}) })
     this.pump(live)
     this.flush(live)
   }
 
-  private queuedText(live: Live): string | null {
+  private queuedMessage(live: Live): { text: string; images: ChatImage[] } | null {
     const state = live.driver.items.list().find((item) => item.kind === 'state')
-    return state?.kind === 'state' ? (state.queued?.text ?? null) : null
+    return state?.kind === 'state' && state.queued ? { text: state.queued.text, images: state.queued.images } : null
+  }
+
+  private files(images: readonly ChatImage[]): ChatImageFile[] {
+    return images.map((image) => ({ ...image, ...this.attachments.fileOf(image.id) }))
   }
 
   private record(live: Live, record: LoggedRecord): void {
@@ -314,13 +321,24 @@ export class ChatHost {
       void this.write(live, frame).catch(ignore)
     }
     const queued = live.driver.queuedToSend()
-    if (queued) void this.write(live, live.driver.send(queued.text), queued.ref).catch(ignore)
+    if (!queued) return
+    try {
+      void this.dispatch(live, live.driver.send(queued.text, this.files(queued.images)), queued.ref, queued.images).catch(ignore)
+    } catch (error) {
+      // An image gone from the store since it was queued: the message is dropped with a word.
+      this.record(live, { dir: 'queue', at: this.now(), text: null })
+      this.record(live, { dir: 'note', at: this.now(), level: 'error', text: `排队的消息没能发出：${error instanceof Error ? error.message : String(error)}` })
+    }
+  }
+
+  private write(live: Live, frame: unknown, ref?: string): Promise<unknown> {
+    return this.dispatch(live, { wire: frame, logged: frame }, ref)
   }
 
   // Logged and applied before it is written, so a crash in between cannot send it twice.
-  private write(live: Live, frame: unknown, ref?: string): Promise<unknown> {
-    this.record(live, { dir: 'out', at: this.now(), frame, ...(ref ? { ref } : {}) })
-    return this.daemon.request('write', { sessionId: live.sessionId, data: `${JSON.stringify(frame)}\n` })
+  private dispatch(live: Live, message: ChatOutgoing, ref?: string, images: readonly ChatImage[] = []): Promise<unknown> {
+    this.record(live, { dir: 'out', at: this.now(), frame: message.logged, ...(ref ? { ref } : {}), ...(images.length ? { images: [...images] } : {}) })
+    return this.daemon.request('write', { sessionId: live.sessionId, data: `${JSON.stringify(message.wire)}\n` })
   }
 
   private flush(live: Live): void {

@@ -4,6 +4,7 @@ import { dropChat, isPlan, itemKey, pathShortener, prependChatPage, setChatPage,
 import { perform, showConversationPlan, useCore } from '../core-store'
 import { AGENT_LABEL, dayAndTime } from '../labels'
 import { ChatDock } from './ChatDock'
+import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
@@ -38,7 +39,12 @@ function TerminalMessage({ message }: { message: ConversationMessage }) {
 function Item({ conversationId, item }: { conversationId: string; item: ChatItem }) {
   switch (item.kind) {
     case 'user':
-      return <div className="chat-user">{item.text}</div>
+      return (
+        <div className="chat-user">
+          <ChatImageStrip images={item.images} />
+          {item.text}
+        </div>
+      )
     case 'assistant':
       return <div className="chat-assistant" data-streaming={item.streaming || undefined}><ChatMarkdown text={item.text} /></div>
     case 'reasoning':

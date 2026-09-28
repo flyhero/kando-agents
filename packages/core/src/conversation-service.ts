@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
+import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
 import { catalogOf, probeChatCatalog } from './chat-catalog'
 import { ChatHost, createDriver, type ChatStage } from './chat-host'
@@ -60,10 +61,11 @@ export class ConversationService {
     private readonly sessionsRoot: string,
     private readonly callbackCommand: (conversationId: string, stageId: string, agent: AgentKind) => string[],
     private readonly emit: (event: ConversationEvent) => void,
-    private readonly projects: ProjectRegistry
+    private readonly projects: ProjectRegistry,
+    private readonly attachments: AttachmentStore
   ) {
     this.transcript = new TerminalTranscript(sessionsRoot)
-    this.chats = new ChatHost(daemon, sessionsRoot, {
+    this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
       items: (conversationId, items) => {
         this.rememberMode(conversationId, items)
         this.rememberCatalog(conversationId, items)
@@ -394,9 +396,20 @@ export class ConversationService {
     }
   }
 
-  async send(id: string, text: string, queue = false): Promise<void> {
+  async send(id: string, text: string, imageIds: readonly string[] = [], queue = false): Promise<void> {
     this.get(id)
-    await this.chats.send(id, text, queue)
+    await this.chats.send(id, text, await this.chatImages(imageIds), queue)
+  }
+
+  // Each image once, checked to be in the store before the agent is asked to look at it.
+  private async chatImages(ids: readonly string[]): Promise<ChatImage[]> {
+    const images: ChatImage[] = []
+    for (const id of new Set(ids)) {
+      const info = await this.attachments.info(id)
+      if (!info) throw new Rejection('attachment-not-found', `no image ${id}`)
+      images.push({ id, width: info.width, height: info.height })
+    }
+    return images
   }
 
   cancelQueued(id: string): void {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { ChatDecision, ChatDiff, ChatModel, ChatOption, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
-import type { ChatAnswer, ChatDriver, ChatPreferences, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
+import type { ChatDecision, ChatDiff, ChatImage, ChatModel, ChatOption, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatPreferences, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
@@ -278,7 +278,7 @@ export class CodexAppServer implements ChatDriver {
       }
       case 'out': {
         const frame = Frame.safeParse(record.frame)
-        if (frame.success) this.sent(frame.data, record.at, record.ref)
+        if (frame.success) this.sent(frame.data, record.at, record.ref, record.images ?? [])
         break
       }
       case 'note':
@@ -288,7 +288,7 @@ export class CodexAppServer implements ChatDriver {
         this.choose(record.option, record.value)
         break
       case 'queue':
-        this.queue.set(record.text, record.ref)
+        this.queue.set(record.text, record.ref, record.images)
         break
       case 'exit':
         this.ended(record.stderr, record.at)
@@ -334,22 +334,28 @@ export class CodexAppServer implements ChatDriver {
     return this.threadId
   }
 
-  // A message while a plan waits carries on planning, in plan mode as before.
-  send(text: string): unknown {
+  // A message while a plan waits carries on planning, in plan mode as before. Codex reads an
+  // image from its path itself, so the frame is what the log keeps.
+  send(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
     if (!this.ready() || !this.threadId) throw new Rejection('chat-starting', 'the agent is still starting')
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
-    return this.turnStart(this.threadId, text, this.chosen.permissionMode)
+    const frame = this.turnStart(this.threadId, text, this.chosen.permissionMode, images)
+    return { wire: frame, logged: frame }
   }
 
-  private turnStart(threadId: string, text: string, permissionMode: string | undefined): unknown {
+  private turnStart(threadId: string, text: string, permissionMode: string | undefined, images: readonly ChatImageFile[] = []): unknown {
+    const input = [
+      ...(text || images.length === 0 ? [{ type: 'text', text, text_elements: [] }] : []),
+      ...images.map((image) => ({ type: 'localImage', path: image.path }))
+    ]
     return {
       id: `kando-turn-${this.turns + 1}`,
       method: 'turn/start',
-      params: { threadId, input: [{ type: 'text', text, text_elements: [] }], ...this.turnOptions(permissionMode) }
+      params: { threadId, input, ...this.turnOptions(permissionMode) }
     }
   }
 
-  queuedToSend(): { text: string; ref: string } | null {
+  queuedToSend(): { text: string; images: ChatImage[]; ref: string } | null {
     return this.ready() && !this.turn ? this.queue.next() : null
   }
 
@@ -786,7 +792,7 @@ export class CodexAppServer implements ChatDriver {
     this.pending.set(requestId, { kind: 'approval', itemId: approvalId, rawId, denial })
   }
 
-  private sent(frame: Frame, at: number, ref: string | undefined): void {
+  private sent(frame: Frame, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
     if (frame.method !== undefined && frame.id !== undefined) {
       this.requests.set(String(frame.id), frame.method)
       if (frame.method === 'initialize') this.initSent = true
@@ -797,7 +803,7 @@ export class CodexAppServer implements ChatDriver {
         this.interrupts++
         if (this.turn) this.stopping = true
       }
-      if (frame.method === 'turn/start') this.startTurn(frame, at, ref)
+      if (frame.method === 'turn/start') this.startTurn(frame, at, ref, images)
       return
     }
     if (frame.method === 'initialized') {
@@ -818,17 +824,17 @@ export class CodexAppServer implements ChatDriver {
     }
   }
 
-  private startTurn(frame: Frame, at: number, ref: string | undefined): void {
+  private startTurn(frame: Frame, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
     this.turns++
     const params = TurnParams.safeParse(frame.params)
     if (params.success) this.turnMode(params.data, at)
     const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(frame.params)
-    const text = input.success ? input.data.input.map((part) => part.text ?? '').join('\n') : ''
+    const text = input.success ? input.data.input.flatMap((part) => (part.type === 'text' ? [part.text ?? ''] : [])).join('\n') : ''
     const id = ref ?? `turn-${this.turns}`
-    this.items.put({ id: `u:${id}`, kind: 'user', text }, at)
+    this.items.put({ id: `u:${id}`, kind: 'user', text, images: [...images] }, at)
     this.queue.sent(ref)
     this.turn = { ref: id, turnId: null, assistant: null }
-    this.messages.push({ role: 'user', text, eventKey: `chat:${id}:user`, complete: false })
+    this.messages.push({ role: 'user', text: messageText(text, images), eventKey: `chat:${id}:user`, complete: false })
   }
 
   // A turn answers a waiting plan by the mode it runs in: plan mode keeps planning, any other

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AttachmentId } from './attachments'
 
 // tui: the agent's own interface in a terminal · chat: Kando renders its structured events
 export const CONVERSATION_MODES = ['tui', 'chat'] as const
@@ -75,11 +76,15 @@ export const ChatQuestion = z.object({
 })
 export type ChatQuestion = z.infer<typeof ChatQuestion>
 
+// An image sent with a message, from core's attachment store.
+export const ChatImage = z.object({ id: AttachmentId, width: z.number().int().positive(), height: z.number().int().positive() })
+export type ChatImage = z.infer<typeof ChatImage>
+
 // Every item has a stable id; a newer revision of it replaces the one the client holds.
 const Base = z.object({ id: z.string(), stageId: z.string(), revision: z.number().int(), at: z.number() })
 
 export const ChatItem = z.discriminatedUnion('kind', [
-  Base.extend({ kind: z.literal('user'), text: z.string() }),
+  Base.extend({ kind: z.literal('user'), text: z.string(), images: z.array(ChatImage).default([]) }),
   Base.extend({ kind: z.literal('assistant'), text: z.string(), streaming: z.boolean() }),
   Base.extend({ kind: z.literal('reasoning'), text: z.string(), streaming: z.boolean() }),
   Base.extend({
@@ -137,7 +142,7 @@ export const ChatItem = z.discriminatedUnion('kind', [
     // What the agent says it is doing right now.
     activity: z.string().nullable(),
     // A message waiting for the turn to end; held after an interrupted or failed turn.
-    queued: z.object({ text: z.string(), held: z.boolean() }).nullable()
+    queued: z.object({ text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) }).nullable()
   })
 ])
 export type ChatItem = z.infer<typeof ChatItem>

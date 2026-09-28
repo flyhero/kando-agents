@@ -230,7 +230,7 @@ describe('ClaudeStream options', () => {
     expect(state?.model).toBe('sonnet')
     const [effort] = driver.setOption('effort', 'high')
     expect(effort).toMatchObject({ request: { subtype: 'apply_flag_settings', settings: { effortLevel: 'high' } } })
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-9' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-9' })
     expect(() => driver.setOption('model', 'haiku')).toThrow(expect.objectContaining({ reason: 'chat-busy' }))
   })
 
@@ -246,7 +246,7 @@ describe('ClaudeStream options', () => {
     const driver = new ClaudeStream('stage-1', OPTIONS)
     driver.apply({ dir: 'out', at, frame: { type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } } })
     driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } } })
-    driver.apply({ dir: 'out', at, frame: driver.send('plan it'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('plan it').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: { type: 'control_request', request_id: 'plan-1', request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: 'toolu_p' } } })
     expect(driver.items.get('a:plan-1')).toMatchObject({ detail: '# Plan', decisions: ['allow', 'allowForSession', 'deny'] })
     const [accept] = driver.respond('plan-1', { decision: 'allowForSession' })
@@ -288,16 +288,16 @@ describe('ClaudeStream commands', () => {
     expect(driver.due()).toEqual([{ type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } }])
     driver.apply({ dir: 'out', at, frame: driver.due()[0] })
     expect(driver.due()).toEqual([])
-    expect(() => driver.send('hi')).toThrow(expect.objectContaining({ reason: 'chat-starting' }))
+    expect(() => driver.send('hi').wire).toThrow(expect.objectContaining({ reason: 'chat-starting' }))
   })
 
   it('takes one message at a time and waits on approvals', () => {
     const driver = started()
-    const frame = driver.send('clean up')
+    const frame = driver.send('clean up').wire
     expect(frame).toEqual({ type: 'user', message: { role: 'user', content: 'clean up' } })
     driver.apply({ dir: 'out', at, frame, ref: 'ref-1' })
     expect(driver.activity()).toBe('running')
-    expect(() => driver.send('again')).toThrow(expect.objectContaining({ reason: 'chat-busy' }))
+    expect(() => driver.send('again').wire).toThrow(expect.objectContaining({ reason: 'chat-busy' }))
 
     driver.apply({ dir: 'in', at, frame: canUseTool('req-1') })
     expect(driver.activity()).toBe('awaiting')
@@ -317,7 +317,7 @@ describe('ClaudeStream commands', () => {
 
   it('interrupts by denying what waits and asking the agent to stop', () => {
     const driver = started()
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: canUseTool('req-2') })
     const frames = driver.interrupt()
     expect(frames).toEqual([
@@ -334,7 +334,7 @@ describe('ClaudeStream commands', () => {
     const driver = started()
     const call = (id: string, command: string) => ({ type: 'assistant', parent_tool_use_id: null, message: { id: `msg-${id}`, content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }] } })
     const failed = (id: string) => ({ type: 'user', parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: 'Exit code 1' }] } })
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: call('toolu_1', 'false') })
     driver.apply({ dir: 'in', at, frame: failed('toolu_1') })
     driver.apply({ dir: 'in', at, frame: call('toolu_2', 'sleep 4') })
@@ -366,11 +366,27 @@ describe('ClaudeStream commands', () => {
     expect(ofKind(early.items.list(), 'notice')[0]?.text).toContain('Invalid API key')
 
     const driver = started()
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: canUseTool('req-3') })
     driver.apply({ dir: 'exit', at, code: 143, stderr: '' })
     expect(driver.items.get('a:req-3')).toMatchObject({ resolution: 'cancelled' })
     expect(driver.items.get('turn:ref-1')).toMatchObject({ state: 'interrupted' })
     expect(driver.activity()).toBe('idle')
+  })
+  it('shows an image as its bytes before the text, and logs the message without them', () => {
+    const driver = started()
+    const image = { id: `${'a'.repeat(64)}.png`, width: 4, height: 3, mime: 'image/png' as const, path: '/store/a.png', read: () => Uint8Array.from([1, 2, 3]) }
+    const { wire, logged } = driver.send('what is this', [image])
+    expect(wire).toEqual({ type: 'user', message: { role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+      { type: 'text', text: 'what is this' }
+    ] } })
+    expect(logged).toEqual({ type: 'user', message: { role: 'user', content: 'what is this' } })
+    expect(driver.send('', [image]).wire).toMatchObject({ message: { content: [{ type: 'image' }] } })
+    const big = { ...image, read: () => new Uint8Array(5 * 1024 * 1024 + 1) }
+    expect(() => driver.send('x', [big])).toThrow(expect.objectContaining({ reason: 'chat-image-too-large' }))
+    driver.apply({ dir: 'out', at, frame: logged, ref: 'ref-1', images: [{ id: image.id, width: 4, height: 3 }] })
+    expect(driver.items.get('u:ref-1')).toMatchObject({ kind: 'user', text: 'what is this', images: [{ id: image.id, width: 4, height: 3 }] })
+    expect(driver.takeMessages()).toEqual([{ role: 'user', text: 'what is this\n\n（附了 1 张图片）', eventKey: 'chat:ref-1:user', complete: false }])
   })
 })

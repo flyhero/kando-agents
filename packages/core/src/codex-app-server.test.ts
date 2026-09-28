@@ -145,7 +145,7 @@ describe('CodexAppServer options', () => {
     driver.apply({ dir: 'option', at, option: 'model', value: 'gpt-6-sol' })
     driver.apply({ dir: 'option', at, option: 'effort', value: 'ultra' })
     expect(stateOf(driver)).toMatchObject({ permissionMode: 'readOnly', model: 'gpt-6-sol', effort: 'ultra' })
-    expect(driver.send('go')).toMatchObject({
+    expect(driver.send('go').wire).toMatchObject({
       params: { approvalPolicy: 'on-request', sandboxPolicy: { type: 'readOnly' }, model: 'gpt-6-sol', effort: 'ultra' }
     })
   })
@@ -157,7 +157,7 @@ describe('CodexAppServer options', () => {
     expect(() => driver.setOption('permissionMode', 'bypass')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
     const allowed = live({ ...OPTIONS, allowBypass: true })
     allowed.apply({ dir: 'option', at, option: 'permissionMode', value: 'bypass' })
-    expect(allowed.send('go')).toMatchObject({ params: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } } })
+    expect(allowed.send('go').wire).toMatchObject({ params: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } } })
   })
 
   it('opens a thread with what the conversation chose last time', () => {
@@ -187,7 +187,7 @@ describe('CodexAppServer commands', () => {
     handshake(driver, 'thread-1', { model: 'gpt-x', reasoningEffort: 'low' })
     expect(driver.setOption('permissionMode', 'plan')).toEqual([])
     driver.apply({ dir: 'option', at, option: 'permissionMode', value: 'plan' })
-    const turn = driver.send('Plan a README')
+    const turn = driver.send('Plan a README').wire
     driver.apply({ dir: 'out', at, frame: turn, ref: 'ref-1' })
     const plan = (id: string, text: string) => {
       driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: { type: 'plan', id, text } } } })
@@ -232,7 +232,7 @@ describe('CodexAppServer commands', () => {
     expect(driver.activity()).toBe('running')
     driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: 'turn-2', status: 'completed', error: null } } } })
     // Out of plan mode, later turns say nothing of it.
-    expect(driver.send('next')).not.toHaveProperty('params.collaborationMode')
+    expect(driver.send('next').wire).not.toHaveProperty('params.collaborationMode')
   })
 
   it('sends a plan back with a note, takes a message as more planning, and lets it go on exit', () => {
@@ -243,7 +243,7 @@ describe('CodexAppServer commands', () => {
     expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: 'denied' })
     expect(modeOf(driver)).toBe('plan')
     plan('p2', '1. Write README.md\n2. Add usage')
-    const typed = driver.send('Shorter, please')
+    const typed = driver.send('Shorter, please').wire
     expect(typed).toMatchObject({ params: { collaborationMode: { mode: 'plan' } } })
     driver.apply({ dir: 'out', at, frame: typed, ref: 'ref-3' })
     expect(driver.items.get('a:plan:p2')).toMatchObject({ resolution: 'denied' })
@@ -261,7 +261,7 @@ describe('CodexAppServer commands', () => {
     expect(open).toEqual({ id: 'kando-thread', method: 'thread/start', params: { cwd: '/work/repo', approvalPolicy: 'on-request', sandbox: 'workspace-write' } })
     expect(driver.ready()).toBe(true)
     expect(driver.due()).toEqual([])
-    expect(driver.send('go')).toMatchObject({
+    expect(driver.send('go').wire).toMatchObject({
       method: 'turn/start',
       params: { threadId: 'thread-1', approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/work/web'] } }
     })
@@ -270,7 +270,7 @@ describe('CodexAppServer commands', () => {
   it('denies with decline where Codex offers it and with cancel where it does not', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: { id: 0, method: 'item/fileChange/requestApproval', params: { itemId: 'exec-1' } } })
     driver.apply({ dir: 'in', at, frame: { id: 1, method: 'item/commandExecution/requestApproval', params: { itemId: 'exec-2', command: "/bin/zsh -lc 'rm -rf build'", availableDecisions: ['accept', 'cancel'] } } })
     expect(driver.activity()).toBe('awaiting')
@@ -284,7 +284,7 @@ describe('CodexAppServer commands', () => {
   it('interrupts the running turn after cancelling what waits on the user', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     expect(() => driver.interrupt()).toThrow(expect.objectContaining({ reason: 'chat-busy' }))
     driver.apply({ dir: 'in', at, frame: { id: 'kando-turn-1', result: { turn: { id: 'turn-9' } } } })
     driver.apply({ dir: 'in', at, frame: { id: 4, method: 'item/tool/requestUserInput', params: { questions: [{ id: 'q1', header: 'Pick', question: 'Which?', options: [{ label: 'A' }] }] } } })
@@ -297,7 +297,7 @@ describe('CodexAppServer commands', () => {
   it('marks calls the user stopped as interrupted rather than failed', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)
-    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-1' })
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
     driver.apply({ dir: 'in', at, frame: { id: 'kando-turn-1', result: { turn: { id: 'turn-9' } } } })
     const command = (id: string, status: string) => ({ type: 'commandExecution', id, command: 'sleep 5', status, exitCode: status === 'inProgress' ? null : 1 })
     driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { item: command('exec-1', 'failed') } } })
@@ -331,6 +331,18 @@ describe('CodexAppServer commands', () => {
     expect(unwrapShell("/bin/zsh -lc 'cat codex.txt'")).toBe('cat codex.txt')
     expect(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`)).toBe("echo 'hi'")
     expect(unwrapShell('git status')).toBe('git status')
+  })
+  it('hands an image to Codex by its path, after the text when there is any', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver)
+    const image = { id: `${'a'.repeat(64)}.png`, width: 4, height: 3, mime: 'image/png' as const, path: '/store/a.png', read: () => Uint8Array.from([]) }
+    const { wire, logged } = driver.send('look', [image])
+    expect(logged).toBe(wire)
+    expect(wire).toMatchObject({ method: 'turn/start', params: { input: [{ type: 'text', text: 'look', text_elements: [] }, { type: 'localImage', path: '/store/a.png' }] } })
+    expect(driver.send('', [image]).wire).toMatchObject({ params: { input: [{ type: 'localImage', path: '/store/a.png' }] } })
+    driver.apply({ dir: 'out', at, frame: wire, ref: 'ref-1', images: [{ id: image.id, width: 4, height: 3 }] })
+    expect(driver.items.get('u:ref-1')).toMatchObject({ kind: 'user', text: 'look', images: [{ id: image.id, width: 4, height: 3 }] })
+    expect(driver.takeMessages()).toEqual([{ role: 'user', text: 'look\n\n（附了 1 张图片）', eventKey: 'chat:ref-1:user', complete: false }])
   })
 })
 

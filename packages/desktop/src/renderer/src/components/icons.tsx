@@ -331,3 +331,13 @@ export function ExternalIcon() {
     </svg>
   )
 }
+
+export function ImageIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="3" y="4" width="14" height="12" rx="1.5" />
+      <circle cx="7.5" cy="8.5" r="1.3" />
+      <path d="M3.5 14.5l3.8-3.8 3 3 2.2-2.2 4 4" />
+    </svg>
+  )
+}

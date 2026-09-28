@@ -283,6 +283,11 @@ export function useChatOptionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('chat-options') ?? false)
 }
 
+// Whether a chat message can carry images.
+export function useChatImagesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('chat-images') ?? false)
+}
+
 export function dismissError(): void {
   useCore.setState({ error: null })
 }

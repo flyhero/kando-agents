@@ -1,11 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ChatItem } from '@kando/protocol'
 import type { StageMessage } from './chat-driver'
 import { ChatHost, type ChatSink, type ChatStage } from './chat-host'
+import { AttachmentStore } from './attachment-store'
 import { fakeChatDaemon } from './fake-chat-agent'
+import { pngBytes } from './image-fixtures'
 
 const STAGE: ChatStage = {
   conversationId: 'conversation-1',
@@ -42,9 +44,12 @@ const canUseTool = (requestId: string) => ({
 describe('ChatHost', () => {
   let root: string
   let daemon: ReturnType<typeof fakeChatDaemon>
+  let attachments: AttachmentStore
 
   beforeEach(() => {
     root = mkdtempSync(path.join(os.tmpdir(), 'kando-chat-host-'))
+    mkdirSync(path.join(root, 'attachments'))
+    attachments = new AttachmentStore(path.join(root, 'attachments'))
     daemon = fakeChatDaemon()
   })
 
@@ -53,7 +58,7 @@ describe('ChatHost', () => {
   })
 
   async function started(sink: ChatSink = recordingSink().sink) {
-    const host = new ChatHost(daemon, root, sink)
+    const host = new ChatHost(daemon, root, attachments, sink)
     daemon.deliver = (event) => {
       if (event.event === 'data') host.handleData(event.sessionId, event.offset, event.data)
       if (event.event === 'exit') host.handleExit(event.sessionId, event.exitCode)
@@ -95,7 +100,7 @@ describe('ChatHost', () => {
 
     // A new core: same log on disk, the daemon still holds all of the session's output.
     const second = recordingSink()
-    const restarted = new ChatHost(daemon, root, second.sink)
+    const restarted = new ChatHost(daemon, root, attachments, second.sink)
     daemon.deliver = (event) => {
       if (event.event === 'data') restarted.handleData(event.sessionId, event.offset, event.data)
     }
@@ -111,7 +116,7 @@ describe('ChatHost', () => {
   })
 
   it('holds output that arrives while it reads the buffer, and feeds it once, in order', async () => {
-    const host = new ChatHost(daemon, root, recordingSink().sink)
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink)
     const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })
     daemon.answerInit = false
     const init = `${JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } })}\n`
@@ -136,7 +141,7 @@ describe('ChatHost', () => {
     const { host, sessionId } = await started()
     daemon.reply = () => {}
     await host.send(STAGE.conversationId, 'first')
-    await host.send(STAGE.conversationId, 'second', true)
+    await host.send(STAGE.conversationId, 'second', [], true)
     expect(stateOf(host)).toMatchObject({ queued: { text: 'second', held: false } })
     expect(userFrames(sessionId)).toHaveLength(1)
     finish(sessionId, 'completed')
@@ -153,7 +158,7 @@ describe('ChatHost', () => {
     const { host, sessionId } = await started()
     daemon.reply = () => {}
     await host.send(STAGE.conversationId, 'first')
-    await host.send(STAGE.conversationId, 'second', true)
+    await host.send(STAGE.conversationId, 'second', [], true)
     finish(sessionId, 'aborted_streaming')
     await flushMicrotasks()
     expect(stateOf(host)).toMatchObject({ queued: { text: 'second', held: true } })
@@ -162,7 +167,7 @@ describe('ChatHost', () => {
     await flushMicrotasks()
     expect(userFrames(sessionId)).toHaveLength(2)
     finish(sessionId, 'completed')
-    await host.send(STAGE.conversationId, 'third', true)
+    await host.send(STAGE.conversationId, 'third', [], true)
     finish(sessionId, 'aborted_streaming')
     host.cancelQueued(STAGE.conversationId)
     expect(stateOf(host)).toMatchObject({ queued: null })
@@ -174,8 +179,8 @@ describe('ChatHost', () => {
     const { host, sessionId } = await started(first.sink)
     daemon.reply = () => {}
     await host.send(STAGE.conversationId, 'first')
-    await host.send(STAGE.conversationId, 'second', true)
-    const restarted = new ChatHost(daemon, root, recordingSink().sink)
+    await host.send(STAGE.conversationId, 'second', [], true)
+    const restarted = new ChatHost(daemon, root, attachments, recordingSink().sink)
     daemon.deliver = (event) => {
       if (event.event === 'data') restarted.handleData(event.sessionId, event.offset, event.data)
     }
@@ -187,7 +192,7 @@ describe('ChatHost', () => {
   })
 
   it('notes a hole in the output instead of reading half a frame', async () => {
-    const host = new ChatHost(daemon, root, recordingSink().sink)
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink)
     const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })
     daemon.answerInit = false
     await host.open(STAGE, sessionId, 0, false)
@@ -210,7 +215,7 @@ describe('ChatHost', () => {
   })
 
   it('fails the start with what the agent printed when it exits before initializing', async () => {
-    const host = new ChatHost(daemon, root, recordingSink().sink)
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink)
     daemon.deliver = (event) => {
       if (event.event === 'exit') host.handleExit(event.sessionId, event.exitCode)
     }
@@ -220,5 +225,33 @@ describe('ChatHost', () => {
     const opening = host.open(STAGE, sessionId, 0, true)
     queueMicrotask(() => daemon.exit(sessionId, 1))
     await expect(opening).rejects.toMatchObject({ reason: 'chat-start-failed', message: expect.stringContaining('Invalid API key') })
+  })
+  it('shows the agent a message\'s images and keeps only their names in the log', async () => {
+    const recorded = recordingSink()
+    const { host, sessionId } = await started(recorded.sink)
+    const stored = await attachments.put(pngBytes(4, 3))
+    const image = { id: stored.id, width: 4, height: 3 }
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'what is this', [image])
+    expect(userFrames(sessionId)[0]).toMatchObject({ message: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png' } }, { type: 'text', text: 'what is this' }] } })
+    const log = readFileSync(path.join(root, STAGE.conversationId, 'stages', `${STAGE.stageId}.jsonl`), 'utf8')
+    expect(log).not.toContain('base64')
+    expect(log).toContain(stored.id)
+    expect(host.items(STAGE).find((item) => item.kind === 'user')).toMatchObject({ text: 'what is this', images: [image] })
+    expect(recorded.messages[0]).toMatchObject({ role: 'user', text: 'what is this\n\n（附了 1 张图片）' })
+
+    // Queued with an image, a message goes out with it once the turn ends, after a restart too.
+    await host.send(STAGE.conversationId, '', [image], true)
+    expect(stateOf(host)).toMatchObject({ queued: { text: '', images: [image] } })
+    const restarted = new ChatHost(daemon, root, attachments, recordingSink().sink)
+    daemon.deliver = (event) => {
+      if (event.event === 'data') restarted.handleData(event.sessionId, event.offset, event.data)
+    }
+    await restarted.open(STAGE, sessionId, recorded.offsets.at(-1) ?? 0, false)
+    finish(sessionId, 'completed')
+    await flushMicrotasks()
+    expect(userFrames(sessionId)).toHaveLength(2)
+    expect(userFrames(sessionId)[1]).toMatchObject({ message: { content: [{ type: 'image' }] } })
+    expect(restarted.items(STAGE).filter((item) => item.kind === 'user').at(-1)).toMatchObject({ text: '', images: [image] })
   })
 })

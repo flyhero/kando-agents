@@ -3759,6 +3759,100 @@ button.task-tag-updated:hover {
 .chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
 .chat-input-button[data-stop] { background: var(--text); color: var(--surface); }
 
+/* The ＋ at the start of the options row, sized like the selects beside it. */
+.chat-add-button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chat-add-button:hover:not(:disabled),
+.chat-add-button:focus-visible,
+.chat-add-button[aria-expanded='true'] { background: var(--surface-muted); color: var(--text); }
+.chat-add-button:disabled { opacity: 0.5; cursor: default; }
+.chat-add-button svg { width: 16px; height: 16px; }
+.chat-options .menu { min-width: 200px; }
+
+/* Images going with a message: small, in a row, each opening the viewer. */
+.chat-images {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-input-card .chat-images { padding: 10px 12px 0; }
+.chat-user .chat-images { margin-bottom: 6px; }
+
+.chat-image { position: relative; }
+
+.chat-image-button {
+  display: block;
+  height: 64px;
+  max-width: 160px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  cursor: zoom-in;
+}
+
+.chat-image-button:hover { border-color: var(--text-muted); }
+.chat-image-button:focus-visible { outline: 2px solid var(--focus); }
+
+.chat-image-button img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Hovering a thumbnail in the composer shows what can be done with it; the picture stays clickable between the buttons. */
+.chat-image-actions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  background: rgb(0 0 0 / 40%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.chat-image:hover .chat-image-actions,
+.chat-image:focus-within .chat-image-actions { opacity: 1; }
+
+.chat-image-action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 92%);
+  color: #333;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.chat-image-action:hover { background: #fff; color: #000; }
+.chat-image-action:focus-visible { outline: 2px solid var(--focus); }
+.chat-image-action svg { width: 14px; height: 14px; }
+
+.chat-queued-images { flex: none; color: var(--text-muted); }
+
 
 /* Below the input: plain text that reads as a setting until hovered, like the agents' own CLIs. */
 .chat-options {

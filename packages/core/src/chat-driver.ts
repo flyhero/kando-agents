@@ -1,22 +1,38 @@
-import type { ChatDecision, ChatOption, ChatTurnActivity } from '@kando/protocol'
+import type { ChatDecision, ChatImage, ChatOption, ChatTurnActivity } from '@kando/protocol'
+import type { AttachmentFile } from './attachment-store'
 import type { ChatItems } from './chat-items'
 
 // What happened in a chat stage, in order: a frame from the agent or to it, a note Kando made,
 // the process ending. A stage's log holds these, and replaying them rebuilds the stage.
 export type ChatRecord =
   | { dir: 'in'; at: number; frame: unknown }
-  // ref names the item an outgoing user message becomes.
-  | { dir: 'out'; at: number; frame: unknown; ref?: string }
+  // ref names the item an outgoing user message becomes, images what it showed the agent.
+  | { dir: 'out'; at: number; frame: unknown; ref?: string; images?: ChatImage[] }
   | { dir: 'note'; at: number; level: 'info' | 'warning' | 'error'; text: string }
   // The user switched an option; an agent that takes options per turn applies it from here.
   | { dir: 'option'; at: number; option: ChatOption; value: string }
   // A message to send once the turn ends (ref names its user item), or null to drop it.
-  | { dir: 'queue'; at: number; text: string | null; ref?: string }
+  | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[] }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
 // often the stage is replayed, so each is stored once.
 export type StageMessage = { role: 'user' | 'assistant'; text: string; eventKey: string; complete: boolean }
+
+// The text conversation_messages keeps of a user message: the next agent, and a search, learn
+// that images went with it, since neither can see them.
+export function messageText(text: string, images: readonly ChatImage[]): string {
+  if (images.length === 0) return text
+  const note = `（附了 ${images.length} 张图片）`
+  return text ? `${text}\n\n${note}` : note
+}
+
+// An image going with a message, as the store holds it: an agent takes the path, or the bytes.
+export type ChatImageFile = ChatImage & AttachmentFile
+
+// A message as the agent takes it, and as the log keeps it: the same, unless the message carries
+// an image's bytes, which the log leaves out for the record's images.
+export type ChatOutgoing = { wire: unknown; logged: unknown }
 
 export type ChatAnswer = { decision: ChatDecision; message?: string; answers?: Record<string, string[]> }
 
@@ -49,13 +65,13 @@ export interface ChatDriver {
   activity(): ChatTurnActivity
   providerSessionId(): string | null
   // Frames for the user's actions; each throws a Rejection when the stage cannot take it now.
-  send(text: string): unknown
+  send(text: string, images?: readonly ChatImageFile[]): ChatOutgoing
   respond(requestId: string, answer: ChatAnswer): unknown[]
   interrupt(): unknown[]
   // Frames that switch an option, after checking the stage offers the value (a Rejection if not).
   setOption(option: ChatOption, value: string): unknown[]
   // The queued message, once the agent is ready and idle to take it.
-  queuedToSend(): { text: string; ref: string } | null
+  queuedToSend(): { text: string; images: ChatImage[]; ref: string } | null
   // What of an incoming frame to keep in the log, or null for nothing: streamed deltas are
   // covered by the frames that complete them.
   logged(frame: unknown): unknown | null

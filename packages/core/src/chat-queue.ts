@@ -1,13 +1,15 @@
-import type { ChatTurnState } from '@kando/protocol'
+import type { ChatImage, ChatTurnState } from '@kando/protocol'
+
+type Entry = { text: string; images: ChatImage[]; ref: string; held: boolean }
 
 // One message the user wrote while the agent worked, sent once the turn is over. A turn that was
 // interrupted or failed does not send it: it waits, held, for the user to send or drop it.
 export class ChatQueue {
-  private entry: { text: string; ref: string; held: boolean } | null = null
+  private entry: Entry | null = null
 
   // A queue record: text to wait (replacing what waited), or null to drop it.
-  set(text: string | null, ref: string | undefined): void {
-    this.entry = text === null || !ref ? null : { text, ref, held: false }
+  set(text: string | null, ref: string | undefined, images: readonly ChatImage[] = []): void {
+    this.entry = text === null || !ref ? null : { text, images: [...images], ref, held: false }
   }
 
   // The message went out as the user message with this ref.
@@ -19,11 +21,11 @@ export class ChatQueue {
     if (this.entry && state !== 'completed') this.entry = { ...this.entry, held: true }
   }
 
-  next(): { text: string; ref: string } | null {
-    return this.entry && !this.entry.held ? { text: this.entry.text, ref: this.entry.ref } : null
+  next(): { text: string; images: ChatImage[]; ref: string } | null {
+    return this.entry && !this.entry.held ? { text: this.entry.text, images: this.entry.images, ref: this.entry.ref } : null
   }
 
-  get view(): { text: string; held: boolean } | null {
-    return this.entry && { text: this.entry.text, held: this.entry.held }
+  get view(): { text: string; held: boolean; images: ChatImage[] } | null {
+    return this.entry && { text: this.entry.text, held: this.entry.held, images: this.entry.images }
   }
 }

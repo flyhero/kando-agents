@@ -1,8 +1,7 @@
 import type { ChatItem, Conversation } from '@kando/protocol'
-import { showConversationChanges, useChatOptionsSupported } from '../core-store'
+import { showConversationChanges } from '../core-store'
 import { isPlan, itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
-import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChatPlanCard } from './ChatPlan'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatTodosChip } from './ChatTodos'
@@ -45,7 +44,6 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
 }) {
   const inspectable = conversation.projectPaths.length > 0
   const running = conversation.sessionId !== null
-  const optionsSupported = useChatOptionsSupported()
   return (
     <div className="chat-dock">
       <div className="chat-dock-header">
@@ -67,8 +65,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
           )}
         </div>
       )}
-      <ChatComposer conversation={conversation} queued={running ? (state?.queued ?? null) : null} />
-      {optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
+      <ChatComposer conversation={conversation} state={state} />
     </div>
   )
 }

@@ -87,6 +87,7 @@ const REASON_TEXT: Record<string, string> = {
   'duplicate-project': '不能重复选择同一个项目目录',
   'chat-starting': 'agent 还在启动，稍等再发',
   'chat-busy': 'agent 还在处理上一条消息',
+  'chat-image-too-large': 'Claude Code 只接受 5MB 以内的图片',
   'chat-idle': '现在没有进行中的回合',
   'chat-request-gone': '这个请求已经不再等待回答',
   'chat-not-running': '这条会话的 agent 没有以聊天界面运行',

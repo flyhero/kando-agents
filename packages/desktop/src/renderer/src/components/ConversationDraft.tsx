@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog, type ConversationMode } from '@kando/protocol'
-import { closeConversationDraft, perform, selectConversation, useChatOptionsSupported, useCore } from '../core-store'
+import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
 import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
+import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { effortLabel, modeLabel, START_MODES } from './ChatOptionsBar'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
@@ -30,8 +31,10 @@ export function ConversationDraft() {
   const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
   const rpc = useCore((s) => s.rpc)
   const optionsSupported = useChatOptionsSupported()
+  const imagesSupported = useChatImagesSupported()
+  const attached = useComposerImages()
   const allowBypass = usePreferences((s) => s.allowBypass)
-  const canSend = agent !== null && !busy && text.trim() !== ''
+  const canSend = agent !== null && !busy && attached.uploading === 0 && (text.trim() !== '' || attached.images.length > 0)
 
   useEffect(() => {
     if (!agent || !rpc || !optionsSupported || agent in catalogs) return
@@ -65,7 +68,8 @@ export function ConversationDraft() {
     setBusy(true)
     const created = await create('chat')
     if (created) {
-      await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: text.trim() }))
+      const images = attached.images.map((image) => image.id)
+      await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: text.trim(), ...(images.length ? { images } : {}) }))
       selectConversation(created.id)
       return
     }
@@ -119,7 +123,13 @@ export function ConversationDraft() {
               <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} />
               {projectPaths.length === 0 && <span className="muted">不选项目时，用 Kando 的工作目录</span>}
             </div>
-            <div className="chat-input-card" data-working={busy || undefined}>
+            <div
+              className="chat-input-card"
+              data-working={busy || undefined}
+              onDragOver={imagesSupported ? attached.handlers.onDragOver : undefined}
+              onDrop={imagesSupported ? attached.handlers.onDrop : undefined}
+            >
+              {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
               <textarea
                 className="chat-input"
                 rows={3}
@@ -129,6 +139,7 @@ export function ConversationDraft() {
                 aria-label="第一条消息"
                 placeholder={agent ? `给 ${AGENT_LABEL[agent]} 发第一条消息，Enter 发送，Shift+Enter 换行` : '先在上面选一个 agent'}
                 onChange={(event) => setText(event.target.value)}
+                onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
                 onKeyDown={(event) => {
                   if (!sendsMessage(event)) return
                   event.preventDefault()
@@ -146,53 +157,58 @@ export function ConversationDraft() {
                 <EnterIcon />
               </button>
             </div>
-            {agent && optionsSupported && (
+            {(imagesSupported || (agent && optionsSupported)) && (
               <div className="chat-options">
-                <select
-                  className="chat-select"
-                  aria-label="权限模式"
-                  data-mode={modes[agent]}
-                  value={modes[agent]}
-                  disabled={busy}
-                  onChange={(event) => {
-                    const picked = ChatPermissionMode.safeParse(event.target.value)
-                    if (picked.success) setModes({ ...modes, [agent]: picked.data })
-                  }}
-                >
-                  {[...START_MODES[agent], ...(allowBypass ? ['bypass' as const] : [])].map((mode) => (
-                    <option key={mode} value={mode}>{modeLabel(agent, mode)}</option>
-                  ))}
-                </select>
-                <span className="chat-dock-spacer" />
-                {catalog === undefined && <span className="chat-options-note muted">正在读取模型…</span>}
-                {catalog && (
-                  <select
-                    className="chat-select"
-                    aria-label="模型"
-                    title={catalog.models.find((each) => each.id === modelId)?.description ?? undefined}
-                    disabled={busy}
-                    value={modelId ?? ''}
-                    onChange={(event) => {
-                      const next = catalog.models.find((each) => each.id === event.target.value)
-                      // An effort the new model does not take goes with the old one.
-                      if (next) choose({ model: next.id, effort: pick.effort && next.efforts.includes(pick.effort) ? pick.effort : undefined })
-                    }}
-                  >
-                    {!modelId && <option value="" disabled>默认模型</option>}
-                    {catalog.models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
-                  </select>
-                )}
-                {efforts.length > 0 && (
-                  <select
-                    className="chat-select"
-                    aria-label="推理强度"
-                    disabled={busy}
-                    value={effort ?? ''}
-                    onChange={(event) => choose({ ...pick, effort: event.target.value })}
-                  >
-                    {!effort && <option value="" disabled>默认强度</option>}
-                    {efforts.map((each) => <option key={each} value={each}>{effortLabel(each)}</option>)}
-                  </select>
+                {imagesSupported && <ChatAddMenu disabled={busy} onAdd={attached.add} />}
+                {agent && optionsSupported && (
+                  <>
+                    <select
+                      className="chat-select"
+                      aria-label="权限模式"
+                      data-mode={modes[agent]}
+                      value={modes[agent]}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const picked = ChatPermissionMode.safeParse(event.target.value)
+                        if (picked.success) setModes({ ...modes, [agent]: picked.data })
+                      }}
+                    >
+                      {[...START_MODES[agent], ...(allowBypass ? ['bypass' as const] : [])].map((mode) => (
+                        <option key={mode} value={mode}>{modeLabel(agent, mode)}</option>
+                      ))}
+                    </select>
+                    <span className="chat-dock-spacer" />
+                    {catalog === undefined && <span className="chat-options-note muted">正在读取模型…</span>}
+                    {catalog && (
+                      <select
+                        className="chat-select"
+                        aria-label="模型"
+                        title={catalog.models.find((each) => each.id === modelId)?.description ?? undefined}
+                        disabled={busy}
+                        value={modelId ?? ''}
+                        onChange={(event) => {
+                          const next = catalog.models.find((each) => each.id === event.target.value)
+                          // An effort the new model does not take goes with the old one.
+                          if (next) choose({ model: next.id, effort: pick.effort && next.efforts.includes(pick.effort) ? pick.effort : undefined })
+                        }}
+                      >
+                        {!modelId && <option value="" disabled>默认模型</option>}
+                        {catalog.models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
+                      </select>
+                    )}
+                    {efforts.length > 0 && (
+                      <select
+                        className="chat-select"
+                        aria-label="推理强度"
+                        disabled={busy}
+                        value={effort ?? ''}
+                        onChange={(event) => choose({ ...pick, effort: event.target.value })}
+                      >
+                        {!effort && <option value="" disabled>默认强度</option>}
+                        {efforts.map((each) => <option key={each} value={each}>{effortLabel(each)}</option>)}
+                      </select>
+                    )}
+                  </>
                 )}
               </div>
             )}
