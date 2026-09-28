@@ -19,6 +19,40 @@ export type ChatTurnState = z.infer<typeof ChatTurnState>
 export const ChatDecision = z.enum(['allow', 'allowForSession', 'deny'])
 export type ChatDecision = z.infer<typeof ChatDecision>
 
+// Kando's names for how freely an agent may act; each agent maps them onto its own settings and
+// offers the ones it has. ask: confirm each call · acceptEdits: file edits go through (Codex:
+// on-request) · plan: read and plan only · auto: the agent's own judgement · readOnly: a read-only
+// sandbox · bypass: nothing asked, nothing sandboxed.
+export const CHAT_PERMISSION_MODES = ['ask', 'acceptEdits', 'plan', 'auto', 'readOnly', 'bypass'] as const
+export const ChatPermissionMode = z.enum(CHAT_PERMISSION_MODES)
+export type ChatPermissionMode = z.infer<typeof ChatPermissionMode>
+
+export const CHAT_OPTIONS = ['permissionMode', 'model', 'effort'] as const
+export const ChatOption = z.enum(CHAT_OPTIONS)
+export type ChatOption = z.infer<typeof ChatOption>
+
+export const ChatTodo = z.object({
+  content: z.string(),
+  status: z.enum(['pending', 'in_progress', 'completed']).catch('pending'),
+  // How the step reads while it is under way ("Writing tests").
+  activeForm: z.string().nullable()
+})
+export type ChatTodo = z.infer<typeof ChatTodo>
+
+export const ChatModel = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string().nullable(),
+  // The reasoning efforts it takes, in the agent's own words; empty when it takes none.
+  efforts: z.array(z.string()),
+  isDefault: z.boolean()
+})
+export type ChatModel = z.infer<typeof ChatModel>
+
+// How much of the model's context the conversation fills, in tokens; window is null until known.
+export const ChatContextUse = z.object({ used: z.number(), window: z.number().nullable() })
+export type ChatContextUse = z.infer<typeof ChatContextUse>
+
 // A file change as a unified-diff body: lines start with +, - or a space, hunks with @@.
 export const ChatDiff = z.object({
   path: z.string(),
@@ -80,7 +114,26 @@ export const ChatItem = z.discriminatedUnion('kind', [
     error: z.string().nullable(),
     durationMs: z.number().nullable()
   }),
-  Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() })
+  Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
+  // A turn's checklist as it last stood, where the turn first touched it.
+  Base.extend({ kind: z.literal('todos'), todos: z.array(ChatTodo) }),
+  // The stage as it stands now, one per stage and not part of the conversation's flow: the
+  // composer reads it for the options it offers and the progress it shows.
+  Base.extend({
+    kind: z.literal('state'),
+    // One of CHAT_PERMISSION_MODES, or the agent's own name for a mode Kando has none for.
+    permissionMode: z.string().nullable(),
+    permissionModes: z.array(z.string()),
+    model: z.string().nullable(),
+    models: z.array(ChatModel),
+    effort: z.string().nullable(),
+    context: ChatContextUse.nullable(),
+    todos: z.array(ChatTodo),
+    // What the agent says it is doing right now.
+    activity: z.string().nullable(),
+    // A message waiting for the turn to end; held after an interrupted or failed turn.
+    queued: z.object({ text: z.string(), held: z.boolean() }).nullable()
+  })
 ])
 export type ChatItem = z.infer<typeof ChatItem>
 

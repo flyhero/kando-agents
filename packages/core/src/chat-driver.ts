@@ -23,6 +23,8 @@ export type ChatStageOptions = {
   extraDirs: readonly string[]
   // The provider session (Claude session, Codex thread) to continue, if any.
   resume: string | null
+  // Whether the user lets this conversation run with nothing asked and nothing sandboxed.
+  allowBypass?: boolean
 }
 
 // Speaks one agent's JSON protocol. Everything it knows comes from apply(), so a live stage and one

@@ -55,6 +55,9 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
       return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
     case 'notice':
       return <div className="chat-notice" data-level={item.level}>{item.text}</div>
+    case 'todos':
+    case 'state':
+      return null
   }
 }
 

@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import type { ChatDecision, ChatDiff, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import type { ChatDecision, ChatDiff, ChatModel, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
+import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
 
 // Codex's app-server protocol (`codex app-server`): JSON-RPC over stdio without the jsonrpc field,
@@ -57,6 +58,39 @@ const TurnEvent = z.looseObject({
   })
 })
 const ThreadEvent = z.looseObject({ thread: z.looseObject({ id: z.string() }) })
+const SandboxShape = z.looseObject({ type: z.string() })
+// What a thread was opened with, from the thread/start or thread/resume answer.
+const ThreadOpened = z.looseObject({
+  thread: z.looseObject({ id: z.string() }),
+  model: z.string().nullish(),
+  reasoningEffort: z.string().nullish(),
+  approvalPolicy: z.unknown().optional(),
+  sandbox: SandboxShape.optional().catch(undefined)
+})
+// What the thread runs with after a turn's overrides took effect.
+const SettingsUpdated = z.looseObject({
+  threadSettings: z.looseObject({
+    approvalPolicy: z.unknown().optional(),
+    sandboxPolicy: SandboxShape.optional().catch(undefined),
+    model: z.string().nullish(),
+    effort: z.string().nullish()
+  })
+})
+const TokenUsage = z.looseObject({
+  tokenUsage: z.looseObject({ last: z.looseObject({ totalTokens: z.number() }), modelContextWindow: z.number().nullish() })
+})
+const PlanUpdated = z.looseObject({ plan: z.array(z.looseObject({ step: z.string(), status: z.string() })).catch([]) })
+const ModelEntry = z.looseObject({
+  id: z.string(),
+  displayName: z.string().nullish(),
+  description: z.string().nullish(),
+  hidden: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+  supportedReasoningEfforts: z.array(z.looseObject({ reasoningEffort: z.string() })).catch([]).optional(),
+  defaultReasoningEffort: z.string().nullish()
+})
+type ModelEntry = z.infer<typeof ModelEntry>
+const ModelList = z.looseObject({ data: z.array(z.unknown()).catch([]) })
 const ErrorEvent = z.looseObject({ error: z.looseObject({ message: z.string().optional() }).catch({}), willRetry: z.boolean().optional() })
 const Resolved = z.looseObject({ requestId: Id })
 const CommandApproval = z.looseObject({
@@ -85,6 +119,43 @@ type Pending = {
   // What deny means here: decline where the server offers it, else cancel, which ends the turn.
   denial: 'decline' | 'cancel'
 }
+
+type Sandbox = 'workspace-write' | 'read-only' | 'danger-full-access'
+
+// Kando's permission modes as Codex's approval policy and sandbox. acceptEdits is what the Codex
+// TUI starts with: the sandbox lets it write the workspace, and it asks when it wants out.
+export const CODEX_MODES: Record<string, { approvalPolicy: string; sandbox: Sandbox }> = {
+  ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
+  acceptEdits: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  readOnly: { approvalPolicy: 'on-request', sandbox: 'read-only' },
+  bypass: { approvalPolicy: 'never', sandbox: 'danger-full-access' }
+}
+
+// The protocol spells a sandbox in kebab case on a thread and as a tagged object in a policy.
+function sandboxName(type: string | undefined): Sandbox | null {
+  switch (type) {
+    case 'workspace-write':
+    case 'workspaceWrite':
+      return 'workspace-write'
+    case 'read-only':
+    case 'readOnly':
+      return 'read-only'
+    case 'danger-full-access':
+    case 'dangerFullAccess':
+      return 'danger-full-access'
+    default:
+      return null
+  }
+}
+
+// Kando's name for a policy and sandbox, or Codex's own words for a pairing it has no name for.
+export function codexMode(approvalPolicy: unknown, sandbox: Sandbox | null): string | null {
+  if (typeof approvalPolicy !== 'string' || !sandbox) return null
+  const found = Object.entries(CODEX_MODES).find(([, mode]) => mode.approvalPolicy === approvalPolicy && mode.sandbox === sandbox)
+  return found ? found[0] : `${approvalPolicy} · ${sandbox}`
+}
+
+const TODO_STATUS: Record<string, ChatTodo['status']> = { pending: 'pending', inProgress: 'in_progress', completed: 'completed' }
 
 const DECISIONS: Record<string, 'allowed' | 'allowedForSession' | 'denied'> = {
   accept: 'allowed',
@@ -149,9 +220,17 @@ export class CodexAppServer implements ChatDriver {
   private interrupts = 0
   private results = 0
   private messages: StageMessage[] = []
+  private readonly state: StageState
+  private modelsRequested = false
+  private catalog: ModelEntry[] = []
+  private model: string | null = null
+  private effort: string | null = null
+  private approvalPolicy: unknown = null
+  private sandbox: Sandbox | null = null
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
+    this.state = new StageState(this.items)
   }
 
   apply(record: ChatRecord): void {
@@ -159,18 +238,21 @@ export class CodexAppServer implements ChatDriver {
       case 'in': {
         const frame = Frame.safeParse(record.frame)
         if (frame.success) this.receive(frame.data, record.at)
-        return
+        break
       }
       case 'out': {
         const frame = Frame.safeParse(record.frame)
         if (frame.success) this.sent(frame.data, record.at, record.ref)
-        return
+        break
       }
       case 'note':
-        return this.items.notice(record.level, record.text, record.at)
+        this.items.notice(record.level, record.text, record.at)
+        break
       case 'exit':
-        return this.ended(record.stderr, record.at)
+        this.ended(record.stderr, record.at)
     }
+    this.refreshOptions()
+    this.state.publish(record.at)
   }
 
   due(): unknown[] {
@@ -187,6 +269,7 @@ export class CodexAppServer implements ChatDriver {
     if (!this.initialized || this.startError) return frames
     if (!this.initializedSent) frames.push({ method: 'initialized' })
     if (!this.threadRequested) frames.push(this.openThread())
+    if (!this.modelsRequested) frames.push({ id: 'kando-models', method: 'model/list', params: {} })
     return frames
   }
 
@@ -248,7 +331,19 @@ export class CodexAppServer implements ChatDriver {
     if (method === undefined) return this.loggedResponse(parsed.data)
     // Server requests are kept whole; of the notifications, only those that change what the chat shows.
     if (id !== undefined) return frame
-    const kept = ['thread/started', 'turn/started', 'turn/completed', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
+    if (method === 'thread/settings/updated') {
+      const update = SettingsUpdated.safeParse(parsed.data.params)
+      if (!update.success) return null
+      const { approvalPolicy, sandboxPolicy, model, effort } = update.data.threadSettings
+      return { method, params: { threadSettings: { approvalPolicy, sandboxPolicy: sandboxPolicy ? { type: sandboxPolicy.type } : undefined, model, effort } } }
+    }
+    if (method === 'thread/tokenUsage/updated') {
+      const usage = TokenUsage.safeParse(parsed.data.params)
+      if (!usage.success) return null
+      const { last, modelContextWindow } = usage.data.tokenUsage
+      return { method, params: { tokenUsage: { last: { totalTokens: last.totalTokens }, modelContextWindow } } }
+    }
+    const kept = ['thread/started', 'turn/started', 'turn/completed', 'turn/plan/updated', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
     return kept.includes(method) ? frame : null
   }
 
@@ -261,13 +356,46 @@ export class CodexAppServer implements ChatDriver {
   private loggedResponse(frame: Frame): unknown {
     if (frame.id === undefined || frame.error) return frame
     const method = this.requests.get(String(frame.id))
-    const thread = ThreadEvent.safeParse(frame.result)
+    const thread = ThreadOpened.safeParse(frame.result)
     if ((method === 'thread/start' || method === 'thread/resume') && thread.success) {
-      return { id: frame.id, result: { thread: { id: thread.data.thread.id } } }
+      const { model, reasoningEffort, approvalPolicy, sandbox } = thread.data
+      return { id: frame.id, result: { thread: { id: thread.data.thread.id }, model, reasoningEffort, approvalPolicy, sandbox: sandbox ? { type: sandbox.type } : undefined } }
+    }
+    if (method === 'model/list') {
+      const list = ModelList.safeParse(frame.result)
+      return { id: frame.id, result: { data: list.success ? this.modelEntries(list.data.data) : [] } }
     }
     const turn = TurnEvent.safeParse(frame.result)
     if (method === 'turn/start' && turn.success) return { id: frame.id, result: { turn: { id: turn.data.turn.id } } }
     return method === 'initialize' ? { id: frame.id, result: {} } : frame
+  }
+
+  private modelEntries(data: readonly unknown[]): ModelEntry[] {
+    return data.flatMap((raw) => {
+      const entry = ModelEntry.safeParse(raw)
+      if (!entry.success || entry.data.hidden) return []
+      const { id, displayName, description, isDefault, supportedReasoningEfforts, defaultReasoningEffort } = entry.data
+      return [{ id, displayName, description, isDefault, supportedReasoningEfforts, defaultReasoningEffort }]
+    })
+  }
+
+  private refreshOptions(): void {
+    const models: ChatModel[] = this.catalog.map((entry) => ({
+      id: entry.id,
+      label: entry.displayName ?? entry.id,
+      description: entry.description ?? null,
+      efforts: (entry.supportedReasoningEfforts ?? []).map((effort) => effort.reasoningEffort),
+      isDefault: entry.isDefault ?? false
+    }))
+    const current = this.catalog.find((entry) => entry.id === this.model)
+    this.state.set({
+      models,
+      model: this.model,
+      // A thread on its model's default effort reports none.
+      effort: this.effort ?? current?.defaultReasoningEffort ?? null,
+      permissionMode: codexMode(this.approvalPolicy, this.sandbox),
+      permissionModes: ['ask', 'acceptEdits', 'readOnly', ...(this.options.allowBypass ? ['bypass'] : [])]
+    })
   }
 
   private openThread(): unknown {
@@ -303,9 +431,19 @@ export class CodexAppServer implements ChatDriver {
         this.initialized = true
       }
     } else if (method === 'thread/start' || method === 'thread/resume') {
-      const thread = ThreadEvent.safeParse(frame.result)
-      if (thread.success) this.threadId = thread.data.thread.id
-      else this.startError = error ?? 'Codex did not open a thread'
+      const thread = ThreadOpened.safeParse(frame.result)
+      if (thread.success) {
+        this.threadId = thread.data.thread.id
+        this.model = thread.data.model ?? this.model
+        this.effort = thread.data.reasoningEffort ?? this.effort
+        this.approvalPolicy = thread.data.approvalPolicy ?? this.approvalPolicy
+        this.sandbox = sandboxName(thread.data.sandbox?.type) ?? this.sandbox
+      } else {
+        this.startError = error ?? 'Codex did not open a thread'
+      }
+    } else if (method === 'model/list') {
+      const list = ModelList.safeParse(frame.result)
+      if (list.success) this.catalog = this.modelEntries(list.data.data)
     } else if (method === 'turn/start') {
       const turn = TurnEvent.safeParse(frame.result)
       if (turn.success && this.turn && !this.turn.turnId) this.turn.turnId = turn.data.turn.id
@@ -346,6 +484,28 @@ export class CodexAppServer implements ChatDriver {
         const id = `m:${delta.data.itemId}`
         if (!this.items.get(id)) this.items.put({ id, kind: 'assistant', text: '', streaming: true }, at)
         this.items.append(id, delta.data.delta)
+        return
+      }
+      case 'thread/settings/updated': {
+        const update = SettingsUpdated.safeParse(params)
+        if (!update.success) return
+        const { approvalPolicy, sandboxPolicy, model, effort } = update.data.threadSettings
+        if (approvalPolicy !== undefined) this.approvalPolicy = approvalPolicy
+        this.sandbox = sandboxName(sandboxPolicy?.type) ?? this.sandbox
+        if (model) this.model = model
+        if (effort !== undefined) this.effort = effort
+        return
+      }
+      case 'thread/tokenUsage/updated': {
+        const usage = TokenUsage.safeParse(params)
+        if (usage.success) this.state.setContext({ used: usage.data.tokenUsage.last.totalTokens, window: usage.data.tokenUsage.modelContextWindow ?? null })
+        return
+      }
+      case 'turn/plan/updated': {
+        const plan = PlanUpdated.safeParse(params)
+        if (!plan.success) return
+        const todos = plan.data.plan.map((step) => ({ content: step.step, status: TODO_STATUS[step.status] ?? 'pending', activeForm: null }))
+        this.state.setTodos(todos, this.turn?.ref ?? null, at)
         return
       }
       case 'serverRequest/resolved': {
@@ -490,6 +650,7 @@ export class CodexAppServer implements ChatDriver {
       this.requests.set(String(frame.id), frame.method)
       if (frame.method === 'initialize') this.initSent = true
       if (frame.method === 'thread/start' || frame.method === 'thread/resume') this.threadRequested = true
+      if (frame.method === 'model/list') this.modelsRequested = true
       if (frame.method === 'turn/interrupt') this.interrupts++
       if (frame.method === 'turn/start') this.startTurn(frame, at, ref)
       return
@@ -540,6 +701,7 @@ export class CodexAppServer implements ChatDriver {
   }
 
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
+    this.state.endTurn()
     for (const item of this.items.list()) {
       if (item.kind === 'assistant' && item.streaming) this.items.put({ ...item, streaming: false }, at)
     }

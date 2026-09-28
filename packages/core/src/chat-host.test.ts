@@ -31,7 +31,8 @@ function recordingSink() {
 }
 
 const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0))
-const kinds = (items: ChatItem[]) => items.map((item) => item.kind)
+// The stage's state item is not part of the conversation's flow.
+const kinds = (items: ChatItem[]) => items.filter((item) => item.kind !== 'state').map((item) => item.kind)
 const canUseTool = (requestId: string) => ({
   type: 'control_request',
   request_id: requestId,
@@ -65,7 +66,10 @@ describe('ChatHost', () => {
   it('initializes the agent, then carries a message and its reply', async () => {
     const recorded = recordingSink()
     const { host, sessionId } = await started(recorded.sink)
-    expect(daemon.written(sessionId)).toEqual([{ type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } }])
+    expect(daemon.written(sessionId)).toEqual([
+      { type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } },
+      { type: 'control_request', request_id: 'kando-settings', request: { subtype: 'get_settings' } }
+    ])
 
     const reply = daemon.reply
     daemon.reply = () => {}

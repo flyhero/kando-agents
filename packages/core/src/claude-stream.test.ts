@@ -17,8 +17,8 @@ function fixture(name: string): ChatRecord[] {
     })
 }
 
-function replay(records: readonly ChatRecord[]): ClaudeStream {
-  const driver = new ClaudeStream('stage-1', OPTIONS)
+function replay(records: readonly ChatRecord[], options: ChatStageOptions = OPTIONS): ClaudeStream {
+  const driver = new ClaudeStream('stage-1', options)
   records.forEach((record) => driver.apply(record))
   return driver
 }
@@ -78,8 +78,8 @@ describe('ClaudeStream', () => {
     expect(replay(fixture('claude-session.jsonl')).takeMessages()).toEqual(messages)
   })
 
-  it('rebuilds the same items from what it logs as from everything it saw', () => {
-    const records = fixture('claude-session.jsonl')
+  it.each(['claude-session.jsonl', 'claude-options.jsonl'])('rebuilds the same items from what it logs as from everything it saw (%s)', (name) => {
+    const records = fixture(name)
     const live = replay(records)
     const logger = new ClaudeStream('stage-1', OPTIONS)
     const kept = records.flatMap((record): ChatRecord[] => {
@@ -87,7 +87,7 @@ describe('ClaudeStream', () => {
       const frame = logger.logged(record.frame)
       return frame === null ? [] : [{ ...record, frame }]
     })
-    expect(kept.length).toBeLessThan(records.length / 2)
+    expect(kept.length).toBeLessThan(name === 'claude-session.jsonl' ? records.length / 2 : records.length)
     expect(shown(replay(kept).items.list())).toEqual(shown(live.items.list()))
   })
 
@@ -127,6 +127,65 @@ describe('ClaudeStream', () => {
   })
 })
 
+describe('ClaudeStream state', () => {
+  // Plan mode, two TaskCreate calls, ExitPlanMode approved into acceptEdits, then TaskUpdate and TaskList.
+  const records = fixture('claude-options.jsonl')
+  const stateOf = (driver: ClaudeStream) => ofKind(driver.items.list(), 'state')[0]
+
+  it('reports the mode, model, effort and context the stage runs with', () => {
+    const state = stateOf(replay(records))
+    expect(state).toMatchObject({ permissionMode: 'acceptEdits', model: 'haiku', permissionModes: ['ask', 'acceptEdits', 'plan'] })
+    expect(state?.models.map((model) => model.id)).toContain('sonnet')
+    expect(state?.models.find((model) => model.id === 'sonnet')?.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(state?.context?.window).toBe(200_000)
+    expect(state?.context?.used).toBeGreaterThan(10_000)
+  })
+
+  it('follows the permission mode as the CLI reports it change', () => {
+    const driver = new ClaudeStream('stage-1', OPTIONS)
+    const modes: Array<string | null> = []
+    for (const record of records) {
+      driver.apply(record)
+      const mode = stateOf(driver)?.permissionMode ?? null
+      if (modes.at(-1) !== mode) modes.push(mode)
+    }
+    expect(modes).toEqual([null, 'ask', 'plan', 'acceptEdits'])
+  })
+
+  it('offers auto only for a model that has it, and bypass only when the user allows it', () => {
+    const allowed = replay(records.map((record) => record), { ...OPTIONS, allowBypass: true })
+    expect(stateOf(allowed)?.permissionModes).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])
+  })
+
+  it('turns task tool calls into a checklist instead of tool cards', () => {
+    const driver = replay(records)
+    const items = driver.items.list()
+    expect(ofKind(items, 'tool').map((tool) => tool.name)).not.toEqual(expect.arrayContaining(['TaskCreate', 'TaskUpdate', 'TaskList', 'ToolSearch']))
+    expect(stateOf(driver)?.todos).toEqual([
+      { content: 'Create notes.md file', status: 'completed', activeForm: null },
+      { content: 'Write two short lines to notes.md', status: 'completed', activeForm: null }
+    ])
+    // The first turn created and finished both; the second listed them unchanged.
+    expect(ofKind(items, 'todos').map((item) => item.id)).toEqual(['todos:ref-1'])
+  })
+
+  it('shows the plan an ExitPlanMode call proposes', () => {
+    const [plan] = ofKind(replay(records).items.list(), 'tool').filter((tool) => tool.name === 'ExitPlanMode')
+    expect(plan).toMatchObject({ title: '计划', status: 'done' })
+    expect(plan?.input).toContain('# Add notes.md')
+  })
+
+  it('keeps no account details from initialize in what it logs', () => {
+    const driver = new ClaudeStream('stage-1', OPTIONS)
+    const kept = driver.logged({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: 'kando-init', response: { account: { email: 'someone@example.com' }, commands: [{ name: 'x' }], current_permission_mode: 'default', models: [] } }
+    })
+    expect(JSON.stringify(kept)).not.toContain('example.com')
+    expect(JSON.stringify(kept)).not.toContain('commands')
+  })
+})
+
 describe('ClaudeStream commands', () => {
   const at = 1
   const started = () => {
@@ -134,6 +193,9 @@ describe('ClaudeStream commands', () => {
     const [init] = driver.due()
     driver.apply({ dir: 'out', at, frame: init })
     driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } } })
+    const [settings] = driver.due()
+    expect(settings).toMatchObject({ request_id: 'kando-settings', request: { subtype: 'get_settings' } })
+    driver.apply({ dir: 'out', at, frame: settings })
     return driver
   }
   const canUseTool = (requestId: string) => ({

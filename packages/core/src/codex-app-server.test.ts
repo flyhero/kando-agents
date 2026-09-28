@@ -85,14 +85,62 @@ describe('CodexAppServer', () => {
   })
 })
 
+describe('CodexAppServer state', () => {
+  // gpt-6-luna at low effort, then medium effort with the untrusted policy (Kando's ask).
+  const records = fixture('codex-options.jsonl')
+  const stateOf = (driver: CodexAppServer) => ofKind(driver.items.list(), 'state')[0]
+
+  it('reports the mode, model, effort and context the thread runs with', () => {
+    const state = stateOf(replay(records))
+    expect(state).toMatchObject({ permissionMode: 'ask', model: 'gpt-6-luna', effort: 'medium', permissionModes: ['ask', 'acceptEdits', 'readOnly'] })
+    expect(state?.models.find((model) => model.id === 'gpt-6-sol')).toMatchObject({ label: 'GPT-6-Sol', isDefault: true })
+    expect(state?.models.find((model) => model.id === 'gpt-6-luna')?.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(state?.context).toEqual({ used: 22_525, window: 258_400 })
+  })
+
+  it('follows what each turn changed', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    const seen: string[] = []
+    for (const record of records) {
+      driver.apply(record)
+      const state = stateOf(driver)
+      const now = `${state?.permissionMode}/${state?.effort}`
+      if (state && seen.at(-1) !== now) seen.push(now)
+    }
+    expect(seen).toEqual(['null/null', 'acceptEdits/medium', 'acceptEdits/low', 'ask/medium'])
+  })
+
+  it('turns a plan update into the turn\'s checklist', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    driver.apply({ dir: 'out', at: 1, frame: { id: 'kando-turn-1', method: 'turn/start', params: { input: [{ type: 'text', text: 'go' }] } }, ref: 'ref-1' })
+    driver.apply({ dir: 'in', at: 2, frame: { method: 'turn/plan/updated', params: { plan: [{ step: 'Write the parser', status: 'completed' }, { step: 'Test it', status: 'inProgress' }] } } })
+    const todos = [
+      { content: 'Write the parser', status: 'completed', activeForm: null },
+      { content: 'Test it', status: 'in_progress', activeForm: null }
+    ]
+    expect(stateOf(driver)?.todos).toEqual(todos)
+    expect(driver.items.get('todos:ref-1')).toMatchObject({ kind: 'todos', todos })
+  })
+
+  it('rebuilds the same state from what it logs', () => {
+    const logger = new CodexAppServer('stage-1', OPTIONS)
+    const kept = records.flatMap((record): ChatRecord[] => {
+      if (record.dir !== 'in') return [record]
+      const frame = logger.logged(record.frame)
+      return frame === null ? [] : [{ ...record, frame }]
+    })
+    expect(shown([stateOf(replay(kept))!])).toEqual(shown([stateOf(replay(records))!]))
+  })
+})
+
 describe('CodexAppServer commands', () => {
   const at = 1
   const handshake = (driver: CodexAppServer, threadId = 'thread-1') => {
     driver.due().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
     driver.apply({ dir: 'in', at, frame: { id: 'kando-init', result: {} } })
-    const [initialized, open] = driver.due()
-    driver.apply({ dir: 'out', at, frame: initialized })
-    driver.apply({ dir: 'out', at, frame: open })
+    const [initialized, open, models] = driver.due()
+    expect(models).toEqual({ id: 'kando-models', method: 'model/list', params: {} })
+    for (const frame of [initialized, open, models]) driver.apply({ dir: 'out', at, frame })
     driver.apply({ dir: 'in', at, frame: { id: 'kando-thread', result: { thread: { id: threadId } } } })
     return { initialized, open }
   }

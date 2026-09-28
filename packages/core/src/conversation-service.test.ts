@@ -319,7 +319,7 @@ describe('ConversationService in chat mode', () => {
     expect(service.messages(created.id).map((message) => [message.role, message.text]))
       .toEqual([['user', 'Refactor the parser'], ['assistant', 'echo: Refactor the parser']])
     expect(service.get(created.id).title).toBe('Refactor the parser')
-    expect(service.chatPage(created.id).items.map((item) => item.kind)).toEqual(['user', 'assistant', 'turn'])
+    expect(service.chatPage(created.id).items.map((item) => item.kind).filter((kind) => kind !== 'state')).toEqual(['user', 'assistant', 'turn'])
     // The JSON never lands in the terminal record.
     const terminal = Buffer.from(service.history(created.id, 0, 65536).data, 'base64').toString()
     expect(terminal).toContain('聊天界面')

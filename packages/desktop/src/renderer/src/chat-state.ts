@@ -87,16 +87,18 @@ export function timeline(
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = []
   const known = new Set(stages.map((stage) => stage.id))
+  // A stage's state item feeds the composer; it is not something that happened.
+  const flow = items.filter((item) => item.kind !== 'state')
   for (const stage of stages) {
     entries.push({ kind: 'stage', stage })
     if (stage.mode === 'chat') {
-      items.filter((item) => item.stageId === stage.id).forEach((item) => entries.push({ kind: 'item', item }))
+      flow.filter((item) => item.stageId === stage.id).forEach((item) => entries.push({ kind: 'item', item }))
     } else {
       messages.filter((message) => message.stageId === stage.id).forEach((message) => entries.push({ kind: 'message', message }))
     }
   }
   // A stage that began after the list was read.
-  items.filter((item) => !known.has(item.stageId)).forEach((item) => entries.push({ kind: 'item', item }))
+  flow.filter((item) => !known.has(item.stageId)).forEach((item) => entries.push({ kind: 'item', item }))
   return entries
 }
 

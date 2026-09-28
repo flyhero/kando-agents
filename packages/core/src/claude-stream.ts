@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import type { ChatDiff, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import type { ChatDiff, ChatModel, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
+import { StageState } from './chat-stage-state'
+import { CLAUDE_TASK_TOOLS, ClaudeTasks } from './claude-tasks'
 import { Rejection } from './rejection'
 
 // Claude Code's stream-json protocol (`claude -p --input-format stream-json --output-format
@@ -9,8 +11,21 @@ import { Rejection } from './rejection'
 // read loosely and anything unrecognized is ignored rather than trusted.
 
 const INIT_ID = 'kando-init'
+const SETTINGS_ID = 'kando-settings'
 const INTERRUPT_PREFIX = 'kando-interrupt-'
 const MAX_PATCH = 50_000
+// Calls that are Claude Code's own machinery, or that another item already shows: no tool card.
+const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion', 'ToolSearch', ...CLAUDE_TASK_TOOLS])
+// Claude Code's permission modes by Kando's names for them; manual is what newer versions call default.
+const PERMISSION_MODES: Record<string, string> = {
+  default: 'ask',
+  manual: 'ask',
+  acceptEdits: 'acceptEdits',
+  plan: 'plan',
+  auto: 'auto',
+  bypassPermissions: 'bypass'
+}
+const ONE_MILLION = 1_000_000
 
 const Head = z.looseObject({ type: z.string() })
 const Block = z.looseObject({
@@ -30,7 +45,33 @@ const Blocks = z.array(z.unknown()).transform((blocks) => blocks.flatMap((block)
   return parsed.success ? [parsed.data] : []
 }))
 const Subagent = z.string().nullish()
-const SystemFrame = z.looseObject({ subtype: z.string().optional(), session_id: z.string().optional() })
+const SystemFrame = z.looseObject({
+  subtype: z.string().optional(),
+  session_id: z.string().optional(),
+  model: z.string().optional(),
+  permissionMode: z.string().optional(),
+  // task_summary: what the agent is doing right now, null once it stops.
+  detail: z.string().nullish()
+})
+const ModelRow = z.looseObject({
+  value: z.string(),
+  resolvedModel: z.string().nullish(),
+  displayName: z.string().nullish(),
+  description: z.string().nullish(),
+  supportedEffortLevels: z.array(z.string()).catch([]).optional(),
+  supportsAutoMode: z.boolean().optional()
+})
+type ModelRow = z.infer<typeof ModelRow>
+const InitResponse = z.looseObject({
+  current_permission_mode: z.string().optional(),
+  models: z.array(z.unknown()).catch([]).optional()
+})
+const SettingsResponse = z.looseObject({ effective: z.looseObject({ effortLevel: z.string().nullish() }).optional() })
+const Usage = z.looseObject({
+  input_tokens: z.number().optional(),
+  cache_creation_input_tokens: z.number().optional(),
+  cache_read_input_tokens: z.number().optional()
+})
 const StreamFrame = z.looseObject({
   parent_tool_use_id: Subagent,
   event: z.looseObject({
@@ -43,7 +84,7 @@ const StreamFrame = z.looseObject({
 })
 const AssistantFrame = z.looseObject({
   parent_tool_use_id: Subagent,
-  message: z.looseObject({ id: z.string(), content: Blocks.catch([]) })
+  message: z.looseObject({ id: z.string(), content: Blocks.catch([]), usage: Usage.optional().catch(undefined) })
 })
 const UserFrame = z.looseObject({
   parent_tool_use_id: Subagent,
@@ -57,7 +98,9 @@ const ResultFrame = z.looseObject({
   result: z.string().nullish(),
   terminal_reason: z.string().nullish(),
   errors: z.array(z.string()).nullish().catch(null),
-  duration_ms: z.number().nullish()
+  duration_ms: z.number().nullish(),
+  // Every model the turn used, the main one and any the CLI ran for itself.
+  modelUsage: z.record(z.string(), z.looseObject({ contextWindow: z.number().optional() })).optional().catch(undefined)
 })
 const Input = z.record(z.string(), z.unknown()).catch({})
 const ControlRequest = z.looseObject({
@@ -109,6 +152,13 @@ type Pending = {
   suggestions: unknown[]
 }
 
+function modelRows(value: unknown): ModelRow[] {
+  return (Array.isArray(value) ? value : []).flatMap((row) => {
+    const parsed = ModelRow.safeParse(row)
+    return parsed.success ? [parsed.data] : []
+  })
+}
+
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
 }
@@ -143,6 +193,8 @@ export function describeClaudeTool(name: string, input: Record<string, unknown>)
       return str(input.description) ?? ''
     case 'TodoWrite':
       return Array.isArray(input.todos) ? `${input.todos.length} 项` : ''
+    case 'ExitPlanMode':
+      return '计划'
     default: {
       const first = Object.values(input).find((value) => typeof value === 'string')
       return typeof first === 'string' ? firstLine(first) : ''
@@ -153,6 +205,7 @@ export function describeClaudeTool(name: string, input: Record<string, unknown>)
 // The input worth showing beside the title; file tools show a diff instead.
 function inputText(name: string, input: Record<string, unknown>): string | null {
   if (name === 'Bash') return str(input.command)
+  if (name === 'ExitPlanMode') return str(input.plan)
   if (['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'].includes(name)) return null
   return Object.keys(input).length ? clip(JSON.stringify(input, null, 2), 4000) : null
 }
@@ -215,8 +268,8 @@ export class ClaudeStream implements ChatDriver {
   // Control requests Kando does not handle, still owed an error reply.
   private readonly unanswered = new Set<string>()
   private readonly denied = new Set<string>()
-  // AskUserQuestion calls, which their question item shows instead of a tool card.
-  private readonly questionCalls = new Set<string>()
+  // Calls with no tool card of their own (see HIDDEN_TOOLS).
+  private readonly hiddenCalls = new Set<string>()
   // Blocks of each API message seen as complete frames, and the streamed text items they finish.
   private readonly blockCounts = new Map<string, number>()
   private readonly streaming = new Map<string, string[]>()
@@ -224,23 +277,38 @@ export class ClaudeStream implements ChatDriver {
   private interrupts = 0
   private results = 0
   private messages: StageMessage[] = []
+  private readonly state: StageState
+  private readonly tasks = new ClaudeTasks()
+  private settingsSent = false
+  // What the stage runs: the CLI's model catalog, the model it reports, and its context window.
+  private catalog: ModelRow[] = []
+  private reportedModel: string | null = null
+  private contextWindow: number | null = null
+  private permissionMode: string | null = null
+  private effort: string | null = null
 
-  constructor(stageId: string, options: ChatStageOptions) {
+  constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
+    this.state = new StageState(this.items)
     this.sessionId = options.resume
   }
 
   apply(record: ChatRecord): void {
     switch (record.dir) {
       case 'in':
-        return this.receive(record.frame, record.at)
+        this.receive(record.frame, record.at)
+        break
       case 'out':
-        return this.sent(record.frame, record.at, record.ref)
+        this.sent(record.frame, record.at, record.ref)
+        break
       case 'note':
-        return this.items.notice(record.level, record.text, record.at)
+        this.items.notice(record.level, record.text, record.at)
+        break
       case 'exit':
-        return this.ended(record.code, record.stderr, record.at)
+        this.ended(record.code, record.stderr, record.at)
     }
+    this.refreshOptions()
+    this.state.publish(record.at)
   }
 
   due(): unknown[] {
@@ -251,6 +319,10 @@ export class ClaudeStream implements ChatDriver {
     }
     for (const requestId of this.unanswered) {
       frames.push({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'Kando does not handle this request' } })
+    }
+    // The effort is the one setting nothing else reports.
+    if (this.initialized && !this.settingsSent) {
+      frames.push({ type: 'control_request', request_id: SETTINGS_ID, request: { subtype: 'get_settings' } })
     }
     return frames
   }
@@ -306,8 +378,10 @@ export class ClaudeStream implements ChatDriver {
       case 'system': {
         const system = SystemFrame.safeParse(frame)
         if (!system.success) return null
-        const { subtype, session_id } = system.data
-        if (subtype === 'init') return { type: 'system', subtype, session_id }
+        const { subtype, session_id, model, permissionMode } = system.data
+        if (subtype === 'init') return { type: 'system', subtype, session_id, model, permissionMode }
+        // A status frame names the permission mode only when it changed.
+        if (subtype === 'status' && permissionMode) return { type: 'system', subtype, permissionMode }
         return subtype === 'compact_boundary' ? { type: 'system', subtype } : null
       }
       case 'user': {
@@ -328,7 +402,7 @@ export class ClaudeStream implements ChatDriver {
         const response = ControlResponse.safeParse(frame)
         if (!response.success || !this.ownRequest(response.data.response.request_id)) return null
         const { subtype, request_id, error } = response.data.response
-        return { type: 'control_response', response: { subtype, request_id, ...(error ? { error } : {}) } }
+        return { type: 'control_response', response: { subtype, request_id, ...(error ? { error } : {}), ...this.keptAnswer(response.data.response) } }
       }
       default:
         return frame
@@ -342,7 +416,57 @@ export class ClaudeStream implements ChatDriver {
   }
 
   private ownRequest(requestId: string): boolean {
-    return requestId === INIT_ID || requestId.startsWith(INTERRUPT_PREFIX)
+    return requestId === INIT_ID || requestId === SETTINGS_ID || requestId.startsWith(INTERRUPT_PREFIX)
+  }
+
+  // What of an answer to Kando's request to keep: the models and mode initialize reports (it also
+  // carries the account, commands and more, none of which belongs in a log), and the effort.
+  private keptAnswer(response: { request_id: string; response?: unknown }): { response?: unknown } {
+    if (response.request_id === INIT_ID) {
+      const init = InitResponse.safeParse(response.response)
+      if (!init.success) return {}
+      const models = modelRows(init.data.models).map(({ value, resolvedModel, displayName, description, supportedEffortLevels, supportsAutoMode }) =>
+        ({ value, resolvedModel, displayName, description, supportedEffortLevels, supportsAutoMode }))
+      return { response: { current_permission_mode: init.data.current_permission_mode, models } }
+    }
+    if (response.request_id === SETTINGS_ID) {
+      const settings = SettingsResponse.safeParse(response.response)
+      return settings.success ? { response: { effective: { effortLevel: settings.data.effective?.effortLevel ?? null } } } : {}
+    }
+    return {}
+  }
+
+  // The options the stage offers follow from the catalog, the model and the mode reported.
+  private refreshOptions(): void {
+    const models: ChatModel[] = this.catalog.filter((row) => row.value !== 'default').map((row) => ({
+      id: row.value,
+      label: row.displayName ?? row.value,
+      description: row.description ?? null,
+      efforts: row.supportedEffortLevels ?? [],
+      isDefault: row.resolvedModel != null && row.resolvedModel === this.catalog.find((each) => each.value === 'default')?.resolvedModel
+    }))
+    const current = this.currentModel()
+    this.state.set({
+      models,
+      model: current?.value ?? this.reportedModel,
+      effort: this.effort,
+      permissionMode: this.permissionMode,
+      permissionModes: [
+        'ask',
+        'acceptEdits',
+        'plan',
+        ...(current?.supportsAutoMode ? ['auto'] : []),
+        ...(this.options.allowBypass ? ['bypass'] : [])
+      ]
+    })
+  }
+
+  // The catalog row for the model the CLI says it runs, by alias or by the id an alias resolves to.
+  private currentModel(): ModelRow | undefined {
+    const reported = this.reportedModel
+    if (!reported) return undefined
+    const rows = this.catalog.filter((row) => row.value !== 'default')
+    return rows.find((row) => row.value === reported) ?? rows.find((row) => row.resolvedModel === reported)
   }
 
   private reply(requestId: string, response: unknown): unknown {
@@ -397,8 +521,12 @@ export class ClaudeStream implements ChatDriver {
   private system(frame: unknown, at: number): void {
     const system = SystemFrame.safeParse(frame)
     if (!system.success) return
-    if (system.data.subtype === 'init' && system.data.session_id) this.sessionId = system.data.session_id
-    if (system.data.subtype === 'compact_boundary') this.items.notice('info', '对话上下文已压缩', at)
+    const { subtype, session_id, model, permissionMode, detail } = system.data
+    if (subtype === 'init' && session_id) this.sessionId = session_id
+    if (subtype === 'init' && model) this.reportedModel = model
+    if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
+    if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
+    if (subtype === 'compact_boundary') this.items.notice('info', '对话上下文已压缩', at)
   }
 
   private stream(frame: unknown, at: number): void {
@@ -428,7 +556,12 @@ export class ClaudeStream implements ChatDriver {
   private assistant(frame: unknown, at: number): void {
     const parsed = AssistantFrame.safeParse(frame)
     if (!parsed.success || parsed.data.parent_tool_use_id) return
-    const { id: message, content } = parsed.data.message
+    const { id: message, content, usage } = parsed.data.message
+    // What the latest request sent is what the conversation now fills of the context.
+    if (usage) {
+      const used = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0)
+      this.state.setContext({ used, window: this.contextWindow ?? this.guessedWindow() })
+    }
     for (const block of content) {
       // Each complete frame carries one block, in the order the stream indexed them.
       const index = this.blockCounts.get(message) ?? 0
@@ -457,8 +590,10 @@ export class ClaudeStream implements ChatDriver {
   private toolUse(block: Block, at: number): void {
     const id = `t:${block.id}`
     const name = block.name ?? 'tool'
-    if (name === 'AskUserQuestion') {
-      this.questionCalls.add(id)
+    if (HIDDEN_TOOLS.has(name)) {
+      this.hiddenCalls.add(id)
+      if (CLAUDE_TASK_TOOLS.has(name) && block.id) this.tasks.call(name, block.id, block.input)
+      if (name === 'TodoWrite') this.state.setTodos(this.tasks.list(), this.turn?.ref ?? null, at)
       return
     }
     const input = Input.parse(block.input ?? {})
@@ -484,7 +619,11 @@ export class ClaudeStream implements ChatDriver {
     for (const block of content) {
       if (block.type !== 'tool_result' || !block.tool_use_id) continue
       const id = `t:${block.tool_use_id}`
-      if (this.questionCalls.has(id)) continue
+      if (this.hiddenCalls.has(id)) {
+        this.tasks.result(block.tool_use_id, parsed.data.tool_use_result)
+        this.state.setTodos(this.tasks.list(), this.turn?.ref ?? null, at)
+        continue
+      }
       const previous = this.items.get(id)
       const tool = previous?.kind === 'tool'
         ? previous
@@ -508,6 +647,12 @@ export class ClaudeStream implements ChatDriver {
     const parsed = ResultFrame.safeParse(frame)
     if (!parsed.success) return
     const result = parsed.data
+    const window = this.windowOf(result.modelUsage)
+    if (window) {
+      this.contextWindow = window
+      const context = this.state.current.context
+      if (context) this.state.setContext({ used: context.used, window })
+    }
     const state: ChatTurnState = (result.terminal_reason ?? '').startsWith('aborted')
       ? 'interrupted'
       : result.is_error || (result.subtype && result.subtype !== 'success')
@@ -517,8 +662,24 @@ export class ClaudeStream implements ChatDriver {
     this.endTurn(state, error, result.duration_ms ?? null, at)
   }
 
+  // The window of the model the stage runs; a turn's usage also lists models the CLI ran for itself.
+  private windowOf(usage: Record<string, { contextWindow?: number }> | undefined): number | null {
+    if (!usage) return null
+    const model = this.currentModel()
+    const names = [this.reportedModel, model?.resolvedModel, model?.value].filter((name): name is string => Boolean(name))
+    const match = names.map((name) => usage[name]?.contextWindow).find((window) => typeof window === 'number')
+    return match ?? null
+  }
+
+  // Before the first turn reports it: a 1M model says so in its name.
+  private guessedWindow(): number | null {
+    const names = [this.reportedModel, this.currentModel()?.value].filter((name): name is string => Boolean(name))
+    return names.some((name) => name.includes('[1m]')) ? ONE_MILLION : null
+  }
+
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
     this.finishStreaming(at)
+    this.state.endTurn()
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
@@ -581,12 +742,24 @@ export class ClaudeStream implements ChatDriver {
 
   private controlResponse(frame: unknown): void {
     const parsed = ControlResponse.safeParse(frame)
-    if (!parsed.success || parsed.data.response.request_id !== INIT_ID) return
-    if (parsed.data.response.subtype === 'success') {
-      this.initialized = true
-    } else {
-      this.initError = parsed.data.response.error ?? 'initialize failed'
+    if (!parsed.success) return
+    const { request_id: requestId, subtype, error, response } = parsed.data.response
+    if (requestId === SETTINGS_ID) {
+      const settings = SettingsResponse.safeParse(response)
+      if (subtype === 'success' && settings.success) this.effort = settings.data.effective?.effortLevel ?? null
+      return
     }
+    if (requestId !== INIT_ID) return
+    if (subtype !== 'success') {
+      this.initError = error ?? 'initialize failed'
+      return
+    }
+    this.initialized = true
+    const init = InitResponse.safeParse(response)
+    if (!init.success) return
+    this.catalog = modelRows(init.data.models)
+    const mode = init.data.current_permission_mode
+    if (mode) this.permissionMode = PERMISSION_MODES[mode] ?? mode
   }
 
   private sent(frame: unknown, at: number, ref: string | undefined): void {
@@ -604,6 +777,7 @@ export class ClaudeStream implements ChatDriver {
     if (head.data.type === 'control_request') {
       const request = ControlRequest.safeParse(frame)
       if (request.data?.request_id === INIT_ID) this.initSent = true
+      if (request.data?.request_id === SETTINGS_ID) this.settingsSent = true
       if (request.data?.request_id.startsWith(INTERRUPT_PREFIX)) this.interrupts++
       return
     }
