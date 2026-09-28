@@ -1,5 +1,6 @@
 import type { AgentKind, ChatContextUse, ChatItem, ChatOption, Conversation } from '@kando/protocol'
 import { perform } from '../core-store'
+import { usePreferences } from '../preferences'
 
 type StateItem = Extract<ChatItem, { kind: 'state' }>
 
@@ -53,30 +54,43 @@ function withCurrent(values: readonly string[], current: string | null): string[
 
 // Below the composer: how freely the agent may act on the left; on the right, the model and effort
 // it runs beside how full its context is. A click switches each; the model and effort change
-// between turns, the mode at any time.
+// between turns, the mode at any time. With no agent running, the choices are for the next start,
+// from what the last stage offered: as chosen since, or as that stage left them.
 export function ChatOptionsBar({ conversation, state }: { conversation: Conversation; state: StateItem }) {
-  const { id, agent } = conversation
-  const idle = conversation.chat?.turn === 'idle'
+  const { id, agent, chatOptions: next } = conversation
+  const running = conversation.sessionId !== null
+  const allowBypass = usePreferences((s) => s.allowBypass)
+  // An older core takes options only from a running agent.
+  if (!running && !next) return null
+  const idle = !running || conversation.chat?.turn === 'idle'
   const set = (option: ChatOption, value: string) => void perform((rpc) => rpc.call('conversations.setOption', { id, option, value }))
-  const model = state.models.find((each) => each.id === state.model)
+  const permissionMode = running ? state.permissionMode : (next?.permissionMode ?? state.permissionMode)
+  const modelId = running ? state.model : (next?.model ?? state.model)
+  // A model picked since takes its own default effort unless one was picked for it too.
+  const effort = running ? state.effort : (next?.effort ?? (next?.model && next.model !== state.model ? null : state.effort))
+  // The next start offers bypass by the setting as it is then.
+  const offered = running ? state.permissionModes : [...state.permissionModes.filter((mode) => mode !== 'bypass'), ...(allowBypass ? ['bypass'] : [])]
+  const model = state.models.find((each) => each.id === modelId)
   const efforts = model?.efforts ?? []
-  const modes = withCurrent(state.permissionModes, state.permissionMode)
-  const models = state.models.some((each) => each.id === state.model) || !state.model
+  const modes = withCurrent(offered, permissionMode)
+  const models = model || !modelId
     ? state.models
-    : [{ id: state.model, label: state.model, description: null, efforts: [], isDefault: false }, ...state.models]
+    : [{ id: modelId, label: modelId, description: null, efforts: [], isDefault: false }, ...state.models]
+  const later = running ? null : '发下一条消息时按这个启动'
   return (
     <div className="chat-options">
       {modes.length > 0 && (
         <select
           className="chat-select"
           aria-label="权限模式"
-          data-mode={state.permissionMode ?? undefined}
-          value={state.permissionMode ?? ''}
+          data-mode={permissionMode ?? undefined}
+          title={later ?? undefined}
+          value={permissionMode ?? ''}
           onChange={(event) => set('permissionMode', event.target.value)}
         >
-          {!state.permissionMode && <option value="" disabled>权限模式</option>}
+          {!permissionMode && <option value="" disabled>权限模式</option>}
           {modes.map((mode) => (
-            <option key={mode} value={mode} disabled={!state.permissionModes.includes(mode)}>
+            <option key={mode} value={mode} disabled={!offered.includes(mode)}>
               {MODE_LABEL[agent][mode] ?? mode}
             </option>
           ))}
@@ -87,12 +101,12 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
         <select
           className="chat-select"
           aria-label="模型"
-          title={idle ? model?.description ?? undefined : '回合结束后才能换模型'}
+          title={later ?? (idle ? model?.description ?? undefined : '回合结束后才能换模型')}
           disabled={!idle}
-          value={state.model ?? ''}
+          value={modelId ?? ''}
           onChange={(event) => set('model', event.target.value)}
         >
-          {!state.model && <option value="" disabled>模型</option>}
+          {!modelId && <option value="" disabled>模型</option>}
           {models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
         </select>
       )}
@@ -100,12 +114,12 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
         <select
           className="chat-select"
           aria-label="推理强度"
-          title={idle ? undefined : '回合结束后才能换推理强度'}
+          title={later ?? (idle ? undefined : '回合结束后才能换推理强度')}
           disabled={!idle}
-          value={state.effort ?? ''}
+          value={effort ?? ''}
           onChange={(event) => set('effort', event.target.value)}
         >
-          {!state.effort && <option value="" disabled>默认强度</option>}
+          {!effort && <option value="" disabled>默认强度</option>}
           {efforts.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>)}
         </select>
       )}

@@ -68,7 +68,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
         </div>
       )}
       <ChatComposer conversation={conversation} queued={running ? (state?.queued ?? null) : null} />
-      {running && optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
+      {optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
     </div>
   )
 }

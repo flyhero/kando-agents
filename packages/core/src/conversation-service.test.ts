@@ -414,6 +414,25 @@ describe('ConversationService in chat mode', () => {
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits']))
   })
 
+  it('takes options for the next start while no agent runs, from what the last stage offered', async () => {
+    const created = await service.create('claude', [], 'chat')
+    await service.stop(created.id)
+    await service.setOption(created.id, 'model', 'sonnet')
+    await service.setOption(created.id, 'effort', 'high')
+    await service.setOption(created.id, 'permissionMode', 'plan')
+    expect(service.get(created.id).chatOptions).toEqual({ permissionMode: 'plan', model: 'sonnet', effort: 'high' })
+    await expect(service.setOption(created.id, 'model', 'opus')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    await expect(service.setOption(created.id, 'effort', 'max')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    await expect(service.setOption(created.id, 'permissionMode', 'readOnly')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    // Haiku takes no effort, so the one chosen for Sonnet goes with it.
+    await service.setOption(created.id, 'model', 'haiku')
+    expect(service.get(created.id).chatOptions).toMatchObject({ model: 'haiku', effort: null })
+    await service.setOption(created.id, 'model', 'sonnet')
+    await service.setOption(created.id, 'effort', 'low')
+    await service.continue(created.id, 'chat')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--model', 'sonnet', '--effort', 'low']))
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

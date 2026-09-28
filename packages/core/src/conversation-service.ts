@@ -271,13 +271,46 @@ export class ConversationService {
   }
 
   // Remembered for the conversation's next start once the stage took it: a model or effort here,
-  // a permission mode when the stage reports it (see rememberMode).
+  // a permission mode when the stage reports it (see rememberMode). With no agent running, only
+  // remembered, from what the last chat stage offered.
   async setOption(id: string, option: ChatOption, value: string): Promise<void> {
-    const { agent } = this.get(id)
+    const conversation = this.get(id)
+    const { agent } = conversation
+    if (this.chats.activity(id) === null) {
+      this.chooseForNextStart(conversation, option, value)
+      return
+    }
     await this.chats.setOption(id, option, value)
     if (option === 'permissionMode') return
     const chosen = this.store.chatOptions(id)
     this.store.setChatOptions(id, { [agent]: { ...chosen[agent], [option]: value } })
+  }
+
+  private chooseForNextStart(conversation: Conversation, option: ChatOption, value: string): void {
+    const { id, agent } = conversation
+    const stage = this.store.stages(id).filter((each) => each.mode === 'chat').at(-1)
+    const state = stage?.agent === agent
+      ? this.chats.items(this.chatStage(conversation, stage)).findLast((item) => item.kind === 'state')
+      : undefined
+    if (state?.kind !== 'state') throw new Rejection('chat-option-invalid', `no chat stage of ${agent} to take options from`)
+    const chosen = this.store.chatOptions(id)
+    const current = chosen[agent] ?? {}
+    const model = (name: string | null | undefined) => state.models.find((each) => each.id === name)
+    if (option === 'permissionMode') {
+      // Bypass is for the start to allow, which asks the user's setting again.
+      if (value !== 'bypass' && !state.permissionModes.includes(value)) throw new Rejection('chat-option-invalid', `${agent} offers no permission mode ${value}`)
+      this.store.setChatOptions(id, { permissionMode: value })
+    } else if (option === 'model') {
+      const picked = model(value)
+      if (!picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${value}`)
+      // An effort the new model does not take would stop it from starting.
+      const effort = current.effort && picked.efforts.includes(current.effort) ? current.effort : undefined
+      this.store.setChatOptions(id, { [agent]: { model: value, effort } })
+    } else {
+      if (!model(current.model ?? state.model)?.efforts.includes(value)) throw new Rejection('chat-option-invalid', `the model takes no effort ${value}`)
+      this.store.setChatOptions(id, { [agent]: { ...current, effort: value } })
+    }
+    this.changed(conversation)
   }
 
   // The mode the stage runs in, however it got there: a plan approved to carry out with edits
@@ -505,7 +538,13 @@ export class ConversationService {
 
   private withChat(conversation: Conversation): Conversation {
     const turn = conversation.sessionId ? this.chats.activity(conversation.id) : null
-    return { ...conversation, chat: turn ? { turn } : null }
+    const chosen = this.store.chatOptions(conversation.id)
+    const chatOptions = {
+      permissionMode: chosen.permissionMode ?? null,
+      model: chosen[conversation.agent]?.model ?? null,
+      effort: chosen[conversation.agent]?.effort ?? null
+    }
+    return { ...conversation, chat: turn ? { turn } : null, chatOptions }
   }
 
   private changed(value: Conversation): Conversation {

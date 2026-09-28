@@ -5,6 +5,13 @@ type PipeSession = { output: string; exitCode: number | null; stderr: string; io
 
 // For tests: a daemon whose pipe sessions answer like Claude Code in stream-json mode (its PTY
 // sessions stay silent). Events go to `deliver`, which a test points at whatever handles them.
+// A catalog as Claude Code lists it: the default and two others, one of them without efforts.
+const FAKE_MODELS = [
+  { value: 'default', resolvedModel: 'claude-sonnet-5', displayName: 'Default', supportedEffortLevels: ['low', 'high'] },
+  { value: 'sonnet', resolvedModel: 'claude-sonnet-5', displayName: 'Sonnet', supportedEffortLevels: ['low', 'high'] },
+  { value: 'haiku', resolvedModel: 'claude-haiku-4-5', displayName: 'Haiku' }
+]
+
 export function fakeChatDaemon() {
   const sessions = new Map<string, PipeSession>()
   const writes: Array<{ sessionId: string; frame: unknown }> = []
@@ -66,7 +73,7 @@ export function fakeChatDaemon() {
         writes.push({ sessionId, frame })
         const text = JSON.stringify(frame)
         if (text.includes('"subtype":"initialize"') && fake.answerInit) {
-          queueMicrotask(() => fake.emit(sessionId, { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } }))
+          queueMicrotask(() => fake.emit(sessionId, { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init', response: { models: FAKE_MODELS } } }))
         }
         // A mode switch is taken as Claude takes it: acknowledged, then reported.
         const switched = /"request_id":"(kando-option-\d+)","request":\{"subtype":"set_permission_mode","mode":"(\w+)"/.exec(text)
