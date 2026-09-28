@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type ChatItem, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { ChatAnswer, StageMessage } from './chat-driver'
 import { ChatHost, type ChatStage } from './chat-host'
@@ -93,7 +93,7 @@ export class ConversationService {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
 
-  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui'): Promise<Conversation> {
+  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
     const projects: string[] = []
     const picked: string[] = []
@@ -121,6 +121,7 @@ export class ConversationService {
       if (head) starts[project] = head
     }
     const created = this.store.create(agent, workspace, projects, id, starts)
+    if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)
@@ -132,15 +133,17 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
-  async continue(id: string, mode: ConversationMode = 'tui'): Promise<Conversation> {
+  async continue(id: string, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
     const current = this.get(id)
     if (current.sessionId || this.launching.has(id)) throw new Rejection('conversation-running')
+    if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     return this.start(id, current.agent, '', false, mode)
   }
 
-  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui'): Promise<Conversation> {
+  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
     const current = this.get(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
+    if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning) throw new Rejection('conversation-running')
     if (current.sessionId) await this.stop(id)
@@ -209,7 +212,8 @@ export class ConversationService {
   ): Promise<Conversation> {
     const { id } = current
     const { agent } = stage
-    const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, current.projectPaths.slice(1))
+    const { options } = this.chatStage(current, stage)
+    const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, current.projectPaths.slice(1), options)
     let sessionId: string
     try {
       ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
@@ -248,12 +252,27 @@ export class ConversationService {
   }
 
   private chatStage(conversation: Conversation, stage: ConversationStage): ChatStage {
+    const chosen = this.store.chatOptions(conversation.id)
     return {
       conversationId: conversation.id,
       stageId: stage.id,
       agent: stage.agent,
-      options: { cwd: conversation.workspacePath, extraDirs: conversation.projectPaths.slice(1), resume: stage.providerSessionId }
+      options: {
+        cwd: conversation.workspacePath,
+        extraDirs: conversation.projectPaths.slice(1),
+        resume: stage.providerSessionId,
+        allowBypass: chosen.allowBypass ?? false,
+        preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] }
+      }
     }
+  }
+
+  // Remembered for the conversation's next start, once the stage took it.
+  async setOption(id: string, option: ChatOption, value: string): Promise<void> {
+    const { agent } = this.get(id)
+    await this.chats.setOption(id, option, value)
+    const chosen = this.store.chatOptions(id)
+    this.store.setChatOptions(id, option === 'permissionMode' ? { permissionMode: value } : { [agent]: { ...chosen[agent], [option]: value } })
   }
 
   async send(id: string, text: string): Promise<void> {

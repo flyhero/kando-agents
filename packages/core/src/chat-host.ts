@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentKind, ChatItem, ChatTurnActivity } from '@kando/protocol'
+import type { AgentKind, ChatItem, ChatOption, ChatTurnActivity } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
 import { ClaudeStream } from './claude-stream'
@@ -197,6 +197,17 @@ export class ChatHost {
   async interrupt(conversationId: string): Promise<void> {
     const live = this.running(conversationId)
     const sent = live.driver.interrupt().map((frame) => this.write(live, frame))
+    this.flush(live)
+    await Promise.all(sent)
+  }
+
+  async setOption(conversationId: string, option: ChatOption, value: string): Promise<void> {
+    const live = this.running(conversationId)
+    const frames = live.driver.setOption(option, value)
+    const record: LoggedRecord = { dir: 'option', at: this.now(), option, value }
+    live.log.append([record])
+    live.driver.apply(record)
+    const sent = frames.map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
   }

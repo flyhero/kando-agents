@@ -1,4 +1,4 @@
-import type { ChatDecision, ChatTurnActivity } from '@kando/protocol'
+import type { ChatDecision, ChatOption, ChatTurnActivity } from '@kando/protocol'
 import type { ChatItems } from './chat-items'
 
 // What happened in a chat stage, in order: a frame from the agent or to it, a note Kando made,
@@ -8,6 +8,8 @@ export type ChatRecord =
   // ref names the item an outgoing user message becomes.
   | { dir: 'out'; at: number; frame: unknown; ref?: string }
   | { dir: 'note'; at: number; level: 'info' | 'warning' | 'error'; text: string }
+  // The user switched an option; an agent that takes options per turn applies it from here.
+  | { dir: 'option'; at: number; option: ChatOption; value: string }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
@@ -25,7 +27,11 @@ export type ChatStageOptions = {
   resume: string | null
   // Whether the user lets this conversation run with nothing asked and nothing sandboxed.
   allowBypass?: boolean
+  // What the conversation last chose, for a stage that starts with it.
+  preferred?: ChatPreferences
 }
+
+export type ChatPreferences = { permissionMode?: string; model?: string; effort?: string }
 
 // Speaks one agent's JSON protocol. Everything it knows comes from apply(), so a live stage and one
 // rebuilt from its log end up the same; the frames it asks for are sent (and logged) by the host.
@@ -44,6 +50,8 @@ export interface ChatDriver {
   send(text: string): unknown
   respond(requestId: string, answer: ChatAnswer): unknown[]
   interrupt(): unknown[]
+  // Frames that switch an option, after checking the stage offers the value (a Rejection if not).
+  setOption(option: ChatOption, value: string): unknown[]
   // What of an incoming frame to keep in the log, or null for nothing: streamed deltas are
   // covered by the frames that complete them.
   logged(frame: unknown): unknown | null

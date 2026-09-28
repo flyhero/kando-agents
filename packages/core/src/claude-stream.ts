@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ChatDiff, ChatModel, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import type { ChatDiff, ChatModel, ChatOption, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { StageState } from './chat-stage-state'
@@ -13,6 +13,7 @@ import { Rejection } from './rejection'
 const INIT_ID = 'kando-init'
 const SETTINGS_ID = 'kando-settings'
 const INTERRUPT_PREFIX = 'kando-interrupt-'
+const OPTION_PREFIX = 'kando-option-'
 const MAX_PATCH = 50_000
 // Calls that are Claude Code's own machinery, or that another item already shows: no tool card.
 const HIDDEN_TOOLS: ReadonlySet<string> = new Set(['AskUserQuestion', 'ToolSearch', ...CLAUDE_TASK_TOOLS])
@@ -24,6 +25,14 @@ const PERMISSION_MODES: Record<string, string> = {
   plan: 'plan',
   auto: 'auto',
   bypassPermissions: 'bypass'
+}
+// And back: the mode set_permission_mode takes for each of Kando's names.
+export const CLAUDE_MODE_NAMES: Record<string, string> = {
+  ask: 'default',
+  acceptEdits: 'acceptEdits',
+  plan: 'plan',
+  auto: 'auto',
+  bypass: 'bypassPermissions'
 }
 const ONE_MILLION = 1_000_000
 
@@ -146,6 +155,7 @@ const EditResult = z.looseObject({ type: z.string().optional(), structuredPatch:
 
 type Pending = {
   kind: 'approval' | 'question'
+  tool: string
   itemId: string
   toolItemId: string | null
   input: Record<string, unknown>
@@ -286,6 +296,9 @@ export class ClaudeStream implements ChatDriver {
   private contextWindow: number | null = null
   private permissionMode: string | null = null
   private effort: string | null = null
+  // Option switches sent and not yet answered, by request id.
+  private readonly optionRequests = new Map<string, { subtype: string; value: string }>()
+  private optionsSent = 0
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
@@ -367,6 +380,26 @@ export class ClaudeStream implements ChatDriver {
     return [...denials, request]
   }
 
+  setOption(option: ChatOption, value: string): unknown[] {
+    if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
+    const state = this.state.current
+    const request = (body: Record<string, unknown>) => [{ type: 'control_request', request_id: `${OPTION_PREFIX}${this.optionsSent + 1}`, request: body }]
+    if (option === 'permissionMode') {
+      // A mode switch mid-turn is fine: it governs the calls still to come.
+      const mode = CLAUDE_MODE_NAMES[value]
+      if (!mode || !state.permissionModes.includes(value)) throw new Rejection('chat-option-invalid', `this stage offers no permission mode ${value}`)
+      return request({ subtype: 'set_permission_mode', mode })
+    }
+    if (this.turn) throw new Rejection('chat-busy', 'the model and effort change between turns')
+    if (option === 'model') {
+      if (!state.models.some((model) => model.id === value)) throw new Rejection('chat-option-invalid', `Claude Code lists no model ${value}`)
+      return request({ subtype: 'set_model', model: value })
+    }
+    const model = state.models.find((each) => each.id === state.model)
+    if (!model?.efforts.includes(value)) throw new Rejection('chat-option-invalid', `the model takes no effort ${value}`)
+    return request({ subtype: 'apply_flag_settings', settings: { effortLevel: value } })
+  }
+
   logged(frame: unknown): unknown | null {
     const head = Head.safeParse(frame)
     if (!head.success) return null
@@ -416,7 +449,7 @@ export class ClaudeStream implements ChatDriver {
   }
 
   private ownRequest(requestId: string): boolean {
-    return requestId === INIT_ID || requestId === SETTINGS_ID || requestId.startsWith(INTERRUPT_PREFIX)
+    return requestId === INIT_ID || requestId === SETTINGS_ID || requestId.startsWith(INTERRUPT_PREFIX) || requestId.startsWith(OPTION_PREFIX)
   }
 
   // What of an answer to Kando's request to keep: the models and mode initialize reports (it also
@@ -433,7 +466,8 @@ export class ClaudeStream implements ChatDriver {
       const settings = SettingsResponse.safeParse(response.response)
       return settings.success ? { response: { effective: { effortLevel: settings.data.effective?.effortLevel ?? null } } } : {}
     }
-    return {}
+    // An option switch answers with the mode it set, or nothing.
+    return response.request_id.startsWith(OPTION_PREFIX) && response.response !== undefined ? { response: response.response } : {}
   }
 
   // The options the stage offers follow from the catalog, the model and the mode reported.
@@ -481,6 +515,13 @@ export class ClaudeStream implements ChatDriver {
       const answers = Object.fromEntries(Object.entries(answer.answers).map(([question, labels]) => [question, labels.join(', ')]))
       return { behavior: 'allow', updatedInput: { ...pending.input, answers } }
     }
+    if (pending.tool === 'ExitPlanMode') {
+      if (answer.decision === 'deny') {
+        return { behavior: 'deny', message: answer.message ? `Keep planning. ${answer.message}` : 'Keep planning: revise the plan and present it again.' }
+      }
+      const mode = answer.decision === 'allowForSession' ? 'acceptEdits' : 'default'
+      return { behavior: 'allow', updatedInput: pending.input, updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] }
+    }
     switch (answer.decision) {
       case 'allow':
         return { behavior: 'allow', updatedInput: pending.input }
@@ -510,7 +551,7 @@ export class ClaudeStream implements ChatDriver {
       case 'control_request':
         return this.controlRequest(frame, at)
       case 'control_response':
-        return this.controlResponse(frame)
+        return this.controlResponse(frame, at)
       case 'control_cancel_request': {
         const cancel = ControlCancel.safeParse(frame)
         if (cancel.success) this.resolve(cancel.data.request_id, 'cancelled', null, at)
@@ -721,29 +762,46 @@ export class ClaudeStream implements ChatDriver {
         multiSelect: question.multiSelect ?? false
       }))
       this.items.put({ id: itemId, kind: 'question', requestId, questions, answers: null, resolution: null }, at)
-      this.pending.set(requestId, { kind: 'question', itemId, toolItemId, input, suggestions: [] })
+      this.pending.set(requestId, { kind: 'question', tool, itemId, toolItemId, input, suggestions: [] })
       return
     }
     const suggestions = request.permission_suggestions ?? []
     const itemId = `a:${requestId}`
+    // A plan to approve: carry it out asking each edit (allow) or taking edits as they come
+    // (allowForSession), or keep planning (deny).
+    const plan = tool === 'ExitPlanMode'
     this.items.put({
       id: itemId,
       kind: 'approval',
       requestId,
       tool,
       title: describeClaudeTool(tool, input),
-      detail: str(request.description) ?? str(input.description),
+      detail: plan ? str(input.plan) : (str(request.description) ?? str(input.description)),
       toolItemId,
-      decisions: suggestions.length ? ['allow', 'allowForSession', 'deny'] : ['allow', 'deny'],
+      decisions: plan || suggestions.length ? ['allow', 'allowForSession', 'deny'] : ['allow', 'deny'],
       resolution: null
     }, at)
-    this.pending.set(requestId, { kind: 'approval', itemId, toolItemId, input, suggestions })
+    this.pending.set(requestId, { kind: 'approval', tool, itemId, toolItemId, input, suggestions })
   }
 
-  private controlResponse(frame: unknown): void {
+  private controlResponse(frame: unknown, at: number): void {
     const parsed = ControlResponse.safeParse(frame)
     if (!parsed.success) return
     const { request_id: requestId, subtype, error, response } = parsed.data.response
+    const switched = this.optionRequests.get(requestId)
+    if (switched) {
+      this.optionRequests.delete(requestId)
+      if (subtype !== 'success') {
+        this.items.notice('warning', `没能切换：${error ?? '未知原因'}`, at)
+      } else if (switched.subtype === 'set_model') {
+        this.reportedModel = switched.value
+      } else if (switched.subtype === 'apply_flag_settings') {
+        this.effort = switched.value
+      } else {
+        this.permissionMode = PERMISSION_MODES[switched.value] ?? switched.value
+      }
+      return
+    }
     if (requestId === SETTINGS_ID) {
       const settings = SettingsResponse.safeParse(response)
       if (subtype === 'success' && settings.success) this.effort = settings.data.effective?.effortLevel ?? null
@@ -778,6 +836,14 @@ export class ClaudeStream implements ChatDriver {
       const request = ControlRequest.safeParse(frame)
       if (request.data?.request_id === INIT_ID) this.initSent = true
       if (request.data?.request_id === SETTINGS_ID) this.settingsSent = true
+      if (request.data?.request_id.startsWith(OPTION_PREFIX)) {
+        this.optionsSent++
+        const body = z.looseObject({ subtype: z.string(), mode: z.string().optional(), model: z.string().optional(), settings: z.looseObject({ effortLevel: z.string().optional() }).optional() }).safeParse(request.data.request)
+        if (body.success) {
+          const value = body.data.mode ?? body.data.model ?? body.data.settings?.effortLevel ?? ''
+          this.optionRequests.set(request.data.request_id, { subtype: body.data.subtype, value })
+        }
+      }
       if (request.data?.request_id.startsWith(INTERRUPT_PREFIX)) this.interrupts++
       return
     }
@@ -798,6 +864,9 @@ export class ClaudeStream implements ChatDriver {
         ? Object.fromEntries(Object.entries(answers).map(([question, label]) => [question, [String(label)]]))
         : null
       this.resolve(requestId, chosen ? 'answered' : 'cancelled', chosen, at)
+    } else if (answered.data.behavior === 'allow' && pending?.tool === 'ExitPlanMode') {
+      const setsMode = z.array(z.looseObject({ mode: z.string().optional() })).catch([]).parse(answered.data.updatedPermissions ?? [])
+      this.resolve(requestId, setsMode.some((update) => update.mode === 'acceptEdits') ? 'allowedForSession' : 'allowed', null, at)
     } else if (answered.data.behavior === 'allow') {
       this.resolve(requestId, answered.data.updatedPermissions?.length ? 'allowedForSession' : 'allowed', null, at)
     } else {

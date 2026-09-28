@@ -4,7 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
-import { ChatDecision, ChatItemList, ConversationMode } from './chat'
+import { ChatDecision, ChatItemList, ChatOption, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 
@@ -29,7 +29,11 @@ const FlowRef = z.object({ flowId: z.string().min(1).max(64) })
 const Ok = z.object({ ok: z.literal(true) })
 const ConversationRef = z.object({ id: z.string().uuid() })
 // What core can do beyond this protocol version's baseline; an older core sends none.
-export const CORE_FEATURES = ['chat'] as const
+// chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
+export const CORE_FEATURES = ['chat', 'chat-options'] as const
+// Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
+// conversation keeps what its latest start said.
+const AllowBypass = z.boolean().optional()
 // One page of a conversation's chat history; `before` fetches the page older than it, null when none is left.
 const ChatPage = z.object({ items: ChatItemList, before: z.string().nullable() })
 
@@ -87,17 +91,20 @@ export const rpcMethods = {
   'conversations.get': { params: ConversationRef, result: Conversation },
   // mode defaults to tui, which is all an older core knows; check CORE_FEATURES before asking for chat.
   'conversations.create': {
-    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional() }),
+    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
     result: Conversation
   },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
-  'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional() }), result: Conversation },
+  'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional(), allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {
-    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional() }),
+    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
     result: Conversation
   },
   // Chat mode only: a message for the agent, which must be idle.
   'conversations.send': { params: ConversationRef.extend({ text: z.string().trim().min(1).max(100000) }), result: Ok },
+  // Chat mode only: switches one of the stage's options to a value its state item offers. The
+  // conversation remembers it for its next start.
+  'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },
   // Ends the running turn; the agent stays up for the next message.
   'conversations.interrupt': { params: ConversationRef, result: Ok },
   // Answers an approval or question item. answers maps a question id to the chosen labels.

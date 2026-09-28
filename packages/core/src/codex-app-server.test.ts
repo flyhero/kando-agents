@@ -133,6 +133,41 @@ describe('CodexAppServer state', () => {
   })
 })
 
+describe('CodexAppServer options', () => {
+  const at = 3
+  const live = (options = OPTIONS) => replay(fixture('codex-options.jsonl').filter((record) => record.dir !== 'exit'), options)
+  const stateOf = (driver: CodexAppServer) => ofKind(driver.items.list(), 'state')[0]
+
+  it('shows a choice at once and sends it with the next turn', () => {
+    const driver = live()
+    expect(driver.setOption('permissionMode', 'readOnly')).toEqual([])
+    driver.apply({ dir: 'option', at, option: 'permissionMode', value: 'readOnly' })
+    driver.apply({ dir: 'option', at, option: 'model', value: 'gpt-6-sol' })
+    driver.apply({ dir: 'option', at, option: 'effort', value: 'ultra' })
+    expect(stateOf(driver)).toMatchObject({ permissionMode: 'readOnly', model: 'gpt-6-sol', effort: 'ultra' })
+    expect(driver.send('go')).toMatchObject({
+      params: { approvalPolicy: 'on-request', sandboxPolicy: { type: 'readOnly' }, model: 'gpt-6-sol', effort: 'ultra' }
+    })
+  })
+
+  it('refuses what the catalog does not list, and bypass unless the user allows it', () => {
+    const driver = live()
+    expect(() => driver.setOption('model', 'sonnet')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    expect(() => driver.setOption('effort', 'ultra')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    expect(() => driver.setOption('permissionMode', 'bypass')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    const allowed = live({ ...OPTIONS, allowBypass: true })
+    allowed.apply({ dir: 'option', at, option: 'permissionMode', value: 'bypass' })
+    expect(allowed.send('go')).toMatchObject({ params: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } } })
+  })
+
+  it('opens a thread with what the conversation chose last time', () => {
+    const driver = new CodexAppServer('stage-1', { ...OPTIONS, preferred: { permissionMode: 'ask', model: 'gpt-6-luna' } })
+    driver.apply({ dir: 'out', at, frame: driver.due()[0] })
+    driver.apply({ dir: 'in', at, frame: { id: 'kando-init', result: {} } })
+    expect(driver.due()[1]).toMatchObject({ method: 'thread/start', params: { approvalPolicy: 'untrusted', sandbox: 'workspace-write', model: 'gpt-6-luna' } })
+  })
+})
+
 describe('CodexAppServer commands', () => {
   const at = 1
   const handshake = (driver: CodexAppServer, threadId = 'thread-1') => {

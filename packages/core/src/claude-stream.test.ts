@@ -186,6 +186,62 @@ describe('ClaudeStream state', () => {
   })
 })
 
+describe('ClaudeStream options', () => {
+  // The recorded stage, still running: everything but its exit.
+  const live = () => replay(fixture('claude-options.jsonl').filter((record) => record.dir !== 'exit'))
+  const at = 2
+
+  it('switches the permission mode, even mid-turn, to one the stage offers', () => {
+    const driver = live()
+    expect(driver.setOption('permissionMode', 'ask')).toEqual([
+      { type: 'control_request', request_id: 'kando-option-2', request: { subtype: 'set_permission_mode', mode: 'default' } }
+    ])
+    expect(() => driver.setOption('permissionMode', 'bypass')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    expect(() => driver.setOption('permissionMode', 'readOnly')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+  })
+
+  it('switches the model and effort between turns only, to what the catalog lists', () => {
+    const driver = live()
+    const [frame] = driver.setOption('model', 'sonnet')
+    expect(frame).toMatchObject({ request: { subtype: 'set_model', model: 'sonnet' } })
+    expect(() => driver.setOption('model', 'gpt-6-sol')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    // Haiku takes no effort at all.
+    expect(() => driver.setOption('effort', 'high')).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    driver.apply({ dir: 'out', at, frame })
+    driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-option-2' } } })
+    const state = ofKind(driver.items.list(), 'state')[0]
+    expect(state?.model).toBe('sonnet')
+    const [effort] = driver.setOption('effort', 'high')
+    expect(effort).toMatchObject({ request: { subtype: 'apply_flag_settings', settings: { effortLevel: 'high' } } })
+    driver.apply({ dir: 'out', at, frame: driver.send('go'), ref: 'ref-9' })
+    expect(() => driver.setOption('model', 'haiku')).toThrow(expect.objectContaining({ reason: 'chat-busy' }))
+  })
+
+  it('says so when the CLI refuses a switch', () => {
+    const driver = live()
+    driver.apply({ dir: 'out', at, frame: driver.setOption('model', 'sonnet')[0] })
+    driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'error', request_id: 'kando-option-2', error: "Model 'sonnet' not found" } } })
+    expect(ofKind(driver.items.list(), 'notice').at(-1)?.text).toContain("Model 'sonnet' not found")
+    expect(ofKind(driver.items.list(), 'state')[0]?.model).toBe('haiku')
+  })
+
+  it('carries out an approved plan asking each edit, or taking edits as they come', () => {
+    const driver = new ClaudeStream('stage-1', OPTIONS)
+    driver.apply({ dir: 'out', at, frame: { type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } } })
+    driver.apply({ dir: 'in', at, frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } } })
+    driver.apply({ dir: 'out', at, frame: driver.send('plan it'), ref: 'ref-1' })
+    driver.apply({ dir: 'in', at, frame: { type: 'control_request', request_id: 'plan-1', request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: 'toolu_p' } } })
+    expect(driver.items.get('a:plan-1')).toMatchObject({ detail: '# Plan', decisions: ['allow', 'allowForSession', 'deny'] })
+    const [accept] = driver.respond('plan-1', { decision: 'allowForSession' })
+    expect(accept).toMatchObject({ response: { response: { behavior: 'allow', updatedPermissions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }] } } })
+    expect(driver.respond('plan-1', { decision: 'allow' })[0]).toMatchObject({ response: { response: { updatedPermissions: [{ mode: 'default' }] } } })
+    expect(driver.respond('plan-1', { decision: 'deny', message: 'split step 2' })[0])
+      .toMatchObject({ response: { response: { behavior: 'deny', message: 'Keep planning. split step 2' } } })
+    driver.apply({ dir: 'out', at, frame: accept })
+    expect(driver.items.get('a:plan-1')).toMatchObject({ resolution: 'allowedForSession' })
+  })
+})
+
 describe('ClaudeStream commands', () => {
   const at = 1
   const started = () => {

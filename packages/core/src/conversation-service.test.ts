@@ -392,6 +392,16 @@ describe('ConversationService in chat mode', () => {
     expect(conversation?.sessionId).toBeNull()
   })
 
+  it('remembers a switched option for the next start, and bypass only when allowed', async () => {
+    const created = await service.create('claude', [], 'chat')
+    await service.setOption(created.id, 'permissionMode', 'plan')
+    expect(daemon.written(created.sessionId!).at(-1)).toMatchObject({ request: { subtype: 'set_permission_mode', mode: 'plan' } })
+    await expect(service.setOption(created.id, 'permissionMode', 'bypass')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    await service.stop(created.id)
+    await service.continue(created.id, 'chat', true)
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--allow-dangerously-skip-permissions']))
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

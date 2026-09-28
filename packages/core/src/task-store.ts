@@ -119,7 +119,9 @@ export const MIGRATIONS = [
    );`,
   // A stage runs its agent as a TUI or in chat mode; a chat stage's output is read up to chat_offset.
   `ALTER TABLE conversation_stages ADD COLUMN mode TEXT NOT NULL DEFAULT 'tui';
-   ALTER TABLE conversation_stages ADD COLUMN chat_offset INTEGER NOT NULL DEFAULT 0;`
+   ALTER TABLE conversation_stages ADD COLUMN chat_offset INTEGER NOT NULL DEFAULT 0;`,
+  // What a conversation last chose for its chat stages: permission mode, model, effort, bypass.
+  `ALTER TABLE conversations ADD COLUMN chat_options TEXT NOT NULL DEFAULT '{}';`
 ]
 
 

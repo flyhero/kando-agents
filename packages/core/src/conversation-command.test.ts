@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
+import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 
 describe('conversationCommand', () => {
   const callback = ['/path with spaces/node', 'callback.js', 'fixed-id']
@@ -24,5 +24,18 @@ describe('conversationCommand', () => {
   it('reads the handoff path back out of the prompt it sent, and only from that prompt', () => {
     expect(handoffPromptPath(`  ${handoffPrompt('/kando/sessions/c/handoffs/h.md')}\n`)).toBe('/kando/sessions/c/handoffs/h.md')
     expect(handoffPromptPath('请先阅读 Kando 移交文件，然后告诉我里面写了什么')).toBeNull()
+  })
+})
+
+describe('chatCommand', () => {
+  it('starts Claude with what the conversation chose, and bypass only when allowed now', () => {
+    const args = chatCommand('claude', 'session-1', true, null, [], { preferred: { permissionMode: 'plan', model: 'sonnet', effort: 'high' } }).args
+    expect(args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--model', 'sonnet', '--effort', 'high', '--resume', 'session-1']))
+    expect(args).not.toContain('--allow-dangerously-skip-permissions')
+    expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'bypass' } }).args).not.toContain('--permission-mode')
+    const allowed = chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'bypass' }, allowBypass: true }).args
+    expect(allowed).toEqual(expect.arrayContaining(['--allow-dangerously-skip-permissions', '--permission-mode', 'bypassPermissions']))
+    // ask is Claude Code's own default, which --permission-mode does not take by that name.
+    expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'ask' } }).args).not.toContain('--permission-mode')
   })
 })

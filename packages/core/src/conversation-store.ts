@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
+import { z } from 'zod'
 import { Conversation, ConversationMessage, ConversationStage, type AgentKind, type ConversationMode } from '@kando/protocol'
 
 const lastEnded = (column: string) => `(SELECT ${column} FROM conversation_stages
@@ -15,6 +16,17 @@ const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provi
   ended_at AS endedAt, exit_code AS exitCode, mode FROM conversation_stages`
 const MESSAGE_SELECT = `SELECT sequence, conversation_id AS conversationId, stage_id AS stageId,
   role, agent, text, event_key AS eventKey, complete, created_at AS createdAt FROM conversation_messages`
+
+// A model and effort name one agent's catalog, so each agent keeps its own; the permission mode
+// and the bypass allowance are the conversation's.
+const AgentChoice = z.object({ model: z.string().optional(), effort: z.string().optional() })
+const ChatOptions = z.object({
+  permissionMode: z.string().optional(),
+  allowBypass: z.boolean().optional(),
+  claude: AgentChoice.optional(),
+  codex: AgentChoice.optional()
+}).catch({})
+export type ChatOptions = z.infer<typeof ChatOptions>
 
 function conversation(row: Record<string, unknown>): Conversation {
   const { lastExitCode, lastExitAt, mode, ...rest } = row
@@ -74,6 +86,19 @@ export class ConversationStore {
         .run(...entries.map(([, value]) => value), this.now(), id)
     }
     return this.get(id)!
+  }
+
+  chatOptions(id: string): ChatOptions {
+    const row = this.db.prepare('SELECT chat_options FROM conversations WHERE id = ?').get(id)
+    try {
+      return ChatOptions.parse(JSON.parse(String(row?.chat_options ?? '{}')))
+    } catch {
+      return {}
+    }
+  }
+
+  setChatOptions(id: string, patch: ChatOptions): void {
+    this.db.prepare('UPDATE conversations SET chat_options = ? WHERE id = ?').run(JSON.stringify({ ...this.chatOptions(id), ...patch }), id)
   }
 
   outputOffset(id: string): number {

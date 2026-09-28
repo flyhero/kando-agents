@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { ChatDecision, ChatDiff, ChatModel, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
-import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
+import type { ChatDecision, ChatDiff, ChatModel, ChatOption, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import type { ChatAnswer, ChatDriver, ChatPreferences, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
@@ -10,10 +10,6 @@ import { Rejection } from './rejection'
 // only the part Kando uses, loosely, since the server is marked experimental.
 
 const MAX_PATCH = 50_000
-// The policy the Codex TUI starts with by default, stated outright: left out, a thread takes
-// whatever config.toml says.
-const APPROVAL_POLICY = 'on-request'
-const SANDBOX = 'workspace-write'
 
 const Id = z.union([z.string(), z.number()])
 const Frame = z.looseObject({
@@ -124,9 +120,10 @@ type Sandbox = 'workspace-write' | 'read-only' | 'danger-full-access'
 
 // Kando's permission modes as Codex's approval policy and sandbox. acceptEdits is what the Codex
 // TUI starts with: the sandbox lets it write the workspace, and it asks when it wants out.
+const DEFAULT_MODE: { approvalPolicy: string; sandbox: Sandbox } = { approvalPolicy: 'on-request', sandbox: 'workspace-write' }
 export const CODEX_MODES: Record<string, { approvalPolicy: string; sandbox: Sandbox }> = {
   ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
-  acceptEdits: { approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  acceptEdits: DEFAULT_MODE,
   readOnly: { approvalPolicy: 'on-request', sandbox: 'read-only' },
   bypass: { approvalPolicy: 'never', sandbox: 'danger-full-access' }
 }
@@ -153,6 +150,17 @@ export function codexMode(approvalPolicy: unknown, sandbox: Sandbox | null): str
   if (typeof approvalPolicy !== 'string' || !sandbox) return null
   const found = Object.entries(CODEX_MODES).find(([, mode]) => mode.approvalPolicy === approvalPolicy && mode.sandbox === sandbox)
   return found ? found[0] : `${approvalPolicy} · ${sandbox}`
+}
+
+function sandboxPolicy(sandbox: Sandbox, writableRoots: readonly string[]): unknown {
+  switch (sandbox) {
+    case 'workspace-write':
+      return { type: 'workspaceWrite', writableRoots: [...writableRoots], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+    case 'read-only':
+      return { type: 'readOnly', networkAccess: false }
+    case 'danger-full-access':
+      return { type: 'dangerFullAccess' }
+  }
 }
 
 const TODO_STATUS: Record<string, ChatTodo['status']> = { pending: 'pending', inProgress: 'in_progress', completed: 'completed' }
@@ -227,10 +235,13 @@ export class CodexAppServer implements ChatDriver {
   private effort: string | null = null
   private approvalPolicy: unknown = null
   private sandbox: Sandbox | null = null
+  // What the user chose, sent with every turn: Codex takes options per turn, not in between.
+  private readonly chosen: ChatPreferences
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
     this.state = new StageState(this.items)
+    this.chosen = { ...options.preferred }
   }
 
   apply(record: ChatRecord): void {
@@ -247,6 +258,9 @@ export class CodexAppServer implements ChatDriver {
       }
       case 'note':
         this.items.notice(record.level, record.text, record.at)
+        break
+      case 'option':
+        this.choose(record.option, record.value)
         break
       case 'exit':
         this.ended(record.stderr, record.at)
@@ -300,11 +314,26 @@ export class CodexAppServer implements ChatDriver {
       params: {
         threadId: this.threadId,
         input: [{ type: 'text', text, text_elements: [] }],
-        approvalPolicy: APPROVAL_POLICY,
-        // The conversation's other projects are writable too, as --add-dir makes them in the TUI.
-        sandboxPolicy: { type: 'workspaceWrite', writableRoots: [...this.options.extraDirs], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+        ...this.turnOptions()
       }
     }
+  }
+
+  setOption(option: ChatOption, value: string): unknown[] {
+    if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
+    const state = this.state.current
+    if (option === 'permissionMode') {
+      if (!state.permissionModes.includes(value)) throw new Rejection('chat-option-invalid', `this stage offers no permission mode ${value}`)
+      return []
+    }
+    if (this.turn) throw new Rejection('chat-busy', 'the model and effort change between turns')
+    if (option === 'model') {
+      if (!state.models.some((model) => model.id === value)) throw new Rejection('chat-option-invalid', `Codex lists no model ${value}`)
+      return []
+    }
+    const model = state.models.find((each) => each.id === state.model)
+    if (!model?.efforts.includes(value)) throw new Rejection('chat-option-invalid', `the model takes no effort ${value}`)
+    return []
   }
 
   respond(requestId: string, answer: ChatAnswer): unknown[] {
@@ -398,9 +427,41 @@ export class CodexAppServer implements ChatDriver {
     })
   }
 
+  // The mode a turn runs in: what the user chose, if this stage may run it, else the TUI's default.
+  // It is always stated outright: left out, a thread takes whatever config.toml says.
+  private mode(): { approvalPolicy: string; sandbox: Sandbox } {
+    const chosen = this.chosen.permissionMode
+    const allowed = chosen !== 'bypass' || this.options.allowBypass
+    return (chosen && allowed ? CODEX_MODES[chosen] : undefined) ?? DEFAULT_MODE
+  }
+
+  private turnOptions(): Record<string, unknown> {
+    const { approvalPolicy, sandbox } = this.mode()
+    return {
+      approvalPolicy,
+      // The conversation's other projects are writable too, as --add-dir makes them in the TUI.
+      sandboxPolicy: sandboxPolicy(sandbox, this.options.extraDirs),
+      ...(this.chosen.model ? { model: this.chosen.model } : {}),
+      ...(this.chosen.effort ? { effort: this.chosen.effort } : {})
+    }
+  }
+
+  // Shows the choice at once; the next turn carries it to Codex, and its settings update confirms it.
+  private choose(option: ChatOption, value: string): void {
+    this.chosen[option] = value
+    if (option === 'model') this.model = value
+    if (option === 'effort') this.effort = value
+    if (option === 'permissionMode') {
+      const { approvalPolicy, sandbox } = this.mode()
+      this.approvalPolicy = approvalPolicy
+      this.sandbox = sandbox
+    }
+  }
+
   private openThread(): unknown {
     const { cwd, resume } = this.options
-    const common = { cwd, approvalPolicy: APPROVAL_POLICY, sandbox: SANDBOX }
+    const { approvalPolicy, sandbox } = this.mode()
+    const common = { cwd, approvalPolicy, sandbox, ...(this.chosen.model ? { model: this.chosen.model } : {}) }
     return resume
       ? { id: 'kando-thread', method: 'thread/resume', params: { threadId: resume, ...common, excludeTurns: true } }
       : { id: 'kando-thread', method: 'thread/start', params: common }

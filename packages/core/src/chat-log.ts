@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, openSync, readFileSync, closeSync, fstatSync, ftruncateSync, readSync } from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
+import { ChatOption } from '@kando/protocol'
 import type { ChatRecord } from './chat-driver'
 
 const Level = z.enum(['info', 'warning', 'error']).catch('info')
@@ -9,6 +10,7 @@ const LogLine = z.discriminatedUnion('dir', [
   z.object({ dir: z.literal('in'), at: z.number(), frame: z.unknown(), end: z.number().optional() }),
   z.object({ dir: z.literal('out'), at: z.number(), frame: z.unknown(), ref: z.string().optional() }),
   z.object({ dir: z.literal('note'), at: z.number(), level: Level, text: z.string() }),
+  z.object({ dir: z.literal('option'), at: z.number(), option: ChatOption, value: z.string() }),
   z.object({ dir: z.literal('exit'), at: z.number(), code: z.number().nullable(), stderr: z.string() })
 ])
 

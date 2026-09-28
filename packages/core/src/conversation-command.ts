@@ -1,5 +1,7 @@
 import type { AgentKind } from '@kando/protocol'
 import { claudeHookArgs, codexNotifyArgs, type AgentCommand } from './agent-command'
+import type { ChatPreferences } from './chat-driver'
+import { CLAUDE_MODE_NAMES } from './claude-stream'
 
 const HANDOFF_PREFIX = '请先阅读 Kando 移交文件 '
 const HANDOFF_SUFFIX = '，结合当前项目目录现状继续协助用户。'
@@ -22,12 +24,21 @@ export function chatCommand(
   providerSessionId: string | null,
   resume: boolean,
   handoffPath: string | null,
-  extraProjects: readonly string[] = []
+  extraProjects: readonly string[] = [],
+  launch: { preferred?: ChatPreferences; allowBypass?: boolean } = {}
 ): AgentCommand {
   if (agent === 'claude') {
+    const { preferred = {}, allowBypass = false } = launch
+    // A remembered bypass needs the user's say-so for this start too.
+    const wanted = preferred.permissionMode && (preferred.permissionMode !== 'bypass' || allowBypass) ? CLAUDE_MODE_NAMES[preferred.permissionMode] : undefined
     return { command: 'claude', args: [
       '-p', '--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json',
       '--include-partial-messages', '--permission-prompt-tool', 'stdio',
+      // Makes bypass a mode the user can switch to, without starting in it.
+      ...(allowBypass ? ['--allow-dangerously-skip-permissions'] : []),
+      ...(wanted && wanted !== 'default' ? ['--permission-mode', wanted] : []),
+      ...(preferred.model ? ['--model', preferred.model] : []),
+      ...(preferred.effort ? ['--effort', preferred.effort] : []),
       ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
       ...extraProjects.flatMap((project) => ['--add-dir', project]),
       ...(handoffPath ? ['--allowedTools', `Read(/${handoffPath})`] : [])
