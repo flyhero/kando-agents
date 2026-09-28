@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { ConversationMode } from '@kando/protocol'
+import { usePlans } from '../chat-state'
 import { selectConversation, setConversationInspectorOpen, useChatSupported, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
@@ -79,10 +80,13 @@ export function ConversationTerminal({ id }: { id: string }) {
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   const chatSupported = useChatSupported()
+  const plans = usePlans(id)
   if (!conversation) return null
   const chat = conversation.mode === 'chat'
-  // A managed workspace is Kando's own scratch folder: nothing of the user's to compare.
+  // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
+  // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
+  const hasPanel = inspectable || plans.length > 0
   const state = conversationState(conversation)
   const action = async (run: () => Promise<unknown>) => {
     if (busy) return
@@ -109,13 +113,13 @@ export function ConversationTerminal({ id }: { id: string }) {
         {!conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}
         <button type="button" className="tool-button" aria-label="移交给其他智能体" data-tooltip="移交给其他智能体" disabled={busy} onClick={() => setHandoffOpen(true)}><HandoffIcon /></button>
         {conversation.sessionId && <button type="button" className="tool-button" aria-label="停止会话" data-tooltip="停止会话" disabled={busy} onClick={() => void action(() => stopConversation(id))}><StopIcon /></button>}
-        {inspectable && (
+        {hasPanel && (
           <button
             type="button"
             className="tool-button"
             aria-label="检查器"
             aria-pressed={inspectorOpen}
-            data-tooltip={inspectorOpen ? '收起检查器' : '查看改动'}
+            data-tooltip={inspectorOpen ? '收起检查器' : inspectable ? '查看改动' : '查看计划'}
             onClick={() => setConversationInspectorOpen(!inspectorOpen)}
           >
             <InspectorIcon />
@@ -134,7 +138,7 @@ export function ConversationTerminal({ id }: { id: string }) {
       {chat
         ? <ConversationChat conversation={conversation} />
         : <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />}
-      {inspectable && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
+      {hasPanel && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
     </div>
     {handoffOpen && <ConversationHandoffDialog conversation={conversation} onClose={() => setHandoffOpen(false)} />}
   </section>

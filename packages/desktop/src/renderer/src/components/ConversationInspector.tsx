@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Conversation, FolderChanges } from '@kando/protocol'
-import { setConversationInspectorOpen, useCore } from '../core-store'
+import { usePlans } from '../chat-state'
+import { setConversationInspectorOpen, setConversationInspectorTab, useCore } from '../core-store'
 import { BranchStatusDetails, useProjectHeads } from './BranchStatus'
-import { CommitList, FileDiffView, FileList, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
+import { ChatPlanView } from './ChatPlan'
+import { CommitList, FileDiffView, FileList, GIT_TABS, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
 
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
@@ -57,14 +59,19 @@ function ChangeList({ changes, onOpen }: { changes: FolderChanges[] | null; onOp
   )
 }
 
-// Beside the transcript, opened by the user: a conversation has no review step to open it for them.
+// Beside the transcript, opened by the user or by a plan the agent proposes. A conversation in
+// Kando's own folder has no changes of the user's to show, only its plans.
 export function ConversationInspector({ conversation, widthRatio, onWidthRatioChange }: {
   conversation: Conversation
   widthRatio: number
   onWidthRatioChange: (ratio: number) => void
 }) {
   const rpc = useCore((state) => state.rpc)
-  const [tab, setTab] = useState<InspectorTab>('changes')
+  const wanted = useCore((state) => state.conversationInspectorTab)
+  const selectedPlan = useCore((state) => state.conversationPlan)
+  const plans = usePlans(conversation.id)
+  const tabs: InspectorTab[] = [...(conversation.projectPaths.length > 0 ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : [])]
+  const tab = tabs.includes(wanted) ? wanted : (tabs[0] ?? 'changes')
   const [refreshCount, setRefreshCount] = useState(0)
   const [selected, setSelected] = useState<{ project: string; file: string } | null>(null)
   const changes = useFolderChanges(conversation.id, conversation.updatedAt, refreshCount)
@@ -75,13 +82,16 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       label="会话检查器"
       ratio={widthRatio}
       onRatioChange={onWidthRatioChange}
+      tabs={tabs}
       tab={tab}
-      onTab={setTab}
+      onTab={setConversationInspectorTab}
       fileCount={fileCount}
       onRefresh={() => setRefreshCount((count) => count + 1)}
       onClose={() => setConversationInspectorOpen(false)}
     >
-      {tab === 'branch' ? (
+      {tab === 'plan' ? (
+        <ChatPlanView plans={plans} selected={selectedPlan} />
+      ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
       ) : selected && rpc ? (
         <FileDiffView

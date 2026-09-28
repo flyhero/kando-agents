@@ -25,12 +25,16 @@ export function useFocusCount(): number {
   return count
 }
 
-export type InspectorTab = 'changes' | 'branch'
+export type InspectorTab = 'changes' | 'branch' | 'plan'
 
-export function InspectorPanel({ label, ratio, onRatioChange, tab, onTab, fileCount, onRefresh, onClose, children }: {
+const TAB_LABEL: Record<InspectorTab, string> = { changes: '变更', branch: '分支', plan: '计划' }
+export const GIT_TABS: readonly InspectorTab[] = ['changes', 'branch']
+
+export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, tab, onTab, fileCount, onRefresh, onClose, children }: {
   label: string
   ratio: number
   onRatioChange: (ratio: number) => void
+  tabs?: readonly InspectorTab[]
   tab: InspectorTab
   onTab: (tab: InspectorTab) => void
   fileCount: number
@@ -48,16 +52,17 @@ export function InspectorPanel({ label, ratio, onRatioChange, tab, onTab, fileCo
       >
         <header className="inspector-header">
           <div className="inspector-tabs" role="tablist" aria-label="检查器">
-            <button type="button" role="tab" aria-selected={tab === 'changes'} onClick={() => onTab('changes')}>
-              变更{fileCount > 0 && <span className="count">{fileCount}</span>}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'branch'} onClick={() => onTab('branch')}>
-              分支
-            </button>
+            {tabs.map((each) => (
+              <button key={each} type="button" role="tab" aria-selected={tab === each} onClick={() => onTab(each)}>
+                {TAB_LABEL[each]}{each === 'changes' && fileCount > 0 && <span className="count">{fileCount}</span>}
+              </button>
+            ))}
           </div>
-          <button type="button" className="tool-button inspector-refresh" aria-label="刷新" data-tooltip="刷新" onClick={onRefresh}>
-            <RefreshIcon />
-          </button>
+          {tab !== 'plan' && (
+            <button type="button" className="tool-button inspector-refresh" aria-label="刷新" data-tooltip="刷新" onClick={onRefresh}>
+              <RefreshIcon />
+            </button>
+          )}
           <button type="button" className="tool-button" aria-label="收起检查器" data-tooltip="收起" onClick={onClose}>
             <CloseIcon />
           </button>

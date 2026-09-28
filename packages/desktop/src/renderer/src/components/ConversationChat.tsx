@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatItem, Conversation, ConversationMessage, ConversationStage } from '@kando/protocol'
 import { dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
-import { perform, useCore } from '../core-store'
+import { perform, showConversationPlan, useCore } from '../core-store'
 import { AGENT_LABEL, dayAndTime } from '../labels'
 import { ChatDock } from './ChatDock'
 import { ChatMarkdown } from './ChatMarkdown'
+import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
 import { ChatPaths, ChatToolCard } from './ChatToolCard'
@@ -50,6 +51,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
     case 'tool':
       return <ChatToolCard item={item} />
     case 'approval':
+      return item.tool === 'ExitPlanMode' ? <ChatPlanLine item={item} /> : <ChatRequestLine conversationId={conversationId} item={item} />
     case 'question':
       return <ChatRequestLine conversationId={conversationId} item={item} />
     case 'turn':
@@ -132,6 +134,16 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
   const finishedCalls = useMemo(() => items.filter((item) => item.kind === 'tool' && item.status !== 'running').length, [items])
   // Each stage has one; the running stage's is the newest.
   const state = useMemo(() => items.findLast((item): item is Extract<ChatItem, { kind: 'state' }> => item.kind === 'state') ?? null, [items])
+
+  // A plan the agent proposes opens beside the conversation, once; the user may close it again.
+  const waitingPlan = pending.find((item) => item.kind === 'approval' && item.tool === 'ExitPlanMode')
+  const waitingPlanKey = waitingPlan ? itemKey(waitingPlan) : null
+  const shownPlan = useRef<string | null>(null)
+  useEffect(() => {
+    if (!waitingPlanKey || shownPlan.current === waitingPlanKey) return
+    shownPlan.current = waitingPlanKey
+    showConversationPlan(waitingPlanKey)
+  }, [waitingPlanKey])
 
   useLayoutEffect(() => {
     const element = list.current

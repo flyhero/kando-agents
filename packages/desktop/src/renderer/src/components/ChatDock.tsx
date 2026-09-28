@@ -1,9 +1,10 @@
 import type { ChatItem, Conversation } from '@kando/protocol'
-import { setConversationInspectorOpen, useChatOptionsSupported } from '../core-store'
+import { showConversationChanges, useChatOptionsSupported } from '../core-store'
 import { itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { ChatApprovalCard, ChatPlanCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
+import { ChatPlanCard } from './ChatPlan'
+import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatTodosChip } from './ChatTodos'
 import { useFolderChanges } from './ConversationInspector'
 import { ArrowUpIcon } from './icons'
@@ -25,7 +26,7 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
       type="button"
       className="chat-changes"
       data-tooltip="项目里还没提交的改动，也可能有你自己的；点开检查器看"
-      onClick={() => setConversationInspectorOpen(true)}
+      onClick={showConversationChanges}
     >
       {files.length} 个文件改动{counted.length > 0 && <span className="mono"> {lineTotals(counted)}</span>}
     </button>

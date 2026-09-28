@@ -17,6 +17,7 @@ import {
   type Conversation
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
+import type { InspectorTab } from './components/Inspector'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
 
@@ -52,8 +53,11 @@ type CoreState = {
   view: TaskView
   // The inspector beside a task's terminal, kept open from one task to the next.
   inspectorOpen: boolean
-  // A conversation's, which only the user opens.
+  // A conversation's, which the user opens, or a plan the agent proposes; on the tab last shown.
   conversationInspectorOpen: boolean
+  conversationInspectorTab: InspectorTab
+  // The plan its plan tab shows, by item key; null for the newest.
+  conversationPlan: string | null
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -86,6 +90,8 @@ export const useCore = create<CoreState>()(() => ({
   view: 'detail',
   inspectorOpen: false,
   conversationInspectorOpen: false,
+  conversationInspectorTab: 'changes',
+  conversationPlan: null,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -123,6 +129,19 @@ export function setInspectorOpen(open: boolean): void {
 
 export function setConversationInspectorOpen(open: boolean): void {
   useCore.setState({ conversationInspectorOpen: open })
+}
+
+export function setConversationInspectorTab(tab: InspectorTab): void {
+  useCore.setState({ conversationInspectorTab: tab })
+}
+
+export function showConversationChanges(): void {
+  useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'changes' })
+}
+
+// One of the conversation's plans by item key, or null for its newest.
+export function showConversationPlan(key: string | null): void {
+  useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'plan', conversationPlan: key })
 }
 
 // A new terminal starts in the folder of whatever the user is looking at: a task's worktree, a

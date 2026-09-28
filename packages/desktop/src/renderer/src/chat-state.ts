@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { ChatItem, ConversationMessage, ConversationStage } from '@kando/protocol'
 
@@ -7,6 +8,19 @@ export type ChatPage = { items: ChatItem[]; before: string | null }
 
 // Only conversations a view is watching are here; core sends updates for those alone.
 export const useChat = create<Record<string, ChatPage>>()(() => ({}))
+
+// A plan Claude proposed from plan mode is the approval of its ExitPlanMode call.
+export type PlanItem = Extract<ChatItem, { kind: 'approval' }>
+const NO_PLANS: PlanItem[] = []
+
+// The conversation's plans, oldest first, while a view watches it.
+export function usePlans(conversationId: string): PlanItem[] {
+  const items = useChat((s) => s[conversationId]?.items)
+  return useMemo(
+    () => items?.filter((item): item is PlanItem => item.kind === 'approval' && item.tool === 'ExitPlanMode') ?? NO_PLANS,
+    [items]
+  )
+}
 
 // Item ids are unique within their stage only: each stage numbers its notices and requests afresh.
 export function itemKey(item: Pick<ChatItem, 'stageId' | 'id'>): string {
