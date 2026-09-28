@@ -752,6 +752,28 @@ describe('TaskService in the chat view', () => {
     expect((await service.resumeChat(prefix)).status).toBe('running')
   })
 
+  it('works in the primary project and reaches the others as additional directories', async () => {
+    const api = path.join(dir, 'api')
+    const web = path.join(dir, 'web')
+    const dependency = readyTask('First', api)
+    execFileSync('git', ['init', '-q', web])
+    git(web, 'commit', '-q', '--allow-empty', '-m', 'init')
+    const created = service.create({ title: 'Both' })
+    const task = service.update({ id: created.id, details: 'x', repos: [web, api], agent: 'claude', dependsOn: [dependency.id] })
+
+    // Planning reads the projects where they are, the primary one as the cwd.
+    await service.start(task.id)
+    expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(web) })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--add-dir', realpathSync(api)]))
+
+    store.update(dependency.id, { status: 'done' })
+    const running = await service.start(task.id)
+    const [primary, additional] = running.repos.map((repo) => realpathSync(repo.worktreePath ?? ''))
+    expect(daemon.spawns.at(-1)).toMatchObject({ cwd: primary })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--add-dir', additional]))
+    expect(conversations.get(running.conversationId ?? '').projectPaths).toEqual([primary, additional])
+  })
+
   it('keeps a chat task running when its agent goes, hands it in when the user says, and goes on by message', async () => {
     const task = readyTask('Chat me', path.join(dir, 'app'))
     const started = await service.start(task.id)

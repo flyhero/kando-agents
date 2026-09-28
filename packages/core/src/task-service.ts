@@ -1,4 +1,3 @@
-import path from 'node:path'
 import {
   checkChatResume,
   checkContinue,
@@ -38,20 +37,12 @@ import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
 import type { TaskPatch, TaskStore } from './task-store'
-import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees, type Workspace } from './workspace'
+import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees } from './workspace'
 
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
 // What a task needs of its chat.
 export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get'>
-
-// The worktrees outside the agent's cwd, which it reaches as additional directories.
-function outsideCwd(workspace: Workspace): string[] {
-  return workspace.entries.map((entry) => entry.dir).filter((dir) => {
-    const relative = path.relative(workspace.cwd, dir)
-    return relative.startsWith('..') || path.isAbsolute(relative)
-  })
-}
 
 export class TaskService {
   private readonly launching = new Set<string>()
@@ -353,7 +344,7 @@ export class TaskService {
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'new', readable: images.command.all, allowBypass
+        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.command.all, allowBypass
       })
       this.store.update(task.id, { status: 'running', lastExit: null, awaitingInput: false })
       const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
@@ -390,7 +381,7 @@ export class TaskService {
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'resume', readable: images.command.all, allowBypass
+        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.command.all, allowBypass
       })
       return task.status === 'running' ? this.get(task.id) : this.changed(this.store.update(task.id, { status: 'running', awaitingInput: false }))
     })
