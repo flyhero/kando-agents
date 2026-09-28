@@ -68,6 +68,15 @@ export function fakeChatDaemon() {
         if (text.includes('"subtype":"initialize"') && fake.answerInit) {
           queueMicrotask(() => fake.emit(sessionId, { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init' } }))
         }
+        // A mode switch is taken as Claude takes it: acknowledged, then reported.
+        const switched = /"request_id":"(kando-option-\d+)","request":\{"subtype":"set_permission_mode","mode":"(\w+)"/.exec(text)
+        if (switched) {
+          const [, requestId, mode] = switched
+          queueMicrotask(() => {
+            fake.emit(sessionId, { type: 'control_response', response: { subtype: 'success', request_id: requestId, response: { mode } } })
+            fake.emit(sessionId, { type: 'system', subtype: 'status', status: null, permissionMode: mode })
+          })
+        }
         const user = typeof frame === 'object' && frame !== null && Reflect.get(frame, 'type') === 'user'
         if (user) {
           const content = String(Reflect.get(Reflect.get(frame, 'message'), 'content'))

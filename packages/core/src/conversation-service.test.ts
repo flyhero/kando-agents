@@ -402,6 +402,18 @@ describe('ConversationService in chat mode', () => {
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--allow-dangerously-skip-permissions']))
   })
 
+  it('remembers the mode the stage was left in, as approving a plan leaves it', async () => {
+    const created = await service.create('claude', [], 'chat')
+    await service.setOption(created.id, 'permissionMode', 'plan')
+    await settle()
+    // Carrying out the plan with edits accepted: Claude reports the switch itself.
+    daemon.emit(created.sessionId!, { type: 'system', subtype: 'status', status: null, permissionMode: 'acceptEdits' })
+    await settle()
+    await service.stop(created.id)
+    await service.continue(created.id, 'chat')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits']))
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

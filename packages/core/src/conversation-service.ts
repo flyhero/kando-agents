@@ -58,7 +58,10 @@ export class ConversationService {
   ) {
     this.transcript = new TerminalTranscript(sessionsRoot)
     this.chats = new ChatHost(daemon, sessionsRoot, {
-      items: (conversationId, items) => this.emit({ type: 'chatItems', conversationId, items }),
+      items: (conversationId, items) => {
+        this.rememberMode(conversationId, items)
+        this.emit({ type: 'chatItems', conversationId, items })
+      },
       delta: (conversationId, stageId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, stageId, itemId, append }),
       messages: (stage, messages) => messages.forEach((message) => this.recordChatMessage(stage, message)),
       provider: (stage, providerSessionId) => this.store.setProviderSession(stage.stageId, providerSessionId),
@@ -267,12 +270,24 @@ export class ConversationService {
     }
   }
 
-  // Remembered for the conversation's next start, once the stage took it.
+  // Remembered for the conversation's next start once the stage took it: a model or effort here,
+  // a permission mode when the stage reports it (see rememberMode).
   async setOption(id: string, option: ChatOption, value: string): Promise<void> {
     const { agent } = this.get(id)
     await this.chats.setOption(id, option, value)
+    if (option === 'permissionMode') return
     const chosen = this.store.chatOptions(id)
-    this.store.setChatOptions(id, option === 'permissionMode' ? { permissionMode: value } : { [agent]: { ...chosen[agent], [option]: value } })
+    this.store.setChatOptions(id, { [agent]: { ...chosen[agent], [option]: value } })
+  }
+
+  // The mode the stage runs in, however it got there: a plan approved to carry out with edits
+  // accepted leaves the conversation in acceptEdits, not in the plan mode the user picked.
+  private rememberMode(conversationId: string, items: readonly ChatItem[]): void {
+    const mode = items.findLast((item) => item.kind === 'state')
+    if (mode?.kind !== 'state' || !mode.permissionMode) return
+    if (this.store.chatOptions(conversationId).permissionMode !== mode.permissionMode) {
+      this.store.setChatOptions(conversationId, { permissionMode: mode.permissionMode })
+    }
   }
 
   async send(id: string, text: string, queue = false): Promise<void> {
