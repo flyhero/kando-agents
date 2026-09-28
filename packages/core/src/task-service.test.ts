@@ -645,6 +645,17 @@ describe('TaskService in the chat view', () => {
     expect(service.get(task.id).plan).toMatchObject({ markdown: '# Plan', agent: 'claude', approved: true, requestId: 'plan-1' })
   })
 
+  it('takes a task by the id prefix the CLI names it by', async () => {
+    const task = readyTask('Chat me', path.join(dir, 'app'))
+    const prefix = task.id.slice(0, 8)
+    const started = await service.start(prefix)
+    expect(started.repos[0]?.worktreePath).toBeTruthy()
+    expect(conversations.get(started.conversationId ?? '').taskId).toBe(task.id)
+    await settle()
+    expect(service.submit(prefix).status).toBe('review')
+    expect((await service.resumeChat(prefix)).status).toBe('running')
+  })
+
   it('keeps a chat task running when its agent goes, hands it in when the user says, and goes on by message', async () => {
     const task = readyTask('Chat me', path.join(dir, 'app'))
     const started = await service.start(task.id)

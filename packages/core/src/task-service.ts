@@ -343,23 +343,23 @@ export class TaskService {
       const imageIds = this.chatImageIds(task, images.prompt)
       if (startKind(dependencies) === 'plan') {
         const workspace = await prepareRefineWorkspace(task, dependencies)
-        const conversation = await chats.startForTask({ id, title: task.title, agent }, {
+        const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'new',
           readable: images.command.all, allowBypass
         })
         await chats.send(conversation.id, chatPlanPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt), imageIds)
-        return this.changed(this.get(id))
+        return this.changed(this.get(task.id))
       }
       // The worktrees are kept before the agent starts, so a failed start is retried in the same trees.
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
-      this.store.update(id, { repos: workspace.repos })
-      const conversation = await chats.startForTask({ id, title: task.title, agent }, {
+      this.store.update(task.id, { repos: workspace.repos })
+      const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'new', readable: images.command.all, allowBypass
       })
-      this.store.update(id, { status: 'running', lastExit: null, awaitingInput: false })
+      this.store.update(task.id, { status: 'running', lastExit: null, awaitingInput: false })
       const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
       await chats.send(conversation.id, prompt, imageIds)
-      return this.changed(this.get(id))
+      return this.changed(this.get(task.id))
     })
   }
 
@@ -382,18 +382,18 @@ export class TaskService {
       const images = await this.images(task)
       if (task.status === 'pending') {
         const workspace = await prepareRefineWorkspace(task, dependencies)
-        await chats.startForTask({ id, title: task.title, agent }, {
+        await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'resume',
           readable: images.command.all, allowBypass
         })
-        return this.get(id)
+        return this.get(task.id)
       }
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
-      this.store.update(id, { repos: workspace.repos })
-      await chats.startForTask({ id, title: task.title, agent }, {
+      this.store.update(task.id, { repos: workspace.repos })
+      await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'resume', readable: images.command.all, allowBypass
       })
-      return task.status === 'running' ? this.get(id) : this.changed(this.store.update(id, { status: 'running', awaitingInput: false }))
+      return task.status === 'running' ? this.get(task.id) : this.changed(this.store.update(task.id, { status: 'running', awaitingInput: false }))
     })
   }
 
@@ -405,7 +405,7 @@ export class TaskService {
     if (blocker) {
       throw new Rejection(blocker)
     }
-    return this.changed(this.store.update(id, { status: 'review', awaitingInput: false }))
+    return this.changed(this.store.update(task.id, { status: 'review', awaitingInput: false }))
   }
 
   // Keeps the plan a task's read-only chat proposed, for when the task can run.
@@ -419,7 +419,7 @@ export class TaskService {
       throw new Rejection('no-chat')
     }
     const kept = await this.requireChats().savePlan(task.conversationId, stageId, requestId)
-    return this.changed(this.store.update(id, { plan: { ...kept, approved: false, stageId, requestId, createdAt: Date.now() } }))
+    return this.changed(this.store.update(task.id, { plan: { ...kept, approved: false, stageId, requestId, createdAt: Date.now() } }))
   }
 
   // A plan approved in the task's chat is the one it carries out.
