@@ -159,6 +159,13 @@ describe('ClaudeStream state', () => {
     expect(stateOf(replay(before, { ...OPTIONS, preferred: { model: 'sonnet' } }))?.model).toBe('sonnet')
   })
 
+  it('reports the effort it was started with, which the settings leave out', () => {
+    const settled = records.findIndex((record) => record.dir === 'in' && JSON.stringify(record.frame).includes('"request_id":"kando-settings"'))
+    const before = records.slice(0, settled + 1)
+    expect(stateOf(replay(before))?.effort).toBeNull()
+    expect(stateOf(replay(before, { ...OPTIONS, preferred: { effort: 'low' } }))?.effort).toBe('low')
+  })
+
   it('offers auto only for a model that has it, and bypass only when the user allows it', () => {
     const allowed = replay(records.map((record) => record), { ...OPTIONS, allowBypass: true })
     expect(stateOf(allowed)?.permissionModes).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])

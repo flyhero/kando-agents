@@ -835,7 +835,8 @@ export class ClaudeStream implements ChatDriver {
     }
     if (requestId === SETTINGS_ID) {
       const settings = SettingsResponse.safeParse(response)
-      if (subtype === 'success' && settings.success) this.effort = settings.data.effective?.effortLevel ?? null
+      // The settings leave out an --effort the stage was started with, which wins over them.
+      if (subtype === 'success' && settings.success) this.effort = this.options.preferred?.effort ?? settings.data.effective?.effortLevel ?? null
       return
     }
     if (requestId !== INIT_ID) return
