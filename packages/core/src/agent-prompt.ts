@@ -14,21 +14,24 @@ import {
 } from '@kando/protocol'
 import type { RefineWorkspace, Workspace } from './workspace'
 
-// Relative when the folder sits under the agent's cwd, absolute otherwise.
+// Worktrees may be siblings, so include their relative path from the primary repo.
 function where(workspace: Workspace, dir: string): string {
   const relative = path.relative(workspace.cwd, dir)
-  return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? `${relative}/` : dir
+  return !relative ? '.' : path.isAbsolute(relative) ? dir : relative
 }
+
+const PROJECT_INSTRUCTIONS = '访问附加项目前先阅读其中适用的 AGENTS.md、CLAUDE.md 等项目指令；各项目指令仅作用于其对应目录。Git、构建和测试命令应在对应项目目录内执行。'
 
 function workspaceSection(workspace: Workspace): string | null {
   if (!workspace.multi) {
     return null
   }
   return [
-    '本任务涉及多个项目，当前目录下每个子目录是一个 Git 仓库的独立 worktree：',
+    `本任务涉及多个项目，每个仓库使用独立 worktree。当前工作目录：${workspace.cwd}`,
     ...workspace.entries.map(
-      (entry) => `- ${where(workspace, entry.dir)} ← ${entry.source}${entry.branch ? `（分支 ${entry.branch}）` : ''}`
-    )
+      (entry, index) => `- ${index === 0 ? '主项目' : '附加项目'}：${where(workspace, entry.dir)}（${entry.dir}） ← ${entry.source}${entry.branch ? `（分支 ${entry.branch}）` : ''}`
+    ),
+    PROJECT_INSTRUCTIONS
   ].join('\n')
 }
 
@@ -91,7 +94,8 @@ function dependencyLine(landed: ReadonlySet<string>, dependency: Dependency): st
 function codeSection(workspace: RefineWorkspace): string {
   return [
     '本任务涉及的代码（只读查看，不要修改）：',
-    ...workspace.dirs.map((dir) => `- ${dir}${dir === workspace.cwd ? '（当前目录）' : ''}`)
+    ...workspace.dirs.map((dir, index) => `- ${index === 0 ? '主项目' : '附加项目'}：${dir}${dir === workspace.cwd ? '（当前目录）' : ''}`),
+    PROJECT_INSTRUCTIONS
   ].join('\n')
 }
 
@@ -207,7 +211,7 @@ export function continuePrompt(
     [
       '这个任务之前已经执行过一次，现在继续做。',
       branches.length
-        ? `上次的改动就在当前目录的分支 ${branches.join('、')} 上，可以用 git log / git diff 查看。`
+        ? `上次的改动在各项目对应的分支 ${branches.join('、')} 上，可以在对应项目目录用 git log / git diff 查看。`
         : '上次的改动就在当前目录里。'
     ].join(''),
     taskPrompt(task),

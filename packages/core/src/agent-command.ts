@@ -65,18 +65,20 @@ export function agentCommand(
   agent: AgentKind,
   prompt: string,
   images: CommandImages = NO_IMAGES,
-  events: EventCallback | null = null
+  events: EventCallback | null = null,
+  extraDirs: readonly string[] = []
 ): AgentCommand {
+  const directoryArgs = extraDirs.flatMap((dir) => ['--add-dir', dir])
   switch (agent) {
     case 'claude': {
       const rules = claudeImageRules(images)
       return {
         command: 'claude',
-        args: [...(rules.length ? ['--allowedTools', rules.join(',')] : []), ...claudeEvents(events), '--', prompt]
+        args: [...directoryArgs, ...(rules.length ? ['--allowedTools', rules.join(',')] : []), ...claudeEvents(events), '--', prompt]
       }
     }
     case 'codex':
-      return { command: 'codex', args: [...codexImageArgs(images), ...codexEvents(events), '--', prompt] }
+      return { command: 'codex', args: [...directoryArgs, ...codexImageArgs(images), ...codexEvents(events), '--', prompt] }
   }
 }
 

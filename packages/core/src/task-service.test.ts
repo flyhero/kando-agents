@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -239,17 +239,113 @@ describe('TaskService', () => {
     expect(sessions.spawns[0]?.cwd).toBe(folder)
   })
 
-  it('lays several repos out side by side and tells the agent which is which', async () => {
+  it.each(['claude', 'codex'] as const)('runs %s in the primary worktree with isolated additional repos', async (agent) => {
     const api = initRepo('api')
     const web = initRepo('web')
     const task = readyTask('Rename user id', [api, web])
+    service.update({ id: task.id, agent })
 
     const running = await service.run(task.id)
     const taskDir = path.join(dir, 'worktrees', task.id.slice(0, 8))
-    expect(sessions.spawns[0]?.cwd).toBe(taskDir)
+    expect(sessions.spawns[0]?.cwd).toBe(path.join(taskDir, 'api'))
     expect(running.repos.map((repo) => repo.worktreePath)).toEqual([path.join(taskDir, 'api'), path.join(taskDir, 'web')])
     expect(git(path.join(taskDir, 'web'), 'branch', '--show-current')).toBe(running.repos[1]?.branch)
-    expect(sessions.spawns[0]?.args[1]).toContain(`- api/ ← ${api}`)
+    expect(sessions.spawns[0]?.args.slice(0, 2)).toEqual(['--add-dir', path.join(taskDir, 'web')])
+    expect(sessions.spawns[0]?.args.at(-1)).toContain(`主项目：.（${path.join(taskDir, 'api')}） ← ${api}`)
+    for (const repo of running.repos) {
+      writeFileSync(path.join(repo.worktreePath!, 'draft.txt'), repo.path)
+      expect(existsSync(path.join(repo.path, 'draft.txt'))).toBe(false)
+      expect((await service.diff(task.id, repo.path, 'draft.txt')).diff).toContain(`+${repo.path}`)
+    }
+    expect((await service.changes(task.id)).map((repo) => repo.files.length)).toEqual([1, 1])
+  })
+
+  it('persists primary selection and reuses worktrees, branches and edits when continuing', async () => {
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const task = readyTask('Primary', [api, web])
+    const running = await service.run(task.id)
+    const original = running.repos
+    writeFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'keep me')
+    service.handleSessionExit(running.sessionId!, 0)
+    const updated = service.update({ id: task.id, repos: [web, api] })
+    expect(updated.repos).toEqual([original[1], original[0]])
+    const reopened = new TaskStore(path.join(dir, 'kando.db'))
+    try {
+      expect(reopened.get(task.id)?.repos).toEqual(updated.repos)
+    } finally {
+      reopened.close()
+    }
+    const continued = await service.continue(task.id)
+    expect(continued.repos).toEqual(updated.repos)
+    expect(sessions.spawns[1]?.cwd).toBe(original[1]?.worktreePath)
+    expect(sessions.spawns[1]?.args.slice(0, 2)).toEqual(['--add-dir', original[0]?.worktreePath])
+    expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
+    service.handleSessionExit(continued.sessionId!, 0)
+    const redo = service.redo(task.id, undefined)
+    expect(redo.repos.map((repo) => repo.path)).toEqual([web, api])
+    const redone = await service.run(redo.id)
+    expect(sessions.spawns[2]?.cwd).toBe(redone.repos[0]?.worktreePath)
+    expect(redone.repos[0]?.worktreePath).not.toBe(original[1]?.worktreePath)
+    expect(existsSync(path.join(redone.repos[0]!.worktreePath!, 'draft.txt'))).toBe(false)
+    expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
+  })
+
+  it('promotes the next project when the primary is removed without deleting its worktree', async () => {
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const task = readyTask('Remove primary', [api, web])
+    const running = await service.run(task.id)
+    service.handleSessionExit(running.sessionId!, 0)
+    const updated = service.update({ id: task.id, repos: [web] })
+    expect(updated.repos).toEqual([running.repos[1]])
+    await service.continue(task.id)
+    expect(sessions.spawns[1]?.cwd).toBe(running.repos[1]?.worktreePath)
+    expect(existsSync(running.repos[0]!.worktreePath!)).toBe(true)
+  })
+
+  it('reserves existing same-name worktrees when adding a new primary', async () => {
+    for (const name of ['first', 'second', 'third']) mkdirSync(path.join(dir, name))
+    const first = initRepo('first/app')
+    const second = initRepo('second/app')
+    const third = initRepo('third/app')
+    const task = readyTask('Same names', [first, second])
+    const running = await service.run(task.id)
+    service.handleSessionExit(running.sessionId!, 0)
+    service.update({ id: task.id, repos: [third, second, first] })
+    const continued = await service.continue(task.id)
+    expect(continued.repos.slice(1)).toEqual([running.repos[1], running.repos[0]])
+    expect(new Set(continued.repos.map((repo) => repo.worktreePath)).size).toBe(3)
+    expect(git(continued.repos[0]!.worktreePath!, 'rev-parse', '--git-common-dir')).toBe(git(third, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    expect(sessions.spawns[1]?.cwd).toBe(continued.repos[0]?.worktreePath)
+  })
+
+  it('rejects project edits throughout run, refine and continue preparation', async () => {
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const task = readyTask('Starting', [api, web])
+    const running = service.run(task.id)
+    expect(() => service.update({ id: task.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
+    service.handleSessionExit((await running).sessionId!, 0)
+    const continuing = service.continue(task.id)
+    expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
+    await continuing
+
+    const pending = readyTask('Refining', [api, web])
+    const refining = service.refine(pending.id)
+    expect(() => service.update({ id: pending.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
+    await refining
+    expect(() => service.update({ id: pending.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'refining' }))
+    service.handleSessionExit(service.get(pending.id).refineSessionId!, 0)
+    expect(service.update({ id: pending.id, repos: [web, api] }).repos[0]?.path).toBe(web)
+  })
+
+  it('rejects changes to an abandoned task through the service', async () => {
+    const task = readyTask('Abandoned', [initRepo('api')])
+    const run = await service.run(task.id)
+    service.handleSessionExit(run.sessionId!, 0)
+    service.redo(task.id, undefined)
+    expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'task-abandoned' }))
   })
 
   it('refuses a plain folder next to other repos', async () => {

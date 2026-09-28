@@ -19,7 +19,7 @@ export type WorkspaceEntry = {
   base: string | null
 }
 
-export type Workspace = { cwd: string; multi: boolean; entries: WorkspaceEntry[]; repos: TaskRepo[] }
+export type Workspace = { cwd: string; extraDirs: string[]; multi: boolean; entries: WorkspaceEntry[]; repos: TaskRepo[] }
 
 export function normalizeRepoPath(input: string): string {
   const expanded = input === '~' || input.startsWith('~/') ? path.join(os.homedir(), input.slice(1)) : input
@@ -148,9 +148,8 @@ async function addWorktree(topLevel: string, worktreePath: string, branch: strin
 }
 
 // Each git repo gets its own worktree on the task's branch, under one task directory.
-// One repo: the agent works inside that worktree. Several: it works in the task
-// directory, one subfolder per repo. A plain folder runs in place, so it can only
-// be a task's sole repo.
+// The agent works in the primary worktree and gets the others as additional directories.
+// A plain folder runs in place, so it can only be a task's sole repo.
 export async function prepareWorkspace(
   task: Pick<Task, 'id' | 'title' | 'repos' | 'source'>,
   dependencies: readonly Pick<Task, 'repos'>[],
@@ -181,10 +180,11 @@ export async function prepareWorkspace(
   }
 
   const stackable = await dependencyBranches(dependencies)
-  const taken = new Set<string>()
+  // Reordering must not let a newly added repo claim a retained worktree's name.
+  const taken = new Set(task.repos.flatMap((repo) => repo.worktreePath ? [path.basename(repo.worktreePath)] : []))
   const entries: WorkspaceEntry[] = []
   for (const { repo, topLevel } of resolved) {
-    const name = uniqueName(path.basename(topLevel ?? repo.path), taken)
+    const name = repo.worktreePath ? path.basename(repo.worktreePath) : uniqueName(path.basename(topLevel ?? repo.path), taken)
     if (repo.worktreePath && (await isDirectory(repo.worktreePath))) {
       entries.push({ name, source: repo.path, dir: repo.worktreePath, branch: repo.branch, base: null })
     } else if (!topLevel) {
@@ -194,12 +194,13 @@ export async function prepareWorkspace(
       // with several there is no single right base, so start from HEAD.
       const candidates = stackable.get(topLevel) ?? []
       const base = candidates.length === 1 ? (candidates[0] ?? null) : null
-      const worktreePath = path.join(taskDir, name)
+      const worktreePath = repo.worktreePath ?? path.join(taskDir, name)
+      const repoBranch = repo.branch ?? branch
       // A leftover from a run that failed part-way is picked up as is.
       if (!(await isDirectory(worktreePath))) {
-        await addWorktree(topLevel, worktreePath, branch, base ?? 'HEAD')
+        await addWorktree(topLevel, worktreePath, repoBranch, base ?? 'HEAD')
       }
-      entries.push({ name, source: repo.path, dir: worktreePath, branch, base })
+      entries.push({ name, source: repo.path, dir: worktreePath, branch: repoBranch, base })
     }
   }
 
@@ -211,7 +212,8 @@ export async function prepareWorkspace(
     throw new Rejection('missing-repo')
   }
   return {
-    cwd: multi ? taskDir : first.dir,
+    cwd: first.dir,
+    extraDirs: entries.slice(1).map((entry) => entry.dir),
     multi,
     entries,
     repos: entries.map((entry) => ({

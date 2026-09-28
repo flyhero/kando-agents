@@ -3,6 +3,7 @@ import {
   checkChatResume,
   checkContinue,
   checkDependencies,
+  checkEditProjects,
   checkMove,
   checkRedo,
   checkRefine,
@@ -209,10 +210,8 @@ export class TaskService {
       patch.previousDetails = null
     }
     if (repos !== undefined) {
-      // The running agent's worktrees were laid out for the current list.
-      if (task.status === 'running') {
-        throw new Rejection('task-running', 'repos cannot change while the agent runs')
-      }
+      const blocker = checkEditProjects(task, this.launching.has(task.id))
+      if (blocker) throw new Rejection(blocker)
       patch.repos = withKnownWorktrees(task.repos, repos.map(normalizeRepoPath))
       const current = new Set(task.repos.map((repo) => repo.path))
       this.projects.remember(patch.repos.map((repo) => repo.path).filter((repoPath) => !current.has(repoPath)))
@@ -259,7 +258,7 @@ export class TaskService {
       this.store.update(task.id, { repos: workspace.repos })
       const images = await this.images(task)
       const prompt = agentPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt)
-      return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent)) }
+      return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent), workspace.extraDirs) }
     })
     return this.changed(this.store.update(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
   }
@@ -288,7 +287,7 @@ export class TaskService {
       this.store.update(task.id, { repos: workspace.repos })
       const images = await this.images(task)
       const prompt = continuePrompt(task, workspace, dependencies, images.prompt, note || null)
-      return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent)) }
+      return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent), workspace.extraDirs) }
     })
     return this.changed(this.store.update(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
   }
