@@ -4,7 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
-import { ChatDecision, ChatItemList, ChatOption, ConversationMode } from './chat'
+import { ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 
@@ -91,7 +91,8 @@ export const rpcMethods = {
   'conversations.get': { params: ConversationRef, result: Conversation },
   // mode defaults to tui, which is all an older core knows; check CORE_FEATURES before asking for chat.
   'conversations.create': {
-    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
+    // permissionMode: the mode a chat-mode start begins in, one the agent has.
+    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional(), allowBypass: AllowBypass, permissionMode: ChatPermissionMode.optional() }),
     result: Conversation
   },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },

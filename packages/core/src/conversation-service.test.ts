@@ -414,6 +414,14 @@ describe('ConversationService in chat mode', () => {
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits']))
   })
 
+  it('starts a new chat in the permission mode picked for it, one the agent has', async () => {
+    const created = await service.create('claude', [], 'chat', false, 'plan')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan']))
+    expect(service.get(created.id).chatOptions?.permissionMode).toBe('plan')
+    await expect(service.create('claude', [], 'chat', false, 'readOnly')).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    expect(service.list()).toHaveLength(1)
+  })
+
   it('takes options for the next start while no agent runs, from what the last stage offered', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.stop(created.id)

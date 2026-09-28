@@ -9,6 +9,8 @@ import { ChatLog } from './chat-log'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
 import { folderChanges, folderDiff, folderHead } from './conversation-changes'
+import { CLAUDE_MODE_NAMES } from './claude-stream'
+import { CODEX_MODES } from './codex-app-server'
 import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
@@ -98,8 +100,12 @@ export class ConversationService {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
 
-  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
+  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui', allowBypass?: boolean, permissionMode?: string): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
+    // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
+    if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : CODEX_MODES))) {
+      throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
+    }
     const projects: string[] = []
     const picked: string[] = []
     for (const rawPath of projectPaths) {
@@ -127,6 +133,7 @@ export class ConversationService {
     }
     const created = this.store.create(agent, workspace, projects, id, starts)
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
+    if (permissionMode) this.store.setChatOptions(id, { permissionMode })
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)

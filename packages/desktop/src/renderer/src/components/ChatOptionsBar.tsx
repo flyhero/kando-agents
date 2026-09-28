@@ -1,4 +1,4 @@
-import type { AgentKind, ChatContextUse, ChatItem, ChatOption, Conversation } from '@kando/protocol'
+import type { AgentKind, ChatContextUse, ChatItem, ChatOption, ChatPermissionMode, Conversation } from '@kando/protocol'
 import { perform } from '../core-store'
 import { usePreferences } from '../preferences'
 
@@ -8,6 +8,17 @@ type StateItem = Extract<ChatItem, { kind: 'state' }>
 const MODE_LABEL: Record<AgentKind, Record<string, string>> = {
   claude: { ask: '逐项确认', acceptEdits: '自动接受编辑', plan: '规划', auto: '自动判断', bypass: '全部放行' },
   codex: { ask: '逐项确认', acceptEdits: '自动', readOnly: '只读', bypass: '全部放行' }
+}
+
+export function modeLabel(agent: AgentKind, mode: string): string {
+  return MODE_LABEL[agent][mode] ?? mode
+}
+
+// What a new conversation can start in, before its agent lists what it offers (bypass aside):
+// auto hangs on the model, so it waits for the agent. The first is where each starts by default.
+export const START_MODES: Record<AgentKind, readonly ChatPermissionMode[]> = {
+  claude: ['ask', 'acceptEdits', 'plan'],
+  codex: ['acceptEdits', 'ask', 'readOnly']
 }
 
 const EFFORT_LABEL: Record<string, string> = {
@@ -91,7 +102,7 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
           {!permissionMode && <option value="" disabled>权限模式</option>}
           {modes.map((mode) => (
             <option key={mode} value={mode} disabled={!offered.includes(mode)}>
-              {MODE_LABEL[agent][mode] ?? mode}
+              {modeLabel(agent, mode)}
             </option>
           ))}
         </select>

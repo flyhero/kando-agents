@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { AGENT_KINDS, type AgentKind, type ConversationMode } from '@kando/protocol'
-import { closeConversationDraft, perform, selectConversation, useCore } from '../core-store'
+import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ConversationMode } from '@kando/protocol'
+import { closeConversationDraft, perform, selectConversation, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
+import { usePreferences } from '../preferences'
 import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
+import { modeLabel, START_MODES } from './ChatOptionsBar'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
 
@@ -20,10 +22,17 @@ export function ConversationDraft() {
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  // Kept per agent, so switching back finds the mode picked for it.
+  const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: START_MODES.claude[0]!, codex: START_MODES.codex[0]! })
+  const optionsSupported = useChatOptionsSupported()
+  const allowBypass = usePreferences((s) => s.allowBypass)
   const canSend = agent !== null && !busy && text.trim() !== ''
 
-  const create = (mode: ConversationMode) =>
-    agent ? perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(mode) })) : Promise.resolve(null)
+  const create = (mode: ConversationMode) => {
+    if (!agent) return Promise.resolve(null)
+    const permissionMode = mode === 'chat' && optionsSupported ? { permissionMode: modes[agent] } : {}
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(mode), ...permissionMode }))
+  }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
   const send = async () => {
@@ -112,6 +121,25 @@ export function ConversationDraft() {
                 <EnterIcon />
               </button>
             </div>
+            {agent && optionsSupported && (
+              <div className="chat-options">
+                <select
+                  className="chat-select"
+                  aria-label="权限模式"
+                  data-mode={modes[agent]}
+                  value={modes[agent]}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const picked = ChatPermissionMode.safeParse(event.target.value)
+                    if (picked.success) setModes({ ...modes, [agent]: picked.data })
+                  }}
+                >
+                  {[...START_MODES[agent], ...(allowBypass ? ['bypass' as const] : [])].map((mode) => (
+                    <option key={mode} value={mode}>{modeLabel(agent, mode)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
       </div>
