@@ -4,6 +4,7 @@ import { itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
 import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChatApprovalCard, ChatPlanCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
+import { ChatTodosChip } from './ChatTodos'
 import { useFolderChanges } from './ConversationInspector'
 import { ArrowUpIcon } from './icons'
 import { lineTotals } from './Inspector'
@@ -47,6 +48,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
   return (
     <div className="chat-dock">
       <div className="chat-dock-header">
+        {running && state && <ChatTodosChip todos={state.todos} />}
         {inspectable && <ChangesChip conversation={conversation} finishedCalls={finishedCalls} />}
         <span className="chat-dock-spacer" />
         <button type="button" className="tool-button" aria-label="上一条消息" data-tooltip="上一条消息" onClick={onPrevious}>
@@ -64,7 +66,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
           )}
         </div>
       )}
-      <ChatComposer conversation={conversation} />
+      <ChatComposer conversation={conversation} queued={running ? (state?.queued ?? null) : null} />
       {running && optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
     </div>
   )

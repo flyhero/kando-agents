@@ -6,6 +6,7 @@ import { AGENT_LABEL, dayAndTime } from '../labels'
 import { ChatDock } from './ChatDock'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
+import { ChatTodosLine, currentTodo } from './ChatTodos'
 import { ChatPaths, ChatToolCard } from './ChatToolCard'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -56,6 +57,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
     case 'notice':
       return <div className="chat-notice" data-level={item.level}>{item.text}</div>
     case 'todos':
+      return <ChatTodosLine item={item} />
     case 'state':
       return null
   }
@@ -174,6 +176,7 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
     [conversation.projectPaths, conversation.workspacePath]
   )
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
+  const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
   return (
     <ChatPaths.Provider value={shorten}>
     <div className="chat-view">
@@ -194,7 +197,7 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
               : <Item conversationId={id} item={entry.item} />}
           </div>
         ))}
-        {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理…</div>}
+        {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理{doing ? `：${doing}` : ''}…</div>}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>

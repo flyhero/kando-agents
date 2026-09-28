@@ -1,12 +1,29 @@
 import { useState } from 'react'
-import type { Conversation } from '@kando/protocol'
-import { perform } from '../core-store'
+import type { ChatItem, Conversation } from '@kando/protocol'
+import { perform, useChatOptionsSupported } from '../core-store'
 import { continueConversation } from './ConversationActions'
 import { EnterIcon, StopIcon } from './icons'
 
-// One message at a time: the box takes the next one while the agent works, and sends once it is
-// idle. Its corner button sends when the agent is idle and stops the turn while it works.
-export function ChatComposer({ conversation }: { conversation: Conversation }) {
+type Queued = NonNullable<Extract<ChatItem, { kind: 'state' }>['queued']>
+
+// The message waiting for the turn to end, or one an interrupted turn held back.
+function QueuedMessage({ queued, onEdit, onSend, onCancel }: { queued: Queued; onEdit: () => void; onSend: () => void; onCancel: () => void }) {
+  return (
+    <div className="chat-queued" data-held={queued.held || undefined}>
+      <span className="chat-queued-label">{queued.held ? '上一回合没有完成，这条还没发：' : '回合结束后发送：'}</span>
+      <span className="chat-queued-text">{queued.text}</span>
+      <span className="chat-queued-actions">
+        {queued.held && <button type="button" className="link-button" onClick={onSend}>发送</button>}
+        <button type="button" className="link-button" onClick={onEdit}>编辑</button>
+        <button type="button" className="link-button" onClick={onCancel}>取消</button>
+      </span>
+    </div>
+  )
+}
+
+// Enter sends when the agent is idle; while it works, Enter queues the message for when the turn
+// ends (a second one joins the first). The corner button sends, or stops the turn.
+export function ChatComposer({ conversation, queued }: { conversation: Conversation; queued: Queued | null }) {
   const { id } = conversation
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -14,13 +31,22 @@ export function ChatComposer({ conversation }: { conversation: Conversation }) {
   const turn = conversation.chat?.turn ?? null
   const idle = running && turn === 'idle'
   const working = running && (turn === 'running' || turn === 'awaiting')
-  const canSend = idle && !busy && text.trim() !== ''
+  // An older core takes a message only between turns.
+  const queueable = useChatOptionsSupported() && working
+  const canSend = (idle || queueable) && !busy && text.trim() !== ''
   const send = async () => {
     if (!canSend) return
     setBusy(true)
-    const sent = await perform((rpc) => rpc.call('conversations.send', { id, text: text.trim() }))
+    const message = idle || !queued ? text.trim() : `${queued.text}\n\n${text.trim()}`
+    const sent = await perform((rpc) => rpc.call('conversations.send', { id, text: message, ...(queueable ? { queue: true } : {}) }))
     setBusy(false)
     if (sent) setText('')
+  }
+  const cancelQueued = () => perform((rpc) => rpc.call('conversations.cancelQueued', { id }))
+  const editQueued = async () => {
+    if (!queued) return
+    const pulled = queued.text
+    if (await cancelQueued()) setText((current) => (current.trim() ? `${pulled}\n\n${current}` : pulled))
   }
   const interrupt = () => void perform((rpc) => rpc.call('conversations.interrupt', { id }))
   if (!running) {
@@ -32,13 +58,26 @@ export function ChatComposer({ conversation }: { conversation: Conversation }) {
     )
   }
   return (
+    <>
+    {queued && (
+      <QueuedMessage
+        queued={queued}
+        onEdit={() => void editQueued()}
+        onSend={() => void perform((rpc) => rpc.call('conversations.sendQueued', { id }))}
+        onCancel={() => void cancelQueued()}
+      />
+    )}
     <div className="chat-input-card" data-working={working || undefined} data-awaiting={turn === 'awaiting' || undefined}>
       <textarea
         className="chat-input"
         rows={3}
         value={text}
         aria-label="给 agent 的消息"
-        placeholder={idle ? '给 agent 发消息，Enter 发送，Shift+Enter 换行' : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断'}
+        placeholder={
+          idle ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
+            : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送；Esc 中断`
+            : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断'
+        }
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           // Enter while an input method is composing picks a candidate; it is not a send.
@@ -61,5 +100,6 @@ export function ChatComposer({ conversation }: { conversation: Conversation }) {
         </button>
       )}
     </div>
+    </>
   )
 }
