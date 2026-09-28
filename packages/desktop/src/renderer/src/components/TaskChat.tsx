@@ -7,7 +7,7 @@ import { usePreferences } from '../preferences'
 import { BranchStatus } from './BranchStatus'
 import type { ChatSurface } from './chat-surface'
 import { ConversationChat } from './ConversationChat'
-import { projectNames } from './ProjectPicker'
+import { projectSummary } from './ProjectPicker'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { SourceLink } from './SourceLink'
 import { StatusIcon } from './StatusIcon'
@@ -93,7 +93,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
         {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
         {task.repos.length > 0 && (
           <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
-            {projectNames(task.repos.map((repo) => repo.path))}
+            {projectSummary(task.repos.map((repo) => repo.path))}
           </span>
         )}
         <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
