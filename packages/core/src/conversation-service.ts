@@ -27,6 +27,8 @@ export type ConversationEvent =
 const CHAT_PAGE_ITEMS = 1000
 const STOP_GRACE_MS = 5000
 const KILL_GRACE_MS = 2000
+// A chat agent left this long with nothing to do is let go (see releaseIdle).
+const CHAT_IDLE_MS = 30 * 60_000
 
 // Whether `promise` settles within `ms`.
 function settles(promise: Promise<void>, ms: number): Promise<boolean> {
@@ -311,6 +313,15 @@ export class ConversationService {
       this.store.setChatOptions(id, { [agent]: { ...current, effort: value } })
     }
     this.changed(conversation)
+  }
+
+  // An idle chat agent goes after a while, so the ones open all day do not pile up; the next
+  // message starts it again on the same session.
+  async releaseIdle(now = Date.now()): Promise<void> {
+    for (const id of this.chats.idleSince(now - CHAT_IDLE_MS)) {
+      if (this.launching.has(id)) continue
+      await this.stop(id).catch((error: unknown) => console.error('[kando-core] releasing an idle chat agent failed', error))
+    }
   }
 
   // The mode the stage runs in, however it got there: a plan approved to carry out with edits

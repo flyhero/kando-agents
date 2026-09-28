@@ -433,6 +433,21 @@ describe('ConversationService in chat mode', () => {
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--model', 'sonnet', '--effort', 'low']))
   })
 
+  it('lets an idle chat agent go after 30 minutes, and never one with work in hand', async () => {
+    const idle = await service.create('claude', [], 'chat')
+    await service.send(idle.id, 'first')
+    await settle()
+    daemon.reply = () => {}
+    const busy = await service.create('claude', [], 'chat')
+    await service.send(busy.id, 'still going')
+    await settle()
+    await service.releaseIdle(Date.now() + 29 * 60_000)
+    expect(service.get(idle.id).sessionId).not.toBeNull()
+    await service.releaseIdle(Date.now() + 31 * 60_000)
+    expect(service.get(idle.id)).toMatchObject({ sessionId: null, lastExit: { code: null } })
+    expect(service.get(busy.id).sessionId).not.toBeNull()
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

@@ -136,6 +136,8 @@ await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVe
 daemon.start()
 usage.start()
 sources.start()
+// Idle chat agents are checked for once a minute, so one goes within a minute of its limit.
+setInterval(() => void conversations.releaseIdle(), 60_000).unref()
 console.log(`[kando-core] listening on 127.0.0.1:${server.port} (home ${paths.home})`)
 
 let shuttingDown = false

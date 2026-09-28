@@ -40,6 +40,8 @@ type Live = ChatStage & {
   activity: ChatTurnActivity
   provider: string | null
   started: { resolve(): void; reject(error: Error): void } | null
+  // When anything last went either way, or the user last changed something.
+  lastActive: number
 }
 
 export function createDriver(stage: ChatStage): ChatDriver {
@@ -92,7 +94,8 @@ export class ChatHost {
       stderr: '',
       activity: driver.activity(),
       provider: null,
-      started: null
+      started: null,
+      lastActive: records.at(-1)?.at ?? this.now()
     }
     this.lives.set(sessionId, live)
     this.history.delete(stage.stageId)
@@ -164,6 +167,22 @@ export class ChatHost {
     return this.liveOf(conversationId)?.driver.activity() ?? null
   }
 
+  // Whether the running stage holds nothing the user would lose if its agent went: no turn, no
+  // request waiting on the user, no message queued or held.
+  idle(conversationId: string): boolean {
+    const live = this.liveOf(conversationId)
+    return live !== undefined && this.isIdle(live)
+  }
+
+  // Conversations whose agent has sat idle since before `before`.
+  idleSince(before: number): string[] {
+    return [...this.lives.values()].filter((live) => live.lastActive < before && this.isIdle(live)).map((live) => live.conversationId)
+  }
+
+  private isIdle(live: Live): boolean {
+    return live.attached && live.driver.ready() && live.driver.activity() === 'idle' && this.queuedText(live) === null
+  }
+
   // A running stage's items, or an ended one's rebuilt from its log.
   items(stage: ChatStage): ChatItem[] {
     const live = [...this.lives.values()].find((each) => each.stageId === stage.stageId)
@@ -220,6 +239,7 @@ export class ChatHost {
   private record(live: Live, record: LoggedRecord): void {
     live.log.append([record])
     live.driver.apply(record)
+    live.lastActive = record.at
   }
 
   async respond(conversationId: string, requestId: string, answer: ChatAnswer): Promise<void> {
@@ -239,9 +259,7 @@ export class ChatHost {
   async setOption(conversationId: string, option: ChatOption, value: string): Promise<void> {
     const live = this.running(conversationId)
     const frames = live.driver.setOption(option, value)
-    const record: LoggedRecord = { dir: 'option', at: this.now(), option, value }
-    live.log.append([record])
-    live.driver.apply(record)
+    this.record(live, { dir: 'option', at: this.now(), option, value })
     const sent = frames.map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
@@ -285,6 +303,7 @@ export class ChatHost {
       if (kept !== null) records.push({ dir: 'in', at, frame: kept, end: line.end })
     }
     live.log.append(records)
+    if (lines.length) live.lastActive = this.now()
     if (end !== null) this.sink.offset(live.stageId, end)
   }
 
@@ -300,9 +319,7 @@ export class ChatHost {
 
   // Logged and applied before it is written, so a crash in between cannot send it twice.
   private write(live: Live, frame: unknown, ref?: string): Promise<unknown> {
-    const record: LoggedRecord = { dir: 'out', at: this.now(), frame, ...(ref ? { ref } : {}) }
-    live.log.append([record])
-    live.driver.apply(record)
+    this.record(live, { dir: 'out', at: this.now(), frame, ...(ref ? { ref } : {}) })
     return this.daemon.request('write', { sessionId: live.sessionId, data: `${JSON.stringify(frame)}\n` })
   }
 
