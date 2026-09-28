@@ -10,6 +10,8 @@ export type ChatRecord =
   | { dir: 'note'; at: number; level: 'info' | 'warning' | 'error'; text: string }
   // The user switched an option; an agent that takes options per turn applies it from here.
   | { dir: 'option'; at: number; option: ChatOption; value: string }
+  // A message to send once the turn ends (ref names its user item), or null to drop it.
+  | { dir: 'queue'; at: number; text: string | null; ref?: string }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
@@ -52,6 +54,8 @@ export interface ChatDriver {
   interrupt(): unknown[]
   // Frames that switch an option, after checking the stage offers the value (a Rejection if not).
   setOption(option: ChatOption, value: string): unknown[]
+  // The queued message, once the agent is ready and idle to take it.
+  queuedToSend(): { text: string; ref: string } | null
   // What of an incoming frame to keep in the log, or null for nothing: streamed deltas are
   // covered by the frames that complete them.
   logged(frame: unknown): unknown | null

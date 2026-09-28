@@ -127,6 +127,65 @@ describe('ChatHost', () => {
     expect(host.items(STAGE).filter((item) => item.kind === 'assistant').map((item) => item.kind === 'assistant' && item.text)).toEqual(['early'])
   })
 
+  const stateOf = (host: ChatHost) => host.items(STAGE).find((item) => item.kind === 'state')
+  const userFrames = (sessionId: string) => daemon.written(sessionId).filter((frame) => JSON.stringify(frame).includes('"type":"user"'))
+  const finish = (sessionId: string, terminal: 'completed' | 'aborted_streaming') =>
+    daemon.emit(sessionId, { type: 'result', subtype: terminal === 'completed' ? 'success' : 'error_during_execution', is_error: terminal !== 'completed', terminal_reason: terminal })
+
+  it('sends a message queued during a turn once the turn completes', async () => {
+    const { host, sessionId } = await started()
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'first')
+    await host.send(STAGE.conversationId, 'second', true)
+    expect(stateOf(host)).toMatchObject({ queued: { text: 'second', held: false } })
+    expect(userFrames(sessionId)).toHaveLength(1)
+    finish(sessionId, 'completed')
+    await flushMicrotasks()
+    expect(userFrames(sessionId).map((frame) => JSON.stringify(frame))).toEqual([
+      expect.stringContaining('first'),
+      expect.stringContaining('second')
+    ])
+    expect(stateOf(host)).toMatchObject({ queued: null })
+    expect(host.items(STAGE).filter((item) => item.kind === 'user').map((item) => item.kind === 'user' && item.text)).toEqual(['first', 'second'])
+  })
+
+  it('holds a queued message after an interrupted turn until the user sends or drops it', async () => {
+    const { host, sessionId } = await started()
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'first')
+    await host.send(STAGE.conversationId, 'second', true)
+    finish(sessionId, 'aborted_streaming')
+    await flushMicrotasks()
+    expect(stateOf(host)).toMatchObject({ queued: { text: 'second', held: true } })
+    expect(userFrames(sessionId)).toHaveLength(1)
+    host.sendQueued(STAGE.conversationId)
+    await flushMicrotasks()
+    expect(userFrames(sessionId)).toHaveLength(2)
+    finish(sessionId, 'completed')
+    await host.send(STAGE.conversationId, 'third', true)
+    finish(sessionId, 'aborted_streaming')
+    host.cancelQueued(STAGE.conversationId)
+    expect(stateOf(host)).toMatchObject({ queued: null })
+    expect(() => host.sendQueued(STAGE.conversationId)).toThrow(expect.objectContaining({ reason: 'chat-nothing-queued' }))
+  })
+
+  it('keeps a queued message across a restart and sends it when the turn ends', async () => {
+    const first = recordingSink()
+    const { host, sessionId } = await started(first.sink)
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'first')
+    await host.send(STAGE.conversationId, 'second', true)
+    const restarted = new ChatHost(daemon, root, recordingSink().sink)
+    daemon.deliver = (event) => {
+      if (event.event === 'data') restarted.handleData(event.sessionId, event.offset, event.data)
+    }
+    await restarted.open(STAGE, sessionId, first.offsets.at(-1) ?? 0, false)
+    expect(stateOf(restarted)).toMatchObject({ queued: { text: 'second', held: false } })
+    finish(sessionId, 'completed')
+    await flushMicrotasks()
+    expect(userFrames(sessionId)).toHaveLength(2)
+  })
+
   it('notes a hole in the output instead of reading half a frame', async () => {
     const host = new ChatHost(daemon, root, recordingSink().sink)
     const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })

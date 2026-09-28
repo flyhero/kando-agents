@@ -275,9 +275,19 @@ export class ConversationService {
     this.store.setChatOptions(id, option === 'permissionMode' ? { permissionMode: value } : { [agent]: { ...chosen[agent], [option]: value } })
   }
 
-  async send(id: string, text: string): Promise<void> {
+  async send(id: string, text: string, queue = false): Promise<void> {
     this.get(id)
-    await this.chats.send(id, text)
+    await this.chats.send(id, text, queue)
+  }
+
+  cancelQueued(id: string): void {
+    this.get(id)
+    this.chats.cancelQueued(id)
+  }
+
+  sendQueued(id: string): void {
+    this.get(id)
+    this.chats.sendQueued(id)
   }
 
   async respond(id: string, requestId: string, answer: ChatAnswer): Promise<void> {

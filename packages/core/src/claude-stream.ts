@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { ChatDiff, ChatModel, ChatOption, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
+import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { CLAUDE_TASK_TOOLS, ClaudeTasks } from './claude-tasks'
 import { Rejection } from './rejection'
@@ -288,6 +289,7 @@ export class ClaudeStream implements ChatDriver {
   private results = 0
   private messages: StageMessage[] = []
   private readonly state: StageState
+  private readonly queue = new ChatQueue()
   private readonly tasks = new ClaudeTasks()
   private settingsSent = false
   // What the stage runs: the CLI's model catalog, the model it reports, and its context window.
@@ -316,6 +318,12 @@ export class ClaudeStream implements ChatDriver {
         break
       case 'note':
         this.items.notice(record.level, record.text, record.at)
+        break
+      case 'queue':
+        this.queue.set(record.text, record.ref)
+        break
+      case 'option':
+        // Claude Code takes options through its own control requests, which the log also holds.
         break
       case 'exit':
         this.ended(record.code, record.stderr, record.at)
@@ -378,6 +386,10 @@ export class ClaudeStream implements ChatDriver {
     )
     const request = { type: 'control_request', request_id: `${INTERRUPT_PREFIX}${this.interrupts + 1}`, request: { subtype: 'interrupt' } }
     return [...denials, request]
+  }
+
+  queuedToSend(): { text: string; ref: string } | null {
+    return this.ready() && !this.turn ? this.queue.next() : null
   }
 
   setOption(option: ChatOption, value: string): unknown[] {
@@ -481,6 +493,7 @@ export class ClaudeStream implements ChatDriver {
     }))
     const current = this.currentModel()
     this.state.set({
+      queued: this.queue.view,
       models,
       model: current?.value ?? this.reportedModel,
       effort: this.effort,
@@ -721,6 +734,7 @@ export class ClaudeStream implements ChatDriver {
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
     this.finishStreaming(at)
     this.state.endTurn()
+    this.queue.turnEnded(state)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
@@ -828,6 +842,7 @@ export class ClaudeStream implements ChatDriver {
       if (!user.success || !ref) return
       const text = user.data.message.content
       this.items.put({ id: `u:${ref}`, kind: 'user', text }, at)
+      this.queue.sent(ref)
       this.turn = { ref, assistant: null }
       this.messages.push({ role: 'user', text, eventKey: `chat:${ref}:user`, complete: false })
       return

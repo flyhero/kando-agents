@@ -11,6 +11,7 @@ const LogLine = z.discriminatedUnion('dir', [
   z.object({ dir: z.literal('out'), at: z.number(), frame: z.unknown(), ref: z.string().optional() }),
   z.object({ dir: z.literal('note'), at: z.number(), level: Level, text: z.string() }),
   z.object({ dir: z.literal('option'), at: z.number(), option: ChatOption, value: z.string() }),
+  z.object({ dir: z.literal('queue'), at: z.number(), text: z.string().nullable(), ref: z.string().optional() }),
   z.object({ dir: z.literal('exit'), at: z.number(), code: z.number().nullable(), stderr: z.string() })
 ])
 

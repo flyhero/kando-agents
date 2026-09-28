@@ -59,7 +59,9 @@ export function createRpcHandlers(
     'conversations.continue': ({ id, mode, allowBypass }) => conversations.continue(id, mode, allowBypass),
     'conversations.handoff': ({ id, agent, note, stopRunning, mode, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, mode, allowBypass),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
-    'conversations.send': async ({ id, text }) => { await conversations.send(id, text); return OK },
+    'conversations.send': async ({ id, text, queue }) => { await conversations.send(id, text, queue); return OK },
+    'conversations.cancelQueued': ({ id }) => { conversations.cancelQueued(id); return OK },
+    'conversations.sendQueued': ({ id }) => { conversations.sendQueued(id); return OK },
     'conversations.interrupt': async ({ id }) => { await conversations.interrupt(id); return OK },
     'conversations.respond': async ({ id, requestId, ...answer }) => { await conversations.respond(id, requestId, answer); return OK },
     // Read after subscribing, so an item that changes in between reaches the client either way.

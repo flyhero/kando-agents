@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { ChatDecision, ChatDiff, ChatModel, ChatOption, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatPreferences, ChatRecord, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
+import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
 
@@ -229,6 +230,7 @@ export class CodexAppServer implements ChatDriver {
   private results = 0
   private messages: StageMessage[] = []
   private readonly state: StageState
+  private readonly queue = new ChatQueue()
   private modelsRequested = false
   private catalog: ModelEntry[] = []
   private model: string | null = null
@@ -261,6 +263,9 @@ export class CodexAppServer implements ChatDriver {
         break
       case 'option':
         this.choose(record.option, record.value)
+        break
+      case 'queue':
+        this.queue.set(record.text, record.ref)
         break
       case 'exit':
         this.ended(record.stderr, record.at)
@@ -317,6 +322,10 @@ export class CodexAppServer implements ChatDriver {
         ...this.turnOptions()
       }
     }
+  }
+
+  queuedToSend(): { text: string; ref: string } | null {
+    return this.ready() && !this.turn ? this.queue.next() : null
   }
 
   setOption(option: ChatOption, value: string): unknown[] {
@@ -418,6 +427,7 @@ export class CodexAppServer implements ChatDriver {
     }))
     const current = this.catalog.find((entry) => entry.id === this.model)
     this.state.set({
+      queued: this.queue.view,
       models,
       model: this.model,
       // A thread on its model's default effort reports none.
@@ -740,6 +750,7 @@ export class CodexAppServer implements ChatDriver {
     const text = input.success ? input.data.input.map((part) => part.text ?? '').join('\n') : ''
     const id = ref ?? `turn-${this.turns}`
     this.items.put({ id: `u:${id}`, kind: 'user', text }, at)
+    this.queue.sent(ref)
     this.turn = { ref: id, turnId: null, assistant: null }
     this.messages.push({ role: 'user', text, eventKey: `chat:${id}:user`, complete: false })
   }
@@ -763,6 +774,7 @@ export class CodexAppServer implements ChatDriver {
 
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
     this.state.endTurn()
+    this.queue.turnEnded(state)
     for (const item of this.items.list()) {
       if (item.kind === 'assistant' && item.streaming) this.items.put({ ...item, streaming: false }, at)
     }

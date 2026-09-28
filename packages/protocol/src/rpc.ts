@@ -100,8 +100,12 @@ export const rpcMethods = {
     params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
     result: Conversation
   },
-  // Chat mode only: a message for the agent, which must be idle.
-  'conversations.send': { params: ConversationRef.extend({ text: z.string().trim().min(1).max(100000) }), result: Ok },
+  // Chat mode only: a message for the agent. With queue, one sent while a turn runs waits for the
+  // turn to end (replacing any that already waited); without it, the agent must be idle.
+  'conversations.send': { params: ConversationRef.extend({ text: z.string().trim().min(1).max(100000), queue: z.boolean().optional() }), result: Ok },
+  // Drops the waiting message, or sends one an interrupted or failed turn left held.
+  'conversations.cancelQueued': { params: ConversationRef, result: Ok },
+  'conversations.sendQueued': { params: ConversationRef, result: Ok },
   // Chat mode only: switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },

@@ -180,11 +180,46 @@ export class ChatHost {
     return driver.items.list()
   }
 
-  async send(conversationId: string, text: string): Promise<void> {
+  // With queue, a message sent while a turn runs waits for the turn to end.
+  async send(conversationId: string, text: string, queue = false): Promise<void> {
     const live = this.running(conversationId)
+    if (queue && live.driver.activity() !== 'idle') {
+      this.enqueue(live, text)
+      return
+    }
     const sent = this.write(live, live.driver.send(text), randomUUID())
     this.flush(live)
     await sent
+  }
+
+  cancelQueued(conversationId: string): void {
+    const live = this.running(conversationId)
+    this.record(live, { dir: 'queue', at: this.now(), text: null })
+    this.flush(live)
+  }
+
+  // Queued again, so a message an interrupted turn held goes out now if the agent is idle.
+  sendQueued(conversationId: string): void {
+    const live = this.running(conversationId)
+    const text = this.queuedText(live)
+    if (text === null) throw new Rejection('chat-nothing-queued', 'no message is waiting')
+    this.enqueue(live, text)
+  }
+
+  private enqueue(live: Live, text: string): void {
+    this.record(live, { dir: 'queue', at: this.now(), text, ref: randomUUID() })
+    this.pump(live)
+    this.flush(live)
+  }
+
+  private queuedText(live: Live): string | null {
+    const state = live.driver.items.list().find((item) => item.kind === 'state')
+    return state?.kind === 'state' ? (state.queued?.text ?? null) : null
+  }
+
+  private record(live: Live, record: LoggedRecord): void {
+    live.log.append([record])
+    live.driver.apply(record)
   }
 
   async respond(conversationId: string, requestId: string, answer: ChatAnswer): Promise<void> {
@@ -253,11 +288,14 @@ export class ChatHost {
     if (end !== null) this.sink.offset(live.stageId, end)
   }
 
-  // Sends what the driver says is owed, such as the handshake.
+  // Sends what the driver says is owed (the handshake, say), and a queued message the agent can
+  // now take. Each goes into the log before it goes out, so none is sent twice.
   private pump(live: Live): void {
     for (const frame of live.driver.due()) {
       void this.write(live, frame).catch(ignore)
     }
+    const queued = live.driver.queuedToSend()
+    if (queued) void this.write(live, live.driver.send(queued.text), queued.ref).catch(ignore)
   }
 
   // Logged and applied before it is written, so a crash in between cannot send it twice.
