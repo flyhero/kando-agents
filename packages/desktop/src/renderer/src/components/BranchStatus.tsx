@@ -36,7 +36,7 @@ export function useProjectHeads(target: BranchTarget, updatedAt: number, opened:
 }
 
 function headLabel(head: ProjectHead): string {
-  if (!head.branch) return '不是 git 仓库'
+  if (!head.branch) return '无 Git 分支'
   return head.detached ? `${head.branch}（分离 HEAD）` : head.branch
 }
 
@@ -76,9 +76,9 @@ function CopyButton({ text }: { text: string }) {
 export function BranchStatusDetails({ heads }: { heads: readonly ProjectHead[] }) {
   return (
     <div className="branch-status">
-      {heads.map((each) => (
+      {heads.map((each, index) => (
         <section key={each.path} className="branch-status-project" aria-label={projectName(each.path)}>
-          {heads.length > 1 && <div className="branch-status-name">{projectName(each.path)}</div>}
+          <div className="branch-status-name">{projectName(each.path)} · {index === 0 ? '主项目' : '附加项目'}</div>
           <div className="branch-status-head">
             <span className="mono">{headLabel(each)}</span>
             {each.branch && <CopyButton text={each.branch} />}
@@ -91,15 +91,14 @@ export function BranchStatusDetails({ heads }: { heads: readonly ProjectHead[] }
   )
 }
 
-// The chip shows the first project that has a branch: a conversation's working directory, or a
-// task's first worktree. The panel lists every project.
+// Even a primary folder without Git must leave the other repos' status accessible.
 export function BranchStatus({ target, updatedAt }: { target: BranchTarget; updatedAt: number }) {
   const [opened, setOpened] = useState(0)
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   const heads = useProjectHeads(target, updatedAt, opened)
-  const head = heads.find((each) => each.branch)
-  if (!head?.branch) return null
+  const head = heads[0]
+  if (!head) return null
   const dirty = heads.some((each) => (each.changes ?? 0) > 0)
   return (
     <span className="menu-anchor">
@@ -108,7 +107,7 @@ export function BranchStatus({ target, updatedAt }: { target: BranchTarget; upda
         className="project-branch branch-chip"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`${headLabel(head)}${dirty ? '，有未提交的改动' : ''}，查看 git 状态`}
+        aria-label={`主项目 ${projectName(head.path)}：${headLabel(head)}${dirty ? '，有未提交的改动' : ''}，查看 git 状态`}
         data-dirty={dirty || undefined}
         onClick={() => {
           if (!open) setOpened((count) => count + 1)

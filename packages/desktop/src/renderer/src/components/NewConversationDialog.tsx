@@ -47,7 +47,7 @@ export function NewConversationDialog() {
           projects={projectPaths.map((projectPath) => ({ path: projectPath, worktreePath: null }))}
           onChange={setProjectPaths}
         />
-        <span className="muted">{projectPaths.length === 0 ? '不选项目时，使用 Kando 持久工作目录' : '第一个项目是终端当前目录；其他项目可由 agent 直接访问'}</span>
+        <span className="muted">{projectPaths.length === 0 ? '不选项目时，使用 Kando 持久工作目录' : '主项目是默认工作目录，其他项目也可访问；直接使用所选目录。'}</span>
       </div>
       {error && <p className="modal-error" role="alert">{error}</p>}
       <footer className="modal-footer"><button type="button" className="button ghost" onClick={close}>取消</button><button type="button" className="button primary" disabled={busy} onClick={() => void create()}>创建并启动</button></footer>

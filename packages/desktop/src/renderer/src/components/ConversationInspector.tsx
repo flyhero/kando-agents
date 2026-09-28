@@ -36,7 +36,7 @@ function ChangeList({ changes, onOpen }: { changes: FolderChanges[] | null; onOp
     <>
       {repos.map((folder) => (
         <section key={folder.path} className="inspector-repo" aria-label={projectName(folder.path)}>
-          {repos.length > 1 && <h3 className="inspector-repo-name">{projectName(folder.path)}</h3>}
+          <h3 className="inspector-repo-name">{projectName(folder.path)} · {folder.path === changes[0]?.path ? '主项目' : '附加项目'}</h3>
           <h4 className="inspector-section-title">本次会话以来的提交</h4>
           {folder.commits === null ? (
             <p className="inspector-summary muted">这个会话开始时 Kando 还没有记录起点，只能看到还没提交的改动。</p>

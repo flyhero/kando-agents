@@ -4,7 +4,7 @@ import { usePlans } from '../chat-state'
 import { selectConversation, setConversationInspectorOpen, useChatSupported, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
-import { projectNames } from './ProjectPicker'
+import { projectSummary } from './ProjectPicker'
 import { BranchStatus } from './BranchStatus'
 import { ConversationChat } from './ConversationChat'
 import { ConversationInspector } from './ConversationInspector'
@@ -113,7 +113,7 @@ export function ConversationTerminal({ id }: { id: string }) {
         ? <TitleEditor title={conversation.title} label="会话标题" onSave={rename} onDone={() => setRenaming(false)} />
         : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
       <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
-      <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{projectNames(conversation.projectPaths)}</span>
+      <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{projectSummary(conversation.projectPaths)}</span>
       <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
       <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
       <div className="toolbar">

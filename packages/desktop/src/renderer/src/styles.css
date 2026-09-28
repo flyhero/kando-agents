@@ -987,6 +987,26 @@ button.task-tag:hover {
   white-space: nowrap;
 }
 
+.project-primary,
+.chip-primary {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chip-primary {
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chip-primary:hover {
+  color: var(--text);
+}
+
 .project-branch {
   max-width: 200px;
   padding: 0 6px;

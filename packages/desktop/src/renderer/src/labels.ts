@@ -66,6 +66,7 @@ const REASON_TEXT: Record<string, string> = {
   'repo-not-git': '涉及多个项目时，每个目录都必须是 Git 仓库',
   'repo-duplicate': '有两个项目路径指向同一个 Git 仓库',
   'task-running': '执行中不能修改项目',
+  'task-abandoned': '已废弃的任务不能修改项目',
   blocked: '依赖的任务还没完成（执行完并验收通过）',
   'dependency-cycle': '不能形成循环依赖',
   refining: '细化会话还在进行，先在终端里退出 agent 结束它',

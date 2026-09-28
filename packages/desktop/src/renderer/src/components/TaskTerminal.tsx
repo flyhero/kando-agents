@@ -3,7 +3,7 @@ import { shortTaskId, type TaskProposal } from '@kando/protocol'
 import { perform, setInspectorOpen, useCore } from '../core-store'
 import { AGENT_LABEL, STATUS_LABEL } from '../labels'
 import { BranchStatus } from './BranchStatus'
-import { projectNames } from './ProjectPicker'
+import { projectSummary } from './ProjectPicker'
 import { ProposalPanel } from './ProposalCard'
 import { SessionTerminal } from './SessionTerminal'
 import { SourceLink } from './SourceLink'
@@ -78,7 +78,7 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
         {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
         {task.repos.length > 0 && (
           <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
-            {projectNames(task.repos.map((repo) => repo.path))}
+            {projectSummary(task.repos.map((repo) => repo.path))}
           </span>
         )}
         <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />

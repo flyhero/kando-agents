@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { shortTaskId, type Task } from '@kando/protocol'
+import { checkEditProjects, shortTaskId, type Task } from '@kando/protocol'
 import { selectTask, updateTask, useCore } from '../core-store'
 import { dayAndTime, STATUS_LABEL } from '../labels'
 import { saveTaskText, unsavedTaskText, useTaskSaveState, type SaveState } from '../unsaved-edits'
@@ -116,9 +116,10 @@ function TaskDetailBody({ task }: { task: Task }) {
             <dd>
               <ProjectPicker
                 projects={task.repos}
-                locked={task.status === 'running' || task.status === 'abandoned'}
+                locked={checkEditProjects(task) !== null}
                 onChange={(repos) => void updateTask(task.id, { repos })}
               />
+              <p className="muted">主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>
             </dd>
             <dt>依赖</dt>
             <dd>

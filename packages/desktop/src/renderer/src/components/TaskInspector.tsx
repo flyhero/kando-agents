@@ -41,7 +41,7 @@ function ChangeList({ changes, onOpen }: { changes: RepoChanges[] | null; onOpen
     <>
       {compared.map((repo) => (
         <section key={repo.path} className="inspector-repo" aria-label={projectName(repo.path)}>
-          {compared.length > 1 && <h3 className="inspector-repo-name">{projectName(repo.path)}</h3>}
+          <h3 className="inspector-repo-name">{projectName(repo.path)} · {repo.path === changes[0]?.path ? '主项目' : '附加项目'}</h3>
           <p className="inspector-summary muted">{summary(repo)}</p>
           {repo.commits.length > 0 && <CommitList commits={repo.commits} title="提交记录" />}
           {repo.files.length === 0

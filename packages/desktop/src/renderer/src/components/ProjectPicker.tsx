@@ -12,6 +12,11 @@ export function projectNames(paths: readonly string[]): string {
   return paths.length ? paths.map(projectName).join('、') : '无项目'
 }
 
+export function projectSummary(paths: readonly string[]): string {
+  const [primary, ...additional] = paths
+  return primary ? `主项目：${projectName(primary)}${additional.length ? ` · 附加：${projectNames(additional)}` : ''}` : '无项目'
+}
+
 function parentDir(projectPath: string): string | undefined {
   const parent = projectPath.replace(/[\\/]+[^\\/]+[\\/]*$/, '')
   return parent && parent !== projectPath ? parent : undefined
@@ -146,7 +151,7 @@ export function ProjectPicker({
 
   return (
     <div className="chip-field">
-      {projects.map((project) => (
+      {projects.map((project, index) => (
         <span
           key={project.path}
           className="chip project-chip"
@@ -154,7 +159,19 @@ export function ProjectPicker({
         >
           <span className="chip-main chip-static">
             <span className="project-name">{projectName(project.path)}</span>
+            {index === 0 && <span className="project-primary">主项目</span>}
           </span>
+          {!locked && index > 0 && (
+            <button
+              type="button"
+              className="chip-primary"
+              title={`将 ${projectName(project.path)} 设为主项目`}
+              aria-label={`将 ${projectName(project.path)} 设为主项目`}
+              onClick={() => onChange([project.path, ...paths.filter((each) => each !== project.path)])}
+            >
+              设为主项目
+            </button>
+          )}
           {!locked && (
             <button
               type="button"

@@ -120,8 +120,8 @@ export function ConversationDraft() {
           </div>
           <div className="chat-dock">
             <div className="chat-dock-header chat-draft-projects">
-              <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} />
-              {projectPaths.length === 0 && <span className="muted">不选项目时，用 Kando 的工作目录</span>}
+              <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
+              <span className="muted">{projectPaths.length === 0 ? '不选项目时，用 Kando 的工作目录' : '主项目是默认工作目录，其他项目也可访问；直接使用所选目录。'}</span>
             </div>
             <div
               className="chat-input-card"
