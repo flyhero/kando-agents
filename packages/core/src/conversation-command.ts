@@ -29,14 +29,16 @@ export function chatCommand(
 ): AgentCommand {
   if (agent === 'claude') {
     const { preferred = {}, allowBypass = false } = launch
-    // A remembered bypass needs the user's say-so for this start too.
-    const wanted = preferred.permissionMode && (preferred.permissionMode !== 'bypass' || allowBypass) ? CLAUDE_MODE_NAMES[preferred.permissionMode] : undefined
+    // A remembered bypass needs the user's say-so for this start too. Asking goes by manual on
+    // the command line, and is passed too, so Claude Code's own default mode cannot override it.
+    const allowed = preferred.permissionMode && (preferred.permissionMode !== 'bypass' || allowBypass) ? preferred.permissionMode : undefined
+    const wanted = allowed === 'ask' ? 'manual' : allowed ? CLAUDE_MODE_NAMES[allowed] : undefined
     return { command: 'claude', args: [
       '-p', '--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json',
       '--include-partial-messages', '--permission-prompt-tool', 'stdio',
       // Makes bypass a mode the user can switch to, without starting in it.
       ...(allowBypass ? ['--allow-dangerously-skip-permissions'] : []),
-      ...(wanted && wanted !== 'default' ? ['--permission-mode', wanted] : []),
+      ...(wanted ? ['--permission-mode', wanted] : []),
       ...(preferred.model ? ['--model', preferred.model] : []),
       ...(preferred.effort ? ['--effort', preferred.effort] : []),
       ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),

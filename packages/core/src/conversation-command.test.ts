@@ -35,7 +35,8 @@ describe('chatCommand', () => {
     expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'bypass' } }).args).not.toContain('--permission-mode')
     const allowed = chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'bypass' }, allowBypass: true }).args
     expect(allowed).toEqual(expect.arrayContaining(['--allow-dangerously-skip-permissions', '--permission-mode', 'bypassPermissions']))
-    // ask is Claude Code's own default, which --permission-mode does not take by that name.
-    expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'ask' } }).args).not.toContain('--permission-mode')
+    // Asking is passed as manual, so a default mode in Claude Code's settings cannot override it.
+    expect(chatCommand('claude', 's', false, null, [], { preferred: { permissionMode: 'ask' } }).args).toEqual(expect.arrayContaining(['--permission-mode', 'manual']))
+    expect(chatCommand('claude', 's', false, null, []).args).not.toContain('--permission-mode')
   })
 })
