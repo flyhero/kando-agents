@@ -172,6 +172,23 @@ export function ArrowLeftIcon() {
   )
 }
 
+export function ArrowUpIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M10 16V4M5 9l5-5 5 5" />
+    </svg>
+  )
+}
+
+// The return key: what sends a message.
+export function EnterIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M15.5 4.5v5a2.5 2.5 0 0 1-2.5 2.5H4.5M8 8.5 4.5 12 8 15.5" />
+    </svg>
+  )
+}
+
 export function SearchIcon() {
   return (
     <svg {...stroked}>

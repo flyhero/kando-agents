@@ -3469,6 +3469,7 @@ button.task-tag-updated:hover {
 }
 
 .chat-list {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3612,7 +3613,14 @@ button.task-tag-updated:hover {
 .chat-request-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .chat-request-reason { flex: 1 1 200px; min-width: 0; }
 .chat-request-resolution { font-size: 12px; }
-.chat-request-done { display: block; padding: 6px 10px; font-size: 12px; overflow-wrap: anywhere; }
+
+.chat-request-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.chat-request-line[data-waiting] { color: var(--warning); }
 
 .chat-question { display: flex; flex-direction: column; gap: 6px; }
 .chat-question-header { font-size: 12px; }
@@ -3644,14 +3652,116 @@ button.task-tag-updated:hover {
 
 .chat-working { font-size: 12px; }
 
-.chat-composer {
+/* Below the list: the project's changes, what waits on the user, and the composer. Only the
+   input itself is boxed, so the dock reads as part of the conversation. */
+.chat-dock {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
-  padding: 10px 12px;
+  padding: 6px 12px 12px;
   border-top: 1px solid var(--border);
 }
 
-.chat-composer-stopped { align-items: center; justify-content: space-between; }
-.chat-input { flex: 1; min-width: 0; resize: vertical; font: inherit; }
-.chat-composer-actions { display: flex; gap: 8px; }
+.chat-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.chat-dock-spacer { flex: 1; }
+
+.chat-changes {
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-changes:hover { background: color-mix(in srgb, var(--text) 8%, var(--surface-muted)); }
+
+.chat-dock-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.chat-input-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.chat-input-card:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+
+/* While the agent works the border breathes; a reduced-motion setting keeps it still but tinted. */
+.chat-input-card[data-working] { animation: chat-working 2.4s ease-in-out infinite; }
+.chat-input-card[data-awaiting] {
+  animation: none;
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface));
+}
+
+@keyframes chat-working {
+  0%, 100% { border-color: var(--border); }
+  50% { border-color: color-mix(in srgb, var(--status-running) 60%, var(--border)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-input-card[data-working] {
+    animation: none;
+    border-color: color-mix(in srgb, var(--status-running) 45%, var(--border));
+  }
+}
+
+/* Grows with what is typed up to a limit, so no resize grip competes with the corner button. */
+.chat-input {
+  display: block;
+  width: 100%;
+  field-sizing: content;
+  min-height: 64px;
+  max-height: 40vh;
+  padding: 10px 44px 10px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.chat-input-button {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+
+.chat-input-button svg { width: 16px; height: 16px; }
+.chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
+.chat-input-button[data-stop] { background: var(--text); color: var(--surface); }
+
+.chat-composer-stopped {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

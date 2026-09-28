@@ -3,15 +3,17 @@ import type { ChatItem, Conversation, ConversationMessage, ConversationStage } f
 import { dropChat, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
 import { perform, useCore } from '../core-store'
 import { AGENT_LABEL, dayAndTime } from '../labels'
-import { ChatComposer } from './ChatComposer'
+import { ChatDock } from './ChatDock'
 import { ChatMarkdown } from './ChatMarkdown'
-import { ChatApprovalCard, ChatQuestionCard } from './ChatRequestCards'
+import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatPaths, ChatToolCard } from './ChatToolCard'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
 // Within this many pixels of the bottom, new output keeps the list scrolled to the end.
 const PINNED_SLACK = 48
+// A message this close under the top edge already counts as the one in view.
+const IN_VIEW_SLACK = 8
 
 function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   const seconds = item.durationMs !== null ? ` · ${(item.durationMs / 1000).toFixed(1)} 秒` : ''
@@ -31,7 +33,7 @@ function TerminalMessage({ message }: { message: ConversationMessage }) {
     : <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
 }
 
-function Item({ conversationId, item, tools }: { conversationId: string; item: ChatItem; tools: ReadonlyMap<string, ToolItem> }) {
+function Item({ conversationId, item }: { conversationId: string; item: ChatItem }) {
   switch (item.kind) {
     case 'user':
       return <div className="chat-user">{item.text}</div>
@@ -47,9 +49,8 @@ function Item({ conversationId, item, tools }: { conversationId: string; item: C
     case 'tool':
       return <ChatToolCard item={item} />
     case 'approval':
-      return <ChatApprovalCard conversationId={conversationId} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
     case 'question':
-      return <ChatQuestionCard conversationId={conversationId} item={item} />
+      return <ChatRequestLine conversationId={conversationId} item={item} />
     case 'turn':
       return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
     case 'notice':
@@ -59,6 +60,11 @@ function Item({ conversationId, item, tools }: { conversationId: string; item: C
 
 function entryKey(entry: TimelineEntry): string {
   return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${entry.item.id}` : `message:${entry.message.sequence}`
+}
+
+// The user's own messages are what ↑ steps back through.
+function isUserEntry(entry: TimelineEntry): boolean {
+  return entry.kind === 'item' ? entry.item.kind === 'user' : entry.kind === 'message' && entry.message.role === 'user'
 }
 
 // A conversation whose latest stage runs in chat mode: every stage in order, then the composer.
@@ -109,11 +115,39 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
     [items]
   )
+  const pending = useMemo(
+    () => items.filter((item): item is RequestItem => (item.kind === 'approval' || item.kind === 'question') && item.resolution === null),
+    [items]
+  )
+  const finishedCalls = useMemo(() => items.filter((item) => item.kind === 'tool' && item.status !== 'running').length, [items])
 
   useLayoutEffect(() => {
     const element = list.current
     if (element && pinned.current) element.scrollTop = element.scrollHeight
   }, [entries])
+
+  // A request docking below makes the list shorter; one pinned to the end stays there.
+  useEffect(() => {
+    const element = list.current
+    if (!element) return
+    const observer = new ResizeObserver(() => {
+      if (pinned.current) element.scrollTop = element.scrollHeight
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // Scrolls to the nearest of the user's messages above what is in view.
+  const previous = () => {
+    const element = list.current
+    if (!element) return
+    const top = element.scrollTop
+    const above = [...element.querySelectorAll<HTMLElement>('[data-user]')].filter((entry) => entry.offsetTop < top - IN_VIEW_SLACK)
+    const target = above.at(-1)
+    if (!target) return
+    pinned.current = false
+    element.scrollTo({ top: target.offsetTop - IN_VIEW_SLACK, behavior: 'smooth' })
+  }
 
   const loadOlder = async () => {
     if (!page?.before) return
@@ -144,16 +178,15 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
         {entries.map((entry) => (
-          <div key={entryKey(entry)} className="chat-entry">
+          <div key={entryKey(entry)} className="chat-entry" data-user={isUserEntry(entry) || undefined}>
             {entry.kind === 'stage' ? <StageDivider stage={entry.stage} />
               : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
-              : <Item conversationId={id} item={entry.item} tools={tools} />}
+              : <Item conversationId={id} item={entry.item} />}
           </div>
         ))}
         {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理…</div>}
-        {turn === 'awaiting' && <div className="chat-working muted">等你回答上面的请求</div>}
       </div>
-      <ChatComposer conversation={conversation} />
+      <ChatDock conversation={conversation} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
     </ChatPaths.Provider>
   )

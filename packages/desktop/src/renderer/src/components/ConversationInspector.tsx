@@ -7,7 +7,7 @@ import { projectName } from './ProjectPicker'
 
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
 // focus, or the user refreshes. An older core without the method has nothing to show.
-function useFolderChanges(id: string, updatedAt: number, refreshCount: number): FolderChanges[] | null {
+export function useFolderChanges(id: string, updatedAt: number, refreshCount: number): FolderChanges[] | null {
   const rpc = useCore((state) => state.rpc)
   const focusCount = useFocusCount()
   const [changes, setChanges] = useState<{ id: string; changes: FolderChanges[] } | null>(null)

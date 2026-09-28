@@ -6,6 +6,7 @@ import { ChatPaths, toolLabel } from './ChatToolCard'
 type ApprovalItem = Extract<ChatItem, { kind: 'approval' }>
 type QuestionItem = Extract<ChatItem, { kind: 'question' }>
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
+export type RequestItem = ApprovalItem | QuestionItem
 
 const DECISION_LABEL: Record<ChatDecision, string> = { allow: '允许', allowForSession: '本会话都允许', deny: '拒绝' }
 const RESOLUTION_TEXT: Record<NonNullable<ApprovalItem['resolution']>, string> = {
@@ -26,23 +27,30 @@ function useResponder(conversationId: string, requestId: string) {
   return { busy, respond }
 }
 
-// What the agent wants to do and the answers it takes. The call's own card sits just above with
-// its diff; a command is repeated here in full, since that card shows only its first line.
+// Where a request sits in the conversation: one line, pointing down to its card while it waits,
+// and saying how it went once answered. An answered question keeps its card, which shows the answer.
+export function ChatRequestLine({ conversationId, item }: { conversationId: string; item: RequestItem }) {
+  const shorten = useContext(ChatPaths)
+  if (item.kind === 'question') {
+    if (item.resolution !== null) return <ChatQuestionCard conversationId={conversationId} item={item} />
+    return <div className="chat-request-line" data-waiting>agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
+  }
+  const what = <>{toolLabel(item.tool)} <span className="mono">{shorten(item.title)}</span></>
+  return item.resolution === null
+    ? <div className="chat-request-line" data-waiting>需要你确认：{what} · 在下方回答</div>
+    : <div className="chat-request-line">{what} · {RESOLUTION_TEXT[item.resolution]}</div>
+}
+
+// A waiting approval, docked above the composer: what the agent wants to do and the answers it
+// takes. The call's own card in the list has its diff; a command is repeated here in full, since
+// that card shows only its first line.
 export function ChatApprovalCard({ conversationId, item, tool }: { conversationId: string; item: ApprovalItem; tool: ToolItem | undefined }) {
   const { busy, respond } = useResponder(conversationId, item.requestId)
   const [reason, setReason] = useState('')
   const shorten = useContext(ChatPaths)
-  const waiting = item.resolution === null
   const title = shorten(item.title)
   // Claude describes a file call by the file's name, which the title already has.
   const detail = item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
-  if (!waiting) {
-    return (
-      <div className="chat-request chat-request-done muted">
-        {toolLabel(item.tool)} <span className="mono">{title}</span> · {item.resolution ? RESOLUTION_TEXT[item.resolution] : ''}
-      </div>
-    )
-  }
   return (
     <div className="chat-request" data-waiting>
       <div className="chat-request-title">
@@ -73,6 +81,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   )
 }
 
+// Interactive while it waits (docked above the composer), a record of the answer afterwards.
 export function ChatQuestionCard({ conversationId, item }: { conversationId: string; item: QuestionItem }) {
   const { busy, respond } = useResponder(conversationId, item.requestId)
   const [chosen, setChosen] = useState<Record<string, string[]>>({})
