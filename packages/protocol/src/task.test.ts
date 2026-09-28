@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChatResume, checkContinue, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
+import { checkChatResume, checkContinue, checkEditProjects, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -28,6 +28,18 @@ function task(overrides: Partial<Task> = {}): Task {
     ...overrides
   }
 }
+
+describe('checkEditProjects', () => {
+  it('locks projects for live, launching and abandoned tasks', () => {
+    expect(checkEditProjects(task({ status: 'running' }))).toBe('task-running')
+    expect(checkEditProjects(task({ refineSessionId: 'session' }))).toBe('refining')
+    expect(checkEditProjects(task({ status: 'abandoned' }))).toBe('task-abandoned')
+    expect(checkEditProjects(task(), true)).toBe('run-in-progress')
+    for (const status of ['pending', 'review', 'done'] as const) {
+      expect(checkEditProjects(task({ status }))).toBeNull()
+    }
+  })
+})
 
 describe('checkMove', () => {
   it('lets a running task be closed, but never moves a done task back', () => {

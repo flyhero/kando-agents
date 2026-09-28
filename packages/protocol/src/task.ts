@@ -59,6 +59,7 @@ export const Task = z.object({
   title: z.string(),
   details: z.string(),
   status: TaskStatus,
+  // Ordered: the first repo is primary; its working directory is the agent's cwd.
   repos: z.array(TaskRepo),
   // Ids of tasks that must be done before this one can run.
   dependsOn: z.array(z.string()),
@@ -93,6 +94,15 @@ export const Task = z.object({
   updatedAt: z.number()
 })
 export type Task = z.infer<typeof Task>
+
+export type ProjectEditBlocker = 'task-running' | 'refining' | 'task-abandoned' | 'run-in-progress'
+
+export function checkEditProjects(task: Pick<Task, 'status' | 'refineSessionId'>, launching = false): ProjectEditBlocker | null {
+  if (launching) return 'run-in-progress'
+  if (task.status === 'running') return 'task-running'
+  if (task.refineSessionId) return 'refining'
+  return task.status === 'abandoned' ? 'task-abandoned' : null
+}
 
 // `running` is entered only by running, continuing or starting, `review` only by a session ending
 // or a chat task handed in (its agent does not end with the work), and `abandoned` only by

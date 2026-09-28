@@ -17,6 +17,7 @@ const TaskTitle = z.string().trim().min(1).max(200)
 const TaskFields = z.object({
   details: z.string().max(MAX_DETAILS_LENGTH).optional(),
   // Each list replaces the task's current one.
+  // The first repo is primary; reordering preserves each repo's worktree.
   repos: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS).optional(),
   dependsOn: z.array(z.string().trim().min(1)).max(50).optional(),
   agent: AgentKind.nullable().optional()
@@ -104,6 +105,7 @@ export const rpcMethods = {
     // permissionMode, model and effort: what a chat-mode start begins with, from what the agent has.
     params: z.object({
       agent: AgentKind,
+      // Primary (cwd) first; other directories are available to the agent in place.
       projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS),
       mode: ConversationMode.optional(),
       allowBypass: AllowBypass,

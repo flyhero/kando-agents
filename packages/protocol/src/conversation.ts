@@ -9,6 +9,7 @@ export const Conversation = z.object({
   agent: AgentKind,
   // PTY cwd: the first selected project, or the managed directory when no project is selected.
   workspacePath: z.string(),
+  // Ordered: primary project first, followed by additional directories.
   projectPaths: z.array(z.string()),
   managedWorkspace: z.boolean(),
   sessionId: z.string().nullable(),
