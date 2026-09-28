@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from '@kando/protocol'
-import type { ChatRecord } from './chat-driver'
+import type { ChatRecord, ChatStageOptions } from './chat-driver'
 import { parseChatRecord } from './chat-log'
 import { ClaudeStream } from './claude-stream'
 
-const OPTIONS = { cwd: '/work/repo', extraDirs: [], resume: null }
+const OPTIONS: ChatStageOptions = { cwd: '/work/repo', extraDirs: [], resume: null }
 
 // Recorded from Claude Code 2.1.282 (claude -p stream-json, --model haiku), then stripped of local paths.
 function fixture(name: string): ChatRecord[] {

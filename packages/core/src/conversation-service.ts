@@ -4,7 +4,7 @@ import path from 'node:path'
 import { MAX_TASK_REPOS, type AgentKind, type ChatItem, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { ChatAnswer, StageMessage } from './chat-driver'
-import { ChatHost, chatSupported, type ChatStage } from './chat-host'
+import { ChatHost, type ChatStage } from './chat-host'
 import { ChatLog } from './chat-log'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
@@ -95,7 +95,6 @@ export class ConversationService {
 
   async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui'): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
-    this.checkMode(agent, mode)
     const projects: string[] = []
     const picked: string[] = []
     for (const rawPath of projectPaths) {
@@ -136,22 +135,16 @@ export class ConversationService {
   async continue(id: string, mode: ConversationMode = 'tui'): Promise<Conversation> {
     const current = this.get(id)
     if (current.sessionId || this.launching.has(id)) throw new Rejection('conversation-running')
-    this.checkMode(current.agent, mode)
     return this.start(id, current.agent, '', false, mode)
   }
 
   async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui'): Promise<Conversation> {
     const current = this.get(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
-    this.checkMode(agent, mode)
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning) throw new Rejection('conversation-running')
     if (current.sessionId) await this.stop(id)
     return this.start(id, agent, note, true, mode)
-  }
-
-  private checkMode(agent: AgentKind, mode: ConversationMode): void {
-    if (mode === 'chat' && !chatSupported(agent)) throw new Rejection('chat-unsupported', `${agent} cannot run in chat mode yet`)
   }
 
   private async start(id: string, agent: AgentKind, note: string, handoff: boolean, mode: ConversationMode): Promise<Conversation> {

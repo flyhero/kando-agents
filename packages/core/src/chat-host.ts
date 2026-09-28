@@ -3,6 +3,7 @@ import type { AgentKind, ChatItem, ChatTurnActivity } from '@kando/protocol'
 import type { ChatAnswer, ChatDriver, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
 import { ClaudeStream } from './claude-stream'
+import { CodexAppServer } from './codex-app-server'
 import type { SessionHost } from './daemon-client'
 import { LineFramer } from './line-framer'
 import { Rejection } from './rejection'
@@ -41,16 +42,12 @@ type Live = ChatStage & {
   started: { resolve(): void; reject(error: Error): void } | null
 }
 
-export function chatSupported(agent: AgentKind): boolean {
-  return agent === 'claude'
-}
-
 export function createDriver(stage: ChatStage): ChatDriver {
   switch (stage.agent) {
     case 'claude':
       return new ClaudeStream(stage.stageId, stage.options)
     case 'codex':
-      throw new Rejection('chat-unsupported', 'Codex cannot run in chat mode yet')
+      return new CodexAppServer(stage.stageId, stage.options)
   }
 }
 

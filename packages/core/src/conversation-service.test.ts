@@ -350,9 +350,22 @@ describe('ConversationService in chat mode', () => {
     expect(service.get(created.id).title).toBe('新会话')
   })
 
-  it('refuses chat mode for an agent that cannot run it yet', async () => {
-    await expect(service.create('codex', [], 'chat')).rejects.toMatchObject({ reason: 'chat-unsupported' })
-    expect(daemon.spawns).toHaveLength(0)
+  it('runs Codex through app-server and binds the thread it opens', async () => {
+    // Codex answers like app-server: the handshake, a thread, and each turn.
+    daemon.answerInit = false
+    daemon.reply = () => {}
+    const creating = service.create('codex', [], 'chat')
+    while (!daemon.sessions.get('pipe-1')) await settle()
+    const answer = (id: unknown, result: unknown) => daemon.emit('pipe-1', { id, result })
+    while (!daemon.written('pipe-1').length) await settle()
+    answer('kando-init', {})
+    while (!daemon.written('pipe-1').some((frame) => JSON.stringify(frame).includes('thread/start'))) await settle()
+    answer('kando-thread', { thread: { id: 'thread-1' } })
+    const created = await creating
+    expect(daemon.spawns[0]).toMatchObject({ command: 'codex', args: ['app-server'] })
+    expect(daemon.written('pipe-1').find((frame) => JSON.stringify(frame).includes('thread/start')))
+      .toMatchObject({ params: { approvalPolicy: 'on-request', sandbox: 'workspace-write' } })
+    expect(service.stages(created.id)[0]?.providerSessionId).toBe('thread-1')
   })
 
   it('drops a chat stage that fails to start, leaving nothing to resume', async () => {
