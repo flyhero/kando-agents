@@ -27,6 +27,16 @@ export function CheckIcon() {
   )
 }
 
+// Handing work in: an arrow down into a tray.
+export function SubmitIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M3.5 11.5v3.2a1.3 1.3 0 0 0 1.3 1.3h10.4a1.3 1.3 0 0 0 1.3-1.3v-3.2" />
+      <path d="M10 3.5v8.5M6.6 8.6 10 12l3.4-3.4" />
+    </svg>
+  )
+}
+
 export function ReopenIcon() {
   return (
     <svg {...stroked}>

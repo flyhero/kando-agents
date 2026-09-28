@@ -1,11 +1,24 @@
 import { useCallback, useState, type ReactElement } from 'react'
-import { checkContinue, checkMove, checkRefine, checkRun, isFinished, manualMoves, shortTaskId, type Task, type TaskStatus } from '@kando/protocol'
-import { perform, selectTask, setInspectorOpen, showView, updateTask, useCore, type TaskView } from '../core-store'
+import {
+  checkContinue,
+  checkMove,
+  checkRefine,
+  checkRun,
+  checkStart,
+  checkSubmit,
+  isFinished,
+  manualMoves,
+  shortTaskId,
+  startKind,
+  type Task,
+  type TaskStatus
+} from '@kando/protocol'
+import { perform, selectTask, setInspectorOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useTaskChatSupported, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
-import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, TerminalIcon } from './icons'
+import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon, TerminalIcon } from './icons'
 import { Popover } from './Popover'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
@@ -87,11 +100,42 @@ function LaunchButton({
   )
 }
 
-// Hand the pane to the agent's terminal, as long as the user is still on this task.
-function showTerminalFor(taskId: string): void {
+// Hand the pane to the agent's terminal or chat, as long as the user is still on this task.
+function showTerminalFor(taskId: string, view: TaskView = 'terminal'): void {
   if (useCore.getState().selectedId === taskId) {
-    showView('terminal')
+    showView(view)
   }
+}
+
+// A task keeps the view it started in; one not started yet takes the setting's, where core offers it.
+export function useTaskMode(task: Task): 'chat' | 'tui' {
+  const supported = useTaskChatSupported()
+  const preferred = usePreferences((s) => s.agentView)
+  if (task.conversationId) return 'chat'
+  if (task.sessionId || task.refineSessionId) return 'tui'
+  return supported && preferred === 'chat' ? 'chat' : 'tui'
+}
+
+// Starting in the chat view needs the user at the chat: the agent's plan comes back there.
+async function startTask(taskId: string, bypassable: boolean): Promise<void> {
+  const allowBypass = bypassable ? { allowBypass: usePreferences.getState().allowBypass } : {}
+  if (await perform((rpc) => rpc.call('tasks.start', { id: taskId, ...allowBypass }))) {
+    showTerminalFor(taskId, 'chat')
+  }
+}
+
+async function submitTask(taskId: string): Promise<void> {
+  if (await perform((rpc) => rpc.call('tasks.submit', { id: taskId }))) {
+    showTaskChanges()
+  }
+}
+
+// What a chat task's agent is doing, for the rule that it is not handed in mid-turn.
+function useChatTurn(task: Task) {
+  return useCore((s) => {
+    const conversation = task.conversationId ? s.conversations[task.conversationId] : undefined
+    return conversation?.sessionId ? (conversation.chat?.turn ?? null) : null
+  })
 }
 
 async function runTask(taskId: string): Promise<void> {
@@ -269,6 +313,43 @@ function RedoButton({ task }: { task: Task }) {
   )
 }
 
+// Planning comes first either way: in the task's worktree when it can run, read-only otherwise.
+// While it only plans, the button returns to that chat.
+function StartButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
+  const bypassable = useChatOptionsSupported()
+  const blocker = checkStart(task, dependencies)
+  if (blocker === 'planning') {
+    return (
+      <button type="button" className="tool-button run-button" aria-pressed="true" aria-label="规划中，查看对话" data-tooltip="规划中，查看对话" onClick={() => showView('chat')}>
+        <ChatIcon />
+      </button>
+    )
+  }
+  const plan = startKind(dependencies) === 'plan'
+  return (
+    <LaunchButton
+      label={plan ? '开始规划' : '开始执行'}
+      className="run-button"
+      Icon={plan ? ChatIcon : PlayIcon}
+      reason={blocker && blockerText(blocker, unfinished(dependencies))}
+      launch={() => startTask(task.id, bypassable)}
+    />
+  )
+}
+
+function SubmitButton({ task }: { task: Task }) {
+  const blocker = checkSubmit(task, useChatTurn(task))
+  return (
+    <LaunchButton
+      label="提交验收"
+      className="run-button"
+      Icon={SubmitIcon}
+      reason={blocker && reasonText(blocker, blocker)}
+      launch={() => submitTask(task.id)}
+    />
+  )
+}
+
 // While the session is open the button just returns to that conversation.
 function RefineButton({ task }: { task: Task }) {
   if (task.refineSessionId) {
@@ -348,20 +429,21 @@ function MoreMenu({ task }: { task: Task }) {
   )
 }
 
-function ViewToggle({ view }: { view: TaskView }) {
-  const next = view === 'terminal' ? 'detail' : 'terminal'
-  const label = next === 'terminal' ? '查看终端' : '查看详情'
+// Between the details and where the agent works: its terminal, or its chat.
+function ViewToggle({ view, work }: { view: TaskView; work: 'terminal' | 'chat' }) {
+  const next = view === work ? 'detail' : work
+  const label = next === 'detail' ? '查看详情' : next === 'chat' ? '查看聊天' : '查看终端'
   return (
     <button type="button" className="tool-button" aria-label={label} data-tooltip={label} onClick={() => showView(next)}>
-      {next === 'terminal' ? <TerminalIcon /> : <DocumentIcon />}
+      {next === 'detail' ? <DocumentIcon /> : next === 'chat' ? <ChatIcon /> : <TerminalIcon />}
     </button>
   )
 }
 
-// The inspector sits beside the terminal, so from the details the button switches over to open it.
-function InspectorToggle({ view }: { view: TaskView }) {
+// The inspector sits beside the terminal or chat, so from the details the button switches over to open it.
+function InspectorToggle({ view, work }: { view: TaskView; work: 'terminal' | 'chat' }) {
   const open = useCore((s) => s.inspectorOpen)
-  const pressed = view === 'terminal' && open
+  const pressed = view === work && open
   return (
     <button
       type="button"
@@ -371,7 +453,7 @@ function InspectorToggle({ view }: { view: TaskView }) {
       data-tooltip={pressed ? '收起检查器' : '查看改动'}
       onClick={() => {
         setInspectorOpen(!pressed)
-        if (view !== 'terminal') showView('terminal')
+        if (view !== work) showView(work)
       }}
     >
       <InspectorIcon />
@@ -383,6 +465,8 @@ function InspectorToggle({ view }: { view: TaskView }) {
 export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const tasks = useCore((s) => s.tasks)
   const dependencies = task.dependsOn.map((id) => tasks[id]).filter((dependency) => dependency !== undefined)
+  const chat = useTaskMode(task) === 'chat'
+  const worktree = task.repos.some((repo) => repo.worktreePath !== null)
   return (
     <div className="toolbar">
       <AgentPicker
@@ -390,8 +474,9 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
         locked={task.status === 'running' || task.status === 'abandoned'}
         onChange={(agent) => void updateTask(task.id, { agent })}
       />
-      {task.status === 'pending' && <RefineButton task={task} />}
-      {task.status === 'pending' && <RunButton task={task} dependencies={dependencies} />}
+      {task.status === 'pending' && !chat && <RefineButton task={task} />}
+      {task.status === 'pending' && (chat ? <StartButton task={task} dependencies={dependencies} /> : <RunButton task={task} dependencies={dependencies} />)}
+      {task.status === 'running' && chat && <SubmitButton task={task} />}
       {manualMoves(task.status).map((status) => {
         const action = moveAction(task.status, status)
         return (
@@ -407,10 +492,13 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
           )
         )
       })}
-      {isFinished(task.status) && <ContinueButton task={task} dependencies={dependencies} />}
+      {/* A chat task goes on by a message in its chat. */}
+      {isFinished(task.status) && !chat && <ContinueButton task={task} dependencies={dependencies} />}
       {isFinished(task.status) && <RedoButton task={task} />}
-      {task.sessionId && task.repos.some((repo) => repo.worktreePath !== null) && <InspectorToggle view={view} />}
-      {(task.sessionId || task.refineSessionId) && <ViewToggle view={view} />}
+      {task.sessionId && worktree && <InspectorToggle view={view} work="terminal" />}
+      {task.conversationId && worktree && <InspectorToggle view={view} work="chat" />}
+      {(task.sessionId || task.refineSessionId) && <ViewToggle view={view} work="terminal" />}
+      {task.conversationId && <ViewToggle view={view} work="chat" />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />
       <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectTask(null)}>
@@ -434,12 +522,27 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
     action()
   }
   const hint = (blocker: string | null) => blocker && blockerText(blocker, unfinished(dependencies))
+  const chat = useTaskMode(task) === 'chat'
+  const bypassable = useChatOptionsSupported()
+  const turn = useChatTurn(task)
   const runBlocker = task.status === 'pending' ? checkRun(task, dependencies) : null
+  const startBlocker = task.status === 'pending' ? checkStart(task, dependencies) : null
   const continueBlocker = isFinished(task.status) ? checkContinue(task, dependencies) : null
   const actions: ReactElement[] = []
-  if (task.status === 'pending') {
+  if (task.status === 'pending' && chat && startBlocker !== 'planning') {
+    const label = startKind(dependencies) === 'plan' ? '开始规划' : '开始执行'
+    actions.push(
+      <MenuItem key="start" label={label} hint={hint(startBlocker)} disabled={startBlocker !== null} onSelect={pick(() => void startTask(task.id, bypassable))} />
+    )
+  } else if (task.status === 'pending' && !chat) {
     actions.push(
       <MenuItem key="run" label="交给 agent 执行" hint={hint(runBlocker)} disabled={runBlocker !== null} onSelect={pick(() => void runTask(task.id))} />
+    )
+  }
+  if (task.status === 'running' && chat) {
+    const blocker = checkSubmit(task, turn)
+    actions.push(
+      <MenuItem key="submit" label="提交验收" hint={blocker && reasonText(blocker, blocker)} disabled={blocker !== null} onSelect={pick(() => void submitTask(task.id))} />
     )
   }
   for (const status of manualMoves(task.status)) {
@@ -451,19 +554,20 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
       )
     }
   }
-  if (isFinished(task.status)) {
+  if (isFinished(task.status) && !chat) {
     actions.push(
       <MenuItem key="continue" label={continueLabel(task)} hint={hint(continueBlocker)} disabled={continueBlocker !== null} onSelect={pick(() => void continueTask(task.id))} />
     )
   }
-  if (task.sessionId || task.refineSessionId) {
+  if (task.sessionId || task.refineSessionId || task.conversationId) {
+    const work = task.conversationId ? 'chat' : 'terminal'
     actions.push(
       <MenuItem
-        key="terminal"
-        label="查看终端"
+        key="work"
+        label={work === 'chat' ? '查看聊天' : '查看终端'}
         onSelect={pick(() => {
           selectTask(task.id)
-          showView('terminal')
+          showView(work)
         })}
       />
     )

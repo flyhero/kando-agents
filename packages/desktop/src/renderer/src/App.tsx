@@ -6,6 +6,7 @@ import { SourceInboxView } from './components/SourceInboxView'
 import { SourceLoginDialog } from './components/SourceLoginDialog'
 import { TaskDetail } from './components/TaskDetail'
 import { TaskList } from './components/TaskList'
+import { TaskChat } from './components/TaskChat'
 import { TaskTerminal } from './components/TaskTerminal'
 import { ConversationList } from './components/ConversationList'
 import { ConversationTerminal } from './components/ConversationTerminal'
@@ -95,6 +96,8 @@ export function App() {
               <SourceInboxView />
             ) : selectedId && view === 'terminal' ? (
               <TaskTerminal key={selectedId} taskId={selectedId} />
+            ) : selectedId && view === 'chat' ? (
+              <TaskChat key={selectedId} taskId={selectedId} />
             ) : selectedId ? (
               <TaskDetail key={selectedId} taskId={selectedId} />
             ) : (

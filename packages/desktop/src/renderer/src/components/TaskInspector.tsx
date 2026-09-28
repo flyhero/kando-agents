@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { RepoChanges, Task } from '@kando/protocol'
-import { setInspectorOpen, useCore } from '../core-store'
+import type { PlanItem } from '../chat-state'
+import { setInspectorOpen, setTaskInspectorTab, showTaskPlan, useCore } from '../core-store'
 import { BranchStatusDetails, useProjectHeads } from './BranchStatus'
-import { CommitList, FileDiffView, FileList, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
+import { ChatPlanView } from './ChatPlan'
+import { CommitList, FileDiffView, FileList, GIT_TABS, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
 
 // Read again whenever the task changes (every agent turn and exit), the window regains focus,
@@ -53,13 +55,21 @@ function ChangeList({ changes, onOpen }: { changes: RepoChanges[] | null; onOpen
 
 // Beside the terminal: what the agent changed since its branch started, to judge a result under
 // review before accepting it.
-export function TaskInspector({ task, widthRatio, onWidthRatioChange }: {
+// A chat task's inspector also shows the plans its agent proposed, and has no git to show while the
+// task only plans.
+export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = [], planNote }: {
   task: Task
   widthRatio: number
   onWidthRatioChange: (ratio: number) => void
+  plans?: readonly PlanItem[]
+  planNote?: (item: PlanItem) => string | null
 }) {
   const rpc = useCore((state) => state.rpc)
-  const [tab, setTab] = useState<InspectorTab>('changes')
+  const wanted = useCore((state) => state.taskInspectorTab)
+  const selectedPlan = useCore((state) => state.taskInspectorPlan)
+  const worktree = task.repos.some((repo) => repo.worktreePath !== null)
+  const tabs: InspectorTab[] = [...(worktree ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : [])]
+  const tab = tabs.includes(wanted) ? wanted : (tabs[0] ?? 'changes')
   const [refreshCount, setRefreshCount] = useState(0)
   const [selected, setSelected] = useState<{ repo: string; file: string } | null>(null)
   const changes = useTaskChanges(task.id, task.updatedAt, refreshCount)
@@ -70,13 +80,16 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange }: {
       label="任务检查器"
       ratio={widthRatio}
       onRatioChange={onWidthRatioChange}
+      tabs={tabs}
       tab={tab}
-      onTab={setTab}
+      onTab={setTaskInspectorTab}
       fileCount={fileCount}
       onRefresh={() => setRefreshCount((count) => count + 1)}
       onClose={() => setInspectorOpen(false)}
     >
-      {tab === 'branch' ? (
+      {tab === 'plan' ? (
+        <ChatPlanView plans={plans} selected={selectedPlan} onSelect={showTaskPlan} note={planNote} />
+      ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">任务还没有 worktree，也就没有分支。</p>
       ) : selected && rpc ? (
         <FileDiffView

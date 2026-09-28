@@ -26,8 +26,12 @@ function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   return `失败${item.error ? `：${item.error}` : ''}`
 }
 
-function StageDivider({ stage }: { stage: ConversationStage }) {
-  const where = stage.mode === 'chat' ? '聊天界面' : '终端，这里只有记下的消息，细节在终端记录里'
+// A task's chat says where each stage ran: only planning beside the projects, or in its worktrees.
+function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean }) {
+  const where = stage.mode !== 'chat' ? '终端，这里只有记下的消息，细节在终端记录里'
+    : stage.planOnly ? '聊天界面 · 只读规划'
+    : task ? '聊天界面 · 在 worktree 里执行'
+    : '聊天界面'
   return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)} · {where}</div>
 }
 
@@ -217,7 +221,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
         {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
         {entries.map((entry) => (
           <div key={entryKey(entry)} className="chat-entry" data-user={isUserEntry(entry) || undefined}>
-            {entry.kind === 'stage' ? <StageDivider stage={entry.stage} />
+            {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={Boolean(conversation.taskId)} />
               : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
               : <Item conversationId={id} item={entry.item} />}
           </div>

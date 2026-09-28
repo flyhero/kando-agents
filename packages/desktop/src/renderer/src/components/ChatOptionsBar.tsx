@@ -84,8 +84,10 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
   const modelId = running ? state.model : (next?.model ?? state.model)
   // A model picked since takes its own default effort unless one was picked for it too.
   const effort = running ? state.effort : (next?.effort ?? (next?.model && next.model !== state.model ? null : state.effort))
-  // The next start offers bypass by the setting as it is then.
-  const offered = running ? state.permissionModes : [...state.permissionModes.filter((mode) => mode !== 'bypass'), ...(allowBypass ? ['bypass'] : [])]
+  // The next start offers bypass by the setting as it is then; a task that only plans never.
+  const offered = running || conversation.planOnly
+    ? state.permissionModes
+    : [...state.permissionModes.filter((mode) => mode !== 'bypass'), ...(allowBypass ? ['bypass'] : [])]
   const model = state.models.find((each) => each.id === modelId)
   const efforts = model?.efforts ?? []
   const modes = withCurrent(offered, permissionMode)

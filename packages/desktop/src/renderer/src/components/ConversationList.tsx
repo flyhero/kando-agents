@@ -146,7 +146,8 @@ export function ConversationList() {
   const section = useCore((s) => s.section)
   const groupBy = usePreferences((p) => p.conversationGroup)
   const sortBy = usePreferences((p) => p.conversationSort)
-  const all = Object.values(conversations)
+  // A task's conversation is reached from its task.
+  const all = Object.values(conversations).filter((conversation) => !conversation.taskId)
   // Null while the search box is closed. Groups left empty by a search drop out.
   const [query, setQuery] = useState<string | null>(null)
   const needle = query?.trim() ?? ''

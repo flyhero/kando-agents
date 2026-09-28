@@ -73,4 +73,9 @@ describe('timeline', () => {
     const restarted = [stage('chat-stage', 'chat', 1), stage('again', 'chat', 2), { ...stage('codex', 'chat', 3), agent: 'codex' as const }]
     expect(timeline(restarted, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['chat-stage', 'codex'])
   })
+
+  it('marks one where a task stops only planning and starts its work', () => {
+    const task = [{ ...stage('plan', 'chat', 1), planOnly: true }, { ...stage('again', 'chat', 2), planOnly: true }, { ...stage('work', 'chat', 3), planOnly: false }]
+    expect(timeline(task, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['plan', 'work'])
+  })
 })

@@ -96,7 +96,18 @@ const REASON_TEXT: Record<string, string> = {
   'daemon-outdated': '正在运行的终端守护进程版本太旧，不支持聊天界面，请重启它（pnpm dev:daemon）',
   'stage-not-found': '找不到更早的聊天记录',
   'chat-option-invalid': '这里用不了这个选项',
-  'chat-nothing-queued': '没有排队的消息'
+  'chat-nothing-queued': '没有排队的消息',
+  'chat-task': '这个任务在聊天界面里进行，直接在聊天里发消息',
+  planning: '依赖的任务还没完成，现在只能规划；在聊天里继续，或保存计划等它们完成',
+  'plan-only': '依赖的任务还没完成，现在只能规划，不能动手改',
+  'not-planning': '只有只读规划时的计划需要保存，执行中的计划确认后就会开始做',
+  'not-running': '只有执行中的任务可以提交验收',
+  'not-chat': '在终端里执行的任务，agent 退出后自动进入待验收',
+  'agent-working': 'agent 还在处理，等这一轮结束再提交',
+  'no-chat': '这个任务还没有开始聊天',
+  abandoned: '已废弃的任务不能继续',
+  'task-conversation': '这条会话属于一个任务，请从任务那里继续',
+  'chat-unavailable': '这个 core 不支持聊天界面'
 }
 
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.

@@ -107,8 +107,9 @@ export function timeline(
   let previous: ConversationStage | null = null
   for (const stage of stages) {
     // An idle chat agent goes and the next message starts it again: no divider for that, only
-    // where the agent or the view changes.
-    const restarted = previous?.mode === 'chat' && stage.mode === 'chat' && previous.agent === stage.agent
+    // where the agent, the view or a task's planning-only turn changes.
+    const restarted = previous?.mode === 'chat' && stage.mode === 'chat' && previous.agent === stage.agent &&
+      Boolean(previous.planOnly) === Boolean(stage.planOnly)
     if (!restarted) entries.push({ kind: 'stage', stage })
     previous = stage
     if (stage.mode === 'chat') {

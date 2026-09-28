@@ -9,6 +9,7 @@ import { SourceLink } from './SourceLink'
 import { SourceSnapshotCard } from './SourceSnapshotCard'
 import { StatusIcon } from './StatusIcon'
 import { TaskAlerts } from './TaskAlerts'
+import { TaskPlanCard } from './TaskPlanCard'
 import { TaskImages, useImageAdder } from './TaskImages'
 import { TaskToolbar } from './TaskActions'
 import { DependencyPicker, TaskDependents } from './DependencyPicker'
@@ -145,6 +146,7 @@ function TaskDetailBody({ task }: { task: Task }) {
 
         <div className="task-detail-main">
           <SourceSnapshotCard task={task} />
+          <TaskPlanCard task={task} />
           <ProposalCard task={task} onApplied={reloadEditor} />
           <RestoreBar task={task} onRestored={reloadEditor} />
 

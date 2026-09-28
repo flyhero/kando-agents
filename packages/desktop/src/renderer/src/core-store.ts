@@ -24,7 +24,8 @@ import { reasonText } from './labels'
 export type ConnectionState = 'waiting-for-core' | 'connecting' | 'connected'
 
 // What the right-hand pane shows for the selected task.
-export type TaskView = 'detail' | 'terminal'
+// terminal: a task's agent in a terminal · chat: a task started in the chat view, in its chat
+export type TaskView = 'detail' | 'terminal' | 'chat'
 export type Section = 'tasks' | 'conversations'
 
 // A sign-in this window started. The flow lives in core and ends if the connection drops.
@@ -53,8 +54,11 @@ type CoreState = {
   conversationDraft: boolean
   selectedId: string | null
   view: TaskView
-  // The inspector beside a task's terminal, kept open from one task to the next.
+  // The inspector beside a task's terminal or chat, kept open from one task to the next, on the
+  // tab last shown; a chat task's plan tab shows taskInspectorPlan (an item key; null: the newest).
   inspectorOpen: boolean
+  taskInspectorTab: InspectorTab
+  taskInspectorPlan: string | null
   // A conversation's, which the user opens, or a plan the agent proposes; on the tab last shown.
   conversationInspectorOpen: boolean
   conversationInspectorTab: InspectorTab
@@ -92,6 +96,8 @@ export const useCore = create<CoreState>()(() => ({
   selectedId: null,
   view: 'detail',
   inspectorOpen: false,
+  taskInspectorTab: 'changes',
+  taskInspectorPlan: null,
   conversationInspectorOpen: false,
   conversationInspectorTab: 'changes',
   conversationPlan: null,
@@ -111,19 +117,40 @@ export const useCore = create<CoreState>()(() => ({
 }))
 
 // A task with a live agent opens on its terminal: that is where the work is happening. One under
-// review opens there too, with the inspector showing what the agent changed.
+// review opens there too, with the inspector showing what the agent changed. A task started in the
+// chat view opens on its chat until it is closed.
 export function selectTask(id: string | null): void {
   useCore.setState((s) => {
     const task = id ? s.tasks[id] : undefined
     const review = task?.status === 'review' && task.sessionId !== null
+    const chat = task?.conversationId && task.status !== 'done' && task.status !== 'abandoned'
     return {
       selectedId: id,
       section: 'tasks',
       inboxOpen: false,
-      view: task && (task.status === 'running' || task.refineSessionId || review) ? 'terminal' : 'detail',
+      view: chat ? 'chat' : task && (task.status === 'running' || task.refineSessionId || review) ? 'terminal' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
   })
+}
+
+export function setTaskInspectorTab(tab: InspectorTab): void {
+  useCore.setState({ taskInspectorTab: tab })
+}
+
+export function showTaskChanges(): void {
+  useCore.setState({ inspectorOpen: true, taskInspectorTab: 'changes' })
+}
+
+// One of a chat task's plans by item key, or null for its newest.
+export function showTaskPlan(key: string | null): void {
+  useCore.setState({ inspectorOpen: true, taskInspectorTab: 'plan', taskInspectorPlan: key })
+}
+
+// A task's conversation is not among the free ones core lists, so its view asks for it.
+export async function loadConversation(id: string): Promise<void> {
+  const conversation = await perform((rpc) => rpc.call('conversations.get', { id }))
+  if (conversation) useCore.setState((s) => ({ conversations: { ...s.conversations, [conversation.id]: conversation } }))
 }
 
 export function setInspectorOpen(open: boolean): void {
@@ -286,6 +313,11 @@ export function useChatOptionsSupported(): boolean {
 // Whether a chat message can carry images.
 export function useChatImagesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('chat-images') ?? false)
+}
+
+// Whether a task can start in the chat view.
+export function useTaskChatSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
 }
 
 export function dismissError(): void {
