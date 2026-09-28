@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
-import { SourceSnapshot, Task, TaskImage, TaskProposal, TaskRepo, TaskSource, type TaskStatus } from '@kando/protocol'
+import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskProposal, TaskRepo, TaskSource, type TaskStatus } from '@kando/protocol'
 
 // Append-only: each entry upgrades PRAGMA user_version by one.
 export const MIGRATIONS = [
@@ -121,14 +121,22 @@ export const MIGRATIONS = [
   `ALTER TABLE conversation_stages ADD COLUMN mode TEXT NOT NULL DEFAULT 'tui';
    ALTER TABLE conversation_stages ADD COLUMN chat_offset INTEGER NOT NULL DEFAULT 0;`,
   // What a conversation last chose for its chat stages: permission mode, model, effort, bypass.
-  `ALTER TABLE conversations ADD COLUMN chat_options TEXT NOT NULL DEFAULT '{}';`
+  `ALTER TABLE conversations ADD COLUMN chat_options TEXT NOT NULL DEFAULT '{}';`,
+  // A task run in the chat view: the plan it kept, the conversation it runs in (which knows its
+  // task, so the link has one home), and which of that conversation's stages may only plan.
+  `ALTER TABLE tasks ADD COLUMN plan TEXT;
+   ALTER TABLE conversations ADD COLUMN task_id TEXT;
+   CREATE INDEX conversations_task ON conversations(task_id);
+   ALTER TABLE conversation_stages ADD COLUMN plan_only INTEGER NOT NULL DEFAULT 0;`
 ]
 
 
 const SELECT = `SELECT id, title, details, status, agent, session_id AS sessionId,
   refine_session_id AS refineSessionId, proposal, previous_details AS previousDetails,
   derived_from AS derivedFrom, abandon_reason AS abandonReason, source, source_snapshot AS sourceSnapshot, images,
-  last_exit AS lastExit, awaiting_input AS awaitingInput, created_at AS createdAt, updated_at AS updatedAt FROM tasks`
+  last_exit AS lastExit, awaiting_input AS awaitingInput, plan,
+  (SELECT id FROM conversations WHERE task_id = tasks.id ORDER BY created_at DESC LIMIT 1) AS conversationId,
+  created_at AS createdAt, updated_at AS updatedAt FROM tasks`
 
 // JSON columns and SQLite's 0/1 booleans are converted; everything else maps straight onto Task.
 const TaskRow = Task.omit({
@@ -139,14 +147,16 @@ const TaskRow = Task.omit({
   sourceSnapshot: true,
   images: true,
   lastExit: true,
-  awaitingInput: true
+  awaitingInput: true,
+  plan: true
 }).extend({
   proposal: z.string().nullable(),
   source: z.string().nullable(),
   sourceSnapshot: z.string().nullable(),
   images: z.string().nullable(),
   lastExit: z.string().nullable(),
-  awaitingInput: z.number()
+  awaitingInput: z.number(),
+  plan: z.string().nullable()
 })
 const TaskImages = z.array(TaskImage)
 const LastExit = Task.shape.lastExit.unwrap().unwrap()
@@ -194,6 +204,7 @@ export type TaskPatch = Partial<
     | 'images'
     | 'lastExit'
     | 'awaitingInput'
+    | 'plan'
     | 'repos'
     | 'dependsOn'
   >
@@ -299,6 +310,7 @@ export class TaskStore {
       images: parseColumn(TaskImages, row.images, `images of task ${row.id}`) ?? [],
       lastExit: parseColumn(LastExit, row.lastExit, `last exit of task ${row.id}`),
       awaitingInput: row.awaitingInput !== 0,
+      plan: parseColumn(TaskPlan, row.plan, `plan of task ${row.id}`),
       repos: (repos.get(row.id) ?? []).map(({ path, worktreePath, branch }) => ({ path, worktreePath, branch })),
       dependsOn: (dependencies.get(row.id) ?? []).map((edge) => edge.dependsOn)
     }))
@@ -413,6 +425,10 @@ export class TaskStore {
       if (patch.awaitingInput !== undefined) {
         sets.push('awaiting_input = ?')
         values.push(Number(patch.awaitingInput))
+      }
+      if (patch.plan !== undefined) {
+        sets.push('plan = ?')
+        values.push(patch.plan === null ? null : JSON.stringify(patch.plan))
       }
       sets.push('updated_at = ?')
       values.push(this.now())

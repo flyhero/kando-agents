@@ -9,11 +9,13 @@ const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_
   project_paths AS projectPaths,
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
   updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt,
-  (SELECT mode FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS mode
+  (SELECT mode FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS mode,
+  (SELECT plan_only FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS planOnly,
+  task_id AS taskId
   FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
-  ended_at AS endedAt, exit_code AS exitCode, mode FROM conversation_stages`
+  ended_at AS endedAt, exit_code AS exitCode, mode, plan_only AS planOnly FROM conversation_stages`
 const MESSAGE_SELECT = `SELECT sequence, conversation_id AS conversationId, stage_id AS stageId,
   role, agent, text, event_key AS eventKey, complete, created_at AS createdAt FROM conversation_messages`
 
@@ -31,8 +33,11 @@ export type ChatOptions = z.infer<typeof ChatOptions>
 function conversation(row: Record<string, unknown>): Conversation {
   const { lastExitCode, lastExitAt, mode, ...rest } = row
   return Conversation.parse({ ...rest, mode: mode ?? 'tui', projectPaths: JSON.parse(String(row.projectPaths)),
-    titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace),
+    titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace), planOnly: Boolean(row.planOnly),
     lastExit: lastExitAt === null ? null : { code: lastExitCode, at: lastExitAt } })
+}
+function stage(row: Record<string, unknown>): ConversationStage {
+  return ConversationStage.parse({ ...row, planOnly: Boolean(row.planOnly) })
 }
 function message(row: Record<string, unknown>): ConversationMessage {
   return ConversationMessage.parse({ ...row, complete: Boolean(row.complete) })
@@ -48,8 +53,14 @@ export class ConversationStore {
 
   close(): void { this.db.close() }
 
+  // The free conversations; a task's own is reached through its task (see byTask).
   list(): Conversation[] {
-    return this.db.prepare(`${SELECT} ORDER BY updated_at DESC`).all().map(conversation)
+    return this.db.prepare(`${SELECT} WHERE task_id IS NULL ORDER BY updated_at DESC`).all().map(conversation)
+  }
+
+  byTask(taskId: string): Conversation | null {
+    const row = this.db.prepare(`${SELECT} WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`).get(taskId)
+    return row ? conversation(row) : null
   }
 
   get(id: string): Conversation | null {
@@ -57,11 +68,29 @@ export class ConversationStore {
     return row ? conversation(row) : null
   }
 
-  create(agent: AgentKind, workspacePath: string, projectPaths: readonly string[], id = randomUUID(), projectStarts: Record<string, string> = {}): Conversation {
+  create(
+    agent: AgentKind,
+    workspacePath: string,
+    projectPaths: readonly string[],
+    id = randomUUID(),
+    projectStarts: Record<string, string> = {},
+    task: { id: string; title: string } | null = null
+  ): Conversation {
     const now = this.now()
+    // A task's conversation is named after it for good: its title is the task's.
     this.db.prepare(`INSERT INTO conversations
-      (id, title, title_locked, agent, workspace_path, project_paths, project_starts, managed_workspace, created_at, updated_at)
-      VALUES (?, '新会话', 0, ?, ?, ?, ?, ?, ?, ?)`).run(id, agent, workspacePath, JSON.stringify(projectPaths), JSON.stringify(projectStarts), Number(projectPaths.length === 0), now, now)
+      (id, title, title_locked, agent, workspace_path, project_paths, project_starts, managed_workspace, task_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      id, task?.title ?? '新会话', Number(task !== null), agent, workspacePath, JSON.stringify(projectPaths), JSON.stringify(projectStarts),
+      Number(projectPaths.length === 0), task?.id ?? null, now, now)
+    return this.get(id)!
+  }
+
+  // Where a task's agent works changes between stages: its projects while it only plans, its
+  // worktrees once it runs.
+  moveWorkspace(id: string, workspacePath: string, projectPaths: readonly string[]): Conversation {
+    this.db.prepare('UPDATE conversations SET workspace_path = ?, project_paths = ?, managed_workspace = ? WHERE id = ?')
+      .run(workspacePath, JSON.stringify(projectPaths), Number(projectPaths.length === 0), id)
     return this.get(id)!
   }
 
@@ -117,41 +146,41 @@ export class ConversationStore {
   }
 
   stages(id: string): ConversationStage[] {
-    return this.db.prepare(`${STAGE_SELECT} WHERE conversation_id = ? ORDER BY started_at, rowid`).all(id).map((row) => ConversationStage.parse(row))
+    return this.db.prepare(`${STAGE_SELECT} WHERE conversation_id = ? ORDER BY started_at, rowid`).all(id).map((row) => stage(row))
   }
 
   activeStage(id: string): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE conversation_id = ? AND ended_at IS NULL ORDER BY rowid DESC LIMIT 1`).get(id)
-    return row ? ConversationStage.parse(row) : null
+    return row ? stage(row) : null
   }
 
   latestStage(id: string, agent: AgentKind): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE conversation_id = ? AND agent = ? ORDER BY rowid DESC LIMIT 1`).get(id, agent)
-    return row ? ConversationStage.parse(row) : null
+    return row ? stage(row) : null
   }
 
   // The agent's newest chat stage in any conversation.
   latestChatStage(agent: AgentKind): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE agent = ? AND mode = 'chat' ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(agent)
-    return row ? ConversationStage.parse(row) : null
+    return row ? stage(row) : null
   }
 
   stage(id: string): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE id = ?`).get(id)
-    return row ? ConversationStage.parse(row) : null
+    return row ? stage(row) : null
   }
 
-  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), mode: ConversationMode = 'tui'): ConversationStage {
+  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), mode: ConversationMode = 'tui', planOnly = false): ConversationStage {
     this.db.prepare(`INSERT INTO conversation_stages
-      (id, conversation_id, agent, provider_session_id, received_sequence, started_at, mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), mode)
+      (id, conversation_id, agent, provider_session_id, received_sequence, started_at, mode, plan_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), mode, Number(planOnly))
     return this.stage(id)!
   }
 
   // The stage a daemon session runs, ended or not.
   stageBySession(sessionId: string): ConversationStage | null {
     const row = this.db.prepare(`${STAGE_SELECT} WHERE session_id = ? ORDER BY rowid DESC LIMIT 1`).get(sessionId)
-    return row ? ConversationStage.parse(row) : null
+    return row ? stage(row) : null
   }
 
   // How far a chat stage's output has been read, counted like the daemon's offsets.
@@ -187,9 +216,11 @@ export class ConversationStore {
 
   // The latest matching message per conversation: SQLite takes the bare text column from the
   // row holding MAX(sequence). lower() folds only ASCII, which CJK text does not need.
+  // Free conversations only, as list() is.
   searchMessages(query: string): Array<{ conversationId: string; text: string }> {
     return this.db.prepare(`SELECT conversation_id AS conversationId, text, MAX(sequence) AS sequence
-      FROM conversation_messages WHERE instr(lower(text), lower(?)) > 0 GROUP BY conversation_id`)
+      FROM conversation_messages WHERE instr(lower(text), lower(?)) > 0
+      AND conversation_id IN (SELECT id FROM conversations WHERE task_id IS NULL) GROUP BY conversation_id`)
       .all(query).map((row) => ({ conversationId: String(row.conversationId), text: String(row.text) }))
   }
 

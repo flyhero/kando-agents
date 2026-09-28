@@ -73,6 +73,29 @@ describe('TaskStore migrations', () => {
     reopened.close()
   })
 
+  it('keeps a task\'s plan, and finds the conversation that runs it through that conversation', () => {
+    const store = new TaskStore(file)
+    const conversations = new ConversationStore(file)
+    const task = store.create('Chat me')
+    expect(task).toMatchObject({ plan: null, conversationId: null })
+    const plan = { markdown: '1. Do it', agent: 'claude' as const, approved: false, stageId: 's', requestId: 'r', createdAt: 5 }
+    expect(store.update(task.id, { plan }).plan).toEqual(plan)
+    const conversation = conversations.create('claude', '/code/app', ['/code/app'], undefined, {}, { id: task.id, title: task.title })
+    expect(conversation).toMatchObject({ taskId: task.id, title: 'Chat me', titleLocked: true, planOnly: false })
+    expect(store.get(task.id)?.conversationId).toBe(conversation.id)
+    // A task's conversation is not a free one.
+    expect(conversations.list()).toEqual([])
+    expect(conversations.byTask(task.id)?.id).toBe(conversation.id)
+    const stage = conversations.startStage(conversation.id, 'claude', null, 0, undefined, 'chat', true)
+    expect(stage.planOnly).toBe(true)
+    expect(conversations.get(conversation.id)?.planOnly).toBe(true)
+    const moved = conversations.moveWorkspace(conversation.id, '/wt/app', ['/wt/app', '/wt/web'])
+    expect(moved).toMatchObject({ workspacePath: '/wt/app', projectPaths: ['/wt/app', '/wt/web'], managedWorkspace: false })
+    expect(store.update(task.id, { plan: null }).plan).toBeNull()
+    conversations.close()
+    store.close()
+  })
+
   it('upgrades a version-7 database: Jira sources gain provider and instance, dismissals follow', () => {
     const raw = new DatabaseSync(file)
     MIGRATIONS.slice(0, 7).forEach((sql) => raw.exec(sql))

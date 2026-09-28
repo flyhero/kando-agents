@@ -229,6 +229,18 @@ describe('ConversationService', () => {
     expect(service.search('nothing like it')).toEqual([])
   })
 
+  it('keeps a task\'s conversation out of the free list and their search', async () => {
+    const free = await service.create('claude', [root])
+    const task = tasks.create('Chat me')
+    const own = store.create('claude', root, [root], undefined, {}, { id: task.id, title: task.title })
+    const ownStage = store.startStage(own.id, 'claude', null, 0, undefined, 'chat')
+    event(free.id, service.stages(free.id)[0]!.id, 'claude', 'user', 'Fix the login page', 'user-1')
+    event(own.id, ownStage.id, 'claude', 'user', 'Fix the login form', 'user-1')
+    expect(service.list().map((conversation) => conversation.id)).toEqual([free.id])
+    expect(service.search('login').map((hit) => hit.conversationId)).toEqual([free.id])
+    expect(service.get(own.id).taskId).toBe(task.id)
+  })
+
   it('recovers daemon output once and preserves workspaces on deletion', async () => {
     const created = await service.create('codex', [])
     const sessionId = created.sessionId!
