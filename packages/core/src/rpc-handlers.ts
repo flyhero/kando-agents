@@ -35,6 +35,10 @@ export function createRpcHandlers(
     'tasks.continue': ({ id, note }) => service.continue(id, note),
     'tasks.redo': ({ id, reason }) => service.redo(id, reason),
     'tasks.refine': ({ id }) => service.refine(id),
+    'tasks.start': ({ id, allowBypass }) => service.start(id, allowBypass),
+    'tasks.resumeChat': ({ id, allowBypass }) => service.resumeChat(id, allowBypass),
+    'tasks.submit': ({ id }) => service.submit(id),
+    'tasks.savePlan': ({ id, stageId, requestId }) => service.savePlan(id, stageId, requestId),
     'tasks.event': ({ id, session, waiting }) => {
       service.agentEvent(id, session, waiting)
       return OK

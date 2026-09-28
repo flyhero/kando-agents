@@ -26,6 +26,8 @@ export type ConversationEvent =
   | { type: 'deleted'; id: string }
   | { type: 'chatItems'; conversationId: string; items: ChatItem[] }
   | { type: 'chatDelta'; conversationId: string; stageId: string; itemId: string; append: string }
+  // A plan approved in a task's chat, for the task to keep as the one it carries out.
+  | { type: 'planApproved'; taskId: string; plan: { markdown: string; agent: AgentKind; stageId: string; requestId: string } }
 
 // How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
 // while it only plans), and whether it goes on with the last session or takes one of its own (a first
@@ -502,8 +504,15 @@ export class ConversationService {
   }
 
   async respond(id: string, requestId: string, answer: ChatAnswer): Promise<void> {
-    this.get(id)
+    const conversation = this.get(id)
+    const stage = this.store.activeStage(id)
+    const item = conversation.taskId && stage
+      ? this.chats.items(this.chatStage(conversation, stage)).find((each) => each.kind === 'approval' && each.requestId === requestId)
+      : undefined
     await this.chats.respond(id, requestId, answer)
+    if (conversation.taskId && stage && item?.kind === 'approval' && isPlanApproval(item) && item.detail && answer.decision !== 'deny') {
+      this.emit({ type: 'planApproved', taskId: conversation.taskId, plan: { markdown: item.detail, agent: stage.agent, stageId: stage.id, requestId } })
+    }
   }
 
   async interrupt(id: string): Promise<void> {

@@ -41,6 +41,30 @@ let server: RpcServer | null = null
 
 const tsxLoader = fileURLToPath(new URL('../node_modules/tsx/dist/loader.mjs', import.meta.url))
 const cli = fileURLToPath(new URL('../../cli/src/main.ts', import.meta.url))
+// Built before the task service, which runs its chat tasks in it; each hands the other its events.
+const conversations = new ConversationService(
+  conversationsStore, daemon, paths.sessions,
+  (id, stageId, agent) => [process.execPath, '--import', tsxLoader, cli, 'conversation-event', paths.home, id, stageId, agent],
+  (event) => {
+    const watchers = (id: string) => [...(server?.connections ?? [])].filter((c) => c.watching.has(id))
+    if (event.type === 'changed') {
+      server?.broadcast('conversations.changed', { conversation: event.conversation })
+      // A task's conversation says whether its agent waits on the user.
+      service.chatChanged(event.conversation)
+    } else if (event.type === 'deleted') server?.broadcast('conversations.deleted', { id: event.id })
+    else if (event.type === 'chatItems') {
+      watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
+    } else if (event.type === 'planApproved') {
+      service.recordPlan(event.taskId, event.plan)
+    } else {
+      const { conversationId, stageId, itemId, append } = event
+      watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, stageId, itemId, append }))
+    }
+  },
+  projects,
+  attachments
+)
+
 const service = new TaskService(
   store,
   projects,
@@ -56,25 +80,8 @@ const service = new TaskService(
   },
   (taskId) => kandoMcpServer(taskId, paths.home),
   attachments,
-  (taskId, session, agent) => [process.execPath, '--import', tsxLoader, cli, 'task-event', paths.home, taskId, session, agent]
-)
-
-const conversations = new ConversationService(
-  conversationsStore, daemon, paths.sessions,
-  (id, stageId, agent) => [process.execPath, '--import', tsxLoader, cli, 'conversation-event', paths.home, id, stageId, agent],
-  (event) => {
-    const watchers = (id: string) => [...(server?.connections ?? [])].filter((c) => c.watching.has(id))
-    if (event.type === 'changed') server?.broadcast('conversations.changed', { conversation: event.conversation })
-    else if (event.type === 'deleted') server?.broadcast('conversations.deleted', { id: event.id })
-    else if (event.type === 'chatItems') {
-      watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
-    } else {
-      const { conversationId, stageId, itemId, append } = event
-      watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, stageId, itemId, append }))
-    }
-  },
-  projects,
-  attachments
+  (taskId, session, agent) => [process.execPath, '--import', tsxLoader, cli, 'task-event', paths.home, taskId, session, agent],
+  conversations
 )
 
 const sourceConfig = new SourceConfigStore(paths.sourcesConfig)

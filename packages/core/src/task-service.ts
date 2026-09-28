@@ -1,13 +1,21 @@
+import path from 'node:path'
 import {
+  checkChatResume,
   checkContinue,
   checkDependencies,
   checkMove,
   checkRedo,
   checkRefine,
   checkRun,
+  checkSavePlan,
+  checkStart,
+  checkSubmit,
   imageLabel,
+  MAX_CHAT_IMAGES,
   MAX_TASK_IMAGES,
+  startKind,
   type AgentKind,
+  type Conversation,
   type FileDiff,
   type ProjectHead,
   type RepoChanges,
@@ -21,16 +29,28 @@ import {
 } from '@kando/protocol'
 import type { SessionInfo } from '@kando/protocol/node'
 import { agentCommand, refineCommand, type AgentCommand, type CommandImages, type EventCallback, type McpServer } from './agent-command'
-import { agentPrompt, continuePrompt, refinePrompt, type PromptImages } from './agent-prompt'
+import { agentPrompt, chatPlanPrompt, chatStartPrompt, continuePrompt, refinePrompt, type PromptImages } from './agent-prompt'
 import type { AttachmentStore } from './attachment-store'
+import type { ConversationService } from './conversation-service'
 import type { SessionHost } from './daemon-client'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
 import type { TaskPatch, TaskStore } from './task-store'
-import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees } from './workspace'
+import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees, type Workspace } from './workspace'
 
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
+
+// What a task needs of its chat.
+export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get'>
+
+// The worktrees outside the agent's cwd, which it reaches as additional directories.
+function outsideCwd(workspace: Workspace): string[] {
+  return workspace.entries.map((entry) => entry.dir).filter((dir) => {
+    const relative = path.relative(workspace.cwd, dir)
+    return relative.startsWith('..') || path.isAbsolute(relative)
+  })
+}
 
 export class TaskService {
   private readonly launching = new Set<string>()
@@ -45,7 +65,9 @@ export class TaskService {
     private readonly refineMcp: (taskId: string) => McpServer,
     private readonly attachments: AttachmentStore,
     // What the agent's hooks run to report its turns back (`kando task-event`); null leaves them out.
-    private readonly agentEvents: ((taskId: string, session: TaskSession, agent: AgentKind) => EventCallback) | null = null
+    private readonly agentEvents: ((taskId: string, session: TaskSession, agent: AgentKind) => EventCallback) | null = null,
+    // Where a task in the chat view runs; null when core has no chat to offer.
+    private readonly chats: TaskConversations | null = null
   ) {}
 
   list(status?: TaskStatus): Task[] {
@@ -250,6 +272,12 @@ export class TaskService {
     if (blocker) {
       throw new Rejection(blocker)
     }
+    // A chat task goes on in its chat, with the note as its next message.
+    if (task.conversationId) {
+      const resumed = await this.resumeChat(id)
+      if (note) await this.requireChats().send(task.conversationId, note)
+      return resumed
+    }
     const { agent } = task
     if (!agent) {
       throw new Rejection('invalid-task')
@@ -290,7 +318,154 @@ export class TaskService {
       this.changed(this.store.update(dependent.id, { dependsOn }))
     })
     this.changed(this.store.update(task.id, { status: 'abandoned', abandonReason: reason || null }))
+    // The successor starts clean, without the chat; the abandoned one keeps it to read, idle.
+    void this.chats?.stopForTask(task.id).catch(() => {})
     return this.changed(this.get(successor.id))
+  }
+
+  // A task started in the chat view plans first. Once everything it builds on is done, it does so in
+  // its worktree and carries the plan out there; before that, only read-only in its projects,
+  // keeping the plan for when it can run. Resolves once the first message is on its way.
+  async start(id: string, allowBypass?: boolean): Promise<Task> {
+    const chats = this.requireChats()
+    const task = this.get(id)
+    const dependencies = this.dependenciesOf(task)
+    const blocker = checkStart(task, dependencies)
+    if (blocker) {
+      throw new Rejection(blocker)
+    }
+    const { agent } = task
+    if (!agent) {
+      throw new Rejection('invalid-task')
+    }
+    return this.launchChat(task, async () => {
+      const images = await this.images(task)
+      const imageIds = this.chatImageIds(task, images.prompt)
+      if (startKind(dependencies) === 'plan') {
+        const workspace = await prepareRefineWorkspace(task, dependencies)
+        const conversation = await chats.startForTask({ id, title: task.title, agent }, {
+          cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'new',
+          readable: images.command.all, allowBypass
+        })
+        await chats.send(conversation.id, chatPlanPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt), imageIds)
+        return this.changed(this.get(id))
+      }
+      // The worktrees are kept before the agent starts, so a failed start is retried in the same trees.
+      const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
+      this.store.update(id, { repos: workspace.repos })
+      const conversation = await chats.startForTask({ id, title: task.title, agent }, {
+        cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'new', readable: images.command.all, allowBypass
+      })
+      this.store.update(id, { status: 'running', lastExit: null, awaitingInput: false })
+      const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
+      await chats.send(conversation.id, prompt, imageIds)
+      return this.changed(this.get(id))
+    })
+  }
+
+  // Readies a chat task's agent before a message goes to it: planning goes on read-only, work goes on
+  // in the worktrees (laid out again, so one the user removed comes back), on the same session. A
+  // finished task goes back to running, as continuing it does.
+  async resumeChat(id: string, allowBypass?: boolean): Promise<Task> {
+    const chats = this.requireChats()
+    const task = this.get(id)
+    const dependencies = this.dependenciesOf(task)
+    const blocker = checkChatResume(task, dependencies)
+    if (blocker) {
+      throw new Rejection(blocker)
+    }
+    const { agent } = task
+    if (!agent) {
+      throw new Rejection('invalid-task')
+    }
+    return this.launchChat(task, async () => {
+      const images = await this.images(task)
+      if (task.status === 'pending') {
+        const workspace = await prepareRefineWorkspace(task, dependencies)
+        await chats.startForTask({ id, title: task.title, agent }, {
+          cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'resume',
+          readable: images.command.all, allowBypass
+        })
+        return this.get(id)
+      }
+      const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
+      this.store.update(id, { repos: workspace.repos })
+      await chats.startForTask({ id, title: task.title, agent }, {
+        cwd: workspace.cwd, extraDirs: outsideCwd(workspace), planOnly: false, session: 'resume', readable: images.command.all, allowBypass
+      })
+      return task.status === 'running' ? this.get(id) : this.changed(this.store.update(id, { status: 'running', awaitingInput: false }))
+    })
+  }
+
+  // A chat task is handed in for review by the user: its agent does not end with the work.
+  submit(id: string): Task {
+    const task = this.get(id)
+    const turn = task.conversationId ? (this.requireChats().get(task.conversationId).chat?.turn ?? null) : null
+    const blocker = checkSubmit(task, turn)
+    if (blocker) {
+      throw new Rejection(blocker)
+    }
+    return this.changed(this.store.update(id, { status: 'review', awaitingInput: false }))
+  }
+
+  // Keeps the plan a task's read-only chat proposed, for when the task can run.
+  async savePlan(id: string, stageId: string, requestId: string): Promise<Task> {
+    const task = this.get(id)
+    const blocker = checkSavePlan(task)
+    if (blocker) {
+      throw new Rejection(blocker)
+    }
+    if (!task.conversationId) {
+      throw new Rejection('no-chat')
+    }
+    const kept = await this.requireChats().savePlan(task.conversationId, stageId, requestId)
+    return this.changed(this.store.update(id, { plan: { ...kept, approved: false, stageId, requestId, createdAt: Date.now() } }))
+  }
+
+  // A plan approved in the task's chat is the one it carries out.
+  recordPlan(taskId: string, plan: { markdown: string; agent: AgentKind; stageId: string; requestId: string }): void {
+    if (this.store.get(taskId)) {
+      this.changed(this.store.update(taskId, { plan: { ...plan, approved: true, createdAt: Date.now() } }))
+    }
+  }
+
+  // Flags a chat task whose agent waits on the user, as hooks do for a terminal one: a running task
+  // whose agent is not working (it may be gone), a planning one whose agent is up and not working.
+  chatChanged(conversation: Conversation): void {
+    const task = conversation.taskId ? this.store.get(conversation.taskId) : null
+    if (!task) {
+      return
+    }
+    const turn = conversation.chat?.turn ?? null
+    const waiting = task.status === 'running' ? turn !== 'running' : task.status === 'pending' && (turn === 'idle' || turn === 'awaiting')
+    if (task.awaitingInput !== waiting) {
+      this.changed(this.store.update(task.id, { awaitingInput: waiting }))
+    }
+  }
+
+  private requireChats(): TaskConversations {
+    if (!this.chats) {
+      throw new Rejection('chat-unavailable', 'this core runs no chat-mode agents')
+    }
+    return this.chats
+  }
+
+  // One start at a time per task, whether in a terminal or a chat.
+  private async launchChat<T>(task: Task, run: () => Promise<T>): Promise<T> {
+    if (this.launching.has(task.id)) {
+      throw new Rejection('run-in-progress')
+    }
+    this.launching.add(task.id)
+    try {
+      return await run()
+    } finally {
+      this.launching.delete(task.id)
+    }
+  }
+
+  // The user's images still on this machine go with the first message; the prompt lists them too.
+  private chatImageIds(task: Task, images: PromptImages): string[] {
+    return task.images.filter((_, index) => images.attached[index]?.path).slice(0, MAX_CHAT_IMAGES).map((image) => image.id)
   }
 
   // Read-only in the repos as they are (or a worktree an earlier run left); see prepareRefineWorkspace.
@@ -379,6 +554,7 @@ export class TaskService {
       await this.sessions.request('kill', { sessionId: task.refineSessionId }).catch(() => {})
     }
     const dependents = this.store.dependents(task.id)
+    await this.chats?.deleteForTask(task.id)
     // Worktrees are left on disk: they may hold the only copy of the agent's work.
     this.store.delete(task.id)
     this.emit({ type: 'deleted', id: task.id })
@@ -411,6 +587,10 @@ export class TaskService {
     const live = new Set(sessions.filter((s) => !s.exited).map((s) => s.sessionId))
     const exitCodes = new Map(sessions.flatMap((s) => (s.exited ? [[s.sessionId, s.exitCode] as const] : [])))
     this.store.list('running').forEach((task) => {
+      // A chat task's agent comes and goes with its conversation; the task runs on without it.
+      if (task.conversationId) {
+        return
+      }
       if (!task.sessionId || !live.has(task.sessionId)) {
         const code = task.sessionId ? (exitCodes.get(task.sessionId) ?? null) : null
         this.changed(this.store.update(task.id, { status: 'review', lastExit: { code }, awaitingInput: false }))

@@ -31,7 +31,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // What core can do beyond this protocol version's baseline; an older core sends none.
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images'] as const
+// task-chat: a task can start in the chat view (tasks.start and the methods beside it).
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -66,6 +67,14 @@ export const rpcMethods = {
   'tasks.redo': { params: TaskRef.extend({ reason: z.string().trim().max(500).optional() }), result: Task },
   // Opens a read-only session to talk the task through; the agent answers via tasks.propose.
   'tasks.refine': { params: TaskRef, result: Task },
+  // A task in the chat view (task-chat). start plans first, then carries the plan out in the task's
+  // worktree, or only plans while its dependencies are unfinished. resumeChat readies its agent
+  // before a message, reopening a finished task as continuing does. submit hands a running one in
+  // for review. savePlan keeps a plan-only stage's plan for when the task can run.
+  'tasks.start': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
+  'tasks.resumeChat': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
+  'tasks.submit': { params: TaskRef, result: Task },
+  'tasks.savePlan': { params: TaskRef.extend({ stageId: z.string().uuid(), requestId: z.string().min(1).max(200) }), result: Task },
   // From the agent's own hooks via `kando task-event`: its turn ended (waiting) or the user answered.
   'tasks.event': { params: TaskRef.extend({ session: TaskSession, waiting: z.boolean() }), result: Ok },
   'tasks.propose': {
