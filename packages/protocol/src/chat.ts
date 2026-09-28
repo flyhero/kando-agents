@@ -147,6 +147,15 @@ export const ChatItem = z.discriminatedUnion('kind', [
 ])
 export type ChatItem = z.infer<typeof ChatItem>
 
+// A plan from plan mode waits as an approval: Claude's ExitPlanMode call, or the plan a Codex
+// plan-mode turn ended with.
+export const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])
+
+// A plain check rather than a type guard: a plan has the approval type of any other approval.
+export function isPlanApproval(item: ChatItem): boolean {
+  return item.kind === 'approval' && PLAN_TOOLS.has(item.tool)
+}
+
 // Parsed one by one, so an item a newer core describes differently drops alone, not the batch.
 export const ChatItemList = z.array(z.unknown()).transform((items) =>
   items.flatMap((item) => {

@@ -27,7 +27,11 @@ export const Conversation = z.object({
     permissionMode: z.string().nullable(),
     model: z.string().nullable(),
     effort: z.string().nullable()
-  }).optional()
+  }).optional(),
+  // The task this conversation runs, which keeps it out of the free conversations. Older cores leave it out.
+  taskId: z.string().nullable().optional(),
+  // Whether its latest stage may only plan: read-only, the plan kept rather than carried out.
+  planOnly: z.boolean().optional()
 })
 export type Conversation = z.infer<typeof Conversation>
 
@@ -41,7 +45,9 @@ export const ConversationStage = z.object({
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   exitCode: z.number().nullable(),
-  mode: ConversationMode.catch('tui').optional()
+  mode: ConversationMode.catch('tui').optional(),
+  // A stage that may only plan (see Conversation.planOnly).
+  planOnly: z.boolean().optional()
 })
 export type ConversationStage = z.infer<typeof ConversationStage>
 

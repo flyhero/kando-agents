@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkContinue, checkMove, checkRedo, checkRefine, checkRun, type Task } from './task'
+import { checkChatResume, checkContinue, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -21,6 +21,8 @@ function task(overrides: Partial<Task> = {}): Task {
     images: [],
     lastExit: null,
     awaitingInput: false,
+    conversationId: null,
+    plan: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides
@@ -109,5 +111,55 @@ describe('checkContinue and checkRedo', () => {
     expect(checkRedo(task({ status: 'review' }))).toBeNull()
     expect(checkRedo(task({ status: 'running' }))).toBe('not-done')
     expect(checkRedo(task({ status: 'abandoned' }))).toBe('not-done')
+  })
+})
+
+describe('a task in the chat view', () => {
+  const ready = { repos: [{ path: '/code/app', worktreePath: null, branch: null }], agent: 'claude' as const }
+  const done = [{ status: 'done' as const }]
+  const unfinished = [{ status: 'done' as const }, { status: 'review' as const }]
+
+  it('starts by planning, carrying the plan out only once what it builds on is done', () => {
+    expect(startKind(done)).toBe('execute')
+    expect(startKind([])).toBe('execute')
+    expect(startKind(unfinished)).toBe('plan')
+    expect(checkStart(task(ready), unfinished)).toBeNull()
+    expect(checkStart(task({ ...ready, conversationId: 'c' }), unfinished)).toBe('planning')
+    expect(checkStart(task({ ...ready, conversationId: 'c' }), done)).toBeNull()
+    expect(checkStart(task({ ...ready, status: 'running' }), done)).toBe('not-pending')
+    expect(checkStart(task({ ...ready, refineSessionId: 'r' }), done)).toBe('refining')
+    expect(checkStart(task({ agent: 'claude' }), done)).toBe('missing-repo')
+    expect(checkStart(task({ ...ready, agent: null }), done)).toBe('missing-agent')
+  })
+
+  it('keeps a task in the view it started in', () => {
+    expect(checkRun(task({ ...ready, conversationId: 'c' }), done)).toBe('chat-task')
+    expect(checkRefine(task({ ...ready, conversationId: 'c' }))).toBe('chat-task')
+  })
+
+  it('hands a running chat task in for review, never mid-turn', () => {
+    const running = task({ ...ready, status: 'running', conversationId: 'c' })
+    expect(checkSubmit(running, 'idle')).toBeNull()
+    expect(checkSubmit(running, null)).toBeNull()
+    expect(checkSubmit(running, 'running')).toBe('agent-working')
+    expect(checkSubmit(running, 'awaiting')).toBe('agent-working')
+    expect(checkSubmit(task({ ...ready, status: 'running' }), 'idle')).toBe('not-chat')
+    expect(checkSubmit(task({ ...ready, status: 'review', conversationId: 'c' }), 'idle')).toBe('not-running')
+  })
+
+  it('goes on by message while planning or working, and reopens a finished task as continuing does', () => {
+    const chat = { ...ready, conversationId: 'c' }
+    expect(checkChatResume(task(chat), unfinished)).toBeNull()
+    expect(checkChatResume(task({ ...chat, status: 'running' }), done)).toBeNull()
+    expect(checkChatResume(task({ ...chat, status: 'review' }), done)).toBeNull()
+    expect(checkChatResume(task({ ...chat, status: 'done' }), unfinished)).toBe('blocked')
+    expect(checkChatResume(task({ ...chat, status: 'abandoned' }), done)).toBe('abandoned')
+    expect(checkChatResume(task(ready), done)).toBe('no-chat')
+  })
+
+  it('keeps a plan for later only while the task cannot run', () => {
+    expect(checkSavePlan(task({ ...ready, conversationId: 'c' }))).toBeNull()
+    expect(checkSavePlan(task({ ...ready, conversationId: 'c', status: 'running' }))).toBe('not-pending')
+    expect(checkSavePlan(task(ready))).toBe('no-chat')
   })
 })

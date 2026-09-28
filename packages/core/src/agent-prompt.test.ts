@@ -36,6 +36,8 @@ function dependency(overrides: Partial<Task> = {}): Task {
     images: [],
     lastExit: null,
     awaitingInput: false,
+    conversationId: null,
+    plan: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides
