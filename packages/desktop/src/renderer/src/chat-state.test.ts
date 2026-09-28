@@ -68,4 +68,9 @@ describe('timeline', () => {
     expect(entries.map((entry) => (entry.kind === 'stage' ? `stage:${entry.stage.mode}` : entry.kind === 'item' ? `item:${entry.item.id}` : `message:${entry.message.text}`)))
       .toEqual(['stage:tui', 'message:hello', 'stage:chat', 'item:a', 'item:late'])
   })
+
+  it('marks no divider where the same agent started again in chat mode', () => {
+    const restarted = [stage('chat-stage', 'chat', 1), stage('again', 'chat', 2), { ...stage('codex', 'chat', 3), agent: 'codex' as const }]
+    expect(timeline(restarted, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['chat-stage', 'codex'])
+  })
 })

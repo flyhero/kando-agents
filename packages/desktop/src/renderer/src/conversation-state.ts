@@ -6,6 +6,14 @@ export type ConversationState = { label: string; running: boolean; failed: boole
 // finished, was stopped, crashed at once or never started.
 export function conversationState(conversation: Conversation): ConversationState {
   const { sessionId, lastExit, chat } = conversation
+  // A chat conversation has no stopped state: its agent starts again with the next message and
+  // goes when idle, so what it is doing, or how it last failed, is all there is to say.
+  if (conversation.mode === 'chat') {
+    if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
+    if (sessionId && chat?.turn === 'running') return { label: '运行中', running: true, failed: false, detail: null }
+    if (!sessionId && lastExit?.code) return { label: '异常退出', running: false, failed: true, detail: `agent 异常退出（code ${lastExit.code}），发消息会重新启动它` }
+    return { label: '空闲', running: false, failed: false, detail: '发消息就会接着聊' }
+  }
   // A chat-mode agent says whether it is working; a TUI's is only known to be up.
   if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
   if (sessionId && chat?.turn === 'idle') return { label: '等待输入', running: true, failed: false, detail: 'agent 在等你的下一条消息' }

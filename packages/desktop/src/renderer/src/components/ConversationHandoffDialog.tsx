@@ -9,13 +9,15 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+  // An idle chat agent has nothing to lose, so core lets it go without asking.
+  const mustConfirm = conversation.sessionId !== null && !(conversation.mode === 'chat' && conversation.chat?.turn === 'idle')
   const error = useCore((s) => s.error)
   const target: AgentKind = conversation.agent === 'claude' ? 'codex' : 'claude'
   const chatSupported = useChatSupported()
   const [mode, setMode] = useState<ConversationMode>(defaultMode)
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
-    if (busy || (conversation.sessionId && !confirmed)) return
+    if (busy || (mustConfirm && !confirmed)) return
     setBusy(true)
     const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(mode) }))
     setBusy(false)
@@ -33,9 +35,9 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
           {(['tui', 'chat'] as const).map((each) => <option key={each} value={each}>{MODE_LABEL[each]}</option>)}
         </select>
       </label>}
-      {conversation.sessionId && <label className="conversation-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />确认停止当前 {AGENT_LABEL[conversation.agent]}，然后启动 {AGENT_LABEL[target]}</label>}
+      {mustConfirm && <label className="conversation-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />确认停止当前 {AGENT_LABEL[conversation.agent]}，然后启动 {AGENT_LABEL[target]}</label>}
       {error && <p className="modal-error" role="alert">{error}</p>}
-      <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>取消</button><button type="button" className="button primary" disabled={busy || Boolean(conversation.sessionId && !confirmed)} onClick={() => void submit()}>移交</button></footer>
+      <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>取消</button><button type="button" className="button primary" disabled={busy || (mustConfirm && !confirmed)} onClick={() => void submit()}>移交</button></footer>
     </div>
   </dialog>
 }

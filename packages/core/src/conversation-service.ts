@@ -138,10 +138,14 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
+  // An idle chat agent makes way for the terminal without the user stopping it first.
   async continue(id: string, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
     const current = this.get(id)
-    if (current.sessionId || this.launching.has(id)) throw new Rejection('conversation-running')
+    if (this.launching.has(id)) throw new Rejection('conversation-running')
+    if (current.sessionId && mode === 'chat' && this.chats.activity(id) !== null) return current
+    if (current.sessionId && !this.chats.idle(id)) throw new Rejection('conversation-running')
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
+    if (current.sessionId) await this.stop(id)
     return this.start(id, current.agent, '', false, mode)
   }
 
@@ -150,7 +154,7 @@ export class ConversationService {
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
-    if (current.sessionId && !stopRunning) throw new Rejection('conversation-running')
+    if (current.sessionId && !stopRunning && !this.chats.idle(id)) throw new Rejection('conversation-running')
     if (current.sessionId) await this.stop(id)
     return this.start(id, agent, note, true, mode)
   }

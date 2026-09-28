@@ -23,8 +23,8 @@ function QueuedMessage({ queued, onEdit, onSend, onCancel }: { queued: Queued; o
 }
 
 // Enter sends when the agent is idle; while it works, Enter queues the message for when the turn
-// ends (a second one joins the first). A stopped conversation continues in chat mode first, since
-// typing here is continuing it. The corner button sends, or stops the turn.
+// ends (a second one joins the first). With no agent running, it starts one on the same session
+// first. The corner button sends, or stops the turn.
 export function ChatComposer({ conversation, queued }: { conversation: Conversation; queued: Queued | null }) {
   const { id } = conversation
   const [text, setText] = useState('')
@@ -73,8 +73,7 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
         aria-label="给 agent 的消息"
         readOnly={starting}
         placeholder={
-          stopped ? `agent 已停止，发消息会接着这个会话重新启动 ${AGENT_LABEL[conversation.agent]}；Enter 发送，Shift+Enter 换行`
-            : idle ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
+          idle || stopped ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送；Esc 中断`
             : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断'
         }
@@ -95,7 +94,7 @@ export function ChatComposer({ conversation, queued }: { conversation: Conversat
           <StopIcon />
         </button>
       ) : (
-        <button type="button" className="chat-input-button" aria-label="发送（Enter）" data-tooltip={starting ? '正在启动 agent…' : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
+        <button type="button" className="chat-input-button" aria-label="发送（Enter）" data-tooltip={starting ? `正在启动 ${AGENT_LABEL[conversation.agent]}…` : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
           <EnterIcon />
         </button>
       )}

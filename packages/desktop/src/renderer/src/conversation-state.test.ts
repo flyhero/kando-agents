@@ -19,8 +19,14 @@ describe('conversationState', () => {
 
   it('tells a chat-mode agent that waits on the user from one that works', () => {
     expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'running' } }).label).toBe('运行中')
-    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } }).label).toBe('等待输入')
     expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'awaiting' } }).label).toBe('等待确认')
+  })
+
+  it('calls a chat conversation idle whether or not its agent is up, unless it crashed', () => {
+    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } })).toMatchObject({ label: '空闲', running: false })
+    expect(label({ mode: 'chat', lastExit: { code: null, at: 1 } }).label).toBe('空闲')
+    expect(label({ mode: 'chat', lastExit: { code: 0, at: 1 } }).label).toBe('空闲')
+    expect(label({ mode: 'chat', lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true })
   })
 
   it('says only "not running" to an older core that sends no exit', () => {

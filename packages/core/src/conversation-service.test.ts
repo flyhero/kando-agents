@@ -448,6 +448,24 @@ describe('ConversationService in chat mode', () => {
     expect(service.get(busy.id).sessionId).not.toBeNull()
   })
 
+  it('makes way for the terminal or a handoff from an idle chat agent, but not a working one', async () => {
+    const created = await service.create('claude', [], 'chat')
+    const chat = created.sessionId!
+    await service.continue(created.id, 'tui')
+    expect(daemon.killed).toEqual([{ sessionId: chat, force: false }])
+    expect(service.get(created.id).mode).toBe('tui')
+    await expect(service.continue(created.id, 'chat')).rejects.toMatchObject({ reason: 'conversation-running' })
+
+    const idle = await service.create('claude', [], 'chat')
+    expect((await service.handoff(idle.id, 'codex', '', false, 'tui')).agent).toBe('codex')
+    daemon.reply = () => {}
+    const working = await service.create('claude', [], 'chat')
+    await service.send(working.id, 'still going')
+    await settle()
+    await expect(service.handoff(working.id, 'codex', '', false, 'tui')).rejects.toMatchObject({ reason: 'conversation-running' })
+    await expect(service.continue(working.id, 'tui')).rejects.toMatchObject({ reason: 'conversation-running' })
+  })
+
   it('takes a running chat stage back after core restarts', async () => {
     const created = await service.create('claude', [], 'chat')
     await service.send(created.id, 'first')

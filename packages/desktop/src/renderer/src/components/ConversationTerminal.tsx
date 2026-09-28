@@ -18,12 +18,15 @@ import { TitleEditor } from './TitleEditor'
 
 const MODE_ACTION: Record<ConversationMode, string> = { tui: '以终端界面继续', chat: '以聊天界面继续' }
 
-// Deleting sits a click away from the everyday buttons, as a task's does. A stopped conversation
-// can continue in either view here; the ▷ button uses the one settings name.
-function MoreMenu({ disabled, onDelete, onContinue }: {
+// Deleting sits a click away from the everyday buttons, as a task's does. A stopped terminal
+// conversation can continue in either view here (the ▷ button uses the one settings name), and a
+// chat one can move to the terminal whenever its agent is not busy.
+function MoreMenu({ disabled, onDelete, continueModes, continueDisabled, onContinue }: {
   disabled: boolean
   onDelete: () => void
-  onContinue: ((mode: ConversationMode) => void) | null
+  continueModes: readonly ConversationMode[]
+  continueDisabled: boolean
+  onContinue: (mode: ConversationMode) => void
 }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -43,11 +46,13 @@ function MoreMenu({ disabled, onDelete, onContinue }: {
       </button>
       {open && (
         <Popover label="更多操作" onClose={close}>
-          {onContinue && (['tui', 'chat'] as const).map((mode) => (
+          {continueModes.map((mode) => (
             <button
               key={mode}
               type="button"
               className="menu-item"
+              disabled={continueDisabled}
+              title={continueDisabled ? '等 agent 这一回合结束' : undefined}
               onClick={() => {
                 close()
                 onContinue(mode)
@@ -83,6 +88,9 @@ export function ConversationTerminal({ id }: { id: string }) {
   const plans = usePlans(id)
   if (!conversation) return null
   const chat = conversation.mode === 'chat'
+  // A chat agent starts with the next message and goes when idle: no continue or stop to press.
+  const chatBusy = chat && conversation.sessionId !== null && conversation.chat?.turn !== 'idle'
+  const continueModes: readonly ConversationMode[] = !chatSupported ? [] : chat ? ['tui'] : conversation.sessionId ? [] : ['tui', 'chat']
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
   // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
@@ -110,9 +118,9 @@ export function ConversationTerminal({ id }: { id: string }) {
       <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>
-        {!conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}
+        {!chat && !conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}
         <button type="button" className="tool-button" aria-label="移交给其他智能体" data-tooltip="移交给其他智能体" disabled={busy} onClick={() => setHandoffOpen(true)}><HandoffIcon /></button>
-        {conversation.sessionId && <button type="button" className="tool-button" aria-label="停止会话" data-tooltip="停止会话" disabled={busy} onClick={() => void action(() => stopConversation(id))}><StopIcon /></button>}
+        {!chat && conversation.sessionId && <button type="button" className="tool-button" aria-label="停止会话" data-tooltip="停止会话" disabled={busy} onClick={() => void action(() => stopConversation(id))}><StopIcon /></button>}
         {hasPanel && (
           <button
             type="button"
@@ -128,7 +136,9 @@ export function ConversationTerminal({ id }: { id: string }) {
         <MoreMenu
           disabled={busy}
           onDelete={remove}
-          onContinue={chatSupported && !conversation.sessionId ? (mode) => void action(() => continueConversation(id, mode)) : null}
+          continueModes={continueModes}
+          continueDisabled={chatBusy}
+          onContinue={(mode) => void action(() => continueConversation(id, mode))}
         />
         <span className="toolbar-separator" aria-hidden="true" />
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectConversation(null)}><CloseIcon /></button>
