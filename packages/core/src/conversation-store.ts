@@ -1,23 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
-import { Conversation, ConversationMessage, ConversationStage, type AgentKind } from '@kando/protocol'
+import { Conversation, ConversationMessage, ConversationStage, type AgentKind, type ConversationMode } from '@kando/protocol'
 
 const lastEnded = (column: string) => `(SELECT ${column} FROM conversation_stages
   WHERE conversation_id = conversations.id AND ended_at IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1)`
 const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_path AS workspacePath,
   project_paths AS projectPaths,
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
-  updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt
+  updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt,
+  (SELECT mode FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS mode
   FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
-  ended_at AS endedAt, exit_code AS exitCode FROM conversation_stages`
+  ended_at AS endedAt, exit_code AS exitCode, mode FROM conversation_stages`
 const MESSAGE_SELECT = `SELECT sequence, conversation_id AS conversationId, stage_id AS stageId,
   role, agent, text, event_key AS eventKey, complete, created_at AS createdAt FROM conversation_messages`
 
 function conversation(row: Record<string, unknown>): Conversation {
-  const { lastExitCode, lastExitAt, ...rest } = row
-  return Conversation.parse({ ...rest, projectPaths: JSON.parse(String(row.projectPaths)),
+  const { lastExitCode, lastExitAt, mode, ...rest } = row
+  return Conversation.parse({ ...rest, mode: mode ?? 'tui', projectPaths: JSON.parse(String(row.projectPaths)),
     titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace),
     lastExit: lastExitAt === null ? null : { code: lastExitCode, at: lastExitAt } })
 }
@@ -109,11 +110,26 @@ export class ConversationStore {
     return row ? ConversationStage.parse(row) : null
   }
 
-  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID()): ConversationStage {
+  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), mode: ConversationMode = 'tui'): ConversationStage {
     this.db.prepare(`INSERT INTO conversation_stages
-      (id, conversation_id, agent, provider_session_id, received_sequence, started_at)
-      VALUES (?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now())
+      (id, conversation_id, agent, provider_session_id, received_sequence, started_at, mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), mode)
     return this.stage(id)!
+  }
+
+  // The stage a daemon session runs, ended or not.
+  stageBySession(sessionId: string): ConversationStage | null {
+    const row = this.db.prepare(`${STAGE_SELECT} WHERE session_id = ? ORDER BY rowid DESC LIMIT 1`).get(sessionId)
+    return row ? ConversationStage.parse(row) : null
+  }
+
+  // How far a chat stage's output has been read, counted like the daemon's offsets.
+  chatOffset(id: string): number {
+    return Number(this.db.prepare('SELECT chat_offset FROM conversation_stages WHERE id = ?').get(id)?.chat_offset ?? 0)
+  }
+
+  setChatOffset(id: string, offset: number): void {
+    this.db.prepare('UPDATE conversation_stages SET chat_offset = MAX(chat_offset, ?) WHERE id = ?').run(offset, id)
   }
 
   attachStage(id: string, sessionId: string): void {

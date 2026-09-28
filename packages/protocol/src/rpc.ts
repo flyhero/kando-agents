@@ -4,6 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
+import { ChatDecision, ChatItemList, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 
@@ -27,11 +28,19 @@ const IssueRef = InstanceRef.extend({ key: z.string().trim().min(1).max(64) })
 const FlowRef = z.object({ flowId: z.string().min(1).max(64) })
 const Ok = z.object({ ok: z.literal(true) })
 const ConversationRef = z.object({ id: z.string().uuid() })
+// What core can do beyond this protocol version's baseline; an older core sends none.
+export const CORE_FEATURES = ['chat'] as const
+// One page of a conversation's chat history; `before` fetches the page older than it, null when none is left.
+const ChatPage = z.object({ items: ChatItemList, before: z.string().nullable() })
 
 export const rpcMethods = {
   'system.hello': {
     params: z.object({ protocolVersion: z.number().int() }),
-    result: z.object({ protocolVersion: z.number().int(), serverVersion: z.string() })
+    result: z.object({
+      protocolVersion: z.number().int(),
+      serverVersion: z.string(),
+      features: z.array(z.string()).optional()
+    })
   },
   'tasks.list': {
     params: z.object({ status: TaskStatus.optional() }),
@@ -76,12 +85,36 @@ export const rpcMethods = {
   'tasks.diff': { params: TaskRef.extend({ repo: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
   'conversations.list': { params: z.object({}), result: z.array(Conversation) },
   'conversations.get': { params: ConversationRef, result: Conversation },
-  'conversations.create': { params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS) }), result: Conversation },
-  'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
-  'conversations.continue': { params: ConversationRef, result: Conversation },
-  'conversations.handoff': {
-    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean() }), result: Conversation
+  // mode defaults to tui, which is all an older core knows; check CORE_FEATURES before asking for chat.
+  'conversations.create': {
+    params: z.object({ agent: AgentKind, projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS), mode: ConversationMode.optional() }),
+    result: Conversation
   },
+  'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
+  'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional() }), result: Conversation },
+  'conversations.handoff': {
+    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional() }),
+    result: Conversation
+  },
+  // Chat mode only: a message for the agent, which must be idle.
+  'conversations.send': { params: ConversationRef.extend({ text: z.string().trim().min(1).max(100000) }), result: Ok },
+  // Ends the running turn; the agent stays up for the next message.
+  'conversations.interrupt': { params: ConversationRef, result: Ok },
+  // Answers an approval or question item. answers maps a question id to the chosen labels.
+  'conversations.respond': {
+    params: ConversationRef.extend({
+      requestId: z.string().min(1).max(200),
+      decision: ChatDecision,
+      message: z.string().trim().max(2000).optional(),
+      answers: z.record(z.string().max(500), z.array(z.string().max(2000)).max(20)).optional()
+    }),
+    result: Ok
+  },
+  // The latest page of chat items; this connection then receives conversations.chatItems and
+  // conversations.chatDelta for the conversation until it unwatches.
+  'conversations.watchChat': { params: ConversationRef, result: ChatPage },
+  'conversations.unwatchChat': { params: ConversationRef, result: Ok },
+  'conversations.chatItems': { params: ConversationRef.extend({ before: z.string().uuid() }), result: ChatPage },
   'conversations.stop': { params: ConversationRef, result: Conversation },
   'conversations.delete': { params: ConversationRef, result: Ok },
   'conversations.history': {
@@ -178,6 +211,10 @@ export const rpcMethods = {
 export const rpcNotifications = {
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
+  // Items added or changed, newest revision each; only to connections watching the conversation.
+  'conversations.chatItems': z.object({ conversationId: z.string(), items: ChatItemList }),
+  // Text streamed onto an assistant or reasoning item the client already holds.
+  'conversations.chatDelta': z.object({ conversationId: z.string(), itemId: z.string(), append: z.string() }),
   'tasks.changed': z.object({ task: Task }),
   'tasks.deleted': z.object({ id: z.string() }),
   'sessions.data': z.object({ sessionId: z.string(), data: z.string(), offset: z.number().int() }),

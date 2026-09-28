@@ -8,6 +8,7 @@ import type { DaemonMethod, DaemonParams, DaemonResult } from '@kando/protocol/n
 import type { SessionHost } from './daemon-client'
 import { ConversationService } from './conversation-service'
 import { ConversationStore } from './conversation-store'
+import { fakeChatDaemon } from './fake-chat-agent'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 
@@ -254,5 +255,131 @@ describe('ConversationService', () => {
     expect(service.stages(created.id)[0]?.providerSessionId).toBe(original.providerSessionId)
     await service.continue(created.id)
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', original.providerSessionId]))
+  })
+})
+
+describe('ConversationService in chat mode', () => {
+  let root: string
+  let tasks: TaskStore
+  let store: ConversationStore
+  let projects: ProjectRegistry
+  let daemon: ReturnType<typeof fakeChatDaemon>
+  let service: ConversationService
+
+  function serve(): ConversationService {
+    const next = new ConversationService(store, daemon, path.join(root, 'sessions'),
+      (id, stage, agent) => ['node', 'callback.js', id, stage, agent], () => {}, projects)
+    daemon.deliver = (event) => {
+      if (event.event === 'data') next.handleData(event)
+      else if (event.event === 'exit') next.handleExit(event.sessionId, event.exitCode)
+      else next.handleStderr(event.sessionId, event.data)
+    }
+    return next
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  beforeEach(() => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'kando-chat-conversation-'))
+    const database = path.join(root, 'kando.db')
+    tasks = new TaskStore(database)
+    store = new ConversationStore(database)
+    projects = new ProjectRegistry(database)
+    daemon = fakeChatDaemon()
+    service = serve()
+  })
+
+  afterEach(() => {
+    projects.close()
+    store.close()
+    tasks.close()
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('runs Claude over stream-json and keeps its messages like a terminal stage would', async () => {
+    const created = await service.create('claude', [], 'chat')
+    expect(created).toMatchObject({ mode: 'chat', chat: { turn: 'idle' } })
+    const args = daemon.spawns[0]?.args ?? []
+    expect(args).toEqual(expect.arrayContaining(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--session-id']))
+    expect(args).not.toContain('--settings')
+    expect(service.isChatSession(created.sessionId!)).toBe(true)
+
+    await service.send(created.id, 'Refactor the parser')
+    await settle()
+    expect(service.messages(created.id).map((message) => [message.role, message.text]))
+      .toEqual([['user', 'Refactor the parser'], ['assistant', 'echo: Refactor the parser']])
+    expect(service.get(created.id).title).toBe('Refactor the parser')
+    expect(service.chatPage(created.id).items.map((item) => item.kind)).toEqual(['user', 'assistant', 'turn'])
+    // The JSON never lands in the terminal record.
+    const terminal = Buffer.from(service.history(created.id, 0, 65536).data, 'base64').toString()
+    expect(terminal).toContain('聊天界面')
+    expect(terminal).not.toContain('echo:')
+  })
+
+  it('continues a terminal stage in chat mode on the same Claude session, and back again', async () => {
+    const created = await service.create('claude', [])
+    const [tui] = service.stages(created.id)
+    service.recordEvent({ id: created.id, stageId: tui!.id, agent: 'claude', role: 'user', text: 'Hello', eventKey: 'user-1', complete: true, providerSessionId: null })
+    await service.stop(created.id)
+    await service.continue(created.id, 'chat')
+    expect(daemon.spawns[0]?.args).toEqual(expect.arrayContaining(['--resume', tui!.providerSessionId]))
+    expect(service.get(created.id).mode).toBe('chat')
+    await service.send(created.id, 'Next step')
+    await settle()
+    await service.stop(created.id)
+    expect(service.get(created.id)).toMatchObject({ sessionId: null, lastExit: { code: null } })
+    await service.continue(created.id, 'tui')
+    expect(daemon.ptySpawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', tui!.providerSessionId]))
+  })
+
+  it('stops a chat agent only once it has exited, forcing it when it will not go', async () => {
+    const created = await service.create('claude', [], 'chat')
+    const sessionId = created.sessionId!
+    await service.stop(created.id)
+    expect(daemon.killed).toEqual([{ sessionId, force: false }])
+    expect(daemon.released).toContain(sessionId)
+    expect(service.get(created.id).sessionId).toBeNull()
+  })
+
+  it('hands off into chat mode with the handoff prompt as the first message, kept out of the title', async () => {
+    const created = await service.create('codex', [])
+    await service.stop(created.id)
+    await service.handoff(created.id, 'claude', 'watch the tests', false, 'chat')
+    const [first] = daemon.written('pipe-1').filter((frame) => JSON.stringify(frame).includes('"type":"user"'))
+    expect(JSON.stringify(first)).toContain('请先阅读 Kando 移交文件')
+    await settle()
+    expect(service.get(created.id).title).toBe('新会话')
+  })
+
+  it('refuses chat mode for an agent that cannot run it yet', async () => {
+    await expect(service.create('codex', [], 'chat')).rejects.toMatchObject({ reason: 'chat-unsupported' })
+    expect(daemon.spawns).toHaveLength(0)
+  })
+
+  it('drops a chat stage that fails to start, leaving nothing to resume', async () => {
+    daemon.answerInit = false
+    daemon.reply = () => {}
+    const creating = service.create('claude', [], 'chat')
+    while (!daemon.sessions.get('pipe-1')) await settle()
+    daemon.sessions.get('pipe-1')!.stderr = 'Not logged in'
+    daemon.exit('pipe-1', 1)
+    await expect(creating).rejects.toMatchObject({ reason: 'chat-start-failed' })
+    const [conversation] = service.list()
+    expect(service.stages(conversation!.id)).toEqual([])
+    expect(conversation?.sessionId).toBeNull()
+  })
+
+  it('takes a running chat stage back after core restarts', async () => {
+    const created = await service.create('claude', [], 'chat')
+    await service.send(created.id, 'first')
+    await settle()
+    const written = daemon.written(created.sessionId!).length
+
+    service = serve()
+    await service.reconcile((await daemon.request('list', {})).sessions)
+    expect(daemon.written(created.sessionId!)).toHaveLength(written)
+    await service.send(created.id, 'second')
+    await settle()
+    expect(service.messages(created.id).map((message) => message.text))
+      .toEqual(['first', 'echo: first', 'second', 'echo: second'])
   })
 })

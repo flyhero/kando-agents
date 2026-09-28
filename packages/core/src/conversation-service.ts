@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_TASK_REPOS, type AgentKind, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { MAX_TASK_REPOS, type AgentKind, type ChatItem, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
+import type { ChatAnswer, StageMessage } from './chat-driver'
+import { ChatHost, chatSupported, type ChatStage } from './chat-host'
+import { ChatLog } from './chat-log'
 import type { SessionHost } from './daemon-client'
 import { ConversationStore } from './conversation-store'
 import { folderChanges, folderDiff, folderHead } from './conversation-changes'
-import { conversationCommand, handoffPromptPath } from './conversation-command'
+import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import type { ProjectRegistry } from './project-registry'
@@ -14,11 +17,36 @@ import { Rejection } from './rejection'
 import { TerminalTranscript } from './terminal-transcript'
 import { normalizeRepoPath, projectHead } from './workspace'
 
-type ConversationEvent = { type: 'changed'; conversation: Conversation } | { type: 'deleted'; id: string }
+export type ConversationEvent =
+  | { type: 'changed'; conversation: Conversation }
+  | { type: 'deleted'; id: string }
+  | { type: 'chatItems'; conversationId: string; items: ChatItem[] }
+  | { type: 'chatDelta'; conversationId: string; itemId: string; append: string }
+
+// A chat page stops adding older stages once it holds this many items.
+const CHAT_PAGE_ITEMS = 1000
+const STOP_GRACE_MS = 5000
+const KILL_GRACE_MS = 2000
+
+// Whether `promise` settles within `ms`.
+function settles(promise: Promise<void>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms)
+    timer.unref()
+    void promise.then(() => {
+      clearTimeout(timer)
+      resolve(true)
+    })
+  })
+}
 
 export class ConversationService {
   private readonly launching = new Set<string>()
   private readonly transcript: TerminalTranscript
+  private readonly chats: ChatHost
+  // Sessions being stopped on purpose: their exit reads as a stop, not a crash.
+  private readonly stopping = new Set<string>()
+  private readonly exitWaiters = new Map<string, () => void>()
 
   constructor(
     private readonly store: ConversationStore,
@@ -29,13 +57,24 @@ export class ConversationService {
     private readonly projects: ProjectRegistry
   ) {
     this.transcript = new TerminalTranscript(sessionsRoot)
+    this.chats = new ChatHost(daemon, sessionsRoot, {
+      items: (conversationId, items) => this.emit({ type: 'chatItems', conversationId, items }),
+      delta: (conversationId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, itemId, append }),
+      messages: (stage, messages) => messages.forEach((message) => this.recordChatMessage(stage, message)),
+      provider: (stage, providerSessionId) => this.store.setProviderSession(stage.stageId, providerSessionId),
+      activity: (conversationId) => {
+        const current = this.store.get(conversationId)
+        if (current) this.changed(current)
+      },
+      offset: (stageId, end) => this.store.setChatOffset(stageId, end)
+    })
   }
 
-  list(): Conversation[] { return this.store.list() }
+  list(): Conversation[] { return this.store.list().map((conversation) => this.withChat(conversation)) }
   get(id: string): Conversation {
     const found = this.store.get(id)
     if (!found) throw new Rejection('conversation-not-found', `no conversation ${id}`)
-    return found
+    return this.withChat(found)
   }
   messages(id: string): ConversationMessage[] { this.get(id); return this.store.messages(id) }
   stages(id: string): ConversationStage[] { this.get(id); return this.store.stages(id) }
@@ -54,8 +93,9 @@ export class ConversationService {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
 
-  async create(agent: AgentKind, projectPaths: readonly string[]): Promise<Conversation> {
+  async create(agent: AgentKind, projectPaths: readonly string[], mode: ConversationMode = 'tui'): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
+    this.checkMode(agent, mode)
     const projects: string[] = []
     const picked: string[] = []
     for (const rawPath of projectPaths) {
@@ -85,7 +125,7 @@ export class ConversationService {
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)
-    return this.start(id, agent, '', false)
+    return this.start(id, agent, '', false, mode)
   }
 
   rename(id: string, title: string): Conversation {
@@ -93,22 +133,28 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
-  async continue(id: string): Promise<Conversation> {
+  async continue(id: string, mode: ConversationMode = 'tui'): Promise<Conversation> {
     const current = this.get(id)
     if (current.sessionId || this.launching.has(id)) throw new Rejection('conversation-running')
-    return this.start(id, current.agent, '', false)
+    this.checkMode(current.agent, mode)
+    return this.start(id, current.agent, '', false, mode)
   }
 
-  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean): Promise<Conversation> {
+  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui'): Promise<Conversation> {
     const current = this.get(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
+    this.checkMode(agent, mode)
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning) throw new Rejection('conversation-running')
     if (current.sessionId) await this.stop(id)
-    return this.start(id, agent, note, true)
+    return this.start(id, agent, note, true, mode)
   }
 
-  private async start(id: string, agent: AgentKind, note: string, handoff: boolean): Promise<Conversation> {
+  private checkMode(agent: AgentKind, mode: ConversationMode): void {
+    if (mode === 'chat' && !chatSupported(agent)) throw new Rejection('chat-unsupported', `${agent} cannot run in chat mode yet`)
+  }
+
+  private async start(id: string, agent: AgentKind, note: string, handoff: boolean, mode: ConversationMode): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     this.launching.add(id)
     try {
@@ -132,7 +178,8 @@ export class ConversationService {
         await writeFile(handoffPath, buildHandoff(current, messages, note, current.agent, agent), { mode: 0o600 })
       }
       const stageId = randomUUID()
-      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId)
+      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, mode)
+      if (mode === 'chat') return await this.startChat(current, stage, saved !== null, handoffPath, handoff, previous !== null)
       const callback = this.callbackCommand(id, stage.id, agent)
       const command = conversationCommand(agent, providerSessionId, saved !== null, callback, handoffPath, current.projectPaths.slice(1))
       const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : previous ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
@@ -145,9 +192,7 @@ export class ConversationService {
         sessionId = spawned.sessionId
       } catch (error) {
         this.store.deleteStage(stage.id)
-        this.transcript.marker(id, error instanceof Rejection && error.reason === 'command-not-found'
-          ? `${agent} 启动失败：找不到 ${command.command} 命令，请先安装并确认它在 PATH 里`
-          : `${agent} 启动失败`)
+        this.transcript.marker(id, this.launchFailure(agent, command.command, error))
         throw error
       }
       this.store.attachStage(stage.id, sessionId)
@@ -160,15 +205,128 @@ export class ConversationService {
     }
   }
 
+  // Runs the stage's agent over stdio, driven by the chat host, and waits until it can take a message.
+  private async startChat(
+    current: Conversation,
+    stage: ConversationStage,
+    resume: boolean,
+    handoffPath: string | null,
+    handoff: boolean,
+    continued: boolean
+  ): Promise<Conversation> {
+    const { id } = current
+    const { agent } = stage
+    const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, current.projectPaths.slice(1))
+    let sessionId: string
+    try {
+      ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
+    } catch (error) {
+      this.store.deleteStage(stage.id)
+      this.transcript.marker(id, this.launchFailure(agent, command.command, error))
+      throw error instanceof Rejection && error.reason === 'unknown-method'
+        ? new Rejection('daemon-outdated', 'the running daemon predates chat mode; restart it')
+        : error
+    }
+    this.store.attachStage(stage.id, sessionId)
+    const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : continued ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
+    this.transcript.marker(id, `${marker}（聊天界面，此段不在终端显示）`)
+    this.changed(this.store.update(id, { agent, sessionId }))
+    try {
+      await this.chats.open(this.chatStage(current, stage), sessionId, 0, true)
+      if (handoffPath) await this.chats.send(id, handoffPrompt(handoffPath))
+    } catch (error) {
+      // A stage that never started leaves nothing to resume, so it goes, log and all.
+      this.chats.forget(sessionId, stage.id)
+      await this.daemon.request('kill', { sessionId, force: true }).catch(() => {})
+      this.store.deleteStage(stage.id)
+      await rm(ChatLog.of(this.sessionsRoot, id, stage.id).file, { force: true })
+      this.changed(this.store.update(id, { sessionId: null }))
+      this.transcript.marker(id, `${agent} 聊天界面启动失败`)
+      throw error
+    }
+    return this.get(id)
+  }
+
+  private launchFailure(agent: AgentKind, command: string, error: unknown): string {
+    return error instanceof Rejection && error.reason === 'command-not-found'
+      ? `${agent} 启动失败：找不到 ${command} 命令，请先安装并确认它在 PATH 里`
+      : `${agent} 启动失败`
+  }
+
+  private chatStage(conversation: Conversation, stage: ConversationStage): ChatStage {
+    return {
+      conversationId: conversation.id,
+      stageId: stage.id,
+      agent: stage.agent,
+      options: { cwd: conversation.workspacePath, extraDirs: conversation.projectPaths.slice(1), resume: stage.providerSessionId }
+    }
+  }
+
+  async send(id: string, text: string): Promise<void> {
+    this.get(id)
+    await this.chats.send(id, text)
+  }
+
+  async respond(id: string, requestId: string, answer: ChatAnswer): Promise<void> {
+    this.get(id)
+    await this.chats.respond(id, requestId, answer)
+  }
+
+  async interrupt(id: string): Promise<void> {
+    this.get(id)
+    await this.chats.interrupt(id)
+  }
+
+  // The newest chat stages' items, oldest first; `before` pages further back.
+  chatPage(id: string, before?: string): { items: ChatItem[]; before: string | null } {
+    const conversation = this.get(id)
+    const stages = this.store.stages(id).filter((stage) => stage.mode === 'chat')
+    const until = before === undefined ? stages.length : stages.findIndex((stage) => stage.id === before)
+    if (until < 0) throw new Rejection('stage-not-found', `no chat stage ${before}`)
+    const pages: ChatItem[][] = []
+    let count = 0
+    let index = until
+    while (index > 0 && (pages.length === 0 || count < CHAT_PAGE_ITEMS)) {
+      index--
+      const items = this.chats.items(this.chatStage(conversation, stages[index]!))
+      pages.unshift(items)
+      count += items.length
+    }
+    return { items: pages.flat(), before: index > 0 ? stages[index]!.id : null }
+  }
+
+  isChatSession(sessionId: string): boolean {
+    return this.store.stageBySession(sessionId)?.mode === 'chat'
+  }
+
   async stop(id: string): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     const current = this.get(id)
     if (!current.sessionId) return current
-    await this.daemon.request('kill', { sessionId: current.sessionId })
+    if (this.store.activeStage(id)?.mode === 'chat') {
+      await this.stopChat(current.sessionId)
+      if (this.store.get(id)?.sessionId === null) return this.get(id)
+    } else {
+      await this.daemon.request('kill', { sessionId: current.sessionId })
+    }
     const stage = this.store.activeStage(id)
     if (stage) this.store.endStage(stage.id, null)
     this.transcript.marker(id, '会话已停止')
     return this.changed(this.store.update(id, { sessionId: null }))
+  }
+
+  // A chat agent is gone only once the daemon says so: clearing the session any earlier would let a
+  // continue start a second writer on the same Claude session or Codex thread.
+  private async stopChat(sessionId: string): Promise<void> {
+    const exited = new Promise<void>((resolve) => this.exitWaiters.set(sessionId, resolve))
+    this.stopping.add(sessionId)
+    await this.daemon.request('kill', { sessionId })
+    if (!(await settles(exited, STOP_GRACE_MS))) {
+      await this.daemon.request('kill', { sessionId, force: true }).catch(() => {})
+      await settles(exited, KILL_GRACE_MS)
+    }
+    this.exitWaiters.delete(sessionId)
+    this.stopping.delete(sessionId)
   }
 
   async delete(id: string): Promise<void> {
@@ -178,6 +336,7 @@ export class ConversationService {
     const directory = path.join(this.sessionsRoot, id)
     await rm(path.join(directory, 'terminal.log'), { force: true })
     await rm(path.join(directory, 'handoffs'), { recursive: true, force: true })
+    await rm(path.join(directory, 'stages'), { recursive: true, force: true })
     this.store.delete(id)
     this.emit({ type: 'deleted', id })
   }
@@ -198,27 +357,42 @@ export class ConversationService {
       if (stage.providerSessionId && stage.providerSessionId !== input.providerSessionId) throw new Rejection('conversation-event-invalid')
       this.store.setProviderSession(stage.id, input.providerSessionId)
     }
-    const text = input.text.trim()
-    if (!text || (input.role === 'user' && this.isHandoffPrompt(input.id, text))) return
+    this.recordStageMessage(conversation, stage, input)
+  }
+
+  private recordChatMessage(chat: ChatStage, message: StageMessage): void {
+    const conversation = this.store.get(chat.conversationId)
+    const stage = this.store.stage(chat.stageId)
+    if (conversation && stage) this.recordStageMessage(conversation, stage, message)
+  }
+
+  // Shared by hook reports and chat stages: the message itself, then what it says about the rest.
+  private recordStageMessage(conversation: Conversation, stage: ConversationStage, message: StageMessage): void {
+    const text = message.text.trim()
+    if (!text || (message.role === 'user' && this.isHandoffPrompt(conversation.id, text))) return
     const saved = this.store.addMessage({
-      conversationId: input.id, stageId: stage.id, role: input.role, agent: input.agent,
-      text, eventKey: input.eventKey, complete: input.complete
+      conversationId: conversation.id, stageId: stage.id, role: message.role, agent: stage.agent,
+      text, eventKey: message.eventKey, complete: message.complete
     })
     if (!saved) return
-    if (input.role === 'assistant' && input.complete) this.store.completePendingUsers(stage.id)
-    if (input.role === 'user' && !conversation.titleLocked && conversation.title === '新会话') {
+    if (message.role === 'assistant' && message.complete) this.store.completePendingUsers(stage.id)
+    if (message.role === 'user' && !conversation.titleLocked && conversation.title === '新会话') {
       const first = text.split(/\r?\n/).map((line) => line.trim().replace(/\s+/g, ' ')).find(Boolean)
       if (first) {
-        this.changed(this.store.update(input.id, { title: [...first].slice(0, 40).join('') }))
+        this.changed(this.store.update(conversation.id, { title: [...first].slice(0, 40).join('') }))
         return
       }
     }
-    this.changed(this.store.touch(input.id))
+    this.changed(this.store.touch(conversation.id))
   }
 
   handleData(event: Extract<DaemonEvent, { event: 'data' }>): void {
+    if (this.chats.handleData(event.sessionId, event.offset, event.data)) return
     const current = this.store.bySession(event.sessionId)
     if (!current) return
+    // Chat output before the host has opened the stage (core just restarted): open() reads it
+    // from the daemon's buffer, and it is JSON, not terminal output.
+    if (this.isChatSession(event.sessionId)) return
     const cursor = this.store.outputOffset(current.id)
     const start = Math.max(0, cursor - event.offset)
     if (start < event.data.length) {
@@ -228,25 +402,43 @@ export class ConversationService {
     }
   }
 
-  handleExit(sessionId: string, exitCode: number): void {
-    const current = this.store.bySession(sessionId)
-    if (!current) return
-    const stage = this.store.activeStage(current.id)
-    if (stage?.sessionId === sessionId) this.store.endStage(stage.id, exitCode)
-    this.transcript.marker(current.id, `agent 已退出，code ${exitCode}`)
-    this.changed(this.store.update(current.id, { sessionId: null }))
+  handleStderr(sessionId: string, data: string): void {
+    this.chats.handleStderr(sessionId, data)
   }
 
+  handleExit(sessionId: string, exitCode: number): void {
+    this.chats.handleExit(sessionId, exitCode)
+    const stopped = this.stopping.has(sessionId)
+    const current = this.store.bySession(sessionId)
+    if (current) {
+      const stage = this.store.activeStage(current.id)
+      if (stage?.sessionId === sessionId) this.store.endStage(stage.id, stopped ? null : exitCode)
+      this.transcript.marker(current.id, stopped ? '会话已停止' : `agent 已退出，code ${exitCode}`)
+      this.changed(this.store.update(current.id, { sessionId: null }))
+    }
+    this.exitWaiters.get(sessionId)?.()
+  }
+
+  // Every session the daemon still knows is drained before it counts as ended, so output from
+  // while core was down is kept; only one the daemon never heard of ended unseen.
   async reconcile(sessions: readonly SessionInfo[]): Promise<void> {
-    const live = new Set(sessions.filter((session) => !session.exited).map((session) => session.sessionId))
+    const known = new Map(sessions.map((session) => [session.sessionId, session]))
     for (const conversation of this.store.list()) {
       if (!conversation.sessionId) continue
-      if (!live.has(conversation.sessionId)) {
+      const info = known.get(conversation.sessionId)
+      try {
         const stage = this.store.activeStage(conversation.id)
-        if (stage) this.store.endStage(stage.id, null)
-        this.changed(this.store.update(conversation.id, { sessionId: null }))
-      } else {
-        await this.recover(conversation)
+        if (!info) {
+          if (stage) this.store.endStage(stage.id, null)
+          this.changed(this.store.update(conversation.id, { sessionId: null }))
+        } else if (stage?.mode === 'chat') {
+          await this.chats.open(this.chatStage(conversation, stage), info.sessionId, this.store.chatOffset(stage.id), false)
+          if (info.exited) this.handleExit(info.sessionId, info.exitCode ?? -1)
+        } else {
+          await this.recover(conversation)
+        }
+      } catch (error) {
+        console.error(`[kando-core] recovering conversation ${conversation.id} failed`, error)
       }
     }
   }
@@ -273,8 +465,14 @@ export class ConversationService {
     return handoffPath !== null && path.dirname(handoffPath) === path.join(this.sessionsRoot, id, 'handoffs')
   }
 
+  private withChat(conversation: Conversation): Conversation {
+    const turn = conversation.sessionId ? this.chats.activity(conversation.id) : null
+    return { ...conversation, chat: turn ? { turn } : null }
+  }
+
   private changed(value: Conversation): Conversation {
-    this.emit({ type: 'changed', conversation: value })
-    return value
+    const decorated = this.withChat(value)
+    this.emit({ type: 'changed', conversation: decorated })
+    return decorated
   }
 }

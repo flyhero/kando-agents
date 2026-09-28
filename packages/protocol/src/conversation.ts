@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ChatTurnActivity, ConversationMode } from './chat'
 import { AgentKind } from './task'
 
 export const Conversation = z.object({
@@ -15,7 +16,11 @@ export const Conversation = z.object({
   updatedAt: z.number(),
   // How the agent last stopped: code is null when it was stopped rather than exiting on its own.
   // null before any run has ended. Older cores leave it out.
-  lastExit: z.object({ code: z.number().int().nullable(), at: z.number() }).nullable().optional()
+  lastExit: z.object({ code: z.number().int().nullable(), at: z.number() }).nullable().optional(),
+  // How the latest stage runs its agent. Older cores leave it out: every stage was a TUI.
+  mode: ConversationMode.catch('tui').optional(),
+  // Set while a chat-mode agent is running, to tell whether it works or waits on the user.
+  chat: z.object({ turn: ChatTurnActivity.catch('idle') }).nullable().optional()
 })
 export type Conversation = z.infer<typeof Conversation>
 
@@ -28,7 +33,8 @@ export const ConversationStage = z.object({
   receivedSequence: z.number().int().nonnegative(),
   startedAt: z.number(),
   endedAt: z.number().nullable(),
-  exitCode: z.number().nullable()
+  exitCode: z.number().nullable(),
+  mode: ConversationMode.catch('tui').optional()
 })
 export type ConversationStage = z.infer<typeof ConversationStage>
 

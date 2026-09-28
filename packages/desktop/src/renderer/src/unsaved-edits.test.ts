@@ -9,7 +9,7 @@ type Sent = { id: number; method: string; params: { id: string; title?: string; 
 function fakeCore() {
   const sent: Sent[] = []
   const client = createRpcClient((frame) => sent.push(JSON.parse(frame)))
-  const connection: RpcConnection = { ...client, close: () => {}, closed: new Promise(() => {}) }
+  const connection: RpcConnection = { ...client, close: () => {}, closed: new Promise(() => {}), features: [] }
   const task = (id: string, details: string) => ({
     id, title: 't', details, status: 'pending', repos: [], dependsOn: [], agent: null, sessionId: null, createdAt: 0, updatedAt: 0
   })

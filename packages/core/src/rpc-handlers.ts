@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from '@kando/protocol'
+import { CORE_FEATURES, PROTOCOL_VERSION } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import type { AttachmentStore } from './attachment-store'
 import type { AttachmentUploads } from './attachment-uploads'
@@ -25,7 +25,7 @@ export function createRpcHandlers(
   terminals: TerminalService
 ): RpcHandlers {
   return {
-    'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version }),
+    'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
     'tasks.list': ({ status }) => service.list(status),
     'tasks.get': ({ id }) => service.get(id),
     'tasks.create': (params) => service.createTask(params),
@@ -54,10 +54,20 @@ export function createRpcHandlers(
     'tasks.diff': ({ id, repo, file }) => service.diff(id, repo, file),
     'conversations.list': () => conversations.list(),
     'conversations.get': ({ id }) => conversations.get(id),
-    'conversations.create': ({ agent, projectPaths }) => conversations.create(agent, projectPaths),
+    'conversations.create': ({ agent, projectPaths, mode }) => conversations.create(agent, projectPaths, mode),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
-    'conversations.continue': ({ id }) => conversations.continue(id),
-    'conversations.handoff': ({ id, agent, note, stopRunning }) => conversations.handoff(id, agent, note, stopRunning),
+    'conversations.continue': ({ id, mode }) => conversations.continue(id, mode),
+    'conversations.handoff': ({ id, agent, note, stopRunning, mode }) => conversations.handoff(id, agent, note, stopRunning, mode),
+    'conversations.send': async ({ id, text }) => { await conversations.send(id, text); return OK },
+    'conversations.interrupt': async ({ id }) => { await conversations.interrupt(id); return OK },
+    'conversations.respond': async ({ id, requestId, ...answer }) => { await conversations.respond(id, requestId, answer); return OK },
+    // Read after subscribing, so an item that changes in between reaches the client either way.
+    'conversations.watchChat': ({ id }, connection) => {
+      connection.watching.add(id)
+      return conversations.chatPage(id)
+    },
+    'conversations.unwatchChat': ({ id }, connection) => { connection.watching.delete(id); return OK },
+    'conversations.chatItems': ({ id, before }) => conversations.chatPage(id, before),
     'conversations.stop': ({ id }) => conversations.stop(id),
     'conversations.delete': async ({ id }) => { await conversations.delete(id); return OK },
     'conversations.history': ({ id, offset, length }) => conversations.history(id, offset, length),
@@ -93,7 +103,9 @@ export function createRpcHandlers(
     'sessions.attach': async ({ sessionId, fromOffset }, connection) => {
       connection.attached.add(sessionId)
       try {
-        const { buffer, bufferStart, endOffset, exited } = await sessions.request('attach', { sessionId })
+        const { buffer, bufferStart, endOffset, exited, io } = await sessions.request('attach', { sessionId })
+        // A chat agent's output is JSON for core, not a terminal to draw; keystrokes would reach its stdin.
+        if (io === 'pipe') throw new Rejection('chat-session', 'this session runs in chat mode')
         const start = Math.max(bufferStart, Math.min(fromOffset ?? bufferStart, endOffset))
         return { buffer: buffer.slice(start - bufferStart), bufferStart: start, endOffset, exited }
       } catch (error) {
@@ -106,11 +118,13 @@ export function createRpcHandlers(
       return OK
     },
     'sessions.write': async ({ sessionId, data }) => {
+      if (conversations.isChatSession(sessionId)) throw new Rejection('chat-session', 'this session runs in chat mode')
       await sessions.request('write', { sessionId, data })
       service.noteInput(sessionId)
       return OK
     },
     'sessions.resize': async ({ sessionId, cols, rows }) => {
+      if (conversations.isChatSession(sessionId)) return OK
       await sessions.request('resize', { sessionId, cols, rows })
       return OK
     },

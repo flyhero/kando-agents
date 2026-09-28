@@ -116,7 +116,10 @@ export const MIGRATIONS = [
   // Shells in the app's terminal panel, which the daemon keeps running across core restarts.
   `CREATE TABLE terminals (
      id TEXT PRIMARY KEY, session_id TEXT NOT NULL, cwd TEXT NOT NULL, title TEXT NOT NULL, created_at INTEGER NOT NULL
-   );`
+   );`,
+  // A stage runs its agent as a TUI or in chat mode; a chat stage's output is read up to chat_offset.
+  `ALTER TABLE conversation_stages ADD COLUMN mode TEXT NOT NULL DEFAULT 'tui';
+   ALTER TABLE conversation_stages ADD COLUMN chat_offset INTEGER NOT NULL DEFAULT 0;`
 ]
 
 

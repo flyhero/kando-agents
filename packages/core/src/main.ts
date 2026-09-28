@@ -63,8 +63,15 @@ const conversations = new ConversationService(
   conversationsStore, daemon, paths.sessions,
   (id, stageId, agent) => [process.execPath, '--import', tsxLoader, cli, 'conversation-event', paths.home, id, stageId, agent],
   (event) => {
+    const watchers = (id: string) => [...(server?.connections ?? [])].filter((c) => c.watching.has(id))
     if (event.type === 'changed') server?.broadcast('conversations.changed', { conversation: event.conversation })
-    else server?.broadcast('conversations.deleted', { id: event.id })
+    else if (event.type === 'deleted') server?.broadcast('conversations.deleted', { id: event.id })
+    else if (event.type === 'chatItems') {
+      watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
+    } else {
+      const { conversationId, itemId, append } = event
+      watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, itemId, append }))
+    }
   },
   projects
 )
@@ -100,6 +107,8 @@ daemon.onEvent((event) => {
     terminals.handleExit(sessionId)
     // A finished run is when the numbers most likely moved.
     void usage.refresh()
+  } else {
+    conversations.handleStderr(sessionId, event.data)
   }
 })
 

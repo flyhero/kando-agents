@@ -18,6 +18,8 @@ import { Rejection } from './rejection'
 
 export type Connection = {
   readonly attached: Set<string>
+  // Conversations whose chat items this client wants as they change.
+  readonly watching: Set<string>
   notify<N extends RpcNotificationName>(name: N, params: RpcNotificationParams<N>): void
   // For state that belongs to this client alone, like a sign-in waiting on its answers.
   onClose(listener: () => void): () => void
@@ -109,6 +111,7 @@ export function startRpcServer(options: {
     const closeListeners = new Set<() => void>()
     const connection: Connection = {
       attached: new Set(),
+      watching: new Set(),
       notify: (name, params) => send(JSON.stringify({ jsonrpc: '2.0', method: name, params })),
       onClose: (listener) => {
         closeListeners.add(listener)

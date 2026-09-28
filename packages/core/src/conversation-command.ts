@@ -15,6 +15,28 @@ export function handoffPromptPath(text: string): string | null {
   return trimmed.slice(HANDOFF_PREFIX.length, -HANDOFF_SUFFIX.length)
 }
 
+// A chat-mode agent speaks JSON lines over stdio: no hooks (the stream carries every message),
+// and no prompt in argv (messages, the handoff prompt included, go to stdin).
+export function chatCommand(
+  agent: AgentKind,
+  providerSessionId: string | null,
+  resume: boolean,
+  handoffPath: string | null,
+  extraProjects: readonly string[] = []
+): AgentCommand {
+  if (agent === 'claude') {
+    return { command: 'claude', args: [
+      '-p', '--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json',
+      '--include-partial-messages', '--permission-prompt-tool', 'stdio',
+      ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
+      ...extraProjects.flatMap((project) => ['--add-dir', project]),
+      ...(handoffPath ? ['--allowedTools', `Read(/${handoffPath})`] : [])
+    ] }
+  }
+  // app-server takes the thread, sandbox and extra roots over the protocol instead.
+  return { command: 'codex', args: ['app-server'] }
+}
+
 export function conversationCommand(
   agent: AgentKind,
   providerSessionId: string | null,

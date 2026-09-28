@@ -96,6 +96,8 @@ export function createRpcClient(send: (frame: string) => void): RpcClient {
 export type RpcConnection = RpcClient & {
   close(): void
   closed: Promise<void>
+  // What the core said it supports beyond the protocol version (see CORE_FEATURES).
+  features: readonly string[]
 }
 
 export function connectRpc(url: string): Promise<RpcConnection> {
@@ -116,7 +118,6 @@ export function connectRpc(url: string): Promise<RpcConnection> {
     }
     socket.onopen = async () => {
       opened = true
-      const connection: RpcConnection = { ...client, close: () => socket.close(), closed }
       try {
         const hello = await client.call('system.hello', { protocolVersion: PROTOCOL_VERSION })
         if (hello.protocolVersion !== PROTOCOL_VERSION) {
@@ -124,7 +125,7 @@ export function connectRpc(url: string): Promise<RpcConnection> {
             `protocol mismatch: client ${PROTOCOL_VERSION}, core ${hello.protocolVersion}`
           )
         }
-        resolve(connection)
+        resolve({ ...client, close: () => socket.close(), closed, features: hello.features ?? [] })
       } catch (error) {
         socket.close()
         reject(error instanceof Error ? error : new Error(String(error)))
