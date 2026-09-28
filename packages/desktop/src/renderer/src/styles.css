@@ -3818,7 +3818,8 @@ button.task-tag-updated:hover {
   background: var(--surface-muted);
 }
 
-.chat-todos-anchor .menu { min-width: 240px; padding: 6px 8px; }
+/* The dock sits at the bottom, and below the chip is the queued message and the input. */
+.chat-todos-anchor .menu { top: auto; bottom: calc(100% + 4px); min-width: 240px; padding: 6px 8px; }
 
 .chat-todos {
   display: flex;
