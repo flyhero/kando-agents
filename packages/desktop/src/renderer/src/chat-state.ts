@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { ChatItem, ConversationMessage, ConversationStage } from '@kando/protocol'
+import { isPlanApproval, type ChatItem, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -13,18 +13,12 @@ export const useChat = create<Record<string, ChatPage>>()(() => ({}))
 // plan-mode turn ended with.
 export type PlanItem = Extract<ChatItem, { kind: 'approval' }>
 const NO_PLANS: PlanItem[] = []
-const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])
-
-// A plain check rather than a type guard: a plan has the approval type of any other approval.
-export function isPlan(item: ChatItem): boolean {
-  return item.kind === 'approval' && PLAN_TOOLS.has(item.tool)
-}
 
 // The conversation's plans, oldest first, while a view watches it.
 export function usePlans(conversationId: string): PlanItem[] {
   const items = useChat((s) => s[conversationId]?.items)
   return useMemo(
-    () => items?.filter((item): item is PlanItem => item.kind === 'approval' && isPlan(item)) ?? NO_PLANS,
+    () => items?.filter((item): item is PlanItem => item.kind === 'approval' && isPlanApproval(item)) ?? NO_PLANS,
     [items]
   )
 }

@@ -1,22 +1,21 @@
-import type { ChatItem, Conversation } from '@kando/protocol'
-import { showConversationChanges } from '../core-store'
-import { isPlan, itemKey } from '../chat-state'
+import { isPlanApproval, type ChatItem, type Conversation } from '@kando/protocol'
+import { itemKey } from '../chat-state'
+import { useChatSurface } from './chat-surface'
 import { ChatComposer } from './ChatComposer'
 import { ChatPlanCard } from './ChatPlan'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatTodosChip } from './ChatTodos'
-import { useFolderChanges } from './ConversationInspector'
 import { ArrowUpIcon } from './icons'
-import { lineTotals } from './Inspector'
+import { lineTotals, useChangedFiles } from './Inspector'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 type StateItem = Extract<ChatItem, { kind: 'state' }>
 
 // What the project holds uncommitted, read again whenever a call finishes; a click opens the
-// inspector with the files. The folders are the user's too, so their own edits count here.
+// inspector with the files.
 function ChangesChip({ conversation, finishedCalls }: { conversation: Conversation; finishedCalls: number }) {
-  const changes = useFolderChanges(conversation.id, conversation.updatedAt, finishedCalls)
-  const files = changes?.flatMap((folder) => folder.files) ?? []
+  const surface = useChatSurface()
+  const files = useChangedFiles(surface.changes, conversation.updatedAt, finishedCalls) ?? []
   if (files.length === 0) return null
   // New and binary files have no line counts; a row of only those would read +0 −0.
   const counted = files.filter((file) => file.additions !== null && file.deletions !== null)
@@ -24,8 +23,8 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
     <button
       type="button"
       className="chat-changes"
-      data-tooltip="项目里还没提交的改动，也可能有你自己的；点开检查器看"
-      onClick={showConversationChanges}
+      data-tooltip={surface.changesHint}
+      onClick={surface.showChanges}
     >
       {files.length} 个文件改动{counted.length > 0 && <span className="mono"> {lineTotals(counted)}</span>}
     </button>
@@ -42,7 +41,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
   finishedCalls: number
   onPrevious: () => void
 }) {
-  const inspectable = conversation.projectPaths.length > 0
+  const inspectable = useChatSurface().changes !== null
   const running = conversation.sessionId !== null
   return (
     <div className="chat-dock">
@@ -59,7 +58,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
           {pending.map((item) =>
             item.kind === 'question'
               ? <ChatQuestionCard key={itemKey(item)} conversationId={conversation.id} item={item} />
-              : isPlan(item)
+              : isPlanApproval(item)
                 ? <ChatPlanCard key={itemKey(item)} conversationId={conversation.id} item={item} />
                 : <ChatApprovalCard key={itemKey(item)} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
           )}

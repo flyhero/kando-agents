@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ChatItem, Conversation, ConversationMessage, ConversationStage } from '@kando/protocol'
-import { dropChat, isPlan, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
-import { perform, showConversationPlan, useCore } from '../core-store'
+import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
+import { perform, useCore } from '../core-store'
+import { ChatSurfaceContext, conversationSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
@@ -57,7 +58,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
     case 'tool':
       return <ChatToolCard item={item} />
     case 'approval':
-      return isPlan(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine conversationId={conversationId} item={item} />
+      return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine conversationId={conversationId} item={item} />
     case 'question':
       return <ChatRequestLine conversationId={conversationId} item={item} />
     case 'turn':
@@ -81,8 +82,12 @@ function isUserEntry(entry: TimelineEntry): boolean {
 }
 
 // A conversation whose latest stage runs in chat mode: every stage in order, then the composer.
-export function ConversationChat({ conversation }: { conversation: Conversation }) {
+// What it does beyond itself comes from the surface it is shown on: a free conversation's own
+// unless another is given, as a task's chat does.
+export function ConversationChat({ conversation, surface }: { conversation: Conversation; surface?: ChatSurface }) {
   const { id } = conversation
+  const own = useMemo(() => conversationSurface(conversation), [conversation])
+  const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
   const page = useChat((s) => s[id])
   const [stages, setStages] = useState<ConversationStage[]>([])
@@ -126,7 +131,7 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
   const entries = useMemo(() => {
     // A plan shows with its approval; the call's own card would only repeat it.
     const plans = new Set(items.flatMap((item) =>
-      item.kind === 'approval' && isPlan(item) && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
+      item.kind === 'approval' && isPlanApproval(item) && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
   const tools = useMemo(
@@ -142,14 +147,15 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
   const state = useMemo(() => items.findLast((item): item is Extract<ChatItem, { kind: 'state' }> => item.kind === 'state') ?? null, [items])
 
   // A plan the agent proposes opens beside the conversation, once; the user may close it again.
-  const waitingPlan = pending.find(isPlan)
+  const waitingPlan = pending.find(isPlanApproval)
   const waitingPlanKey = waitingPlan ? itemKey(waitingPlan) : null
   const shownPlan = useRef<string | null>(null)
+  const showPlan = shown.showPlan
   useEffect(() => {
     if (!waitingPlanKey || shownPlan.current === waitingPlanKey) return
     shownPlan.current = waitingPlanKey
-    showConversationPlan(waitingPlanKey)
-  }, [waitingPlanKey])
+    showPlan(waitingPlanKey)
+  }, [waitingPlanKey, showPlan])
 
   useLayoutEffect(() => {
     const element = list.current
@@ -196,6 +202,7 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
   const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
   return (
+    <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
     <div className="chat-view">
       <div
@@ -220,5 +227,6 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
     </ChatPaths.Provider>
+    </ChatSurfaceContext.Provider>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Conversation, FolderChanges } from '@kando/protocol'
 import { usePlans } from '../chat-state'
-import { setConversationInspectorOpen, setConversationInspectorTab, useCore } from '../core-store'
+import { setConversationInspectorOpen, setConversationInspectorTab, showConversationPlan, useCore } from '../core-store'
 import { BranchStatusDetails, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
 import { CommitList, FileDiffView, FileList, GIT_TABS, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
@@ -90,7 +90,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       onClose={() => setConversationInspectorOpen(false)}
     >
       {tab === 'plan' ? (
-        <ChatPlanView plans={plans} selected={selectedPlan} />
+        <ChatPlanView plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />
       ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
       ) : selected && rpc ? (

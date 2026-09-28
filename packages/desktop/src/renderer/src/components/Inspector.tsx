@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { RpcError, type ChangedFile, type Commit, type FileDiff } from '@kando/protocol'
+import { useCore } from '../core-store'
+import type { BranchTarget } from './BranchStatus'
 import { DiffLines } from './DiffLines'
 import { ArrowLeftIcon, CloseIcon, RefreshIcon } from './icons'
 import { PanelSeparator } from './PanelSeparator'
@@ -23,6 +25,29 @@ export function useFocusCount(): number {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
   return count
+}
+
+// The files a task's worktrees or a conversation's projects have changed, whichever the target is;
+// read again as updatedAt and refresh move, and when the window regains focus.
+export function useChangedFiles(target: BranchTarget | null, updatedAt: number, refresh: number): ChangedFile[] | null {
+  const rpc = useCore((state) => state.rpc)
+  const focusCount = useFocusCount()
+  const key = target ? `${target.kind}:${target.id}` : null
+  const [files, setFiles] = useState<{ key: string; files: ChangedFile[] } | null>(null)
+  useEffect(() => {
+    if (!rpc || !target || !key) return
+    let current = true
+    const read = target.kind === 'task'
+      ? rpc.call('tasks.changes', { id: target.id }).then((repos) => repos.flatMap((repo) => repo.files))
+      : rpc.call('conversations.changes', { id: target.id }).then((folders) => folders.flatMap((folder) => folder.files))
+    void read.catch(() => []).then((found) => {
+      if (current) setFiles({ key, files: found })
+    })
+    return () => {
+      current = false
+    }
+  }, [rpc, key, updatedAt, focusCount, refresh])
+  return files?.key === key ? files.files : null
 }
 
 export type InspectorTab = 'changes' | 'branch' | 'plan'
