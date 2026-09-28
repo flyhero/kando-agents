@@ -33,7 +33,8 @@ const USAGE = `kando <command>
             [--dep id]... [--clear-deps]        依赖的任务，可重复；给出即替换原列表
             [--image file]...                   追加图片（png/jpg/gif/webp），可重复
   move <id> done                         接受待验收的任务，或把未执行、执行中的任务标记为已完成
-  run <id>                               在 worktree 中启动 agent 执行
+  run <id> [--chat]                      在 worktree 中启动 agent 执行；--chat 改在聊天界面里开始：
+                                         先规划，依赖没完成时只读规划，在桌面端查看和批准计划
   continue <id> [--note n]               待验收或已完成的任务：在原来的 worktree 上开新会话继续做，
                                          --note 写验收时发现要改的地方
   redo <id> [--reason r]                 待验收或已完成的任务：废弃这次结果，新建一个继承它的任务
@@ -111,6 +112,7 @@ function formatTask(task: Task): string {
     ...(task.source ? [`source:   ${task.source.name} ${task.source.key}  ${task.source.url}`] : []),
     '',
     task.details || '(还没有详情)',
+    ...(task.plan ? ['', `计划（${task.plan.approved ? '已确认' : '已保存，依赖完成后执行'}）：`, task.plan.markdown.trim()] : []),
     ...(task.images.length ? ['', '图片：', ...taskImageLines(task, kandoPaths().attachments)] : []),
     ...(task.sourceSnapshot
       ? ['', `--- ${task.source?.name ?? '来源'} 原文（拉取于 ${new Date(task.sourceSnapshot.fetchedAt).toLocaleString('zh-CN')}）---`, task.sourceSnapshot.markdown]
@@ -201,6 +203,7 @@ async function main(argv: string[]): Promise<void> {
       task: { type: 'string' },
       reason: { type: 'string' },
       note: { type: 'string' },
+      chat: { type: 'boolean' },
       home: { type: 'string' },
       agent: { type: 'string' },
       image: { type: 'string', multiple: true },
@@ -263,9 +266,13 @@ async function main(argv: string[]): Promise<void> {
         break
       }
       case 'run': {
-        const task = await rpc.call('tasks.run', { id: required(rest[0], 'id') })
+        const id = required(rest[0], 'id')
+        const task = await rpc.call(values.chat ? 'tasks.start' : 'tasks.run', { id })
         const dirs = task.repos.map((repo) => repo.worktreePath ?? repo.path).join('、')
-        console.log(`${formatRow(task)}\n已在 ${dirs} 启动 ${task.agent}`)
+        const chat = !values.chat ? '' : task.status === 'pending'
+          ? '，依赖还没完成，先只读规划；在桌面端的任务里接着聊'
+          : '，先规划；在桌面端的任务里查看和批准计划'
+        console.log(`${formatRow(task)}\n已在 ${dirs} 启动 ${task.agent}${chat}`)
         break
       }
       case 'continue': {

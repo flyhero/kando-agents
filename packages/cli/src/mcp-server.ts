@@ -155,6 +155,7 @@ export function describeTask(task: Task, attachmentsDir: string): string {
     ...(task.dependsOn.length ? [`依赖：${task.dependsOn.map(shortTaskId).join('、')}`] : []),
     '',
     task.details.trim() || '（还没有详情）',
+    ...(task.plan ? ['', `在聊天里${task.plan.approved ? '确认' : '保存'}的计划：`, task.plan.markdown.trim()] : []),
     ...(images.length ? ['', `任务附了 ${images.length} 张图片：`, ...images] : []),
     // Same fence as in the agent's own prompt: a dependency's issue text is not the user's word either.
     ...(task.source ? ['', untrustedSource(task.source, task.sourceSnapshot, snapshotImagePaths(task, attachmentsDir))] : [])
