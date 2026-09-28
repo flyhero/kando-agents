@@ -1,3 +1,4 @@
+import { StringDecoder } from 'node:string_decoder'
 import { z } from 'zod'
 
 // Newline-delimited JSON over a Unix socket / named pipe between core and the PTY daemon.
@@ -90,10 +91,13 @@ export const DaemonInbound = z.union([
   z.object({ id: z.number(), result: z.unknown() })
 ])
 
+// A socket hands over bytes in arbitrary chunks, so a character can straddle two of them; decoding
+// each chunk alone would garble it and change the text's length, which offsets are counted in.
 export function createLineDecoder(onLine: (line: string) => void): (chunk: Buffer | string) => void {
+  const decoder = new StringDecoder('utf8')
   let rest = ''
   return (chunk) => {
-    rest += chunk.toString()
+    rest += typeof chunk === 'string' ? chunk : decoder.write(chunk)
     let index = rest.indexOf('\n')
     while (index !== -1) {
       const line = rest.slice(0, index)
