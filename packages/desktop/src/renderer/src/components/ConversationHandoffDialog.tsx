@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AgentKind, Conversation, ConversationMode } from '@kando/protocol'
 import { dismissError, perform, useChatSupported, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
-import { defaultMode, MODE_LABEL } from './ConversationActions'
+import { defaultMode, MODE_LABEL, startOptions } from './ConversationActions'
 
 export function ConversationHandoffDialog({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -17,7 +17,7 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   const submit = async () => {
     if (busy || (conversation.sessionId && !confirmed)) return
     setBusy(true)
-    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, mode }))
+    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(mode) }))
     setBusy(false)
     if (result) onClose()
   }

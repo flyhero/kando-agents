@@ -21,7 +21,8 @@ const TOOL_LABEL: Record<string, string> = {
   webSearch: '搜索网页',
   Task: '子任务',
   Agent: '子任务',
-  TodoWrite: '待办'
+  TodoWrite: '待办',
+  ExitPlanMode: '计划'
 }
 
 // Turns the conversation's project paths in a title or diff header into short, relative ones.

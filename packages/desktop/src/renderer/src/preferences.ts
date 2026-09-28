@@ -17,6 +17,8 @@ const Preferences = z.object({
   // How a conversation's agent starts unless the user picks otherwise: its own TUI in a terminal,
   // or Kando's chat view of its structured output.
   agentView: z.enum(['tui', 'chat']).catch('tui'),
+  // Off, a chat stage never offers running with nothing asked and nothing sandboxed.
+  allowBypass: z.boolean().catch(false),
   // Off, the sidebar lists only pending and running tasks.
   showAllTasks: z.boolean().catch(false),
   conversationGroup: z.enum(CONVERSATION_GROUPS).catch('none'),

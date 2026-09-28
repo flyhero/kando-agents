@@ -93,7 +93,9 @@ const REASON_TEXT: Record<string, string> = {
   'chat-session': '这条会话运行在聊天界面，没有终端可以连接',
   'chat-start-timeout': 'agent 太久没有完成启动',
   'daemon-outdated': '正在运行的终端守护进程版本太旧，不支持聊天界面，请重启它（pnpm dev:daemon）',
-  'stage-not-found': '找不到更早的聊天记录'
+  'stage-not-found': '找不到更早的聊天记录',
+  'chat-option-invalid': '这里用不了这个选项',
+  'chat-nothing-queued': '没有排队的消息'
 }
 
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.

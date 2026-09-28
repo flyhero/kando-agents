@@ -11,8 +11,14 @@ export function defaultMode(): ConversationMode {
   return chat ? usePreferences.getState().agentView : 'tui'
 }
 
+// What a start tells core besides its mode: whether this user lets chat stages offer bypass.
+export function startOptions(mode: ConversationMode): { mode: ConversationMode; allowBypass?: boolean } {
+  const options = useCore.getState().rpc?.features.includes('chat-options') ?? false
+  return mode === 'chat' && options ? { mode, allowBypass: usePreferences.getState().allowBypass } : { mode }
+}
+
 export function continueConversation(id: string, mode: ConversationMode = defaultMode()) {
-  return perform((rpc) => rpc.call('conversations.continue', { id, mode }))
+  return perform((rpc) => rpc.call('conversations.continue', { id, ...startOptions(mode) }))
 }
 
 export function stopConversation(id: string) {

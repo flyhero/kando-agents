@@ -1,6 +1,7 @@
 import { useContext, useState } from 'react'
 import type { ChatDecision, ChatItem } from '@kando/protocol'
 import { perform } from '../core-store'
+import { ChatMarkdown } from './ChatMarkdown'
 import { ChatPaths, toolLabel } from './ChatToolCard'
 
 type ApprovalItem = Extract<ChatItem, { kind: 'approval' }>
@@ -35,10 +36,50 @@ export function ChatRequestLine({ conversationId, item }: { conversationId: stri
     if (item.resolution !== null) return <ChatQuestionCard conversationId={conversationId} item={item} />
     return <div className="chat-request-line" data-waiting>agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
   }
+  if (item.tool === 'ExitPlanMode') {
+    if (item.resolution === null) return <div className="chat-request-line" data-waiting>计划等你确认 · 在下方回答</div>
+    return (
+      <details className="chat-plan-line">
+        <summary className="chat-request-line">计划 · {PLAN_RESOLUTION[item.resolution]}</summary>
+        {item.detail && <div className="chat-plan-body"><ChatMarkdown text={item.detail} /></div>}
+      </details>
+    )
+  }
   const what = <>{toolLabel(item.tool)} <span className="mono">{shorten(item.title)}</span></>
   return item.resolution === null
     ? <div className="chat-request-line" data-waiting>需要你确认：{what} · 在下方回答</div>
     : <div className="chat-request-line">{what} · {RESOLUTION_TEXT[item.resolution]}</div>
+}
+
+const PLAN_RESOLUTION: Record<NonNullable<ApprovalItem['resolution']>, string> = {
+  allowed: '按计划执行，逐项确认',
+  allowedForSession: '按计划执行，自动接受编辑',
+  denied: '继续规划',
+  cancelled: '已取消'
+}
+
+// A plan the agent wants to carry out: in full, with the mode to carry it out in, or sent back
+// with a note to keep planning.
+export function ChatPlanCard({ conversationId, item }: { conversationId: string; item: ApprovalItem }) {
+  const { busy, respond } = useResponder(conversationId, item.requestId)
+  const [note, setNote] = useState('')
+  return (
+    <div className="chat-request chat-plan" data-waiting>
+      <div className="chat-request-title">计划等你确认</div>
+      {item.detail && <div className="chat-plan-body"><ChatMarkdown text={item.detail} /></div>}
+      <div className="chat-request-actions">
+        <input
+          className="input chat-request-reason"
+          placeholder="要改哪里（继续规划时告诉 agent）"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        <button type="button" className="button ghost" disabled={busy} onClick={() => void respond('deny', note.trim() ? { message: note.trim() } : {})}>继续规划</button>
+        <button type="button" className="button" disabled={busy} onClick={() => void respond('allow')}>执行，逐项确认</button>
+        <button type="button" className="button primary" disabled={busy} onClick={() => void respond('allowForSession')}>执行，自动接受编辑</button>
+      </div>
+    </div>
+  )
 }
 
 // A waiting approval, docked above the composer: what the agent wants to do and the answers it

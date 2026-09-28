@@ -1,13 +1,15 @@
 import type { ChatItem, Conversation } from '@kando/protocol'
-import { setConversationInspectorOpen } from '../core-store'
+import { setConversationInspectorOpen, useChatOptionsSupported } from '../core-store'
 import { itemKey } from '../chat-state'
 import { ChatComposer } from './ChatComposer'
-import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
+import { ChatOptionsBar } from './ChatOptionsBar'
+import { ChatApprovalCard, ChatPlanCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { useFolderChanges } from './ConversationInspector'
 import { ArrowUpIcon } from './icons'
 import { lineTotals } from './Inspector'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
+type StateItem = Extract<ChatItem, { kind: 'state' }>
 
 // What the project holds uncommitted, read again whenever a call finishes; a click opens the
 // inspector with the files. The folders are the user's too, so their own edits count here.
@@ -30,8 +32,10 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
 }
 
 // Everything that waits on the user sits here, above the composer, so it cannot scroll out of view.
-export function ChatDock({ conversation, pending, tools, finishedCalls, onPrevious }: {
+export function ChatDock({ conversation, state, pending, tools, finishedCalls, onPrevious }: {
   conversation: Conversation
+  // The running stage's state; null for an older core or before the stage reports one.
+  state: StateItem | null
   pending: readonly RequestItem[]
   tools: ReadonlyMap<string, ToolItem>
   finishedCalls: number
@@ -39,6 +43,7 @@ export function ChatDock({ conversation, pending, tools, finishedCalls, onPrevio
 }) {
   const inspectable = conversation.projectPaths.length > 0
   const running = conversation.sessionId !== null
+  const optionsSupported = useChatOptionsSupported()
   return (
     <div className="chat-dock">
       <div className="chat-dock-header">
@@ -51,13 +56,16 @@ export function ChatDock({ conversation, pending, tools, finishedCalls, onPrevio
       {running && pending.length > 0 && (
         <div className="chat-dock-requests">
           {pending.map((item) =>
-            item.kind === 'approval'
-              ? <ChatApprovalCard key={itemKey(item)} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
-              : <ChatQuestionCard key={itemKey(item)} conversationId={conversation.id} item={item} />
+            item.kind === 'question'
+              ? <ChatQuestionCard key={itemKey(item)} conversationId={conversation.id} item={item} />
+              : item.tool === 'ExitPlanMode'
+                ? <ChatPlanCard key={itemKey(item)} conversationId={conversation.id} item={item} />
+                : <ChatApprovalCard key={itemKey(item)} conversationId={conversation.id} item={item} tool={item.toolItemId ? tools.get(item.toolItemId) : undefined} />
           )}
         </div>
       )}
       <ChatComposer conversation={conversation} />
+      {running && optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
     </div>
   )
 }

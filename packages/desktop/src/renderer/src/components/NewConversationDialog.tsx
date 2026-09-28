@@ -4,7 +4,7 @@ import { dismissError, perform, selectConversation, setNewConversationOpen, useC
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
-import { MODE_LABEL } from './ConversationActions'
+import { MODE_LABEL, startOptions } from './ConversationActions'
 import { ProjectPicker } from './ProjectPicker'
 
 export function NewConversationDialog() {
@@ -25,7 +25,7 @@ export function NewConversationDialog() {
   const create = async () => {
     if (busy) return
     setBusy(true)
-    const created = await perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, mode: chatSupported ? mode : 'tui' }))
+    const created = await perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(chatSupported ? mode : 'tui') }))
     setBusy(false)
     if (created) { selectConversation(created.id); close() }
   }

@@ -113,7 +113,12 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
   }, [rpc, id, conversation.sessionId])
 
   const items = page?.items ?? NO_ITEMS
-  const entries = useMemo(() => timeline(stages, messages, items), [stages, messages, items])
+  const entries = useMemo(() => {
+    // A plan shows with its approval; the call's own card would only repeat it.
+    const plans = new Set(items.flatMap((item) =>
+      item.kind === 'approval' && item.tool === 'ExitPlanMode' && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
+    return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
+  }, [stages, messages, items])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
     [items]
@@ -123,6 +128,8 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
     [items]
   )
   const finishedCalls = useMemo(() => items.filter((item) => item.kind === 'tool' && item.status !== 'running').length, [items])
+  // Each stage has one; the running stage's is the newest.
+  const state = useMemo(() => items.findLast((item): item is Extract<ChatItem, { kind: 'state' }> => item.kind === 'state') ?? null, [items])
 
   useLayoutEffect(() => {
     const element = list.current
@@ -189,7 +196,7 @@ export function ConversationChat({ conversation }: { conversation: Conversation 
         ))}
         {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理…</div>}
       </div>
-      <ChatDock conversation={conversation} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
+      <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
     </ChatPaths.Provider>
   )

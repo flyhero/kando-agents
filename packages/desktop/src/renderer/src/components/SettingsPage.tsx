@@ -93,6 +93,7 @@ function AgentSettings() {
   const defaultAgent = usePreferences((s) => s.defaultAgent)
   const openTerminal = usePreferences((s) => s.openTerminalOnRun)
   const agentView = usePreferences((s) => s.agentView)
+  const allowBypass = usePreferences((s) => s.allowBypass)
   return (
     <>
       <SettingsRow
@@ -108,6 +109,13 @@ function AgentSettings() {
               { value: 'chat', label: '聊天界面' }
             ]}
           />
+        )}
+      />
+      <SettingsRow
+        label="允许「全部放行」"
+        description="打开后，聊天界面的权限模式里多出「全部放行」：agent 不再请求确认，Codex 也不再受沙箱限制。Claude Code 自己建议只在没有网络的沙箱里这样用。只影响之后启动的聊天会话。"
+        control={(labelId) => (
+          <Toggle labelId={labelId} checked={allowBypass} onChange={(next) => setPreference('allowBypass', next)} />
         )}
       />
       <SettingsRow

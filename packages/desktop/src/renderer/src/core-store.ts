@@ -248,6 +248,11 @@ export function useChatSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('chat') ?? false)
 }
 
+// Whether it can also switch a chat stage's permission mode, model and effort.
+export function useChatOptionsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('chat-options') ?? false)
+}
+
 export function dismissError(): void {
   useCore.setState({ error: null })
 }
