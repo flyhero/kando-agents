@@ -133,6 +133,13 @@ describe('chatBlocks', () => {
       .toEqual(['u', { fold: ['looking', 't', 'tools:a+b'] }, 'answer'])
   })
 
+  it('leaves a finished turn open when folding is off, still listing the files it changed', () => {
+    const edit = tool('e', 'Edit', [{ path: 'a.ts', change: 'update', patch: '+x' }])
+    const items = [user('u'), reply('looking'), tool('a'), edit, reply('answer'), turn('end')]
+    expect(shape(chatBlocks(items.map((item) => ({ kind: 'item' as const, item })), { foldTurns: false })))
+      .toEqual(['u', 'looking', 'tools:a', 'e', 'answer', { changes: [expect.objectContaining({ path: 'a.ts' })] }, 'end'])
+  })
+
   it('keeps a turn that did nothing but answer as it was, and one still running unfolded', () => {
     expect(shape(blocksOf([user('u'), reply('answer'), turn('end')]))).toEqual(['u', 'answer', 'end'])
     expect(shape(blocksOf([user('u'), tool('a'), reply('so far')]))).toEqual(['u', 'tools:a', 'so far'])

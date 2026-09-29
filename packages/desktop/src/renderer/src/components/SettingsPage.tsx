@@ -23,6 +23,7 @@ function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
   const fontSize = usePreferences((s) => s.terminalFontSize)
   const chatWidth = usePreferences((s) => s.chatWidth)
+  const foldTurns = usePreferences((s) => s.foldTurns)
   return (
     <>
       <SettingsRow
@@ -69,6 +70,13 @@ function AppearanceSettings() {
               { value: 'full', label: '全宽' }
             ]}
           />
+        )}
+      />
+      <SettingsRow
+        label="折叠做完的回合"
+        description="打开时，agent 回完一轮，过程（思考、命令、中间的回复）收进「工作了 N 秒」，只留下最后的回答；点它仍能展开。关掉则一直全部显示。"
+        control={(labelId) => (
+          <Toggle labelId={labelId} checked={foldTurns} onChange={(next) => setPreference('foldTurns', next)} />
         )}
       />
     </>
@@ -250,7 +258,7 @@ const SECTIONS: readonly Section[] = [
     group: '界面',
     title: '外观',
     description: '主题、终端和聊天页的显示方式。',
-    keywords: ['主题', '浅色', '深色', '跟随系统', '终端', '字号', '字体', '聊天', '宽度', '全宽'],
+    keywords: ['主题', '浅色', '深色', '跟随系统', '终端', '字号', '字体', '聊天', '宽度', '全宽', '折叠', '回合', '工作了'],
     Icon: ContrastIcon,
     Body: AppearanceSettings
   },

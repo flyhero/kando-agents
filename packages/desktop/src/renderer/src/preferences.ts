@@ -11,6 +11,8 @@ const Preferences = z.object({
   terminalFontSize: z.number().int().min(10).max(20).catch(12),
   // How wide a chat's messages and composer may grow: 800px, 1200px, or the whole chat pane.
   chatWidth: z.enum(['narrow', 'medium', 'full']).catch('narrow'),
+  // Off, a finished turn's work stays in view rather than behind how long it worked.
+  foldTurns: z.boolean().catch(true),
   showUsage: z.boolean().catch(true),
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.

@@ -321,7 +321,8 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       item.kind === 'approval' && isPlanApproval(item) && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
-  const blocks = useMemo(() => chatBlocks(entries), [entries])
+  const foldTurns = usePreferences((s) => s.foldTurns)
+  const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
   const folds = useMemo<FoldState>(() => ({
     // Opens the turn's work, then brings the file's diff into view once it is there.
     reveal: (key, path) => {

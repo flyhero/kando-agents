@@ -266,7 +266,13 @@ function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[
   ]
 }
 
-export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
+// A turn left open still ends with the files it changed, then how it ended.
+function unfoldedTurn(body: ChatBlock[], end: ChatBlock): ChatBlock[] {
+  const files = turnFiles(body.filter(foldable))
+  return [...body, ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: `fold:${end.key}`, files }] : []), end]
+}
+
+export function chatBlocks(entries: readonly TimelineEntry[], { foldTurns = true }: { foldTurns?: boolean } = {}): ChatBlock[] {
   const runs: ChatBlock[] = []
   for (const entry of entries) {
     // Claude often thinks without saying anything it keeps.
@@ -296,7 +302,7 @@ export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
       blocks.push(...body, block)
       body = []
     } else if (item?.kind === 'turn') {
-      blocks.push(...foldTurn(body, item, block))
+      blocks.push(...(foldTurns ? foldTurn(body, item, block) : unfoldedTurn(body, block)))
       body = []
     } else {
       body.push(block)
