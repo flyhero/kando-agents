@@ -12,6 +12,11 @@ import {
 import { claimEndpoint } from './endpoint-claim'
 import { createSessionHost } from './session-host'
 
+// Packaged, the Electron binary runs the daemon as plain Node. Sessions inherit this process's
+// environment, and the flag must not leak into them: it would turn any Electron app a shell or
+// an agent starts into a Node interpreter.
+delete process.env.ELECTRON_RUN_AS_NODE
+
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
 await claimEndpoint(paths.daemonSocket)

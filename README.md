@@ -4,7 +4,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 
 任务与会话并行的多 agent 管理工具。任务适合**记下标题 → 完善详情 → 交给 Claude Code / Codex 在独立 worktree 中执行**；会话适合持续聊天及在两个 agent 之间移交。
 
-当前版本 0.1.0（开发者预览版，从源码运行），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 0.1.0（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
 未执行 pending ──执行──▶ 执行中 running ──退出──▶ 待验收 review ──接受──▶ 已完成 done
@@ -194,19 +194,38 @@ pnpm kando source login jira
 pnpm kando source import jira PROJ-123 --agent claude
 ```
 
+## 打包与安装
+
+macOS（Apple Silicon）可以打包成 dmg：
+
+```bash
+pnpm install
+pnpm dist:mac     # 产物在 packages/desktop/dist/Kando-<版本>-arm64.dmg
+```
+
+`dist:mac` 依次执行 electron-vite 构建、`bundle-backend`（esbuild 把 core、daemon 和 CLI 各打成一个 JS，附上 node-pty 的 macOS 预编译）和 electron-builder。打包的 App 由 Electron 自带的 Node 运行这三个文件（`ELECTRON_RUN_AS_NODE`），所以**装了 App 的机器不需要 Node 和 pnpm**，只需要 `claude` / `codex` CLI 本身。
+
+安装：打开 dmg，把 Kando 拖进「应用程序」。启动时 App 会检查 `~/.kando/core.json`，没有在运行的 core 就自动拉起随附的 daemon 和 core（日志在 `~/.kando/logs/`）；agent 的查找用的是登录 shell 的 PATH，所以 CLI 装在 Homebrew 或 `~/.local/bin` 都能找到。和从源码运行时一样，关闭或退出 App 不会停掉 core、daemon 和正在跑的 agent。
+
+几个注意点：
+
+- **产物没有签名**：本机构建的直接打开；拷到别的机器上首次要右键-打开，或 `xattr -dc /Applications/Kando.app`。正式分发需要 Apple Developer ID 签名与公证。
+- **和源码版共用数据**：两者都用 `~/.kando`（任务库、worktrees、会话记录）和同一个 daemon socket，可以混用；谁先启动，core 就是谁的。
+- **卸载**：删除 App 即可；`~/.kando` 里是任务数据和 worktrees（可能有未合并的工作成果），确认不要了再删。
+
 ## 开发
 
 ```bash
 pnpm typecheck    # 各包 tsc
 pnpm test         # vitest
 pnpm build        # 构建桌面端
+pnpm dist:mac     # 打包 macOS 应用，见上面的「打包与安装」
 ```
 
 ## 下一步
 
 - **agent 状态上报**：接入 Claude Code hooks / Codex notify，区分"等待输入"和"执行中"，不要靠解析终端输出
 - **验收**：按项目配置的测试命令在 worktree 里跑，结果放进检查器；合并分支
-- **打包**：桌面端启动时自动拉起 core 和 daemon，并用 electron-builder 打包
 - **SSH / WSL 执行宿主**：给 git、PTY 操作加上 `hostId`
 - **Windows**：`claude` / `codex` 的 `.cmd` shim 需要单独解析（聊天界面遇到时会明确报错）
 - **任务的聊天界面**：执行、继续和细化也能选聊天界面

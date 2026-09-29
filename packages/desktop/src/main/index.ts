@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, type OpenDialogOptions } from 'electron'
 import { readCoreEndpoint } from '@kando/protocol/node'
+import { ensureBackend } from './backend'
 
 // Main stays thin: tasks, git and PTYs live in core/daemon, so the window
 // can close or crash without touching running agents.
@@ -95,7 +96,22 @@ ipcMain.handle('kando:reveal-file', async (_event, candidates: unknown) => {
   return null
 })
 
+// Packaged, a second launch would race the first for daemon and core; hand it to the open window.
+const primary = !app.isPackaged || app.requestSingleInstanceLock()
+if (!primary) {
+  app.quit()
+}
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+})
+
 void app.whenReady().then(() => {
+  if (!primary) return
+  void ensureBackend()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

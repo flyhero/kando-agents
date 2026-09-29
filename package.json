@@ -16,7 +16,8 @@
     "kando": "tsx packages/cli/src/main.ts",
     "build": "pnpm --filter @kando/desktop run build",
     "typecheck": "pnpm -r run typecheck",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dist:mac": "pnpm --filter @kando/desktop run dist:mac"
   },
   "devDependencies": {
     "@types/node": "catalog:",

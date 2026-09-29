@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { PROTOCOL_VERSION } from '@kando/protocol'
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
 import { readClaudeUsage } from './claude-usage'
 import { readCodexUsage } from './codex-usage'
 import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
+import { cliCommand } from './cli-command'
 import { CredentialStore } from './credential-store'
 import { DaemonClient } from './daemon-client'
 import { jiraProvider } from './jira-provider'
@@ -40,12 +40,10 @@ const conversationsStore = new ConversationStore(paths.database)
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
 
-const tsxLoader = fileURLToPath(new URL('../node_modules/tsx/dist/loader.mjs', import.meta.url))
-const cli = fileURLToPath(new URL('../../cli/src/main.ts', import.meta.url))
 // Built before the task service, which runs its chat tasks in it; each hands the other its events.
 const conversations = new ConversationService(
   conversationsStore, daemon, paths.sessions,
-  (id, stageId, agent) => [process.execPath, '--import', tsxLoader, cli, 'conversation-event', paths.home, id, stageId, agent],
+  (id, stageId, agent) => cliCommand('conversation-event', paths.home, id, stageId, agent),
   (event) => {
     const watchers = (id: string) => [...(server?.connections ?? [])].filter((c) => c.watching.has(id))
     if (event.type === 'changed') {
@@ -81,7 +79,7 @@ const service = new TaskService(
   },
   (taskId) => kandoMcpServer(taskId, paths.home),
   attachments,
-  (taskId, session, agent) => [process.execPath, '--import', tsxLoader, cli, 'task-event', paths.home, taskId, session, agent],
+  (taskId, session, agent) => cliCommand('task-event', paths.home, taskId, session, agent),
   conversations
 )
 

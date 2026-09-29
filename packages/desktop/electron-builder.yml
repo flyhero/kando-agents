@@ -1,0 +1,25 @@
+appId: dev.kando.desktop
+productName: Kando
+directories:
+  output: dist
+# Everything the renderer and main need is compiled into out/; the backend ships as plain files
+# under Resources/backend instead, where forked Node processes can read them (asar cannot be).
+files:
+  - out/**
+  - '!out/backend/**'
+# node-pty is named directly: a from under a node_modules path sidesteps the matcher's
+# built-in node_modules exclusion, which silently dropped it from backend/.
+extraResources:
+  - from: out/backend
+    to: backend
+    filter: ['*.mjs']
+  - from: out/backend/node_modules/node-pty
+    to: backend/node_modules/node-pty
+# All native code arrives prebuilt (node-pty via bundle-backend); nothing to rebuild.
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64

@@ -14,5 +14,12 @@ catalog:
 # so nothing here needs electron-rebuild. Electron downloads its binary lazily, but electron-vite
 # reads path.txt without triggering that, so desktop's dev script runs install-electron first.
 allowBuilds:
+  electron-winstaller: set this to true or false
   esbuild: true
   node-pty: true
+
+# @electron/rebuild names @electron/node-gyp by a git URL, which the supply-chain policy blocks;
+# the same package from npm satisfies it. It is never run: packaging rebuilds nothing (npmRebuild
+# false), every native module arrives prebuilt.
+overrides:
+  '@electron/node-gyp': 10.2.0-electron.2
