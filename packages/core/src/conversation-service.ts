@@ -196,13 +196,16 @@ export class ConversationService {
       ?? this.store.create(task.agent, cwd, projectPaths, randomUUID(), {}, { id: task.id, title: task.title })
     const { id } = conversation
     if (this.launching.has(id)) throw new Rejection('conversation-running')
-    const moved = conversation.workspacePath !== cwd || conversation.projectPaths.join('\n') !== projectPaths.join('\n')
+    // Another cwd is another place for the agent; only the directories it was given changed, the
+    // agent restarts with them but goes on from where it was, as it would take /add-dir.
+    const moved = conversation.workspacePath !== cwd
+    const regrouped = moved || conversation.projectPaths.join('\n') !== projectPaths.join('\n')
     const live = conversation.sessionId !== null && this.chats.activity(id) !== null
-    const same = !moved && conversation.agent === task.agent && (conversation.planOnly ?? false) === launch.planOnly
+    const same = !regrouped && conversation.agent === task.agent && (conversation.planOnly ?? false) === launch.planOnly
     if (live && launch.session === 'resume' && same) return this.withChat(conversation)
     if (conversation.sessionId && !this.chats.idle(id)) throw new Rejection('chat-busy', 'the agent is still working')
     if (conversation.sessionId) await this.stop(id)
-    if (moved) this.store.moveWorkspace(id, cwd, projectPaths)
+    if (regrouped) this.store.moveWorkspace(id, cwd, projectPaths)
     if (conversation.title !== task.title) this.store.update(id, { title: task.title })
     if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
     // A stage of its own plans first; one going on keeps the mode it was left in.

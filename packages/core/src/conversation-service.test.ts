@@ -571,6 +571,19 @@ describe('ConversationService in chat mode', () => {
     expect(service.stages(moved.id).map((each) => each.planOnly)).toEqual([true, false])
   })
 
+  it('goes on with the same Claude session when only another directory is added', async () => {
+    const web = mkdtempSync(path.join(root, 'web-'))
+    const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
+    const first = daemon.spawns.at(-1)!.args
+    await service.send(started.id, 'hello')
+    await settle()
+    const regrouped = await service.startForTask(task, { cwd: root, extraDirs: [web], planOnly: false, session: 'resume' })
+    expect(regrouped.projectPaths).toEqual([realpathSync(root), realpathSync(web)])
+    expect(daemon.spawns).toHaveLength(2)
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', sessionArg(first), '--add-dir', realpathSync(web)]))
+    expect(JSON.stringify(daemon.written(service.get(started.id).sessionId!))).not.toContain('请先阅读 Kando 移交文件')
+  })
+
   it('deletes a task\'s chat with its task, logs and all', async () => {
     const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
     await service.deleteForTask(task.id)

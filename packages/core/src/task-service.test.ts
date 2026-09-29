@@ -793,7 +793,7 @@ describe('TaskService in the chat view', () => {
     await service.resumeChat(task.id)
     expect(daemon.spawns).toHaveLength(spawned + 1)
     expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(api) })
-    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--add-dir', realpathSync(web)]))
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', '--add-dir', realpathSync(web)]))
     // Nothing changed since: the agent is kept.
     await service.resumeChat(task.id)
     expect(daemon.spawns).toHaveLength(spawned + 1)
