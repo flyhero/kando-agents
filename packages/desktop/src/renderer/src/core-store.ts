@@ -72,6 +72,8 @@ type CoreState = {
   settingsSection: string | null
   // The source inbox takes the right-hand pane instead of a task.
   inboxOpen: boolean
+  // So does the page of worktrees, over whatever else was shown there.
+  worktreesOpen: boolean
   error: string | null
   // null until core answers usage.list; an older core without it leaves it null.
   usage: Partial<Record<AgentKind, AgentUsage>> | null
@@ -108,6 +110,7 @@ export const useCore = create<CoreState>()(() => ({
   settingsOpen: false,
   settingsSection: null,
   inboxOpen: false,
+  worktreesOpen: false,
   error: null,
   usage: null,
   sources: null,
@@ -131,6 +134,7 @@ export function selectTask(id: string | null): void {
       selectedId: id,
       section: 'tasks',
       inboxOpen: false,
+      worktreesOpen: false,
       view: chat ? 'chat' : task && (task.status === 'running' || task.refineSessionId || review) ? 'terminal' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
@@ -193,8 +197,7 @@ function activeAmong(id: string | null, terminals: readonly Terminal[]): string 
   return terminals.some((terminal) => terminal.id === id) ? id : terminals.at(-1)?.id ?? null
 }
 
-export async function openTerminal(): Promise<void> {
-  const cwd = contextFolder(useCore.getState())
+export async function openTerminal(cwd = contextFolder(useCore.getState())): Promise<void> {
   const terminal = await perform((rpc) => rpc.call('terminals.open', { cwd }))
   if (terminal) {
     useCore.setState((s) => ({
@@ -228,7 +231,7 @@ export function setTerminalMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, conversationDraft: false, unseen }
   })
 }
 
@@ -240,7 +243,7 @@ function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: 
 }
 
 export function openConversationDraft(): void {
-  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, conversationDraft: true })
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, conversationDraft: true })
 }
 
 export function closeConversationDraft(): void {
@@ -252,7 +255,7 @@ export function setNewConversationOpen(open: boolean): void {
 }
 
 export function openInbox(): void {
-  useCore.setState({ section: 'tasks', inboxOpen: true, selectedId: null, settingsOpen: false })
+  useCore.setState({ section: 'tasks', inboxOpen: true, selectedId: null, settingsOpen: false, worktreesOpen: false })
 }
 
 export function showView(view: TaskView): void {
@@ -265,6 +268,10 @@ export function setNewTaskOpen(open: boolean): void {
 
 export function setSettingsOpen(open: boolean, section: string | null = null): void {
   useCore.setState({ settingsOpen: open, settingsSection: section })
+}
+
+export function setWorktreesOpen(open: boolean): void {
+  useCore.setState({ worktreesOpen: open, settingsOpen: false })
 }
 
 function byAgent(usage: AgentUsage[]): Partial<Record<AgentKind, AgentUsage>> {
@@ -331,6 +338,10 @@ export function useChatImagesSupported(): boolean {
 // Whether a task can start in the chat view.
 export function useTaskChatSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
+}
+
+export function useWorktreesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('worktrees') ?? false)
 }
 
 // An older core keeps no starts, and would drop a picked one without a word.

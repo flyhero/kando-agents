@@ -13,13 +13,14 @@ import {
   type Task,
   type TaskStatus
 } from '@kando/protocol'
-import { perform, selectTask, setInspectorOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useTaskChatSupported, type TaskView } from '../core-store'
+import { perform, selectTask, setInspectorOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useTaskChatSupported, useWorktreesSupported, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon, TerminalIcon } from './icons'
 import { Popover } from './Popover'
+import { cleanWithConfirm } from './WorktreeManager'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
   if (blocker === 'blocked' && waitingOn.length > 0) {
@@ -383,9 +384,19 @@ function RefineButton({ task }: { task: Task }) {
   )
 }
 
+// A finished task's worktrees can go: their commits stay on the branch, and going on lays them out
+// again. Core checks each as it stands; an older core has nothing to clean with.
+function useWorktreeCleaning(task: Task): (() => void) | null {
+  const supported = useWorktreesSupported()
+  const paths = task.repos.flatMap((repo) => (repo.worktreePath ? [repo.worktreePath] : []))
+  if (!supported || paths.length === 0 || (task.status !== 'done' && task.status !== 'abandoned')) return null
+  return () => void cleanWithConfirm(paths, paths.length > 1 ? `这个任务的 ${paths.length} 个 worktree` : '这个任务的 worktree')
+}
+
 function MoreMenu({ task }: { task: Task }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
+  const clean = useWorktreeCleaning(task)
   return (
     <span className="menu-anchor">
       <button
@@ -412,6 +423,19 @@ function MoreMenu({ task }: { task: Task }) {
             复制任务 id
             <span className="menu-item-path mono">{shortTaskId(task.id)}…</span>
           </button>
+          {clean && (
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                close()
+                clean()
+              }}
+            >
+              清理 worktree
+              <span className="menu-item-path">分支保留</span>
+            </button>
+          )}
           <div className="menu-separator" />
           <button
             type="button"
@@ -528,6 +552,7 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
   const runBlocker = task.status === 'pending' ? checkRun(task, dependencies) : null
   const startBlocker = task.status === 'pending' ? checkStart(task, dependencies) : null
   const continueBlocker = isFinished(task.status) ? checkContinue(task, dependencies) : null
+  const clean = useWorktreeCleaning(task)
   const actions: ReactElement[] = []
   if (task.status === 'pending' && chat && startBlocker !== 'planning') {
     const label = startKind(dependencies) === 'plan' ? '开始规划' : '开始执行'
@@ -578,6 +603,7 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
       {actions.length > 0 && <div className="menu-separator" role="separator" />}
       <MenuItem label="重命名" onSelect={pick(onRename)} />
       <MenuItem label="复制任务 id" hint={`${shortTaskId(task.id)}…`} onSelect={pick(() => copyTaskId(task.id))} />
+      {clean && <MenuItem label="清理 worktree" hint="分支保留" onSelect={pick(clean)} />}
       <div className="menu-separator" role="separator" />
       <MenuItem label="删除任务" danger onSelect={pick(() => void deleteTask(task))} />
     </ContextMenu>

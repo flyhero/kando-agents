@@ -15,6 +15,7 @@ import { NewConversationDialog } from './components/NewConversationDialog'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
 import { TerminalPanel } from './components/TerminalPanel'
+import { WorktreeManager } from './components/WorktreeManager'
 
 export function App() {
   const selectedId = useCore((s) => s.selectedId)
@@ -26,6 +27,7 @@ export function App() {
   const error = useCore((s) => s.error)
   const newTaskOpen = useCore((s) => s.newTaskOpen)
   const settingsOpen = useCore((s) => s.settingsOpen)
+  const worktreesOpen = useCore((s) => s.worktreesOpen)
   const inboxOpen = useCore((s) => s.inboxOpen)
   const loginOpen = useCore((s) => s.login !== null)
   const terminalPanelOpen = useCore((s) => s.terminalPanelOpen)
@@ -88,7 +90,9 @@ export function App() {
               <TaskList />
               <ConversationList />
             </div>
-            {section === 'conversations' ? (
+            {worktreesOpen ? (
+              <WorktreeManager />
+            ) : section === 'conversations' ? (
               selectedConversationId ? <ConversationTerminal key={selectedConversationId} id={selectedConversationId} /> :
                 conversationDraft ? <ConversationDraft /> :
                 <section className="detail-empty">选择或新建一条自由会话</section>

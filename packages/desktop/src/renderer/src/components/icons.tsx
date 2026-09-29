@@ -379,3 +379,14 @@ export function ImageIcon() {
     </svg>
   )
 }
+
+export function BranchIcon() {
+  return (
+    <svg {...stroked}>
+      <circle cx="6" cy="5" r="1.8" />
+      <circle cx="6" cy="15" r="1.8" />
+      <circle cx="14" cy="7" r="1.8" />
+      <path d="M6 6.8v6.4M14 8.8c0 3.4-8 2.2-8 4.4" />
+    </svg>
+  )
+}

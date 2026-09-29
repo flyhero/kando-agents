@@ -7,12 +7,14 @@ import { startAppearance } from './appearance'
 import { startCoreConnection } from './core-store'
 import { applyTitleBar } from './desktop-bridge'
 import { startUnsavedEditRetries } from './unsaved-edits'
+import { startWorktreeUpdates } from './worktree-store'
 
 // Outside React so StrictMode's double-mount can't start two loops.
 startCoreConnection()
 startAppearance()
 applyTitleBar()
 startUnsavedEditRetries()
+startWorktreeUpdates()
 
 const root = document.getElementById('root')
 if (!root) {
