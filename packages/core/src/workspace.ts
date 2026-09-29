@@ -135,6 +135,13 @@ async function dependencyBranches(dependencies: readonly Pick<Task, 'repos'>[]):
 
 async function addWorktree(topLevel: string, worktreePath: string, branch: string, base: string): Promise<void> {
   await mkdir(path.dirname(worktreePath), { recursive: true })
+  // A folder deleted by hand leaves git's record of it, which refuses the path. Only that record
+  // goes, not every lost one as prune would, and without force, so a locked worktree stays.
+  try {
+    await execFileAsync('git', ['-C', topLevel, 'worktree', 'remove', worktreePath])
+  } catch {
+    // Never recorded, or locked: adding says why if it still cannot.
+  }
   // A branch left by an earlier, since-removed worktree is checked out again rather than recreated.
   const args = (await branchExists(topLevel, branch))
     ? ['worktree', 'add', worktreePath, branch]

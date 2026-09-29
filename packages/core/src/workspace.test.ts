@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { branchKey, branchSlug, normalizeRepoPath, projectHead } from './workspace'
+import { branchKey, branchSlug, normalizeRepoPath, prepareWorkspace, projectHead } from './workspace'
 
 describe('branchKey', () => {
   it('keeps an issue key as it is, and strips what a branch name should not carry', () => {
@@ -67,5 +67,55 @@ describe('projectHead', () => {
 
   it('has no branch outside a git repo', async () => {
     expect(await projectHead(tempDir())).toMatchObject({ branch: null, detached: false })
+  })
+})
+
+describe('prepareWorkspace', () => {
+  const dirs: string[] = []
+  afterEach(() => dirs.splice(0).forEach((dir) => rmSync(dir, { recursive: true, force: true })))
+  const tempDir = () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'kando-workspace-'))
+    dirs.push(dir)
+    return dir
+  }
+  const git = (dir: string, ...args: string[]) =>
+    execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim()
+  const repo = () => {
+    const dir = tempDir()
+    git(dir, 'init', '-q', '-b', 'main')
+    git(dir, 'commit', '-q', '--allow-empty', '-m', 'init')
+    return dir
+  }
+  const task = (repoPath: string) => ({ id: '76b8c0de-0000-4000-8000-000000000000', title: 'Fix login', repos: [{ path: repoPath, worktreePath: null, branch: null }], source: null })
+  const registered = (dir: string) => git(dir, 'worktree', 'list', '--porcelain')
+
+  it('lays out again, on its branch, a worktree whose folder was deleted by hand', async () => {
+    const source = repo()
+    const root = tempDir()
+    const first = await prepareWorkspace(task(source), [], root)
+    git(first.cwd, 'commit', '-q', '--allow-empty', '-m', 'work')
+    const work = git(first.cwd, 'rev-parse', 'HEAD')
+    // Another worktree git has lost track of is the user's, and stays recorded.
+    const elsewhere = path.join(tempDir(), 'elsewhere')
+    git(source, 'worktree', 'add', '-q', '-b', 'mine', elsewhere)
+    rmSync(elsewhere, { recursive: true, force: true })
+    rmSync(first.cwd, { recursive: true, force: true })
+
+    const again = await prepareWorkspace({ ...task(source), repos: first.repos }, [], root)
+    expect(again.cwd).toBe(first.cwd)
+    expect(git(again.cwd, 'rev-parse', 'HEAD')).toBe(work)
+    expect(git(again.cwd, 'symbolic-ref', '--short', 'HEAD')).toBe(first.repos[0]?.branch)
+    expect(registered(source)).toMatch(/^worktree .*elsewhere$/m)
+  })
+
+  it('leaves a worktree the user locked as it is', async () => {
+    const source = repo()
+    const root = tempDir()
+    const first = await prepareWorkspace(task(source), [], root)
+    git(source, 'worktree', 'lock', first.cwd)
+    rmSync(first.cwd, { recursive: true, force: true })
+
+    await expect(prepareWorkspace({ ...task(source), repos: first.repos }, [], root)).rejects.toMatchObject({ reason: 'worktree-failed' })
+    expect(registered(source)).toMatch(/^locked$/m)
   })
 })
