@@ -307,6 +307,16 @@ export function FilterIcon() {
   )
 }
 
+// Copying: one sheet over another.
+export function CopyIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="7" y="7" width="9.5" height="9.5" rx="2" />
+      <path d="M13 7V5.2A1.7 1.7 0 0 0 11.3 3.5H5.2A1.7 1.7 0 0 0 3.5 5.2v6.1A1.7 1.7 0 0 0 5.2 13H7" />
+    </svg>
+  )
+}
+
 export function PencilIcon() {
   return (
     <svg {...stroked}>

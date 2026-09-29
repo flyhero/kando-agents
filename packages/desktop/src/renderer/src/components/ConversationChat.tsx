@@ -13,6 +13,7 @@ import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
+import { CopyButton } from './CopyButton'
 import { ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChevronRightIcon } from './icons'
 
@@ -49,13 +50,21 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
   switch (item.kind) {
     case 'user':
       return (
-        <div className="chat-user">
-          <ChatImageStrip images={item.images} />
-          {item.text}
-        </div>
+        <>
+          <div className="chat-user">
+            <ChatImageStrip images={item.images} />
+            {item.text}
+          </div>
+          {item.text && <div className="chat-message-actions" data-side="end"><CopyButton text={item.text} label="复制消息" /></div>}
+        </>
       )
     case 'assistant':
-      return <div className="chat-assistant" data-streaming={item.streaming || undefined}><ChatMarkdown text={item.text} /></div>
+      return (
+        <div className="chat-assistant" data-streaming={item.streaming || undefined}>
+          <ChatMarkdown text={item.text} highlight={!item.streaming} />
+          {!item.streaming && item.text && <div className="chat-message-actions"><CopyButton text={item.text} label="复制回复" /></div>}
+        </div>
+      )
     case 'reasoning':
       return (
         <details className="chat-reasoning">
