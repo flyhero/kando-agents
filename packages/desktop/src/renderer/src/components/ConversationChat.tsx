@@ -83,6 +83,30 @@ function Reasoning({ item }: { item: ReasoningItem }) {
   )
 }
 
+type UserItem = Extract<ChatItem, { kind: 'user' }>
+
+// A long message the user sent, such as a task's first prompt, shows its start until opened.
+function UserMessage({ item }: { item: UserItem }) {
+  const [open, setOpen] = useState(false)
+  const long = item.text.split('\n').length > 12 || item.text.length > 1200
+  return (
+    <>
+      <div className="chat-user" data-clipped={(long && !open) || undefined}>
+        <ChatImageStrip images={item.images} />
+        {item.text}
+      </div>
+      {long && (
+        <div className="chat-user-more">
+          <button type="button" className="link-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+            {open ? '收起' : '展开全文'}
+          </button>
+        </div>
+      )}
+      {item.text && <div className="chat-message-actions" data-side="end"><CopyButton text={item.text} label="复制消息" /></div>}
+    </>
+  )
+}
+
 type NoticeItem = Extract<ChatItem, { kind: 'notice' }>
 
 // A notice is one line, opening onto the rest; where the context was compacted is a divider.
@@ -112,15 +136,7 @@ function TerminalMessage({ message }: { message: ConversationMessage }) {
 function Item({ conversationId, item }: { conversationId: string; item: ChatItem }) {
   switch (item.kind) {
     case 'user':
-      return (
-        <>
-          <div className="chat-user">
-            <ChatImageStrip images={item.images} />
-            {item.text}
-          </div>
-          {item.text && <div className="chat-message-actions" data-side="end"><CopyButton text={item.text} label="复制消息" /></div>}
-        </>
-      )
+      return <UserMessage item={item} />
     case 'assistant':
       return (
         <div className="chat-assistant" data-streaming={item.streaming || undefined}>

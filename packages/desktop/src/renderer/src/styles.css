@@ -3601,6 +3601,14 @@ button.task-tag-updated:hover {
   border-bottom: 1px dashed var(--border);
 }
 
+/* A long message clipped to its start, fading out above "展开全文". */
+.chat-user[data-clipped] {
+  max-height: 16em;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+.chat-user-more { display: flex; justify-content: flex-end; margin-top: 2px; font-size: 12px; }
+
 .chat-user {
   margin-left: auto;
   max-width: 80%;
