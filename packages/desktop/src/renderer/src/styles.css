@@ -4571,3 +4571,18 @@ button.task-tag-updated:hover {
 /* Opens into the page: below it is only the input and the window's edge. */
 .chat-draft-projects .menu { top: auto; bottom: calc(100% + 4px); }
 .chat-options-note { font-size: 12px; }
+
+/* Where a task's branch starts, one line per git project on the detail page. */
+.task-start { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0; }
+.task-start + .task-start { margin-top: 4px; }
+.task-start-project { min-width: 56px; color: var(--text-muted); }
+.task-start-button { gap: 4px; padding: 2px 8px; cursor: pointer; }
+.task-start-button:disabled { cursor: default; opacity: 1; color: var(--text-muted); }
+.task-start-button svg { width: 12px; height: 12px; color: var(--text-muted); }
+.task-start-button:not(:disabled):hover,
+.task-start-button[aria-expanded='true'] { border-color: var(--text-muted); }
+.task-start-note { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--text-muted); }
+.task-start-note[data-note] { color: var(--warning); }
+.task-start-choice-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
+.task-start-choice-description { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.task-start-refs { max-height: 220px; overflow-y: auto; }

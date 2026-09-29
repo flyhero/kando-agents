@@ -14,6 +14,7 @@ import { TaskImages, useImageAdder } from './TaskImages'
 import { TaskToolbar } from './TaskActions'
 import { DependencyPicker, TaskDependents } from './DependencyPicker'
 import { ProjectPicker } from './ProjectPicker'
+import { TaskStarts } from './TaskStarts'
 
 // Drafts are local and saved on blur so a remote update never clobbers typing.
 function useDraft(value: string, save: (next: string) => void) {
@@ -122,6 +123,7 @@ function TaskDetailBody({ task }: { task: Task }) {
               />
               <p className="muted">高亮的主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>
             </dd>
+            <TaskStarts task={task} />
             <dt>依赖</dt>
             <dd>
               <DependencyPicker

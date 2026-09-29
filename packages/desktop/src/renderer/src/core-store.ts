@@ -333,6 +333,11 @@ export function useTaskChatSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
 }
 
+// An older core keeps no starts, and would drop a picked one without a word.
+export function useTaskStartSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('task-start') ?? false)
+}
+
 export function showError(message: string): void {
   useCore.setState({ error: message })
 }
