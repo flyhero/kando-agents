@@ -22,11 +22,13 @@ function focusedMenuItems(root: HTMLElement): HTMLElement[] {
   return [...(menu && root.contains(menu) ? menu : root).querySelectorAll<HTMLElement>(ITEMS)]
 }
 
-// A menu at a point: the pointer for a right-click, or under a button with `align: 'end'`.
+// A menu at a point: the pointer for a right-click, or under a button with `align: 'end'`; with
+// `above`, over the point, as for a control at the bottom whose menu should not cover what is below.
 // Portaled to <body> so the sidebar's clipped, scrolling boxes can't cut it off.
-export function ContextMenu({ at, align = 'start', trigger, label, onClose, children }: {
+export function ContextMenu({ at, align = 'start', above = false, trigger, label, onClose, children }: {
   at: MenuPoint
   align?: 'start' | 'end'
+  above?: boolean
   // The button that toggles the menu; pressing it isn't an outside click.
   trigger?: HTMLElement | null
   label: string
@@ -46,9 +48,10 @@ export function ContextMenu({ at, align = 'start', trigger, label, onClose, chil
     const x = align === 'end'
       ? Math.min(Math.max(EDGE, at.x - width), clientWidth - width - EDGE)
       : at.x + width > clientWidth - EDGE ? Math.max(EDGE, at.x - width) : at.x
-    setPlace({ x, y: at.y + height > clientHeight - EDGE ? Math.max(EDGE, at.y - height) : at.y })
+    const y = above || at.y + height > clientHeight - EDGE ? Math.max(EDGE, at.y - height - (above ? 4 : 0)) : at.y
+    setPlace({ x, y })
     element.querySelector<HTMLElement>(ITEMS)?.focus()
-  }, [at, align])
+  }, [at, align, above])
 
   useEffect(() => {
     const outside = (event: Event) =>

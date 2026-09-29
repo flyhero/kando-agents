@@ -23,7 +23,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, value, child
   const close = useCallback(() => setAt(null), [])
   const open = () => {
     const box = button.current?.getBoundingClientRect()
-    // From the button's top: the menu would run off the window below it, so it opens upward.
+    // From the button's top, opening upward: below is the rest of the composer.
     if (box) setAt({ x: align === 'end' ? box.right : box.left, y: box.top })
   }
   return (
@@ -44,7 +44,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, value, child
         <ChevronDownIcon />
       </button>
       {at && (
-        <ContextMenu at={at} align={align} trigger={button.current} label={label} onClose={close}>
+        <ContextMenu at={at} align={align} above trigger={button.current} label={label} onClose={close}>
           {children(close)}
         </ContextMenu>
       )}

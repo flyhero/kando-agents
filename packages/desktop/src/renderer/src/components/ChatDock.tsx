@@ -2,6 +2,7 @@ import { isPlanApproval, type ChatItem, type Conversation } from '@kando/protoco
 import { itemKey } from '../chat-state'
 import { useChatSurface } from './chat-surface'
 import { ChatComposer } from './ChatComposer'
+import { ChatMessageList, type SentMessage } from './ChatMessageList'
 import { ChatPlanCard } from './ChatPlan'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatTodosChip } from './ChatTodos'
@@ -32,7 +33,7 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
 }
 
 // Everything that waits on the user sits here, above the composer, so it cannot scroll out of view.
-export function ChatDock({ conversation, state, pending, tools, finishedCalls, onPrevious }: {
+export function ChatDock({ conversation, state, pending, tools, finishedCalls, onPrevious, sent, onJump }: {
   conversation: Conversation
   // The running stage's state; null for an older core or before the stage reports one.
   state: StateItem | null
@@ -40,6 +41,8 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
   tools: ReadonlyMap<string, ToolItem>
   finishedCalls: number
   onPrevious: () => void
+  sent: readonly SentMessage[]
+  onJump: (key: string) => void
 }) {
   const inspectable = useChatSurface().changes !== null
   const running = conversation.sessionId !== null
@@ -49,6 +52,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
         {running && state && <ChatTodosChip todos={state.todos} />}
         {inspectable && <ChangesChip conversation={conversation} finishedCalls={finishedCalls} />}
         <span className="chat-dock-spacer" />
+        <ChatMessageList messages={sent} onJump={onJump} />
         <button type="button" className="tool-button" aria-label="上一条消息" data-tooltip="上一条消息" onClick={onPrevious}>
           <ArrowUpIcon />
         </button>

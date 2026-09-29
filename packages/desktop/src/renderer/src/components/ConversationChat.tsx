@@ -208,7 +208,7 @@ function Block({ conversationId, block, task }: { conversationId: string; block:
   if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>
   const { entry } = block
   return (
-    <div className="chat-entry" data-user={isUserEntry(entry) || undefined}>
+    <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
         : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
         : <Item conversationId={conversationId} item={entry.item} />}
@@ -291,6 +291,12 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     }
   }), [openFolds])
   const thoughts = useMemo(() => thoughtDurations(items), [items])
+  // What the user sent, in order, for the dock's list of them.
+  const sent = useMemo(() => blocks.flatMap((block) => {
+    if (block.kind !== 'entry' || !isUserEntry(block.entry)) return []
+    const { entry } = block
+    return [{ key: block.key, text: entry.kind === 'item' && entry.item.kind === 'user' ? entry.item.text : entry.kind === 'message' ? entry.message.text : '' }]
+  }), [blocks])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
     [items]
@@ -340,6 +346,17 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     if (!target) return
     pinned.current = false
     element.scrollTo({ top: target.offsetTop - IN_VIEW_SLACK, behavior: 'smooth' })
+  }
+
+  // Brings one of the user's messages into view, and marks it for a moment so the eye finds it.
+  const jump = (key: string) => {
+    const element = list.current
+    const target = element?.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`)
+    if (!element || !target) return
+    pinned.current = false
+    element.scrollTo({ top: target.offsetTop - IN_VIEW_SLACK, behavior: 'smooth' })
+    target.dataset.flash = ''
+    setTimeout(() => delete target.dataset.flash, 1500)
   }
 
   const loadOlder = async () => {
@@ -394,7 +411,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
           </button>
         )}
       </div>
-      <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
+      <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} sent={sent} onJump={jump} />
     </div>
     </Folds.Provider>
     </Thoughts.Provider>

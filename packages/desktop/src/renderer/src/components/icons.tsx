@@ -182,6 +182,16 @@ export function ArrowLeftIcon() {
   )
 }
 
+// A list of lines, each with a mark in front.
+export function ListIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M8 5.5h8.5M8 10h8.5M8 14.5h8.5" />
+      <path d="M3.8 5.5h.4M3.8 10h.4M3.8 14.5h.4" />
+    </svg>
+  )
+}
+
 export function ArrowDownIcon() {
   return (
     <svg {...stroked}>
