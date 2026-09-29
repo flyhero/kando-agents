@@ -9,7 +9,7 @@ export function buildHandoff(
   now = new Date()
 ): string {
   const lines = [
-    '# Kando 自由会话移交',
+    '# Kando 会话移交',
     '',
     `会话：${conversation.title}`,
     `时间：${now.toISOString()}`,

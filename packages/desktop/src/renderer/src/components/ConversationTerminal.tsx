@@ -80,7 +80,7 @@ export function ConversationTerminal({ id }: { id: string }) {
   const remove = () => void action(async () => {
     if (await deleteConversation(conversation)) selectConversation(null)
   })
-  return <section className="detail terminal-view conversation-view" aria-label={`${conversation.title} 的自由会话`}>
+  return <section className="detail terminal-view conversation-view" aria-label={`${conversation.title} 的会话`}>
     <header className="detail-header conversation-header">
       <ConversationStatus conversation={conversation} />
       <div className="header-meta">

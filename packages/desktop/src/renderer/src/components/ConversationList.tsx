@@ -211,9 +211,9 @@ export function ConversationList() {
   }
 
   return (
-    <nav className="conversation-list" data-collapsed={collapsed} aria-label="自由会话列表">
+    <nav className="conversation-list" data-collapsed={collapsed} aria-label="会话列表">
       <header className="task-list-header">
-        <SidebarCollapseButton label="自由会话" count={visible.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
+        <SidebarCollapseButton label="会话" count={visible.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
         <SidebarSearchToggle
           label="搜索会话"
           query={query}

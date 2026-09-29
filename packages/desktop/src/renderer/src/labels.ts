@@ -90,7 +90,7 @@ const REASON_TEXT: Record<string, string> = {
   'run-in-progress': '任务正在启动，请稍候',
   'task-not-found': '任务不存在',
   'session-not-found': '会话已不存在',
-  'conversation-not-found': '自由会话不存在',
+  'conversation-not-found': '会话不存在',
   'conversation-running': '这条会话正在运行或启动，请先停止',
   'conversation-same-agent': '请选择另一个 agent 进行移交',
   'conversation-event-invalid': '会话事件与当前阶段不匹配',

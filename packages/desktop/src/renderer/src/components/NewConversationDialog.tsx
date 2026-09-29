@@ -29,7 +29,7 @@ export function NewConversationDialog() {
   }
   return <dialog ref={dialog} className="modal" onCancel={(event) => { event.preventDefault(); close() }}>
     <div className="modal-body">
-      <header className="modal-header"><h2>新建自由会话</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={close}>×</button></header>
+      <header className="modal-header"><h2>新建会话</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={close}>×</button></header>
       <label className="modal-field"><span className="modal-label">初始 agent</span>
         <select className="input modal-input" value={agent} onChange={(event) => setAgent(event.target.value === 'claude' ? 'claude' : 'codex')}>
           {AGENT_KINDS.map((kind) => <option key={kind} value={kind}>{AGENT_LABEL[kind]}</option>)}

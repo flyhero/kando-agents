@@ -123,7 +123,7 @@ function AgentSettings() {
     <>
       <SettingsRow
         label="会话和任务的界面"
-        description="新建、继续和移交自由会话，以及开始任务时默认用哪一种；自由会话每次也可以另选。聊天界面把 agent 的消息、工具调用和确认请求画成卡片，任务在聊天里先规划，确认计划后再动手。运行中的会话不会切换，下次继续时生效；已经开始的任务保持原来的界面。Codex 的聊天界面依赖它还在实验阶段的 app-server。"
+        description="新建、继续和移交会话，以及开始任务时用哪一种。聊天界面把 agent 的消息、工具调用和确认请求画成卡片，任务在聊天里先规划，确认计划后再动手。运行中的会话不会切换，下次继续时生效；已经开始的任务保持原来的界面。Codex 的聊天界面依赖它还在实验阶段的 app-server。"
         control={(labelId) => (
           <Segmented
             labelId={labelId}
@@ -275,7 +275,7 @@ const SECTIONS: readonly Section[] = [
     id: 'agents',
     group: '任务',
     title: '智能体',
-    description: '新建和执行任务、开始自由会话时 agent 的默认行为。',
+    description: '新建和执行任务、开始会话时 agent 的默认行为。',
     keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话', '任务', '规划'],
     Icon: SparkIcon,
     Body: AgentSettings
