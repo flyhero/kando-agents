@@ -721,7 +721,8 @@ button.task-tag:hover {
   transition-delay: 0.3s;
 }
 
-/* The status bar sits at the window's bottom-left: open upward and to the right. */
+/* The status bar and the chat's bottom row sit at the bottom-left: open upward and to the right.
+   Hidden, a tooltip still takes up room, and one hanging below the pane made it scroll. */
 [data-tooltip][data-tooltip-side='top']::after {
   top: auto;
   right: auto;

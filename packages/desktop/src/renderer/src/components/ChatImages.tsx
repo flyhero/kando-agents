@@ -67,7 +67,7 @@ export function ChatAddMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (f
         className="chat-add-button"
         aria-label="添加内容"
         data-tooltip="添加图片"
-        data-tooltip-align="start"
+        data-tooltip-side="top"
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={disabled}
