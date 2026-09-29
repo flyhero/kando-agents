@@ -241,6 +241,17 @@ textarea {
 .conversation-status[data-failed] { background: var(--danger); }
 .conversation-exit-failed { color: var(--danger); }
 .conversation-header, .task-terminal-header { flex-wrap: wrap; }
+/* Text of several sizes lines up by its baseline rather than by the middle of each box, which left
+   the smaller text higher than the title; the group as a whole stays centred on the icon and the
+   toolbar. */
+.header-meta {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
 .task-terminal-header > .status-icon { flex-shrink: 0; }
 /* The list row's top offset lines the dot up with the first line; the header already centers it. */
 .conversation-header .conversation-status { margin-top: 0; flex-shrink: 0; }

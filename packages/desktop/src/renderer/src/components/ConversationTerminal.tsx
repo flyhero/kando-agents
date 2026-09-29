@@ -109,13 +109,15 @@ export function ConversationTerminal({ id }: { id: string }) {
   return <section className="detail terminal-view conversation-view" aria-label={`${conversation.title} 的自由会话`}>
     <header className="detail-header conversation-header">
       <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} />
-      {renaming
-        ? <TitleEditor title={conversation.title} label="会话标题" onSave={rename} onDone={() => setRenaming(false)} />
-        : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
-      <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
-      <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{primaryProjectName(conversation.projectPaths)}</span>
-      <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
-      <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
+      <div className="header-meta">
+        {renaming
+          ? <TitleEditor title={conversation.title} label="会话标题" onSave={rename} onDone={() => setRenaming(false)} />
+          : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
+        <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
+        <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{primaryProjectName(conversation.projectPaths)}</span>
+        <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
+        <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
+      </div>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>
         {!chat && !conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}

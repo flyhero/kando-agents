@@ -72,40 +72,42 @@ export function TaskTerminal({ taskId }: { taskId: string }) {
       {/* Laid out like a conversation's header: what runs where first, then this task's own state. */}
       <header className="detail-header task-terminal-header">
         <StatusIcon status={task.status} decorative />
-        <span className="terminal-view-title" title={task.title}>
-          {task.title}
-        </span>
-        {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
-        {task.repos.length > 0 && (
-          <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
-            {primaryProjectName(task.repos.map((repo) => repo.path))}
+        <div className="header-meta">
+          <span className="terminal-view-title" title={task.title}>
+            {task.title}
           </span>
-        )}
-        <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
-        <span className="status-pill" data-status={task.status}>
-          {STATUS_LABEL[task.status]}
-        </span>
-        <TaskAlerts task={task} />
-        <span className="muted mono">{shortTaskId(task.id)}</span>
-        <SourceLink task={task} />
-        {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
-        {task.proposal && panel !== 'open' && (
-          <button
-            type="button"
-            className="task-tag task-tag-proposal"
-            onClick={() => {
-              setInspectorOpen(false)
-              setPanel('open')
-            }}
-          >
-            查看方案
-          </button>
-        )}
-        {!task.proposal && task.previousDetails !== null && (
-          <button type="button" className="task-tag task-tag-updated" onClick={restore}>
-            详情已更新 · 撤销
-          </button>
-        )}
+          {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
+          {task.repos.length > 0 && (
+            <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
+              {primaryProjectName(task.repos.map((repo) => repo.path))}
+            </span>
+          )}
+          <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
+          <span className="status-pill" data-status={task.status}>
+            {STATUS_LABEL[task.status]}
+          </span>
+          <TaskAlerts task={task} />
+          <span className="muted mono">{shortTaskId(task.id)}</span>
+          <SourceLink task={task} />
+          {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
+          {task.proposal && panel !== 'open' && (
+            <button
+              type="button"
+              className="task-tag task-tag-proposal"
+              onClick={() => {
+                setInspectorOpen(false)
+                setPanel('open')
+              }}
+            >
+              查看方案
+            </button>
+          )}
+          {!task.proposal && task.previousDetails !== null && (
+            <button type="button" className="task-tag task-tag-updated" onClick={restore}>
+              详情已更新 · 撤销
+            </button>
+          )}
+        </div>
         <TaskToolbar task={task} view="terminal" />
       </header>
       <div className="terminal-body">

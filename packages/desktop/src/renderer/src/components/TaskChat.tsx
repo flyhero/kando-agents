@@ -88,23 +88,25 @@ export function TaskChat({ taskId }: { taskId: string }) {
     <section className="detail terminal-view" aria-label={`${task.title} 的聊天`}>
       <header className="detail-header task-terminal-header">
         <StatusIcon status={task.status} decorative />
-        <span className="terminal-view-title" title={task.title}>
-          {task.title}
-        </span>
-        {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
-        {task.repos.length > 0 && (
-          <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
-            {primaryProjectName(task.repos.map((repo) => repo.path))}
+        <div className="header-meta">
+          <span className="terminal-view-title" title={task.title}>
+            {task.title}
           </span>
-        )}
-        <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
-        <span className="status-pill" data-status={task.status}>
-          {STATUS_LABEL[task.status]}
-        </span>
-        <TaskAlerts task={task} />
-        <span className="muted mono">{shortTaskId(task.id)}</span>
-        <SourceLink task={task} />
-        {conversation?.planOnly && <span className="task-tag task-tag-refining">只读规划</span>}
+          {task.agent && <span className="muted">{AGENT_LABEL[task.agent]}</span>}
+          {task.repos.length > 0 && (
+            <span className="muted" title={task.repos.map((repo) => repo.path).join('\n')}>
+              {primaryProjectName(task.repos.map((repo) => repo.path))}
+            </span>
+          )}
+          <BranchStatus target={{ kind: 'task', id: task.id }} updatedAt={task.updatedAt} />
+          <span className="status-pill" data-status={task.status}>
+            {STATUS_LABEL[task.status]}
+          </span>
+          <TaskAlerts task={task} />
+          <span className="muted mono">{shortTaskId(task.id)}</span>
+          <SourceLink task={task} />
+          {conversation?.planOnly && <span className="task-tag task-tag-refining">只读规划</span>}
+        </div>
         <TaskToolbar task={task} view="chat" />
       </header>
       <div className="terminal-body">
