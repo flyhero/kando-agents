@@ -105,13 +105,39 @@ function CreateForm({ onCreate }: { onCreate: (name: string) => void }) {
   )
 }
 
+function CommitForm({ title, onCommit }: { title: string; onCommit: (message: string) => void }) {
+  const [message, setMessage] = useState(title)
+  const submit = () => {
+    if (message.trim()) onCommit(message.trim())
+  }
+  return (
+    <div className="branch-action branch-action-create">
+      <input
+        className="input"
+        autoFocus
+        value={message}
+        maxLength={10_000}
+        onChange={(event) => setMessage(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') submit()
+        }}
+        placeholder="提交信息"
+        aria-label="提交信息"
+      />
+      <button type="button" className="button" disabled={!message.trim()} onClick={submit}>Commit &amp; Push</button>
+      <p className="branch-action-note">提交这个仓库里的全部改动，并推送当前分支；没有 upstream 时使用 origin。</p>
+    </div>
+  )
+}
+
 function ProjectActions({ conversation, head, option, onChanged }: {
   conversation: Conversation
   head: ProjectHead
   option: ProjectBranches | undefined
   onChanged: (note: string) => void
 }) {
-  const [open, setOpen] = useState<'switch' | 'create' | null>(null)
+  const commitPush = useCore((s) => s.rpc?.features.includes('conversation-commit-push') ?? false)
+  const [open, setOpen] = useState<'switch' | 'create' | 'commit' | null>(null)
   const [busy, setBusy] = useState(false)
   if (!option?.git) return null
   const blocker = checkSwitchBranch(conversation)
@@ -124,19 +150,31 @@ function ProjectActions({ conversation, head, option, onChanged }: {
       onChanged(switchedNote(conversation, branch))
     }
   }
-  const toggle = (next: 'switch' | 'create') => setOpen(open === next ? null : next)
+  const commit = async (message: string) => {
+    setBusy(true)
+    const result = await perform((rpc) => rpc.call('conversations.commitPush', { id: conversation.id, project: head.path, message }))
+    setBusy(false)
+    if (result) {
+      setOpen(null)
+      onChanged(`已提交 ${result.commit} 并推送到 ${result.upstream}。`)
+    }
+  }
+  const toggle = (next: 'switch' | 'create' | 'commit') => setOpen(open === next ? null : next)
   const hint = blocker ? reasonText(blocker, blocker) : undefined
+  const commitHint = hint ?? (!head.branch ? '当前没有可推送的分支' : head.changes === 0 ? '没有可以提交的改动' : undefined)
   return (
     <>
       <div className="branch-actions">
         <button type="button" className="link-button" aria-expanded={open === 'switch'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('switch')}>切换分支</button>
         <button type="button" className="link-button" aria-expanded={open === 'create'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('create')}>新建分支</button>
+        {commitPush && <button type="button" className="link-button" aria-expanded={open === 'commit'} disabled={busy || blocker !== null || !head.branch || head.changes === 0} title={commitHint} onClick={() => toggle('commit')}>Commit &amp; Push</button>}
         {blocker && <span className="muted">{hint}</span>}
       </div>
       {open === 'switch' && (
         <SwitchList option={option} onPick={(ref) => void run((rpc) => rpc.call('conversations.switchBranch', { id: conversation.id, project: head.path, ref }), localName(ref))} />
       )}
       {open === 'create' && <CreateForm onCreate={(name) => void run((rpc) => rpc.call('conversations.createBranch', { id: conversation.id, project: head.path, name }), name)} />}
+      {open === 'commit' && <CommitForm title={conversation.title} onCommit={(message) => void commit(message)} />}
     </>
   )
 }
@@ -166,4 +204,3 @@ export function ConversationBranches({ id, heads, onChanged }: { id: string; hea
     </>
   )
 }
-

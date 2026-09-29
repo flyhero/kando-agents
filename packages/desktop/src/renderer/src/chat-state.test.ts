@@ -3,6 +3,7 @@ import type { ChatItem, ConversationMessage, ConversationStage } from '@kando/pr
 import {
   appendText,
   chatBlocks,
+  finalReplies,
   mergeItems,
   pathShortener,
   prependChatPage,
@@ -173,6 +174,24 @@ describe('chatBlocks', () => {
     const question: ChatItem = { ...base, id: 'q', kind: 'question', requestId: 'r', questions: [], answers: {}, resolution: 'answered' }
     expect(shape(blocksOf([user('u'), thought('empty', ' '), tool('a'), question, tool('b'), reply('answer'), turn('end')])))
       .toEqual(['u', { fold: ['tools:a', 'tools:b'] }, 'q', 'answer'])
+  })
+})
+
+describe('finalReplies', () => {
+  const base = { stageId: 'chat-stage', revision: 1, at: 0 }
+  const assistant = (id: string): ChatItem => ({ ...base, id, kind: 'assistant', text: id, streaming: false })
+  const tool = (id: string): ChatItem => ({ ...base, id, kind: 'tool', name: 'Read', title: id, input: null, status: 'done', output: null, diffs: [] })
+  const turn = (id: string, state: 'completed' | 'interrupted'): ChatItem => ({ ...base, id, kind: 'turn', state, error: null, durationMs: 1 })
+  const entries = (items: ChatItem[]) => items.map((item) => ({ kind: 'item' as const, item }))
+
+  it('keeps copy for the final answer, not progress updates', () => {
+    const replies = finalReplies(entries([assistant('progress'), tool('read'), assistant('answer'), { ...turn('end', 'completed'), at: 42 }]))
+    expect([...replies]).toEqual([['item:chat-stage/answer', 42]])
+  })
+
+  it('does not call an interrupted or unfinished reply final', () => {
+    expect([...finalReplies(entries([assistant('interrupted'), turn('end', 'interrupted')]))]).toEqual([])
+    expect([...finalReplies(entries([assistant('still-running')]))]).toEqual([])
   })
 })
 

@@ -3723,6 +3723,7 @@ button.task-tag-updated:hover {
 .chat-entry:hover > .chat-message-actions,
 .chat-message-actions:focus-within { opacity: 1; }
 .chat-message-actions[data-side='end'] { justify-content: flex-end; }
+.chat-message-time { align-self: center; margin-left: 2px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chat-markdown table { border-collapse: collapse; }
 .chat-markdown th,
 .chat-markdown td { padding: 2px 8px; border: 1px solid var(--border); }

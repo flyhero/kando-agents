@@ -20,7 +20,7 @@ const Preferences = z.object({
   openTerminalOnRun: z.boolean().catch(true),
   // How a conversation's agent starts unless the user picks otherwise: its own TUI in a terminal,
   // or Kando's chat view of its structured output.
-  agentView: z.enum(['tui', 'chat']).catch('tui'),
+  agentView: z.enum(['tui', 'chat']).catch('chat'),
   // Off, a chat stage never offers running with nothing asked and nothing sandboxed.
   allowBypass: z.boolean().catch(false),
   // Off, the sidebar lists only pending and running tasks.

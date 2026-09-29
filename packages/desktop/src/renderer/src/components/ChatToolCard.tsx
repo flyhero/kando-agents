@@ -56,17 +56,20 @@ function DiffCount({ diffs }: { diffs: readonly ChatDiff[] }) {
   )
 }
 
-// Edits to one file made one after another: one card, each edit's diff in turn with its own count.
+// Edits to one file made one after another: one collapsed card, each edit's diff in turn.
 export function ChatEditsCard({ path, tools }: { path: string; tools: readonly ToolItem[] }) {
+  const [first] = tools
+  const [open, setOpen] = useDisclosure(`edits:${first ? itemKey(first) : path}`)
   const shorten = useContext(ChatPaths)
   return (
     <div className="chat-tool" data-diff-path={path}>
-      <div className="chat-tool-header">
+      <button type="button" className="chat-tool-header" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="chat-tool-name">编辑</span>
         <span className="chat-tool-title mono" title={path}>{shorten(path)} · {tools.length} 次修改</span>
         <DiffCount diffs={tools.flatMap((tool) => tool.diffs)} />
-      </div>
-      <div className="chat-diffs">
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+      </button>
+      {open && <div className="chat-diffs">
         {tools.map((tool, index) => (
           <div key={tool.id} className="chat-diff">
             <div className="chat-diff-path chat-edit-step">
@@ -77,7 +80,7 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
             {tool.diffs.map((diff, at) => diff.patch && <DiffLines key={at} patch={diff.patch} />)}
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -141,11 +144,11 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   )
 }
 
-// A call that changed files: its card shows the diff at once, with the lines it added and removed.
+// A call that changed files: its collapsed card opens onto the diff, input and output.
 export function ChatToolCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const shorten = useContext(ChatPaths)
-  const details = Boolean(item.input || item.output)
+  const details = Boolean(item.diffs.length || item.input || item.output)
   return (
     <div className="chat-tool" data-status={item.status}>
       <button
@@ -158,9 +161,10 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         <span className="chat-tool-name">{toolLabel(item.name)}</span>
         <span className="chat-tool-title mono" title={item.title}>{shorten(item.title)}</span>
         <DiffCount diffs={item.diffs} />
+        {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={item.status} />
       </button>
-      {item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
+      {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
       {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}
       {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}
     </div>

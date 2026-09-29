@@ -82,6 +82,9 @@ const REASON_TEXT: Record<string, string> = {
   'branch-switch-failed': '切换分支失败',
   'invalid-branch-name': '分支名不合法',
   'branch-name-taken': '已经有同名的分支',
+  'git-no-changes': '没有可以提交的改动',
+  'git-no-branch': '当前处于分离 HEAD，不能推送分支',
+  'git-no-remote': '当前分支没有 upstream，项目也没有 origin',
   'invalid-start': '起点必须是一个分支',
   'start-not-found': '找不到选的起点分支，请在任务详情里重新选择',
   blocked: '依赖的任务还没完成（执行完并验收通过）',
@@ -130,7 +133,9 @@ const REASON_TEXT: Record<string, string> = {
 
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.
 const REASON_WITH_DETAIL: Record<string, string> = {
-  'chat-start-failed': 'agent 没能以聊天界面启动'
+  'chat-start-failed': 'agent 没能以聊天界面启动',
+  'git-commit-failed': '提交失败',
+  'git-push-failed': '提交已经保留在本地，但推送失败'
 }
 
 export function reasonText(reason: string, fallback: string): string {

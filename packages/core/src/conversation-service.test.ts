@@ -104,6 +104,27 @@ describe('ConversationService', () => {
     expect(store.switchedBranches(created.id)).toEqual({})
   })
 
+  it('commits and pushes only a conversation project after its terminal agent stops', async () => {
+    const repo = path.join(root, 'app')
+    const remote = path.join(root, 'origin.git')
+    execFileSync('git', ['init', '--bare', '-q', remote])
+    execFileSync('git', ['init', '-q', '-b', 'main', repo])
+    execFileSync('git', ['-C', repo, 'config', 'user.name', 'Kando Test'])
+    execFileSync('git', ['-C', repo, 'config', 'user.email', 'kando@example.com'])
+    execFileSync('git', ['-C', repo, 'remote', 'add', 'origin', remote])
+    writeFileSync(path.join(repo, 'note.txt'), 'hello\n')
+    const created = await service.create('claude', [repo])
+    const project = created.projectPaths[0]!
+
+    await expect(service.commitPush(created.id, project, 'feat: add note')).rejects.toMatchObject({ reason: 'conversation-running' })
+    await service.stop(created.id)
+    await expect(service.commitPush(created.id, root, 'feat: add note')).rejects.toMatchObject({ reason: 'repo-not-found' })
+    const result = await service.commitPush(created.id, project, 'feat: add note')
+
+    expect(result).toMatchObject({ branch: 'main', upstream: 'origin/main' })
+    expect(execFileSync('git', ['-C', remote, 'log', '-1', '--format=%s', 'refs/heads/main'], { encoding: 'utf8' }).trim()).toBe('feat: add note')
+  })
+
   it('starts in a persistent isolated workspace and restores its native conversation', async () => {
     const created = await service.create('claude', [])
     expect(created.workspacePath).toBe(path.join(root, 'sessions', created.id, 'workspace'))

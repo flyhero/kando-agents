@@ -169,6 +169,20 @@ export function entryKey(entry: TimelineEntry): string {
   return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
 }
 
+// Only a completed turn's last reply is its copyable answer. Its completion time comes from the
+// turn marker; earlier assistant messages are progress updates, folded or not.
+export function finalReplies(entries: readonly TimelineEntry[]): Map<string, number> {
+  const replies = new Map<string, number>()
+  entries.forEach((entry, index) => {
+    if (entry.kind !== 'item' || entry.item.kind !== 'turn' || entry.item.state !== 'completed') return
+    const previous = entries[index - 1]
+    if (previous?.kind === 'item' && previous.item.kind === 'assistant' && !previous.item.streaming && previous.item.text) {
+      replies.set(entryKey(previous), entry.item.at)
+    }
+  })
+  return replies
+}
+
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 

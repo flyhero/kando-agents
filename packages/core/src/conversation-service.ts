@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
+import { checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -17,6 +17,7 @@ import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } fr
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
+import { commitAndPush } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { TerminalTranscript } from './terminal-transcript'
@@ -134,6 +135,14 @@ export class ConversationService {
 
   async createBranch(id: string, project: string, name: string): Promise<Conversation> {
     return this.branched(id, project, (dir) => createProjectBranch(dir, name))
+  }
+
+  async commitPush(id: string, project: string, message: string): Promise<CommitPushResult> {
+    const conversation = this.get(id)
+    const blocker = checkSwitchBranch(conversation)
+    if (blocker) throw new Rejection(blocker)
+    if (!conversation.projectPaths.includes(project)) throw new Rejection('repo-not-found', `${project} is not one of the conversation's projects`)
+    return commitAndPush(project, message)
   }
 
   // Only while no agent works in the folder (checkSwitchBranch). The conversation's changes then

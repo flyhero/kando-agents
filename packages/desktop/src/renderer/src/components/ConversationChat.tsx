@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
+import { chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
 import { workedFor } from '../chat-tools'
@@ -34,6 +34,10 @@ function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   if (item.state === 'completed') return `完成${seconds}`
   if (item.state === 'interrupted') return `已中断${item.error ? `：${item.error}` : ''}`
   return `失败${item.error ? `：${item.error}` : ''}`
+}
+
+function timeOfDay(ms: number): string {
+  return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 // A task's chat says where each stage ran: only planning beside the projects, or in its worktrees.
@@ -146,7 +150,7 @@ function TerminalMessage({ message }: { message: ConversationMessage }) {
     : <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
 }
 
-function Item({ conversationId, item }: { conversationId: string; item: ChatItem }) {
+function Item({ conversationId, item, completedAt }: { conversationId: string; item: ChatItem; completedAt: number | undefined }) {
   switch (item.kind) {
     case 'user':
       return <UserMessage item={item} />
@@ -154,7 +158,12 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
       return (
         <div className="chat-assistant" data-streaming={item.streaming || undefined}>
           <ChatMarkdown text={item.text} highlight={!item.streaming} />
-          {!item.streaming && item.text && <div className="chat-message-actions"><CopyButton text={item.text} label="复制回复" /></div>}
+          {completedAt !== undefined && item.text && (
+            <div className="chat-message-actions">
+              <CopyButton text={item.text} label="复制回复" />
+              <time className="chat-message-time" dateTime={new Date(completedAt).toISOString()} title={dayAndTime(completedAt)}>{timeOfDay(completedAt)}</time>
+            </div>
+          )}
         </div>
       )
     case 'reasoning':
@@ -197,7 +206,7 @@ function foldText(turn: TurnItem): string {
 type FoldState = { reveal: (key: string, path: string) => void }
 const Folds = createContext<FoldState>({ reveal: () => {} })
 
-function TurnFold({ foldKey, conversationId, turn, blocks, task }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean }) {
+function TurnFold({ foldKey, conversationId, turn, blocks, task, replies }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number> }) {
   const [open, setOpen] = useDisclosure(foldKey)
   return (
     <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
@@ -207,7 +216,7 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task }: { foldKey: st
       </button>
       {open && (
         <div className="chat-fold-body">
-          {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} />)}
+          {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} replies={replies} />)}
         </div>
       )}
     </div>
@@ -250,18 +259,18 @@ function TurnChanges({ fold, files }: { fold: string; files: readonly TurnFile[]
   )
 }
 
-function Block({ conversationId, block, task }: { conversationId: string; block: ChatBlock; task: boolean }) {
+function Block({ conversationId, block, task, replies }: { conversationId: string; block: ChatBlock; task: boolean; replies: ReadonlyMap<string, number> }) {
   if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
   if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
   if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
   if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} /></div>
-  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>
+  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} /></div>
   const { entry } = block
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
         : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
-        : <Item conversationId={conversationId} item={entry.item} />}
+        : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} />}
     </div>
   )
 }
@@ -323,6 +332,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   }, [stages, messages, items])
   const foldTurns = usePreferences((s) => s.foldTurns)
   const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
+  const replies = useMemo(() => finalReplies(entries), [entries])
   const folds = useMemo<FoldState>(() => ({
     // Opens the turn's work, then brings the file's diff into view once it is there.
     reveal: (key, path) => {
@@ -444,7 +454,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <ChatSkeleton />}
-        {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} />)}
+        {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} />)}
         {turn === 'running' && <ChatWorking agent={conversation.agent} doing={doing} since={since} />}
         {away && (
           <button
