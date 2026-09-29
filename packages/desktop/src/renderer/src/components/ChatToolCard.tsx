@@ -96,7 +96,6 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
-        <span className="chat-tool-chevron" aria-hidden="true">{details && <ChevronRightIcon />}</span>
         {tool.description ? (
           // What the agent said the call does; the command itself is a hover, or a click, away.
           <span className="chat-tool-description" title={tool.title}>{tool.description}</span>
@@ -106,6 +105,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
             <span className="chat-tool-title mono" title={tool.title}>{shorten(tool.title)}</span>
           </>
         )}
+        {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={tool.status} />
       </button>
       {open && tool.input && <pre className="chat-tool-io">{tool.input}</pre>}

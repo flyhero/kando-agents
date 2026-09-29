@@ -3811,7 +3811,10 @@ button.task-tag-updated:hover {
   padding-left: 8px;
   border-left: 1px solid var(--border);
 }
-.chat-tool-line .chat-tool-io { margin: 2px 0 6px 20px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.chat-tool-line .chat-tool-io { margin: 2px 0 6px 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+/* A call's line reads as its text, then the chevron that opens it: the text takes only its width. */
+.chat-tool-line .chat-tool-title,
+.chat-tool-line .chat-tool-description { flex: 0 1 auto; }
 
 /* A call still going. */
 .chat-spinner {
