@@ -53,6 +53,13 @@ export function runSummary(tools: readonly Pick<ToolItem, 'name'>[]): string {
   return [...counts.values()].map(({ count, say }) => say(count)).join('，')
 }
 
+// While a run goes it reads as the call under way, when that call says what it does in words;
+// otherwise, and once it is done, as the count of what it did.
+export function runHeadline(tools: readonly Pick<ToolItem, 'name' | 'status' | 'description'>[]): { text: string; described: boolean } {
+  const described = tools.find((tool) => tool.status === 'running')?.description
+  return described ? { text: described, described: true } : { text: runSummary(tools), described: false }
+}
+
 // A call that hands work to a subagent of its own: Claude's Task (Agent in newer versions), or a
 // Codex spawn.
 export function isSubagent(name: string): boolean {

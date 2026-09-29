@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import type { ChatDiff, ChatItem, ChatToolStatus } from '@kando/protocol'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
-import { diffCounts, runSummary, toolLabel } from '../chat-tools'
+import { diffCounts, runHeadline, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
@@ -97,8 +97,15 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         onClick={() => setOpen(!open)}
       >
         <span className="chat-tool-chevron" aria-hidden="true">{details && <ChevronRightIcon />}</span>
-        <span className="chat-tool-name">{toolLabel(tool.name)}</span>
-        <span className="chat-tool-title mono" title={tool.title}>{shorten(tool.title)}</span>
+        {tool.description ? (
+          // What the agent said the call does; the command itself is a hover, or a click, away.
+          <span className="chat-tool-description" title={tool.title}>{tool.description}</span>
+        ) : (
+          <>
+            <span className="chat-tool-name">{toolLabel(tool.name)}</span>
+            <span className="chat-tool-title mono" title={tool.title}>{shorten(tool.title)}</span>
+          </>
+        )}
         <ToolStatus status={tool.status} />
       </button>
       {open && tool.input && <pre className="chat-tool-io">{tool.input}</pre>}
@@ -116,12 +123,13 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   if (tools.length === 1 && only) return <ToolLine tool={only} />
   const running = tools.find((tool) => tool.status === 'running')
   const failed = tools.filter((tool) => tool.status === 'failed' || tool.status === 'denied').length
+  const headline = runHeadline(tools)
   return (
     <div className="chat-tool-run" data-open={open || undefined}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="chat-tool-summary">{runSummary(tools)}</span>
+        <span className="chat-tool-summary" title={headline.described ? running?.title : undefined}>{headline.text}</span>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-        {running && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
+        {running && !headline.described && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
         {running ? <ToolStatus status="running" /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
       </button>
       {open && (

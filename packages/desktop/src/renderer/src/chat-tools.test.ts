@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runSummary, subagentBrief, workedFor } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -28,5 +28,15 @@ describe('subagentBrief', () => {
     expect(subagentBrief(JSON.stringify({ description: 'Find', prompt: 'Look for x', subagent_type: 'Explore' }))).toEqual({ kind: 'Explore', prompt: 'Look for x' })
     expect(subagentBrief('{"prompt": "cut sho')).toEqual({ kind: null, prompt: '{"prompt": "cut sho' })
     expect(subagentBrief(null)).toEqual({ kind: null, prompt: null })
+  })
+})
+
+describe('runHeadline', () => {
+  const call = (status: 'running' | 'done', description: string | null = null) => ({ name: 'Bash', status, description })
+
+  it('reads as the call under way while it says what it does, and as the count once done', () => {
+    expect(runHeadline([call('done', 'List files'), call('running', 'Read the config')])).toEqual({ text: 'Read the config', described: true })
+    expect(runHeadline([call('done', 'List files'), call('done', 'Read the config')])).toEqual({ text: '运行 2 个命令', described: false })
+    expect(runHeadline([call('done'), call('running')])).toEqual({ text: '运行 2 个命令', described: false })
   })
 })

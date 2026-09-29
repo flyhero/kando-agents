@@ -3796,6 +3796,7 @@ button.task-tag-updated:hover {
 .chat-tool-row:disabled { cursor: default; }
 .chat-tool-row .chat-tool-name { font-weight: 500; color: var(--text); }
 .chat-tool-summary { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-tool-description { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-tool-chevron { flex-shrink: 0; display: grid; place-items: center; width: 14px; height: 14px; color: var(--text-muted); }
 .chat-tool-chevron svg { width: 12px; height: 12px; transition: transform 0.12s; }
 .chat-tool-row .chat-tool-chevron { opacity: 0; }
