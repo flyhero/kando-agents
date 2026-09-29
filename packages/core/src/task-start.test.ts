@@ -48,7 +48,8 @@ describe('task starts', () => {
     expect(git(clone, 'rev-parse', 'origin/main')).not.toBe(latest)
     expect(await resolveStart(clone, null, null, 7)).toEqual({
       commit: latest,
-      start: { ref: 'origin/main', commit: latest, note: null, at: 7 }
+      start: { ref: 'origin/main', commit: latest, note: null, at: 7 },
+      head: false
     })
   })
 

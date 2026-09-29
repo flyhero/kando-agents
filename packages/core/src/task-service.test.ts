@@ -584,14 +584,45 @@ describe('TaskService', () => {
     service.handleSessionExit(firstRun.sessionId ?? '', 0)
     const second = service.update({ id: readyTask('Use api', [repo]).id, dependsOn: [first.id] })
 
+    // Nothing picked: planning reads the dependency's branch, which the task will stack on.
     await service.refine(second.id)
     expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('已执行但还没验收，结果可能还要改')
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('上的改动还没进当前代码')
+    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('改动已在当前代码里')
     service.handleSessionExit(service.get(second.id).refineSessionId ?? '', 0)
 
+    // What the project has checked out is read where it is, which has the work once it is merged.
+    service.update({ id: second.id, starts: [{ path: repo, ref: 'HEAD' }] })
+    await service.refine(second.id)
+    expect(sessions.spawns.at(-1)?.cwd).toBe(repo)
+    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('上的改动还没进当前代码')
+    service.handleSessionExit(service.get(second.id).refineSessionId ?? '', 0)
     git(repo, 'merge', '-q', '--ff-only', firstRun.repos[0]?.branch ?? '')
     await service.refine(second.id)
     expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('改动已在当前代码里')
+  })
+
+  it('plans in a checkout of the start with no branch of its own, which goes once the task runs', async () => {
+    const origin = initRepo('origin')
+    const repo = path.join(dir, 'clone')
+    execFileSync('git', ['clone', '-q', origin, repo])
+    git(repo, 'checkout', '-q', '-b', 'feature/mine')
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'mine')
+    const task = readyTask('Plan it', [repo])
+    const taskBranches = () => git(repo, 'branch', '--list', 'kando/*')
+
+    await service.refine(task.id)
+    const checkout = sessions.spawns.at(-1)?.cwd ?? ''
+    expect(checkout).toBe(path.join(dir, 'worktrees', task.id.slice(0, 8), '.planning', 'clone'))
+    expect(git(checkout, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'origin/HEAD'))
+    expect(git(checkout, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD')
+    expect(taskBranches()).toBe('')
+    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('的只读副本，任务分支将从这里拉出')
+    service.handleSessionExit(service.get(task.id).refineSessionId ?? '', 0)
+
+    const running = await service.run(task.id)
+    expect(existsSync(checkout)).toBe(false)
+    expect(existsSync(running.repos[0]!.worktreePath!)).toBe(true)
+    expect(git(repo, 'worktree', 'list')).not.toContain('.planning')
   })
 
   it('refines Codex inside its read-only sandbox', async () => {

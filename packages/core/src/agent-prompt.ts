@@ -90,11 +90,16 @@ function dependencyLine(landed: ReadonlySet<string>, dependency: Dependency): st
   return `- ${label}：${state}，${notes.join('；')}`
 }
 
-// Refining reads the repos where they are, so give the agent every path.
+// Planning reads each repo at the task's start, in a checkout of its own or where it is, so give
+// the agent every path, and what a checkout holds.
 function codeSection(workspace: RefineWorkspace): string {
   return [
     '本任务涉及的代码（只读查看，不要修改）：',
-    ...workspace.dirs.map((dir, index) => `- ${index === 0 ? '主项目' : '附加项目'}：${dir}${dir === workspace.cwd ? '（当前目录）' : ''}`),
+    ...workspace.dirs.map((dir, index) => {
+      const start = workspace.starts.get(dir)
+      const holds = start ? `，是 ${start.ref}（${start.commit.slice(0, 7)}）的只读副本，任务分支将从这里拉出` : ''
+      return `- ${index === 0 ? '主项目' : '附加项目'}：${dir}${dir === workspace.cwd ? '（当前目录）' : ''}${holds}`
+    }),
     PROJECT_INSTRUCTIONS
   ].join('\n')
 }

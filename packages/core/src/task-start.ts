@@ -12,7 +12,8 @@ const FETCH_TIMEOUT_MS = 20_000
 const DEFAULT_BRANCHES = ['refs/remotes/origin/main', 'refs/remotes/origin/master']
 const MAX_REFS = 300
 
-export type ResolvedStart = { commit: string; start: TaskStart }
+// `head`: the start is whatever the project has checked out, which can be read where it is.
+export type ResolvedStart = { commit: string; start: TaskStart; head: boolean }
 
 async function commitOf(dir: string, ref: string): Promise<string | null> {
   return gitOrNull(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
@@ -57,7 +58,7 @@ async function fetched(dir: string, ref: string): Promise<boolean> {
 async function started(dir: string, ref: string, name: string | null, note: StartNote | null, at: number): Promise<ResolvedStart> {
   const commit = await commitOf(dir, ref)
   if (!commit) throw new Rejection('start-not-found', `${name ?? ref} is not a commit in ${dir}`)
-  return { commit, start: { ref: name ?? commit.slice(0, 7), commit, note, at } }
+  return { commit, start: { ref: name ?? commit.slice(0, 7), commit, note, at }, head: ref === START_HEAD }
 }
 
 // Where a task's new branch starts: what the task picked, else the one branch a dependency left

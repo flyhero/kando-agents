@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, rmdir, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -136,8 +136,17 @@ async function dependencyBranches(dependencies: readonly Pick<Task, 'repos'>[]):
   return branches
 }
 
-// `start` is the commit a new branch starts from; null checks out the branch as it is.
-async function addWorktree(topLevel: string, worktreePath: string, branch: string, start: string | null): Promise<void> {
+async function worktreeGit(dir: string, args: readonly string[]): Promise<void> {
+  try {
+    await execFileAsync('git', ['-C', dir, ...args])
+  } catch (error) {
+    const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr).trim() : ''
+    throw new Rejection('worktree-failed', stderr || `git ${args.join(' ')} failed`)
+  }
+}
+
+// `args` add the worktree at `worktreePath`.
+async function addWorktree(topLevel: string, worktreePath: string, args: readonly string[]): Promise<void> {
   await mkdir(path.dirname(worktreePath), { recursive: true })
   // A folder deleted by hand leaves git's record of it, which refuses the path. Only that record
   // goes, not every lost one as prune would, and without force, so a locked worktree stays.
@@ -146,16 +155,7 @@ async function addWorktree(topLevel: string, worktreePath: string, branch: strin
   } catch {
     // Never recorded, or locked: adding says why if it still cannot.
   }
-  // --no-track: the branch is the task's own, not a copy of the one it started from.
-  const args = start === null
-    ? ['worktree', 'add', worktreePath, branch]
-    : ['worktree', 'add', '--no-track', '-b', branch, worktreePath, start]
-  try {
-    await execFileAsync('git', ['-C', topLevel, ...args])
-  } catch (error) {
-    const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr).trim() : ''
-    throw new Rejection('worktree-failed', stderr || 'git worktree add failed')
-  }
+  await worktreeGit(topLevel, ['worktree', 'add', ...args])
 }
 
 // Each git repo gets its own worktree on the task's branch, under one task directory.
@@ -212,10 +212,11 @@ export async function prepareWorkspace(
       // earlier, since-removed worktree is checked out again rather than recreated.
       if (!(await isDirectory(worktreePath))) {
         if (await branchExists(topLevel, repoBranch)) {
-          await addWorktree(topLevel, worktreePath, repoBranch, null)
+          await addWorktree(topLevel, worktreePath, [worktreePath, repoBranch])
         } else {
           const resolved = await resolveStart(topLevel, startRef, base, at)
-          await addWorktree(topLevel, worktreePath, repoBranch, resolved.commit)
+          // --no-track: the branch is the task's own, not a copy of the one it started from.
+          await addWorktree(topLevel, worktreePath, ['--no-track', '-b', repoBranch, worktreePath, resolved.commit])
           start = resolved.start
         }
       }
@@ -265,6 +266,14 @@ export type RefineWorkspace = {
   dirs: string[]
   // Dependency branches already contained in the code the agent reads.
   landed: ReadonlySet<string>
+  // What each planning checkout holds, by its folder; a repo read where it is has none.
+  starts: ReadonlyMap<string, TaskStart>
+}
+
+// Planning checkouts: the code a task's branch would start from, checked out with no branch, apart
+// from the task's worktrees, which only execution lays out.
+function planningRoot(worktreesRoot: string, taskId: string): string {
+  return path.join(worktreesRoot, shortTaskId(taskId), '.planning')
 }
 
 async function isAncestor(dir: string, branch: string): Promise<boolean> {
@@ -276,18 +285,45 @@ async function isAncestor(dir: string, branch: string): Promise<boolean> {
   }
 }
 
-// Refining only reads, and only tasks that never ran are refined, so it works in the
-// repos themselves and creates no worktree or branch: talking leaves nothing behind.
+// Planning only reads, and only tasks that never ran plan, so it makes no branch: each git repo is
+// read at the commit the task's branch would start from, in a planning checkout, or where it is
+// when that start is what the project has checked out. `refresh` moves an existing checkout to
+// the start as it is now; a planning conversation picked up again keeps reading what it read.
 export async function prepareRefineWorkspace(
-  task: Pick<Task, 'repos'>,
-  dependencies: readonly Pick<Task, 'status' | 'repos'>[]
+  task: Pick<Task, 'id' | 'repos'>,
+  dependencies: readonly Pick<Task, 'status' | 'repos'>[],
+  worktreesRoot: string,
+  { refresh = true, at = Date.now() }: { refresh?: boolean; at?: number } = {}
 ): Promise<RefineWorkspace> {
+  const stackable = await dependencyBranches(dependencies)
+  const root = planningRoot(worktreesRoot, task.id)
+  const taken = new Set<string>()
   const dirs: string[] = []
+  const starts = new Map<string, TaskStart>()
   for (const repo of task.repos) {
     if (!(await isDirectory(repo.path))) {
       throw new Rejection('repo-not-found', `repo path does not exist: ${repo.path}`)
     }
-    dirs.push(repo.path)
+    const topLevel = await gitTopLevel(repo.path)
+    if (!topLevel) {
+      dirs.push(repo.path)
+      continue
+    }
+    const checkout = path.join(root, uniqueName(path.basename(topLevel), taken))
+    const exists = await isDirectory(checkout)
+    if (exists && !refresh) {
+      dirs.push(checkout)
+      continue
+    }
+    const resolved = await resolveStart(topLevel, repo.startRef, repo.startRef === null ? onlyBranch(stackable, topLevel) : null, at)
+    if (resolved.head) {
+      dirs.push(repo.path)
+      continue
+    }
+    if (exists) await worktreeGit(checkout, ['checkout', '--quiet', '--detach', resolved.commit])
+    else await addWorktree(topLevel, checkout, ['--quiet', '--detach', checkout, resolved.commit])
+    dirs.push(checkout)
+    starts.set(checkout, resolved.start)
   }
   const first = dirs[0]
   if (!first) {
@@ -305,5 +341,21 @@ export async function prepareRefineWorkspace(
       }
     }
   }
-  return { cwd: first, dirs, landed }
+  return { cwd: first, dirs, landed, starts }
+}
+
+// Once the task runs in its worktrees, its planning checkouts go. The agent only read there, but
+// one holding changes after all stays (removing without force refuses it), as does one whose
+// commit no ref contains, which only that checkout still holds.
+export async function removePlanningCheckouts(taskId: string, worktreesRoot: string): Promise<void> {
+  const root = planningRoot(worktreesRoot, taskId)
+  const names = await readdir(root).catch(() => [])
+  for (const name of names) {
+    const checkout = path.join(root, name)
+    const kept = await execFileAsync('git', ['-C', checkout, 'for-each-ref', '--contains', 'HEAD', '--count=1', '--format=%(refname)'])
+      .then(({ stdout }) => stdout.trim() !== '', () => false)
+    if (kept) await execFileAsync('git', ['-C', checkout, 'worktree', 'remove', checkout]).catch(() => {})
+  }
+  // Only empty folders go: a task directory keeps any worktree in it.
+  for (const dir of [root, path.dirname(root)]) await rmdir(dir).catch(() => {})
 }

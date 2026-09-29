@@ -14,7 +14,8 @@ const workspace: Workspace = {
 const refining = (landed: string[] = []): RefineWorkspace => ({
   cwd: '/code/app',
   dirs: ['/code/app', '/code/web'],
-  landed: new Set(landed)
+  landed: new Set(landed),
+  starts: new Map()
 })
 
 function dependency(overrides: Partial<Task> = {}): Task {
@@ -50,6 +51,13 @@ describe('refinePrompt', () => {
     const prompt = refinePrompt({ title: 'x', details: '', source: null, sourceSnapshot: null }, 'claude', refining(), [])
     expect(prompt).toContain('- 主项目：/code/app（当前目录）\n- 附加项目：/code/web')
     expect(prompt).toContain('AGENTS.md、CLAUDE.md')
+  })
+
+  it('says what a planning checkout holds: the start the task\'s branch will come from', () => {
+    const checkout = '/kando/worktrees/76b8c0de/.planning/app'
+    const workspace = { ...refining(), cwd: checkout, dirs: [checkout, '/code/web'], starts: new Map([[checkout, { ref: 'origin/main', commit: 'bd03e52aa0', note: null, at: 0 }]]) }
+    const prompt = refinePrompt({ title: 'x', details: '', source: null, sourceSnapshot: null }, 'claude', workspace, [])
+    expect(prompt).toContain(`- 主项目：${checkout}（当前目录），是 origin/main（bd03e52）的只读副本，任务分支将从这里拉出\n- 附加项目：/code/web\n`)
   })
 
   it('points a redo at the abandoned attempt and why it was dropped', () => {

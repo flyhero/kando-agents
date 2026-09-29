@@ -42,7 +42,7 @@ import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
 import type { TaskPatch, TaskStore } from './task-store'
-import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, startOptions, withKnownWorktrees } from './workspace'
+import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, removePlanningCheckouts, startOptions, withKnownWorktrees } from './workspace'
 
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
@@ -281,6 +281,8 @@ export class TaskService {
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       // Persist the worktrees first so a failed spawn is retried in the same trees.
       this.store.update(task.id, { repos: workspace.repos })
+      // Running waits for refining to end, so nothing reads the planning checkouts any more.
+      await removePlanningCheckouts(task.id, this.worktreesRoot)
       const images = await this.images(task)
       const prompt = agentPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt)
       return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent), workspace.extraDirs) }
@@ -367,7 +369,7 @@ export class TaskService {
       const images = await this.images(task)
       const imageIds = this.chatImageIds(task, images.prompt)
       if (startKind(dependencies) === 'plan') {
-        const workspace = await prepareRefineWorkspace(task, dependencies)
+        const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot)
         const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'new',
           readable: images.command.all, allowBypass
@@ -381,6 +383,8 @@ export class TaskService {
       const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.command.all, allowBypass
       })
+      // The planning agent stopped for the new stage, so nothing reads there any more.
+      await removePlanningCheckouts(task.id, this.worktreesRoot)
       this.store.update(task.id, { status: 'running', lastExit: null, awaitingInput: false })
       const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
       await chats.send(conversation.id, prompt, imageIds)
@@ -406,7 +410,7 @@ export class TaskService {
     return this.launchChat(task, async () => {
       const images = await this.images(task)
       if (task.status === 'pending') {
-        const workspace = await prepareRefineWorkspace(task, dependencies)
+        const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot, { refresh: false })
         await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'resume',
           readable: images.command.all, allowBypass
@@ -506,7 +510,7 @@ export class TaskService {
     }
     const dependencies = this.dependenciesOf(task)
     const sessionId = await this.launch(task, async () => {
-      const workspace = await prepareRefineWorkspace(task, dependencies)
+      const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot)
       const images = await this.images(task)
       const prompt = refinePrompt(task, agent, workspace, dependencies, this.predecessorOf(task), images.prompt)
       const extraDirs = workspace.dirs.filter((dir) => dir !== workspace.cwd)
@@ -580,7 +584,9 @@ export class TaskService {
     }
     const dependents = this.store.dependents(task.id)
     await this.chats?.deleteForTask(task.id)
-    // Worktrees are left on disk: they may hold the only copy of the agent's work.
+    // Worktrees are left on disk: they may hold the only copy of the agent's work. Planning
+    // checkouts hold none, so they go, unless one holds changes after all.
+    await removePlanningCheckouts(task.id, this.worktreesRoot)
     this.store.delete(task.id)
     this.emit({ type: 'deleted', id: task.id })
     // Their dependency edges went with the task.

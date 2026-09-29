@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { branchKey, branchSlug, normalizeRepoPath, prepareWorkspace, projectHead } from './workspace'
+import { branchKey, branchSlug, normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, removePlanningCheckouts } from './workspace'
 
 describe('branchKey', () => {
   it('keeps an issue key as it is, and strips what a branch name should not carry', () => {
@@ -147,5 +147,54 @@ describe('prepareWorkspace', () => {
 
     await expect(prepareWorkspace({ ...task(source), repos: first.repos }, [], root)).rejects.toMatchObject({ reason: 'worktree-failed' })
     expect(registered(source)).toMatch(/^locked$/m)
+  })
+
+  const clone = (origin: string, name: string) => {
+    const dir = path.join(tempDir(), name)
+    execFileSync('git', ['clone', '-q', origin, dir])
+    return dir
+  }
+
+  it('plans in a checkout of origin\'s default branch with no branch of its own, moved on only when asked', async () => {
+    const origin = repo()
+    const source = clone(origin, 'app')
+    const root = tempDir()
+    const first = await prepareRefineWorkspace(task(source), [], root)
+    expect(first.cwd).toBe(path.join(root, '76b8c0de', '.planning', 'app'))
+    expect(first.starts.get(first.cwd)).toMatchObject({ ref: 'origin/main', commit: git(origin, 'rev-parse', 'HEAD') })
+    expect(git(first.cwd, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD')
+
+    git(origin, 'commit', '-q', '--allow-empty', '-m', 'later')
+    const latest = git(origin, 'rev-parse', 'HEAD')
+    const resumed = await prepareRefineWorkspace(task(source), [], root, { refresh: false })
+    expect(git(resumed.cwd, 'rev-parse', 'HEAD')).not.toBe(latest)
+    const again = await prepareRefineWorkspace(task(source), [], root)
+    expect(again.cwd).toBe(first.cwd)
+    expect(git(again.cwd, 'rev-parse', 'HEAD')).toBe(latest)
+  })
+
+  it('plans where the repo is when the start is what it has checked out', async () => {
+    const source = repo()
+    const workspace = await prepareRefineWorkspace(task(source), [], tempDir())
+    expect(workspace).toMatchObject({ cwd: source, dirs: [source] })
+    expect(workspace.starts.size).toBe(0)
+  })
+
+  it('removes planning checkouts, except one holding changes or a commit no ref has', async () => {
+    const origin = repo()
+    const sources = ['clean', 'edited', 'committed'].map((name) => clone(origin, name))
+    const root = tempDir()
+    const planning = { ...task(sources[0]!), repos: sources.map((source) => ({ path: source, worktreePath: null, branch: null, startRef: null, start: null })) }
+    const [clean, edited, committed] = (await prepareRefineWorkspace(planning, [], root)).dirs
+    writeFileSync(path.join(edited!, 'notes.md'), 'draft')
+    git(committed!, 'commit', '-q', '--allow-empty', '-m', 'only here')
+
+    await removePlanningCheckouts(planning.id, root)
+    expect([clean, edited, committed].map((dir) => existsSync(dir!))).toEqual([false, true, true])
+    expect(git(sources[0]!, 'worktree', 'list')).not.toContain('.planning')
+    rmSync(edited!, { recursive: true, force: true })
+    rmSync(committed!, { recursive: true, force: true })
+    await removePlanningCheckouts(planning.id, root)
+    expect(existsSync(path.join(root, '76b8c0de'))).toBe(false)
   })
 })

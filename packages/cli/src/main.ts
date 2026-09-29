@@ -269,10 +269,13 @@ async function main(argv: string[]): Promise<void> {
       case 'run': {
         const id = required(rest[0], 'id')
         const task = await rpc.call(values.chat ? 'tasks.start' : 'tasks.run', { id })
+        // Planning reads a checkout of where the branch will start, which the task does not keep.
+        if (values.chat && task.status === 'pending') {
+          console.log(`${formatRow(task)}\n已启动 ${task.agent}，依赖还没完成，先在起点的只读副本里规划；在桌面端的任务里接着聊`)
+          break
+        }
         const dirs = task.repos.map((repo) => repo.worktreePath ?? repo.path).join('、')
-        const chat = !values.chat ? '' : task.status === 'pending'
-          ? '，依赖还没完成，先只读规划；在桌面端的任务里接着聊'
-          : '，先规划；在桌面端的任务里查看和批准计划'
+        const chat = values.chat ? '，先规划；在桌面端的任务里查看和批准计划' : ''
         console.log(`${formatRow(task)}\n已在 ${dirs} 启动 ${task.agent}${chat}`)
         break
       }
