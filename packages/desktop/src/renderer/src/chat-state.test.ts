@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { ChatItem, ConversationMessage, ConversationStage } from '@kando/protocol'
 import {
   appendText,
+  chatBlocks,
   mergeItems,
   pathShortener,
   prependChatPage,
@@ -98,5 +99,42 @@ describe('questionAnswers', () => {
       { text: 'Rust, Zig', typed: true }
     ])
     expect(questionAnswers(question, ['Go, TypeScript'])).toEqual([{ text: 'Go', typed: false }, { text: 'TypeScript', typed: false }])
+  })
+})
+
+describe('chatBlocks', () => {
+  const base = { stageId: 'chat-stage', revision: 1, at: 0 }
+  const user = (id: string): ChatItem => ({ ...base, id, kind: 'user', text: 'go', images: [] })
+  const reply = (id: string): ChatItem => ({ ...base, id, kind: 'assistant', text: id, streaming: false })
+  const tool = (id: string, name = 'Read', diffs: { path: string; change: 'update'; patch: string }[] = []): ChatItem =>
+    ({ ...base, id, kind: 'tool', name, title: id, input: null, status: 'done', output: null, diffs })
+  const thought = (id: string, value: string): ChatItem => ({ ...base, id, kind: 'reasoning', text: value, streaming: false })
+  const turn = (id: string): ChatItem => ({ ...base, id, kind: 'turn', state: 'completed', error: null, durationMs: 70_800 })
+  const blocksOf = (items: ChatItem[]) => chatBlocks(items.map((item) => ({ kind: 'item' as const, item })))
+  const shape = (blocks: ReturnType<typeof chatBlocks>): unknown[] => blocks.map((block) =>
+    block.kind === 'tools' ? `tools:${block.tools.map((each) => each.id).join('+')}`
+      : block.kind === 'fold' ? { fold: shape(block.blocks) }
+      : block.entry.kind === 'item' ? block.entry.item.id : block.key)
+
+  it('runs calls made one after another together, a change to files on its own card', () => {
+    const edit = tool('e', 'Edit', [{ path: 'a.ts', change: 'update', patch: '+x' }])
+    expect(shape(blocksOf([user('u'), tool('a'), tool('b', 'Bash'), edit, tool('c'), reply('r')])))
+      .toEqual(['u', 'tools:a+b', 'e', 'tools:c', 'r'])
+  })
+
+  it('folds a finished turn\'s work behind one line and leaves its answer in view', () => {
+    expect(shape(blocksOf([user('u'), reply('looking'), thought('t', 'hm'), tool('a'), tool('b'), reply('answer'), turn('end')])))
+      .toEqual(['u', { fold: ['looking', 't', 'tools:a+b'] }, 'answer'])
+  })
+
+  it('keeps a turn that did nothing but answer as it was, and one still running unfolded', () => {
+    expect(shape(blocksOf([user('u'), reply('answer'), turn('end')]))).toEqual(['u', 'answer', 'end'])
+    expect(shape(blocksOf([user('u'), tool('a'), reply('so far')]))).toEqual(['u', 'tools:a', 'so far'])
+  })
+
+  it('leaves what the user was asked, and empty thinking, out of the fold', () => {
+    const question: ChatItem = { ...base, id: 'q', kind: 'question', requestId: 'r', questions: [], answers: {}, resolution: 'answered' }
+    expect(shape(blocksOf([user('u'), thought('empty', ' '), tool('a'), question, tool('b'), reply('answer'), turn('end')])))
+      .toEqual(['u', { fold: ['tools:a', 'tools:b'] }, 'q', 'answer'])
   })
 })

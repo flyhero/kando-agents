@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type TimelineEntry } from '../chat-state'
+import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type ChatBlock, type TimelineEntry } from '../chat-state'
+import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
@@ -11,7 +12,8 @@ import { ChatMarkdown } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
-import { ChatPaths, ChatToolCard } from './ChatToolCard'
+import { ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
+import { ChevronRightIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
@@ -77,13 +79,50 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
   }
 }
 
-function entryKey(entry: TimelineEntry): string {
-  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
-}
-
 // The user's own messages are what ↑ steps back through.
 function isUserEntry(entry: TimelineEntry): boolean {
   return entry.kind === 'item' ? entry.item.kind === 'user' : entry.kind === 'message' && entry.message.role === 'user'
+}
+
+type TurnItem = Extract<ChatItem, { kind: 'turn' }>
+
+// A finished turn's work, behind how long it took; opening it shows the calls, thinking and replies
+// on the way to its answer.
+function foldText(turn: TurnItem): string {
+  const worked = turn.durationMs !== null ? `工作了 ${workedFor(turn.durationMs)}` : '工作过程'
+  if (turn.state === 'interrupted') return `${worked}，已中断${turn.error ? `：${turn.error}` : ''}`
+  if (turn.state === 'failed') return `${worked}，失败${turn.error ? `：${turn.error}` : ''}`
+  return worked
+}
+
+function TurnFold({ conversationId, turn, blocks, task }: { conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="chat-fold" data-open={open || undefined} data-state={turn.state}>
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+        {foldText(turn)}
+      </button>
+      {open && (
+        <div className="chat-fold-body">
+          {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Block({ conversationId, block, task }: { conversationId: string; block: ChatBlock; task: boolean }) {
+  if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
+  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>
+  const { entry } = block
+  return (
+    <div className="chat-entry" data-user={isUserEntry(entry) || undefined}>
+      {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
+        : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
+        : <Item conversationId={conversationId} item={entry.item} />}
+    </div>
+  )
 }
 
 // A conversation whose latest stage runs in chat mode: every stage in order, then the composer.
@@ -140,6 +179,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       item.kind === 'approval' && isPlanApproval(item) && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
+  const blocks = useMemo(() => chatBlocks(entries), [entries])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
     [items]
@@ -221,13 +261,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
-        {entries.map((entry) => (
-          <div key={entryKey(entry)} className="chat-entry" data-user={isUserEntry(entry) || undefined}>
-            {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={Boolean(conversation.taskId)} />
-              : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
-              : <Item conversationId={id} item={entry.item} />}
-          </div>
-        ))}
+        {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} />)}
         {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理{doing ? `：${doing}` : ''}…</div>}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />

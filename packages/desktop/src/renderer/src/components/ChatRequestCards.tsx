@@ -2,7 +2,8 @@ import { useContext, useEffect, useRef, useState, type KeyboardEvent } from 'rea
 import type { ChatDecision, ChatItem, ChatQuestion } from '@kando/protocol'
 import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
-import { ChatPaths, toolLabel } from './ChatToolCard'
+import { toolLabel } from '../chat-tools'
+import { ChatPaths } from './ChatToolCard'
 import { CheckIcon, PencilIcon } from './icons'
 
 type ApprovalItem = Extract<ChatItem, { kind: 'approval' }>

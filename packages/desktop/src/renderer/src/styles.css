@@ -3639,9 +3639,91 @@ button.task-tag-updated:hover {
   color: var(--text-muted);
 }
 .chat-tool-status { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.chat-tool[data-status='running'] .chat-tool-status { color: var(--status-running); }
-.chat-tool[data-status='failed'] .chat-tool-status,
-.chat-tool[data-status='denied'] .chat-tool-status { color: var(--danger); }
+.chat-tool-status[data-status='failed'],
+.chat-tool-status[data-status='denied'] { color: var(--danger); }
+.chat-diff-count { display: inline-flex; gap: 6px; font-size: 12px; white-space: nowrap; }
+.chat-diff-added { color: var(--status-done); }
+.chat-diff-removed { color: var(--danger); }
+
+/* A call, or a run of them, as a flat line: no box, the chevron showing on hover. */
+.chat-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px 3px 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-tool-row:hover:not(:disabled) { background: var(--surface-muted); }
+.chat-tool-row:disabled { cursor: default; }
+.chat-tool-row .chat-tool-name { font-weight: 500; color: var(--text); }
+.chat-tool-summary { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-tool-chevron { flex-shrink: 0; display: grid; place-items: center; width: 14px; height: 14px; color: var(--text-muted); }
+.chat-tool-chevron svg { width: 12px; height: 12px; transition: transform 0.12s; }
+.chat-tool-row .chat-tool-chevron { opacity: 0; }
+.chat-tool-row:hover .chat-tool-chevron,
+.chat-tool-row:focus-visible .chat-tool-chevron,
+.chat-tool-row[aria-expanded='true'] .chat-tool-chevron { opacity: 1; }
+[aria-expanded='true'] > .chat-tool-chevron svg { transform: rotate(90deg); }
+.chat-tool-run-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 2px 9px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+.chat-tool-line .chat-tool-io { margin: 2px 0 6px 20px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+/* A call still going. */
+.chat-spinner {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--status-running);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-spinner { animation: none; border-color: var(--status-running); }
+}
+
+/* A finished turn's work, behind one line saying how long it took. */
+.chat-fold-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 6px 2px 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-fold-header:hover { background: var(--surface-muted); color: var(--text); }
+.chat-fold[data-state='failed'] .chat-fold-header { color: var(--danger); }
+.chat-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 2px 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
 
 .chat-tool-io {
   margin: 0;

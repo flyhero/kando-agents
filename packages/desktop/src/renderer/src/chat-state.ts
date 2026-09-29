@@ -123,6 +123,90 @@ export function timeline(
   return entries
 }
 
+export function entryKey(entry: TimelineEntry): string {
+  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
+}
+
+type ToolItem = Extract<ChatItem, { kind: 'tool' }>
+type TurnItem = Extract<ChatItem, { kind: 'turn' }>
+
+// What the conversation shows once its work is grouped: calls made one after another as one run,
+// and a finished turn's work folded behind one line, leaving its answer in view.
+export type ChatBlock =
+  | { kind: 'entry'; key: string; entry: TimelineEntry }
+  | { kind: 'tools'; key: string; tools: ToolItem[] }
+  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[] }
+
+// A call that changed files keeps its own card, with its diff; the rest run together.
+function runTool(entry: TimelineEntry): ToolItem | null {
+  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 ? entry.item : null
+}
+
+function itemOf(block: ChatBlock): ChatItem | null {
+  return block.kind === 'entry' && block.entry.kind === 'item' ? block.entry.item : null
+}
+
+// What a finished turn tucks away: the work on the way to its answer. What the user was asked, a
+// plan, and anything that went wrong stay in view.
+function foldable(block: ChatBlock): boolean {
+  const item = itemOf(block)
+  if (!item) return block.kind !== 'entry'
+  switch (item.kind) {
+    case 'tool':
+    case 'reasoning':
+    case 'assistant':
+    case 'todos':
+      return true
+    case 'approval':
+      return !isPlanApproval(item)
+    case 'notice':
+      return item.level === 'info'
+    default:
+      return false
+  }
+}
+
+function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[] {
+  // The answer is the replies it ends with, after the last of its work.
+  const reply = (block: ChatBlock | undefined) => block !== undefined && itemOf(block)?.kind === 'assistant'
+  let answer = body.length
+  while (answer > 0 && reply(body[answer - 1])) answer--
+  const work = body.slice(0, answer)
+  const folded = work.filter(foldable)
+  if (folded.length === 0) return [...body, end]
+  return [{ kind: 'fold', key: `fold:${end.key}`, turn, blocks: folded }, ...work.filter((block) => !foldable(block)), ...body.slice(answer)]
+}
+
+export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
+  const runs: ChatBlock[] = []
+  for (const entry of entries) {
+    // Claude often thinks without saying anything it keeps.
+    if (entry.kind === 'item' && entry.item.kind === 'reasoning' && !entry.item.streaming && !entry.item.text.trim()) continue
+    const tool = runTool(entry)
+    const last = runs.at(-1)
+    if (tool && last?.kind === 'tools') last.tools.push(tool)
+    else if (tool) runs.push({ kind: 'tools', key: `tools:${entryKey(entry)}`, tools: [tool] })
+    else runs.push({ kind: 'entry', key: entryKey(entry), entry })
+  }
+  // Each turn runs from the user's message, or a new stage, to the item that says how it ended.
+  const blocks: ChatBlock[] = []
+  let body: ChatBlock[] = []
+  for (const block of runs) {
+    const item = itemOf(block)
+    const boundary = block.kind === 'entry' && (block.entry.kind !== 'item' || item?.kind === 'user')
+    if (boundary) {
+      blocks.push(...body, block)
+      body = []
+    } else if (item?.kind === 'turn') {
+      blocks.push(...foldTurn(body, item, block))
+      body = []
+    } else {
+      body.push(block)
+    }
+  }
+  return [...blocks, ...body]
+}
+
 // Paths inside the conversation's projects read relative to them; with several projects, each
 // keeps its folder's name in front.
 export function pathShortener(roots: readonly string[]): (text: string) => string {
