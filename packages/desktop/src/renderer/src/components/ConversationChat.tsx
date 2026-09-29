@@ -12,6 +12,7 @@ import { ChatMarkdown } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
+import { ChatWorking } from './ChatWorking'
 import { ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChevronRightIcon } from './icons'
 
@@ -247,6 +248,8 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   )
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
   const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
+  // A turn runs from the message that set it going.
+  const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
@@ -262,7 +265,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
         {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} />)}
-        {turn === 'running' && <div className="chat-working muted">{AGENT_LABEL[conversation.agent]} 正在处理{doing ? `：${doing}` : ''}…</div>}
+        {turn === 'running' && <ChatWorking agent={conversation.agent} doing={doing} since={since} />}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
