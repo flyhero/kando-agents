@@ -411,6 +411,16 @@ describe('CodexAppServer subagents, as recorded', () => {
     })
   }
 
+  it('shows the subagent as one call, with what it was told and what it reported', () => {
+    const items = replay(records).items.list()
+    const tools = ofKind(items, 'tool')
+    expect(tools.map((tool) => [tool.name, tool.title, tool.status])).toEqual([
+      ['spawnAgent', 'In the workspace, run `wc -l a.txt` and report the exact output. Do not do anything else.', 'done']
+    ])
+    expect(JSON.parse(tools[0]?.input ?? '')).toEqual({ prompt: 'In the workspace, run `wc -l a.txt` and report the exact output. Do not do anything else.' })
+    expect(tools[0]?.output).toBe('       1 a.txt')
+  })
+
   it('keeps the subagent\'s own thread out of the chat', () => {
     const driver = replay(records)
     const items = driver.items.list()
@@ -424,14 +434,19 @@ describe('CodexAppServer subagents, as recorded', () => {
     expect(replay(records.slice(0, childDone + 1)).activity()).toBe('running')
   })
 
-  it('logs none of the subagent\'s thread but the files it may ask to change, and rebuilds the same items', () => {
+  it('logs only how the subagent\'s turns ended, and rebuilds the same items from that', () => {
     const kept = logs(records)
     const ofChild = (record: ChatRecord) => text(record).includes(`"threadId":"${child}"`)
     expect(records.filter(ofChild).length).toBeGreaterThan(10)
-    expect(kept.filter(ofChild)).toEqual([])
+    expect(kept.filter(ofChild).map((record) => /"method":"([^"]+)"/.exec(text(record))?.[1])).toEqual(['turn/completed'])
     expect(shown(replay(kept).items.list())).toEqual(shown(replay(records).items.list()))
   })
 
+  it('settles a subagent it does not wait on by the subagent\'s own turn', () => {
+    const spawned = records.findIndex((record) => text(record).includes('"tool":"spawnAgent","status":"completed"'))
+    const driver = replay([...records.slice(0, spawned + 1), records[childDone]!])
+    expect(ofKind(driver.items.list(), 'tool').map((tool) => [tool.status, tool.output])).toEqual([['done', '       1 a.txt']])
+  })
 })
 
 describe('CodexAppServer subagents', () => {
@@ -443,6 +458,47 @@ describe('CodexAppServer subagents', () => {
     driver.apply({ dir: 'out', at: 3, frame: { id: 'kando-turn-1', method: 'turn/start', params: { threadId: thread, input: [{ type: 'text', text: 'go' }] } }, ref: 'ref-1' })
     return driver
   }
+  const collab = (id: string, tool: string, status: string, receiverThreadIds: string[], agentsStates: Record<string, { status: string; message: string | null }>) => ({
+    type: 'collabAgentToolCall', id, tool, status, senderThreadId: thread, receiverThreadIds, prompt: tool === 'spawnAgent' ? 'Look around\nand report' : null, agentsStates
+  })
+  const item = (driver: CodexAppServer, at: number, body: object, completed = true) =>
+    driver.apply({ dir: 'in', at, frame: { method: completed ? 'item/completed' : 'item/started', params: { threadId: thread, item: body } } })
+  const agentOf = (driver: CodexAppServer) => driver.items.get('t:spawn-1')
+
+  it('runs while it works, and fails with what it said when it errors', () => {
+    const driver = opened()
+    item(driver, 4, collab('spawn-1', 'spawnAgent', 'inProgress', [], {}), false)
+    expect(agentOf(driver)).toMatchObject({ kind: 'tool', name: 'spawnAgent', title: 'Look around', status: 'running', output: null })
+    item(driver, 5, collab('spawn-1', 'spawnAgent', 'completed', ['child-1'], { 'child-1': { status: 'pendingInit', message: null } }))
+    expect(agentOf(driver)).toMatchObject({ status: 'running' })
+    item(driver, 6, collab('wait-1', 'wait', 'completed', ['child-1'], { 'child-1': { status: 'errored', message: 'ran out of turns' } }))
+    expect(agentOf(driver)).toMatchObject({ status: 'failed', output: 'ran out of turns' })
+    expect(driver.items.get('t:wait-1')).toBeUndefined()
+  })
+
+  it('stays done when closed after finishing, and is interrupted when closed before', () => {
+    const driver = opened()
+    item(driver, 4, collab('spawn-1', 'spawnAgent', 'completed', ['child-1'], { 'child-1': { status: 'running', message: null } }))
+    item(driver, 5, collab('spawn-2', 'spawnAgent', 'completed', ['child-2'], { 'child-2': { status: 'running', message: null } }))
+    item(driver, 6, collab('wait-1', 'wait', 'completed', ['child-1'], { 'child-1': { status: 'completed', message: 'found it' } }))
+    item(driver, 7, collab('close-1', 'closeAgent', 'completed', ['child-1', 'child-2'], {
+      'child-1': { status: 'shutdown', message: null },
+      'child-2': { status: 'shutdown', message: null }
+    }))
+    expect(agentOf(driver)).toMatchObject({ status: 'done', output: 'found it' })
+    expect(driver.items.get('t:spawn-2')).toMatchObject({ status: 'interrupted' })
+  })
+
+  it('fails a spawn Codex refused, and interrupts subagents still at work when the agent exits', () => {
+    const driver = opened()
+    item(driver, 4, collab('spawn-1', 'spawnAgent', 'failed', [], {}))
+    expect(agentOf(driver)).toMatchObject({ status: 'failed' })
+    item(driver, 5, collab('spawn-2', 'spawnAgent', 'completed', ['child-2'], { 'child-2': { status: 'running', message: null } }))
+    driver.apply({ dir: 'in', at: 6, frame: { method: 'turn/completed', params: { threadId: thread, turn: { id: 'turn-1', status: 'completed' } } } })
+    expect(driver.items.get('t:spawn-2')).toMatchObject({ status: 'running' })
+    driver.apply({ dir: 'exit', at: 7, code: 0, stderr: '' })
+    expect(driver.items.get('t:spawn-2')).toMatchObject({ status: 'interrupted' })
+  })
 
   it('asks for a subagent\'s approval here, naming the files it would change', () => {
     const driver = opened()

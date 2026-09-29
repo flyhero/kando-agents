@@ -41,7 +41,10 @@ const Item = z.looseObject({
   arguments: z.unknown().optional(),
   result: z.unknown().optional(),
   error: z.looseObject({ message: z.string().optional() }).nullish(),
-  query: z.string().optional()
+  query: z.string().optional(),
+  prompt: z.string().nullish(),
+  receiverThreadIds: z.array(z.string()).catch([]).optional(),
+  agentsStates: z.record(z.string(), z.looseObject({ status: z.string(), message: z.string().nullish() })).catch({}).optional()
 })
 type Item = z.infer<typeof Item>
 const ItemEvent = z.looseObject({ item: Item })
@@ -56,6 +59,13 @@ const TurnEvent = z.looseObject({
 })
 const ThreadEvent = z.looseObject({ thread: z.looseObject({ id: z.string() }) })
 const ThreadRef = z.looseObject({ threadId: z.string() })
+const ChildTurn = z.looseObject({
+  turn: z.looseObject({
+    status: z.string().optional(),
+    items: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]).optional(),
+    error: z.looseObject({ message: z.string().optional() }).nullish()
+  })
+})
 const SandboxShape = z.looseObject({ type: z.string() })
 // What a thread was opened with, from the thread/start or thread/resume answer.
 // Codex's plan mode is a collaboration mode, set per turn beside the approval policy and sandbox.
@@ -197,6 +207,17 @@ export function unwrapShell(command: string): string {
   return match ? match[1]!.replaceAll(`'\\''`, `'`) : command
 }
 
+// A subagent's state, as Codex reports it on the calls that deal with it. notFound says nothing.
+const AGENT_STATUS: Record<string, ChatToolStatus> = {
+  pendingInit: 'running',
+  running: 'running',
+  completed: 'done',
+  errored: 'failed',
+  interrupted: 'interrupted',
+  shutdown: 'interrupted'
+}
+const TURN_AGENT_STATUS: Record<string, string> = { completed: 'completed', interrupted: 'interrupted', failed: 'errored' }
+
 function toolStatus(status: string | undefined, exitCode: number | null | undefined): ChatToolStatus {
   switch (status) {
     case 'inProgress':
@@ -238,6 +259,8 @@ export class CodexAppServer implements ChatDriver {
   private initializedSent = false
   private threadRequested = false
   private threadId: string | null = null
+  // The subagents this thread sent off, by their own thread, to the call that spawned each.
+  private readonly agents = new Map<string, string>()
   // What files a subagent's pending change touches, to name them when it asks to make it.
   private readonly childFiles = new Map<string, string>()
   private startError: string | null = null
@@ -417,9 +440,9 @@ export class CodexAppServer implements ChatDriver {
     if (method === undefined) return this.loggedResponse(parsed.data)
     // Server requests are kept whole; of the notifications, only those that change what the chat shows.
     if (id !== undefined) return frame
-    // Of a subagent's thread, only the files it may ask to change.
+    // Of a subagent's thread, only how each turn ended and the files it may ask to change.
     if (this.childThread(method, parsed.data.params)) {
-      return method === 'item/started' && ItemEvent.safeParse(parsed.data.params).data?.item.type === 'fileChange' ? frame : null
+      return method === 'turn/completed' || (method === 'item/started' && ItemEvent.safeParse(parsed.data.params).data?.item.type === 'fileChange') ? frame : null
     }
     if (method === 'thread/settings/updated') {
       const update = SettingsUpdated.safeParse(parsed.data.params)
@@ -600,16 +623,26 @@ export class CodexAppServer implements ChatDriver {
     return thread.success && thread.data.threadId !== this.threadId ? thread.data.threadId : null
   }
 
-  private childNotification(method: string, params: unknown): void {
-    if (method !== 'item/started') return
-    const event = ItemEvent.safeParse(params)
-    if (event.success && event.data.item.type === 'fileChange') {
-      this.childFiles.set(event.data.item.id, (event.data.item.changes ?? []).map((change) => change.path).join(', '))
+  private childNotification(threadId: string, method: string, params: unknown, at: number): void {
+    if (method === 'item/started') {
+      const event = ItemEvent.safeParse(params)
+      if (event.success && event.data.item.type === 'fileChange') {
+        this.childFiles.set(event.data.item.id, (event.data.item.changes ?? []).map((change) => change.path).join(', '))
+      }
+      return
     }
+    if (method !== 'turn/completed') return
+    // A subagent the thread does not wait on is settled by its own turn's end.
+    const turn = ChildTurn.safeParse(params)
+    if (!turn.success) return
+    const { status, items, error } = turn.data.turn
+    const reply = (items ?? []).filter((item) => item.type === 'agentMessage' && item.text?.trim()).at(-1)?.text ?? null
+    this.agentState(threadId, TURN_AGENT_STATUS[status ?? ''] ?? 'completed', status === 'failed' ? (error?.message ?? reply) : reply, at)
   }
 
   private notification(method: string, params: unknown, at: number): void {
-    if (this.childThread(method, params)) return this.childNotification(method, params)
+    const child = this.childThread(method, params)
+    if (child) return this.childNotification(child, method, params, at)
     switch (method) {
       case 'thread/started': {
         const thread = ThreadEvent.safeParse(params)
@@ -760,9 +793,48 @@ export class CodexAppServer implements ChatDriver {
         this.items.put({ id: toolId, kind: 'tool', name: 'webSearch', title: item.query ?? '', input: null, status: completed ? 'done' : 'running', output: null, diffs: [] }, at)
         return
       }
+      case 'collabAgentToolCall': {
+        if (item.tool === 'spawnAgent') return this.spawned(item, completed, at)
+        // Waiting on, messaging or closing subagents shows as how each of them is doing.
+        if (completed) {
+          for (const [thread, state] of Object.entries(item.agentsStates ?? {})) this.agentState(thread, state.status, state.message ?? null, at)
+        }
+        return
+      }
       case 'contextCompaction':
         if (completed) this.items.notice('info', CONTEXT_COMPACTED, at)
     }
+  }
+
+  // A subagent sent off as a call of its own, like Claude's Task: what it was told, and later what it
+  // reported back.
+  private spawned(item: Item, completed: boolean, at: number): void {
+    const id = `t:${item.id}`
+    const prompt = item.prompt ?? ''
+    const receiver = item.receiverThreadIds?.[0]
+    if (receiver) this.agents.set(receiver, id)
+    const state = receiver ? item.agentsStates?.[receiver] : undefined
+    const spawnFailed = completed && item.status !== 'completed'
+    this.items.put({
+      id,
+      kind: 'tool',
+      name: 'spawnAgent',
+      title: prompt.split('\n')[0] ?? '',
+      input: prompt ? clip(JSON.stringify({ prompt }), 4000) : null,
+      status: spawnFailed ? this.settled(item.status === 'interrupted' ? 'interrupted' : 'failed') : (AGENT_STATUS[state?.status ?? ''] ?? 'running'),
+      output: state?.message ?? null,
+      diffs: []
+    }, at)
+  }
+
+  private agentState(thread: string, status: string, message: string | null, at: number): void {
+    const id = this.agents.get(thread)
+    const tool = id ? this.items.get(id) : undefined
+    const next = AGENT_STATUS[status]
+    if (tool?.kind !== 'tool' || !next) return
+    // Closing a subagent that had finished says it was shut down, which is no news of how it did.
+    if (status === 'shutdown' && tool.status !== 'running') return
+    this.items.put({ ...tool, status: this.settled(next), output: message ?? tool.output }, at)
   }
 
   private serverRequest(method: string, rawId: string | number, params: unknown, at: number): void {
@@ -931,6 +1003,8 @@ export class CodexAppServer implements ChatDriver {
   private ended(stderr: string, at: number): void {
     if (this.exited) return
     if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
+    // Subagents still at work go with the agent.
+    this.items.settleTools('interrupted', at)
     // A plan left waiting goes with the agent; the next stage starts from its own messages.
     for (const [requestId, pending] of [...this.pending]) {
       if (pending.kind === 'plan') this.resolve(requestId, 'cancelled', null, at)

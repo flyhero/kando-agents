@@ -19,6 +19,7 @@ const TOOL_LABEL: Record<string, string> = {
   webSearch: '搜索网页',
   Task: '子任务',
   Agent: '子任务',
+  spawnAgent: '子任务',
   TodoWrite: '待办',
   ExitPlanMode: '计划'
 }
@@ -52,9 +53,10 @@ export function runSummary(tools: readonly Pick<ToolItem, 'name'>[]): string {
   return [...counts.values()].map(({ count, say }) => say(count)).join('，')
 }
 
-// A call that hands work to a subagent of its own.
+// A call that hands work to a subagent of its own: Claude's Task (Agent in newer versions), or a
+// Codex spawn.
 export function isSubagent(name: string): boolean {
-  return name === 'Task' || name === 'Agent'
+  return name === 'Task' || name === 'Agent' || name === 'spawnAgent'
 }
 
 // What a subagent was told, and what kind it is, from its call's input: JSON Kando may have cut

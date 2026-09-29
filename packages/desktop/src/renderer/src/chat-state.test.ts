@@ -153,6 +153,7 @@ describe('chatBlocks', () => {
   it('groups subagents sent off together apart from the calls around them', () => {
     expect(shape(blocksOf([user('u'), tool('a'), tool('t1', 'Task'), tool('t2', 'Agent'), tool('b'), reply('r')])))
       .toEqual(['u', 'tools:a', 'agents:t1+t2', 'tools:b', 'r'])
+    expect(shape(blocksOf([user('u'), tool('s1', 'spawnAgent'), tool('s2', 'spawnAgent'), reply('r')]))).toEqual(['u', 'agents:s1+s2', 'r'])
   })
 
   it('leaves where the context was compacted in view, and folds other info', () => {
