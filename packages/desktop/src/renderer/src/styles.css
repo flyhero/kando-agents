@@ -4630,3 +4630,13 @@ button.task-tag-updated:hover {
 .worktree-size { font-size: 12px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .worktree-actions { display: flex; align-items: center; gap: 2px; }
 .worktree-actions .worktree-open { padding: 2px 8px; font-size: 12px; }
+
+/* Switching a conversation's branch, or starting one, inside its branch popover. */
+.branch-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 12px; }
+.branch-action { display: grid; gap: 4px; margin-top: 4px; }
+.branch-action-create { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.branch-action-create .branch-action-note { grid-column: 1 / -1; }
+.branch-action-list { max-height: 200px; overflow-y: auto; }
+.branch-action-note { margin: 0; font-size: 11px; color: var(--text-muted); }
+.branch-action-note[data-warn] { color: var(--warning); }
+.branch-action-done { color: var(--text); }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { ProjectHead } from '@kando/protocol'
 import { useCore } from '../core-store'
+import { ConversationBranches } from './ConversationBranches'
 import { Popover } from './Popover'
 import { projectName } from './ProjectPicker'
 
@@ -72,8 +73,9 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// Every project's branch, uncommitted changes and distance from its upstream.
-export function BranchStatusDetails({ heads }: { heads: readonly ProjectHead[] }) {
+// Every project's branch, uncommitted changes and distance from its upstream; `actions` adds what
+// can be done in each.
+export function BranchStatusDetails({ heads, actions }: { heads: readonly ProjectHead[]; actions?: (head: ProjectHead) => ReactNode }) {
   return (
     <div className="branch-status">
       {heads.map((each, index) => (
@@ -84,6 +86,7 @@ export function BranchStatusDetails({ heads }: { heads: readonly ProjectHead[] }
             {each.branch && <CopyButton text={each.branch} />}
           </div>
           {each.branch && statusLines(each).map((line) => <div key={line} className="muted">{line}</div>)}
+          {actions?.(each)}
         </section>
       ))}
       {heads.some((each) => each.upstream) && <p className="branch-status-note">领先和落后按上次 fetch 到的远程计算。</p>}
@@ -118,7 +121,9 @@ export function BranchStatus({ target, updatedAt }: { target: BranchTarget; upda
       </button>
       {open && (
         <Popover label="git 状态" onClose={close}>
-          <BranchStatusDetails heads={heads} />
+          {target.kind === 'conversation'
+            ? <ConversationBranches id={target.id} heads={heads} onChanged={() => setOpened((count) => count + 1)} />
+            : <BranchStatusDetails heads={heads} />}
         </Popover>
       )}
     </span>
