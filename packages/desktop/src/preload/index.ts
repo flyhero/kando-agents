@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('kando', {
   },
   getCoreEndpoint: (): Promise<unknown> => ipcRenderer.invoke('kando:core-endpoint'),
   pickFolder: (defaultPath?: string): Promise<unknown> => ipcRenderer.invoke('kando:pick-folder', defaultPath),
-  setTheme: (theme: string): Promise<unknown> => ipcRenderer.invoke('kando:set-theme', theme)
+  setTheme: (theme: string): Promise<unknown> => ipcRenderer.invoke('kando:set-theme', theme),
+  revealFile: (candidates: string[]): Promise<unknown> => ipcRenderer.invoke('kando:reveal-file', candidates)
 })

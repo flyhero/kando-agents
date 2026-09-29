@@ -320,6 +320,10 @@ export function useTaskChatSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
 }
 
+export function showError(message: string): void {
+  useCore.setState({ error: message })
+}
+
 export function dismissError(): void {
   useCore.setState({ error: null })
 }

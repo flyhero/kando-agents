@@ -1,4 +1,6 @@
-import { join } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, type OpenDialogOptions } from 'electron'
 import { readCoreEndpoint } from '@kando/protocol/node'
 
@@ -71,6 +73,26 @@ ipcMain.handle('kando:pick-folder', async (event, defaultPath: unknown) => {
   const window = BrowserWindow.fromWebContents(event.sender)
   const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options)
   return result.canceled ? null : (result.filePaths[0] ?? null)
+})
+
+// Shows a file a reply names in the system's file manager: the first of the paths the renderer
+// resolved it to that exists. Showing never opens or runs it, so a path an agent wrote cannot start
+// anything.
+ipcMain.handle('kando:reveal-file', async (_event, candidates: unknown) => {
+  if (!Array.isArray(candidates)) return null
+  for (const candidate of candidates.slice(0, 20)) {
+    if (typeof candidate !== 'string') continue
+    const path = candidate === '~' || candidate.startsWith('~/') ? join(homedir(), candidate.slice(1)) : candidate
+    if (!isAbsolute(path)) continue
+    try {
+      await stat(path)
+    } catch {
+      continue
+    }
+    shell.showItemInFolder(path)
+    return path
+  }
+  return null
 })
 
 void app.whenReady().then(() => {

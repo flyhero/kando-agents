@@ -1,8 +1,37 @@
+import { createContext, useContext, type ReactNode } from 'react'
 import Markdown, { type Components, type ExtraProps } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { showError } from '../core-store'
+import { canRevealFile, revealFile } from '../desktop-bridge'
+import { fileCandidates, fileReference, type FileReference } from '../file-links'
 import { CopyButton } from './CopyButton'
+
+// The folders a conversation works in, the primary first: where a file a reply names is looked for.
+export const ChatRoots = createContext<readonly string[]>([])
+
+const FILE_MANAGER = window.kando?.platform === 'darwin' ? '访达' : window.kando?.platform === 'win32' ? '资源管理器' : '文件管理器'
+
+// A file a reply names, shown in the file manager on a click; never opened, as a reply can name
+// anything.
+function FileLink({ reference, children }: { reference: FileReference; children: ReactNode }) {
+  const roots = useContext(ChatRoots)
+  const candidates = fileCandidates(reference.path, roots)
+  if (candidates.length === 0) return <code>{children}</code>
+  return (
+    <button
+      type="button"
+      className="chat-file-link"
+      title={`在${FILE_MANAGER}中显示 ${reference.path}`}
+      onClick={() => void revealFile(candidates).then((shown) => {
+        if (!shown) showError(`找不到文件：${reference.path}`)
+      })}
+    >
+      <code>{children}</code>
+    </button>
+  )
+}
 
 type HastElement = NonNullable<ExtraProps['node']>
 type HastChild = HastElement['children'][number]
@@ -28,6 +57,11 @@ function languageOf(code: HastElement | undefined): string | null {
 // carries its language and a copy button above it.
 const components: Components = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  // Inline code is a string with no newline and no language; a block's always ends in one.
+  code: ({ node: _node, className, children, ...props }) => {
+    const reference = !className && typeof children === 'string' && !children.includes('\n') && canRevealFile() ? fileReference(children) : null
+    return reference ? <FileLink reference={reference}>{children}</FileLink> : <code className={className} {...props}>{children}</code>
+  },
   pre: ({ node, ...props }) => {
     const code = node?.children.find((child): child is HastElement => child.type === 'element' && child.tagName === 'code')
     const language = languageOf(code)

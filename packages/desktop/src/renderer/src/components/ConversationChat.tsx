@@ -8,7 +8,7 @@ import { AGENT_LABEL, dayAndTime } from '../labels'
 import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
-import { ChatMarkdown } from './ChatMarkdown'
+import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
@@ -369,10 +369,11 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     }
   }
 
-  const shorten = useMemo(
-    () => pathShortener(conversation.projectPaths.length ? conversation.projectPaths : [conversation.workspacePath]),
+  const roots = useMemo(
+    () => (conversation.projectPaths.length ? conversation.projectPaths : [conversation.workspacePath]),
     [conversation.projectPaths, conversation.workspacePath]
   )
+  const shorten = useMemo(() => pathShortener(roots), [roots])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
   const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
   // A turn runs from the message that set it going.
@@ -380,6 +381,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
+    <ChatRoots.Provider value={roots}>
     <Thoughts.Provider value={thoughts}>
     <Folds.Provider value={folds}>
     <div className="chat-view" data-width={width}>
@@ -415,6 +417,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     </div>
     </Folds.Provider>
     </Thoughts.Provider>
+    </ChatRoots.Provider>
     </ChatPaths.Provider>
     </ChatSurfaceContext.Provider>
   )

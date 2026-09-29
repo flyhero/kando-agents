@@ -3619,6 +3619,18 @@ button.task-tag-updated:hover {
   background: var(--surface-muted);
 }
 .chat-markdown pre code { padding: 0; background: none; }
+/* A file a reply names: its code, underlined, showing the file in the file manager. */
+.chat-file-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.chat-file-link code { text-decoration: underline dotted color-mix(in srgb, var(--text-muted) 70%, transparent); text-underline-offset: 2px; }
+.chat-file-link:hover code { color: var(--accent); text-decoration-color: currentColor; }
 
 /* A fenced block of code: its language and a copy button above it, coloured by highlight.js's
    classes against the theme's own tokens. */
