@@ -8,6 +8,7 @@ import { primaryProjectName } from './ProjectPicker'
 import { BranchStatus } from './BranchStatus'
 import { ConversationChat } from './ConversationChat'
 import { ConversationInspector } from './ConversationInspector'
+import { ConversationStatus } from './ConversationStatus'
 import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { continueConversation, deleteConversation, renameConversation, stopConversation } from './ConversationActions'
@@ -108,7 +109,7 @@ export function ConversationTerminal({ id }: { id: string }) {
   })
   return <section className="detail terminal-view conversation-view" aria-label={`${conversation.title} 的自由会话`}>
     <header className="detail-header conversation-header">
-      <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} />
+      <ConversationStatus conversation={conversation} />
       <div className="header-meta">
         {renaming
           ? <TitleEditor title={conversation.title} label="会话标题" onSave={rename} onDone={() => setRenaming(false)} />

@@ -2,6 +2,31 @@ import type { Conversation } from '@kando/protocol'
 
 export type ConversationState = { label: string; running: boolean; failed: boolean; detail: string | null }
 
+// The mark before a conversation's name, most urgent first: it waits on the user, its agent is at
+// work, it failed, a turn finished while the user was elsewhere, or nothing is going on.
+export type ConversationGlyph = 'awaiting' | 'running' | 'failed' | 'unseen' | 'idle'
+
+export function conversationGlyph(conversation: Conversation, unseen: boolean): ConversationGlyph {
+  const state = conversationState(conversation)
+  if (conversation.sessionId && conversation.chat?.turn === 'awaiting') return 'awaiting'
+  if (state.running && conversation.chat?.turn !== 'idle') return 'running'
+  if (state.failed) return 'failed'
+  return unseen ? 'unseen' : 'idle'
+}
+
+// How long ago, as the list says it: short, and a date past a week.
+export function timeAgo(at: number, now: number): string {
+  const minutes = Math.floor((now - at) / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} 天前`
+  const date = new Date(at)
+  return `${date.getMonth() + 1}月${date.getDate()}日`
+}
+
 // One wording for the list, the header and grouping. "Not running" alone hid whether the agent
 // finished, was stopped, crashed at once or never started.
 export function conversationState(conversation: Conversation): ConversationState {

@@ -3,6 +3,7 @@ import type { ChatDiff, ChatItem, ChatToolStatus } from '@kando/protocol'
 import { diffCounts, runSummary, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChevronRightIcon } from './icons'
+import { Spinner } from './Spinner'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -21,7 +22,7 @@ function clipped(text: string): string {
 }
 
 function ToolStatus({ status }: { status: ChatToolStatus }) {
-  if (status === 'running') return <span className="chat-spinner" role="img" aria-label="进行中" />
+  if (status === 'running') return <Spinner label="进行中" />
   const text = STATUS_TEXT[status]
   return text ? <span className="chat-tool-status" data-status={status}>{text}</span> : null
 }

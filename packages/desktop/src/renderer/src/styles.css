@@ -246,7 +246,32 @@ textarea {
 .conversation-list ul { margin: 0; padding: 0 8px 12px; list-style: none; }
 .conversation-group-title { display: flex; gap: 6px; margin: 0; padding: 4px 20px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
 /* Centered in the row's 16px icon column, on the title's first line, like a task's status icon. */
-.conversation-status { justify-self: center; width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: var(--text-muted); }
+/* The mark before a conversation's name: a ring when nothing is going on, a spinner while its agent
+   works, a dot for what wants the user: amber and pulsing when it waits on them, red when it failed,
+   the accent when a turn finished unseen. */
+.conversation-status {
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 50%;
+}
+.conversation-status[data-glyph='idle'] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text-muted) 55%, transparent); }
+.conversation-status[data-glyph='unseen'] { background: var(--accent); transform: scale(0.75); }
+.conversation-status[data-glyph='failed'] { background: var(--danger); transform: scale(0.75); }
+.conversation-status[data-glyph='awaiting'] { background: var(--warning); transform: scale(0.75); animation: status-pulse 1.6s ease-out infinite; }
+.conversation-status .chat-spinner { width: 12px; height: 12px; }
+
+@keyframes status-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 55%, transparent); }
+  100% { box-shadow: 0 0 0 6px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-status[data-glyph='awaiting'] { animation: none; }
+}
 /* The message a search matched, under the row's meta line. */
 .conversation-snippet {
   grid-column: 2;
@@ -260,8 +285,6 @@ textarea {
   overflow: hidden;
 }
 .conversation-snippet mark { border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
-.conversation-status[data-running='true'] { background: var(--status-running); }
-.conversation-status[data-failed] { background: var(--danger); }
 .conversation-exit-failed { color: var(--danger); }
 .conversation-header, .task-terminal-header { flex-wrap: wrap; }
 /* Text of several sizes lines up by its baseline rather than by the middle of each box, which left

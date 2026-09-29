@@ -47,6 +47,8 @@ type CoreState = {
   rpc: RpcConnection | null
   tasks: Record<string, Task>
   conversations: Record<string, Conversation>
+  // Conversations whose turn finished while the user was elsewhere, until they look.
+  unseen: Readonly<Record<string, true>>
   section: Section
   selectedConversationId: string | null
   newConversationOpen: boolean
@@ -89,6 +91,7 @@ export const useCore = create<CoreState>()(() => ({
   rpc: null,
   tasks: {},
   conversations: {},
+  unseen: {},
   section: 'tasks',
   selectedConversationId: null,
   newConversationOpen: false,
@@ -223,7 +226,17 @@ export function setTerminalMaximized(maximized: boolean): void {
 }
 
 export function selectConversation(id: string | null): void {
-  useCore.setState({ selectedConversationId: id, section: 'conversations', settingsOpen: false, conversationDraft: false })
+  useCore.setState((s) => {
+    const { [id ?? '']: _seen, ...unseen } = s.unseen
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, conversationDraft: false, unseen }
+  })
+}
+
+// A turn that was going and is now over, in a conversation the user is not looking at.
+function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: Conversation): boolean {
+  const working = previous?.chat?.turn === 'running' || previous?.chat?.turn === 'awaiting'
+  const looking = s.section === 'conversations' && s.selectedConversationId === next.id
+  return working && next.chat?.turn !== 'running' && next.chat?.turn !== 'awaiting' && !looking
 }
 
 export function openConversationDraft(): void {
@@ -379,7 +392,10 @@ export function startCoreConnection(): void {
           })
         )
         rpc.on('conversations.changed', ({ conversation }) =>
-          useCore.setState((s) => ({ conversations: { ...s.conversations, [conversation.id]: conversation } }))
+          useCore.setState((s) => ({
+            conversations: { ...s.conversations, [conversation.id]: conversation },
+            ...(finishedUnseen(s, s.conversations[conversation.id], conversation) ? { unseen: { ...s.unseen, [conversation.id]: true } } : {})
+          }))
         )
         rpc.on('conversations.deleted', ({ id }) =>
           useCore.setState((s) => {

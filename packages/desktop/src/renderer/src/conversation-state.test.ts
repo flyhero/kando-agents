@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Conversation } from '@kando/protocol'
-import { conversationState } from './conversation-state'
+import { conversationGlyph, conversationState, timeAgo } from './conversation-state'
 
 const base: Conversation = {
   id: '11111111-1111-4111-8111-111111111111', title: 't', titleLocked: false, agent: 'claude', workspacePath: '/w',
@@ -31,5 +31,32 @@ describe('conversationState', () => {
 
   it('says only "not running" to an older core that sends no exit', () => {
     expect(label({}).label).toBe('未运行')
+  })
+})
+
+describe('conversationGlyph', () => {
+  const glyph = (patch: Partial<Conversation>, unseen = false) => conversationGlyph({ ...base, ...patch }, unseen)
+
+  it('puts what waits on the user before an agent at work, and that before a failure', () => {
+    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'awaiting' } })).toBe('awaiting')
+    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'running' } })).toBe('running')
+    expect(glyph({ sessionId: 's' })).toBe('running')
+    expect(glyph({ mode: 'chat', lastExit: { code: 1, at: 1 } }, true)).toBe('failed')
+  })
+
+  it('marks a finished turn the user has not seen, and otherwise nothing going on', () => {
+    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } }, true)).toBe('unseen')
+    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } })).toBe('idle')
+  })
+})
+
+describe('timeAgo', () => {
+  it('says how long ago in the list\'s short words, and the date past a week', () => {
+    const now = new Date(2026, 8, 29, 12, 0).getTime()
+    expect(timeAgo(now - 20_000, now)).toBe('刚刚')
+    expect(timeAgo(now - 5 * 60_000, now)).toBe('5 分钟前')
+    expect(timeAgo(now - 3 * 3_600_000, now)).toBe('3 小时前')
+    expect(timeAgo(now - 2 * 86_400_000, now)).toBe('2 天前')
+    expect(timeAgo(new Date(2026, 8, 1).getTime(), now)).toBe('9月1日')
   })
 })

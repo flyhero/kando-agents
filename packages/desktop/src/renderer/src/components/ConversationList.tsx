@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AGENT_KINDS, type Conversation } from '@kando/protocol'
 import { selectConversation, useCore } from '../core-store'
-import { conversationState } from '../conversation-state'
+import { conversationState, timeAgo } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { CONVERSATION_GROUPS, CONVERSATION_SORTS, setPreference, usePreferences, type Preferences } from '../preferences'
 import { ConversationContextMenu, newConversation, renameConversation } from './ConversationActions'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
+import { ConversationStatus } from './ConversationStatus'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
 import { SlidersIcon } from './icons'
 import { projectName, projectNames } from './ProjectPicker'
@@ -98,8 +99,18 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   return <>{text.slice(0, at)}<mark>{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>
 }
 
-function conversationMeta(conversation: Conversation): string {
-  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversationState(conversation).label}`
+function conversationMeta(conversation: Conversation, now: number): string {
+  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversationState(conversation).label} · ${timeAgo(conversation.updatedAt, now)}`
+}
+
+// The time, a minute at a time, for how long ago each row last changed.
+function useMinute(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
 }
 
 function ViewMenu({ at, trigger, onClose }: { at: MenuPoint; trigger: HTMLElement | null; onClose: () => void }) {
@@ -140,6 +151,7 @@ function ViewMenu({ at, trigger, onClose }: { at: MenuPoint; trigger: HTMLElemen
 }
 
 export function ConversationList() {
+  const now = useMinute()
   const [collapsed, setCollapsed] = useState(false)
   const conversations = useCore((s) => s.conversations)
   const selected = useCore((s) => s.selectedConversationId)
@@ -171,13 +183,12 @@ export function ConversationList() {
 
   const row = (conversation: Conversation) => {
     const snippet = searching ? snippets?.get(conversation.id) : undefined
-    const state = conversationState(conversation)
     return <li key={conversation.id}>
       {renamingId === conversation.id
         ? <div className="task-row conversation-row" data-renaming>
-          <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} />
+          <ConversationStatus conversation={conversation} />
           <TitleEditor title={conversation.title} label="会话标题" onSave={(title) => void renameConversation(conversation.id, title)} onDone={() => setRenamingId(null)} />
-          <span className="task-row-meta">{conversationMeta(conversation)}</span>
+          <span className="task-row-meta">{conversationMeta(conversation, now)}</span>
         </div>
         : <button
           type="button"
@@ -190,9 +201,9 @@ export function ConversationList() {
             setMenu({ id: conversation.id, at: menuPoint(event) })
           }}
         >
-          <span className="conversation-status" data-running={state.running} data-failed={state.failed || undefined} aria-label={state.label} title={state.detail ?? undefined} />
+          <ConversationStatus conversation={conversation} />
           <span className="task-row-title">{conversation.title}</span>
-          <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation)}</span>
+          <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation, now)}</span>
           {snippet && <span className="conversation-snippet"><Highlighted text={snippet} query={needle} /></span>}
         </button>}
     </li>
