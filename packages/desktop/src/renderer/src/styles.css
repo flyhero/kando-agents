@@ -470,6 +470,12 @@ textarea {
   overflow: hidden;
 }
 
+/* A conversation's row says, right of its name, how long ago it last changed. */
+.conversation-row { grid-template-columns: 16px 1fr auto; }
+.conversation-row .task-row-meta,
+.conversation-row .conversation-snippet { grid-column: 2 / span 2; }
+.conversation-age { grid-column: 3; padding-top: 1px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+
 .task-row-meta {
   grid-column: 2;
   overflow: hidden;

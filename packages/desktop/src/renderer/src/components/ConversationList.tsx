@@ -99,8 +99,8 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   return <>{text.slice(0, at)}<mark>{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>
 }
 
-function conversationMeta(conversation: Conversation, now: number): string {
-  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversationState(conversation).label} · ${timeAgo(conversation.updatedAt, now)}`
+function conversationMeta(conversation: Conversation): string {
+  return `${AGENT_LABEL[conversation.agent]} · ${projectNames(conversation.projectPaths)} · ${conversationState(conversation).label}`
 }
 
 // The time, a minute at a time, for how long ago each row last changed.
@@ -188,7 +188,7 @@ export function ConversationList() {
         ? <div className="task-row conversation-row" data-renaming>
           <ConversationStatus conversation={conversation} />
           <TitleEditor title={conversation.title} label="会话标题" onSave={(title) => void renameConversation(conversation.id, title)} onDone={() => setRenamingId(null)} />
-          <span className="task-row-meta">{conversationMeta(conversation, now)}</span>
+          <span className="task-row-meta">{conversationMeta(conversation)}</span>
         </div>
         : <button
           type="button"
@@ -203,7 +203,8 @@ export function ConversationList() {
         >
           <ConversationStatus conversation={conversation} />
           <span className="task-row-title">{conversation.title}</span>
-          <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation, now)}</span>
+          <span className="conversation-age">{timeAgo(conversation.updatedAt, now)}</span>
+          <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation)}</span>
           {snippet && <span className="conversation-snippet"><Highlighted text={snippet} query={needle} /></span>}
         </button>}
     </li>
