@@ -351,6 +351,19 @@ describe('CodexAppServer commands', () => {
     expect(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`)).toBe("echo 'hi'")
     expect(unwrapShell('git status')).toBe('git status')
   })
+
+  it('reads the script however Codex quoted it, as its own command actions do', () => {
+    // Each pair as Codex 0.156.1 sent them: the command, and the script its commandActions named.
+    const recorded = [
+      ['/bin/zsh -lc pwd', 'pwd'],
+      [`/bin/zsh -lc "python3 -c 'from pathlib import Path; Path(\\"plan.md\\").write_text(\\"ok\\\\n\\")'"`, `python3 -c 'from pathlib import Path; Path("plan.md").write_text("ok\\n")'`],
+      [`/bin/zsh -lc "pwd && rg --files -g 'codex-plan.txt' -g '"'!target'"' -g '"'!node_modules'"' | head -n 20"`, "pwd && rg --files -g 'codex-plan.txt' -g '!target' -g '!node_modules' | head -n 20"],
+      [`sh -c "echo \\$HOME and \\\\n kept"`, 'echo $HOME and \\n kept']
+    ]
+    for (const [command, script] of recorded) expect(unwrapShell(command!)).toBe(script)
+    // Anything else is shown as it came: an open quote, a flag it does not know, more than a script.
+    for (const command of [`/bin/zsh -lc 'unclosed`, '/bin/zsh -x ls', "bash -lc 'ls' extra", 'fish -c ls']) expect(unwrapShell(command)).toBe(command)
+  })
   it('hands an image to Codex by its path, after the text when there is any', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)

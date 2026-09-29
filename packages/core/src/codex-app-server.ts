@@ -201,10 +201,50 @@ const DECISIONS: Record<string, 'allowed' | 'allowedForSession' | 'denied'> = {
   cancel: 'denied'
 }
 
-// `/bin/zsh -lc 'cat x'` is how Codex runs `cat x`; the inner command is what the user reads.
+// The words of a command line as a POSIX shell reads its quoting, with nothing expanded; null
+// when a quote is left open.
+function shellWords(line: string): string[] | null {
+  const words: string[] = []
+  let word: string | null = null
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!
+    if (c === "'") {
+      const end = line.indexOf("'", i + 1)
+      if (end < 0) return null
+      word = (word ?? '') + line.slice(i + 1, end)
+      i = end
+    } else if (c === '"') {
+      let text = ''
+      for (i++; i < line.length && line[i] !== '"'; i++) {
+        // Within double quotes a backslash escapes only these; before anything else it stays.
+        const next = line[i + 1]
+        if (line[i] === '\\' && next !== undefined && '$`"\\\n'.includes(next)) i++
+        text += line[i]
+      }
+      if (i >= line.length) return null
+      word = (word ?? '') + text
+    } else if (c === '\\') {
+      word = (word ?? '') + (line[++i] ?? '')
+    } else if (/\s/.test(c)) {
+      if (word !== null) words.push(word)
+      word = null
+    } else {
+      word = (word ?? '') + c
+    }
+  }
+  if (word !== null) words.push(word)
+  return words
+}
+
+// `/bin/zsh -lc 'cat x'` is how Codex runs `cat x`, quoting the script whichever way suits it (not
+// at all, in single quotes, in double quotes, or both run together); the script is what the user
+// reads.
 export function unwrapShell(command: string): string {
-  const match = /^(?:\S*\/)?(?:bash|zsh|sh) -lc '([\s\S]*)'$/.exec(command)
-  return match ? match[1]!.replaceAll(`'\\''`, `'`) : command
+  const words = shellWords(command)
+  if (words?.length !== 3) return command
+  const [shell, flag, script] = words
+  const wrapped = /^(?:\S*\/)?(?:bash|zsh|sh)$/.test(shell ?? '') && (flag === '-lc' || flag === '-c')
+  return wrapped && script ? script : command
 }
 
 // A subagent's state, as Codex reports it on the calls that deal with it. notFound says nothing.
