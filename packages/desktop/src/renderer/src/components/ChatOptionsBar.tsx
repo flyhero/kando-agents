@@ -1,6 +1,7 @@
 import type { AgentKind, ChatContextUse, ChatItem, ChatOption, ChatPermissionMode, Conversation } from '@kando/protocol'
 import { perform } from '../core-store'
 import { usePreferences } from '../preferences'
+import { ChatModelPicker, ChatPicker, type PickerOption } from './ChatPicker'
 
 type StateItem = Extract<ChatItem, { kind: 'state' }>
 
@@ -12,6 +13,39 @@ const MODE_LABEL: Record<AgentKind, Record<string, string>> = {
 
 export function modeLabel(agent: AgentKind, mode: string): string {
   return MODE_LABEL[agent][mode] ?? mode
+}
+
+// What each mode lets the agent do without asking, under its name in the menu.
+const MODE_DESCRIPTION: Record<AgentKind, Record<string, string>> = {
+  claude: {
+    ask: '改文件、运行命令前都先问你',
+    acceptEdits: '改文件不再问，运行命令仍会问',
+    plan: '只读代码、给出计划，你确认后才动手',
+    auto: '由模型判断哪些操作要先问你',
+    bypass: '什么都不问，也不受限制'
+  },
+  codex: {
+    ask: '每一步都先问你',
+    acceptEdits: '在项目里自由修改，越界时才问',
+    plan: '只读代码、给出计划，你确认后才动手',
+    readOnly: '只能读，不能修改文件',
+    bypass: '什么都不问，也不受沙箱限制'
+  }
+}
+
+// The modes as the picker lists them; one the agent offers but cannot be picked now stays greyed.
+export function modeOptions(agent: AgentKind, modes: readonly string[], offered: readonly string[] = modes): PickerOption[] {
+  return modes.map((mode) => ({
+    value: mode,
+    label: modeLabel(agent, mode),
+    description: MODE_DESCRIPTION[agent][mode] ?? null,
+    disabled: !offered.includes(mode)
+  }))
+}
+
+// Only the modes worth a second look stand out: planning, and running with nothing asked.
+export function modeTone(mode: string | null): string | undefined {
+  return mode === 'plan' || mode === 'bypass' ? mode : undefined
 }
 
 // What a new conversation can start in, before its agent lists what it offers (bypass aside):
@@ -67,7 +101,7 @@ function withCurrent(values: readonly string[], current: string | null): string[
   return current && !values.includes(current) ? [current, ...values] : [...values]
 }
 
-// The row under the composer's input, after its ＋: how freely the agent may act on the left; on
+// The composer's toolbar, inside its box after the ＋: how freely the agent may act on the left; on
 // the right, the model and effort it runs beside how full its context is. A click switches each;
 // the model and effort change between turns, the mode at any time. With no agent running, the
 // choices are for the next start, from what the last stage offered: as chosen since, or as that
@@ -98,48 +132,28 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
   return (
     <>
       {modes.length > 0 && (
-        <select
-          className="chat-select"
-          aria-label="权限模式"
-          data-mode={permissionMode ?? undefined}
+        <ChatPicker
+          label="权限模式"
+          value={permissionMode}
+          placeholder="权限模式"
+          options={modeOptions(agent, modes, offered)}
+          tone={modeTone(permissionMode)}
           title={later ?? undefined}
-          value={permissionMode ?? ''}
-          onChange={(event) => set('permissionMode', event.target.value)}
-        >
-          {!permissionMode && <option value="" disabled>权限模式</option>}
-          {modes.map((mode) => (
-            <option key={mode} value={mode} disabled={!offered.includes(mode)}>
-              {modeLabel(agent, mode)}
-            </option>
-          ))}
-        </select>
+          onChange={(mode) => set('permissionMode', mode)}
+        />
       )}
       <span className="chat-dock-spacer" />
       {models.length > 0 && (
-        <select
-          className="chat-select"
-          aria-label="模型"
-          title={later ?? (idle ? model?.description ?? undefined : '回合结束后才能换模型')}
+        <ChatModelPicker
+          models={models.map((each) => ({ value: each.id, label: each.label, description: each.description }))}
+          model={modelId}
+          efforts={efforts.map((each) => ({ value: each, label: effortLabel(each) }))}
+          effort={effort}
           disabled={!idle}
-          value={modelId ?? ''}
-          onChange={(event) => set('model', event.target.value)}
-        >
-          {!modelId && <option value="" disabled>模型</option>}
-          {models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
-        </select>
-      )}
-      {efforts.length > 0 && (
-        <select
-          className="chat-select"
-          aria-label="推理强度"
-          title={later ?? (idle ? undefined : '回合结束后才能换推理强度')}
-          disabled={!idle}
-          value={effort ?? ''}
-          onChange={(event) => set('effort', event.target.value)}
-        >
-          {!effort && <option value="" disabled>默认强度</option>}
-          {efforts.map((effort) => <option key={effort} value={effort}>{effortLabel(effort)}</option>)}
-        </select>
+          title={later ?? (idle ? undefined : '回合结束后才能换模型和推理强度')}
+          onModel={(value) => set('model', value)}
+          onEffort={(value) => set('effort', value)}
+        />
       )}
       {state.context && <ContextRing context={state.context} />}
     </>

@@ -131,22 +131,21 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
           }
         }}
       />
-      {working ? (
-        <button type="button" className="chat-input-button" data-stop aria-label="中断这一回合（Esc）" data-tooltip="中断（Esc）" onClick={interrupt}>
-          <StopIcon />
-        </button>
-      ) : (
-        <button type="button" className="chat-input-button" aria-label="发送（Enter）" data-tooltip={starting ? `正在启动 ${AGENT_LABEL[conversation.agent]}…` : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
-          <EnterIcon />
-        </button>
-      )}
-    </div>
-    {(imagesSupported || (optionsSupported && state)) && (
+      {/* Under the input, inside its box: what goes with the message, how the agent runs, and send. */}
       <div className="chat-options">
         {imagesSupported && <ChatAddMenu disabled={starting} onAdd={attached.add} />}
         {optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
+        {working ? (
+          <button type="button" className="chat-input-button" data-tooltip-side="top-end" data-stop aria-label="中断这一回合（Esc）" data-tooltip="中断（Esc）" onClick={interrupt}>
+            <StopIcon />
+          </button>
+        ) : (
+          <button type="button" className="chat-input-button" data-tooltip-side="top-end" aria-label="发送（Enter）" data-tooltip={starting ? `正在启动 ${AGENT_LABEL[conversation.agent]}…` : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
+            <EnterIcon />
+          </button>
+        )}
       </div>
-    )}
+    </div>
     </>
   )
 }
