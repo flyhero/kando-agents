@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry } from '../chat-state'
+import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
-import { ChatSurfaceContext, conversationSurface, type ChatSurface } from './chat-surface'
+import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
 import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
@@ -14,7 +14,7 @@ import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatTodosLine, currentTodo } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
-import { ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
+import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ArrowDownIcon, ChevronRightIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -142,11 +142,17 @@ function foldText(turn: TurnItem): string {
   return worked
 }
 
-function TurnFold({ conversationId, turn, blocks, task }: { conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean }) {
-  const [open, setOpen] = useState(false)
+// Which folds are open: kept here rather than in each fold, as the files a turn changed open its
+// fold to show one of them.
+type FoldState = { open: ReadonlySet<string>; toggle: (key: string) => void; reveal: (key: string, path: string) => void }
+const Folds = createContext<FoldState>({ open: new Set(), toggle: () => {}, reveal: () => {} })
+
+function TurnFold({ foldKey, conversationId, turn, blocks, task }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean }) {
+  const folds = useContext(Folds)
+  const open = folds.open.has(foldKey)
   return (
-    <div className="chat-fold" data-open={open || undefined} data-state={turn.state}>
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+    <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => folds.toggle(foldKey)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {foldText(turn)}
       </button>
@@ -159,9 +165,47 @@ function TurnFold({ conversationId, turn, blocks, task }: { conversationId: stri
   )
 }
 
+// The files a finished turn changed, under its answer: a count to open, then each file with its
+// lines, which opens the turn's work at that file's card. The inspector has them all.
+function TurnChanges({ fold, files }: { fold: string; files: readonly TurnFile[] }) {
+  const [open, setOpen] = useState(false)
+  const folds = useContext(Folds)
+  const surface = useChatSurface()
+  const shorten = useContext(ChatPaths)
+  const { added, removed } = files.reduce((sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }), { added: 0, removed: 0 })
+  return (
+    <div className="chat-changes-rollup">
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+        改了 {files.length} 个文件
+        <span className="chat-diff-count mono">
+          {added > 0 && <span className="chat-diff-added">+{added}</span>}
+          {removed > 0 && <span className="chat-diff-removed">−{removed}</span>}
+        </span>
+      </button>
+      {open && (
+        <div className="chat-changes-files">
+          {files.map((file) => (
+            <button key={file.path} type="button" className="chat-changes-file" title={file.path} onClick={() => folds.reveal(fold, file.path)}>
+              <span className="mono">{file.change === 'add' ? '新建 ' : file.change === 'delete' ? '删除 ' : ''}{shorten(file.path)}</span>
+              <span className="chat-diff-count mono">
+                {file.added > 0 && <span className="chat-diff-added">+{file.added}</span>}
+                {file.removed > 0 && <span className="chat-diff-removed">−{file.removed}</span>}
+              </span>
+            </button>
+          ))}
+          {surface.changes && <button type="button" className="link-button chat-changes-inspect" onClick={surface.showChanges}>在检查器里看项目的全部改动</button>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Block({ conversationId, block, task }: { conversationId: string; block: ChatBlock; task: boolean }) {
   if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
-  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>
+  if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
+  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} /></div>
+  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>
   const { entry } = block
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined}>
@@ -228,6 +272,24 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
   const blocks = useMemo(() => chatBlocks(entries), [entries])
+  const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(new Set())
+  const folds = useMemo<FoldState>(() => ({
+    open: openFolds,
+    toggle: (key) => setOpenFolds((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    }),
+    // Opens the turn's work, then brings the file's diff into view once it is there.
+    reveal: (key, path) => {
+      setOpenFolds((current) => new Set(current).add(key))
+      pinned.current = false
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const fold = list.current?.querySelector(`[data-fold="${CSS.escape(key)}"]`)
+        fold?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }))
+    }
+  }), [openFolds])
   const thoughts = useMemo(() => thoughtDurations(items), [items])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
@@ -302,6 +364,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
     <Thoughts.Provider value={thoughts}>
+    <Folds.Provider value={folds}>
     <div className="chat-view" data-width={width}>
       <div
         className="chat-list"
@@ -333,6 +396,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
+    </Folds.Provider>
     </Thoughts.Provider>
     </ChatPaths.Provider>
     </ChatSurfaceContext.Provider>

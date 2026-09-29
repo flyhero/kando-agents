@@ -3794,6 +3794,28 @@ button.task-tag-updated:hover {
 }
 .chat-fold-header:hover { background: var(--surface-muted); color: var(--text); }
 .chat-fold[data-state='failed'] .chat-fold-header { color: var(--danger); }
+.chat-edit-step { display: flex; align-items: center; gap: 8px; }
+
+/* Under a finished turn's answer: the files it changed, each opening its card in the turn's work. */
+.chat-changes-files { display: flex; flex-direction: column; margin: 2px 0 0 9px; padding-left: 8px; border-left: 1px solid var(--border); }
+.chat-changes-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-changes-file:hover { background: var(--surface-muted); }
+.chat-changes-file .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-changes-inspect { align-self: flex-start; margin: 4px 6px; font-size: 12px; }
 .chat-fold-body {
   display: flex;
   flex-direction: column;

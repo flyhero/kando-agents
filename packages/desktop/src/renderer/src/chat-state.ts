@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { isPlanApproval, type ChatItem, type ChatQuestion, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { diffCounts } from './chat-tools'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -141,16 +142,49 @@ export function entryKey(entry: TimelineEntry): string {
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 
+// A file a finished turn changed, with every line it added and removed there.
+export type TurnFile = { path: string; added: number; removed: number; change: ChatDiff['change'] }
+
 // What the conversation shows once its work is grouped: calls made one after another as one run,
-// and a finished turn's work folded behind one line, leaving its answer in view.
+// edits to one file one after another as one card, and a finished turn's work folded behind one
+// line, leaving its answer in view with the files it changed under it.
 export type ChatBlock =
   | { kind: 'entry'; key: string; entry: TimelineEntry }
   | { kind: 'tools'; key: string; tools: ToolItem[] }
+  | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
   | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[] }
+  | { kind: 'changes'; key: string; fold: string; files: TurnFile[] }
 
 // A call that changed files keeps its own card, with its diff; the rest run together.
 function runTool(entry: TimelineEntry): ToolItem | null {
   return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 ? entry.item : null
+}
+
+// The one file a call edited, if it edited just one.
+function editedFile(tool: ToolItem): string | null {
+  const [only, ...rest] = tool.diffs
+  return only && rest.length === 0 ? only.path : null
+}
+
+function toolsOf(block: ChatBlock): ToolItem[] {
+  if (block.kind === 'tools' || block.kind === 'edits') return block.tools
+  if (block.kind === 'fold') return block.blocks.flatMap(toolsOf)
+  const item = itemOf(block)
+  return item?.kind === 'tool' ? [item] : []
+}
+
+function turnFiles(blocks: readonly ChatBlock[]): TurnFile[] {
+  const files = new Map<string, TurnFile>()
+  for (const tool of blocks.flatMap(toolsOf)) {
+    for (const diff of tool.diffs) {
+      const { added, removed } = diffCounts([diff])
+      const known = files.get(diff.path)
+      files.set(diff.path, known
+        ? { ...known, added: known.added + added, removed: known.removed + removed, change: diff.change === 'delete' ? 'delete' : known.change }
+        : { path: diff.path, added, removed, change: diff.change })
+    }
+  }
+  return [...files.values()]
 }
 
 function itemOf(block: ChatBlock): ChatItem | null {
@@ -185,7 +219,14 @@ function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[
   const work = body.slice(0, answer)
   const folded = work.filter(foldable)
   if (folded.length === 0) return [...body, end]
-  return [{ kind: 'fold', key: `fold:${end.key}`, turn, blocks: folded }, ...work.filter((block) => !foldable(block)), ...body.slice(answer)]
+  const key = `fold:${end.key}`
+  const files = turnFiles(folded)
+  return [
+    { kind: 'fold', key, turn, blocks: folded },
+    ...work.filter((block) => !foldable(block)),
+    ...body.slice(answer),
+    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files }] : [])
+  ]
 }
 
 export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
@@ -195,9 +236,15 @@ export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
     if (entry.kind === 'item' && entry.item.kind === 'reasoning' && !entry.item.streaming && !entry.item.text.trim()) continue
     const tool = runTool(entry)
     const last = runs.at(-1)
+    const edit = entry.kind === 'item' && entry.item.kind === 'tool' ? entry.item : null
+    const file = edit ? editedFile(edit) : null
+    const previous = last ? itemOf(last) : null
     if (tool && last?.kind === 'tools') last.tools.push(tool)
     else if (tool) runs.push({ kind: 'tools', key: `tools:${entryKey(entry)}`, tools: [tool] })
-    else runs.push({ kind: 'entry', key: entryKey(entry), entry })
+    else if (edit && file && last?.kind === 'edits' && last.path === file) last.tools.push(edit)
+    else if (edit && file && last && previous?.kind === 'tool' && editedFile(previous) === file) {
+      runs[runs.length - 1] = { kind: 'edits', key: `edits:${last.key}`, path: file, tools: [previous, edit] }
+    } else runs.push({ kind: 'entry', key: entryKey(entry), entry })
   }
   // Each turn runs from the user's message, or a new stage, to the item that says how it ended.
   const blocks: ChatBlock[] = []

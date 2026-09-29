@@ -114,7 +114,9 @@ describe('chatBlocks', () => {
   const blocksOf = (items: ChatItem[]) => chatBlocks(items.map((item) => ({ kind: 'item' as const, item })))
   const shape = (blocks: ReturnType<typeof chatBlocks>): unknown[] => blocks.map((block) =>
     block.kind === 'tools' ? `tools:${block.tools.map((each) => each.id).join('+')}`
+      : block.kind === 'edits' ? `edits:${block.path}:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'fold' ? { fold: shape(block.blocks) }
+      : block.kind === 'changes' ? { changes: block.files }
       : block.entry.kind === 'item' ? block.entry.item.id : block.key)
 
   it('runs calls made one after another together, a change to files on its own card', () => {
@@ -131,6 +133,18 @@ describe('chatBlocks', () => {
   it('keeps a turn that did nothing but answer as it was, and one still running unfolded', () => {
     expect(shape(blocksOf([user('u'), reply('answer'), turn('end')]))).toEqual(['u', 'answer', 'end'])
     expect(shape(blocksOf([user('u'), tool('a'), reply('so far')]))).toEqual(['u', 'tools:a', 'so far'])
+  })
+
+  it('puts edits to one file made one after another on one card, and lists a turn\'s files under it', () => {
+    const patch = (lines: string) => [{ path: 'a.ts', change: 'update' as const, patch: lines }]
+    const items = [user('u'), tool('r'), tool('e1', 'Edit', patch('+x\n-y')), tool('e2', 'Edit', patch('+z')),
+      tool('w', 'Write', [{ path: 'b.ts', change: 'update', patch: '+b' }]), reply('answer'), turn('end')]
+    expect(shape(blocksOf(items))).toEqual([
+      'u',
+      { fold: ['tools:r', 'edits:a.ts:e1+e2', 'w'] },
+      'answer',
+      { changes: [{ path: 'a.ts', added: 2, removed: 1, change: 'update' }, { path: 'b.ts', added: 1, removed: 0, change: 'update' }] }
+    ])
   })
 
   it('leaves what the user was asked, and empty thinking, out of the fold', () => {

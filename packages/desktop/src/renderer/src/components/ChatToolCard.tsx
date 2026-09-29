@@ -31,7 +31,7 @@ export function ChatDiffs({ diffs }: { diffs: readonly ChatDiff[] }) {
   return (
     <div className="chat-diffs">
       {diffs.map((diff, index) => (
-        <div key={`${diff.path}:${index}`} className="chat-diff">
+        <div key={`${diff.path}:${index}`} className="chat-diff" data-diff-path={diff.path}>
           <div className="chat-diff-path mono" title={diff.path}>
             {diff.change === 'add' ? '新建 ' : diff.change === 'delete' ? '删除 ' : ''}
             {shorten(diff.path)}
@@ -50,6 +50,32 @@ function DiffCount({ diffs }: { diffs: readonly ChatDiff[] }) {
       {added > 0 && <span className="chat-diff-added">+{added}</span>}
       {removed > 0 && <span className="chat-diff-removed">−{removed}</span>}
     </span>
+  )
+}
+
+// Edits to one file made one after another: one card, each edit's diff in turn with its own count.
+export function ChatEditsCard({ path, tools }: { path: string; tools: readonly ToolItem[] }) {
+  const shorten = useContext(ChatPaths)
+  return (
+    <div className="chat-tool" data-diff-path={path}>
+      <div className="chat-tool-header">
+        <span className="chat-tool-name">编辑</span>
+        <span className="chat-tool-title mono" title={path}>{shorten(path)} · {tools.length} 次修改</span>
+        <DiffCount diffs={tools.flatMap((tool) => tool.diffs)} />
+      </div>
+      <div className="chat-diffs">
+        {tools.map((tool, index) => (
+          <div key={tool.id} className="chat-diff">
+            <div className="chat-diff-path chat-edit-step">
+              第 {index + 1} 次
+              <DiffCount diffs={tool.diffs} />
+              <ToolStatus status={tool.status} />
+            </div>
+            {tool.diffs.map((diff, at) => diff.patch && <DiffLines key={at} patch={diff.patch} />)}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
