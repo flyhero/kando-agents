@@ -13,9 +13,10 @@ export function projectNames(paths: readonly string[]): string {
   return paths.length ? paths.map(projectName).join('、') : '无项目'
 }
 
-export function projectSummary(paths: readonly string[]): string {
-  const [primary, ...additional] = paths
-  return primary ? `主项目：${projectName(primary)}${additional.length ? ` · 附加：${projectNames(additional)}` : ''}` : '无项目'
+// A header names the folder the agent works in; the rest are in its tooltip.
+export function primaryProjectName(paths: readonly string[]): string {
+  const [primary] = paths
+  return primary ? projectName(primary) : '无项目'
 }
 
 function parentDir(projectPath: string): string | undefined {
