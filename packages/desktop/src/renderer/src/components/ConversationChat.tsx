@@ -4,6 +4,7 @@ import { dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timelin
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
+import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown } from './ChatMarkdown'
@@ -90,6 +91,7 @@ function isUserEntry(entry: TimelineEntry): boolean {
 // unless another is given, as a task's chat does.
 export function ConversationChat({ conversation, surface }: { conversation: Conversation; surface?: ChatSurface }) {
   const { id } = conversation
+  const width = usePreferences((s) => s.chatWidth)
   const own = useMemo(() => conversationSurface(conversation), [conversation])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
@@ -208,7 +210,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
-    <div className="chat-view">
+    <div className="chat-view" data-width={width}>
       <div
         className="chat-list"
         ref={list}

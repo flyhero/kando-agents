@@ -9,6 +9,8 @@ export const CONVERSATION_SORTS = ['recent', 'created', 'title'] as const
 const Preferences = z.object({
   theme: z.enum(['system', 'light', 'dark']).catch('system'),
   terminalFontSize: z.number().int().min(10).max(20).catch(12),
+  // How wide a chat's messages and composer may grow: 800px, 1200px, or the whole chat pane.
+  chatWidth: z.enum(['narrow', 'medium', 'full']).catch('narrow'),
   showUsage: z.boolean().catch(true),
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.

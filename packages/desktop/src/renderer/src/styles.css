@@ -3495,8 +3495,8 @@ button.task-tag-updated:hover {
 }
 
 /* Chat view: a conversation in chat mode, its stages in order, then the composer. */
-/* On a wide screen the messages and the composer keep to one reading width in the middle, while
-   the list still scrolls from edge to edge. */
+/* On a wide screen the messages and the composer keep to one reading width in the middle, which
+   the settings choose, while the list still scrolls from edge to edge. */
 .chat-view {
   --chat-width: 800px;
   container-type: inline-size;
@@ -3510,6 +3510,9 @@ button.task-tag-updated:hover {
   background: var(--surface);
 }
 
+.chat-view[data-width='medium'] { --chat-width: 1200px; }
+.chat-view[data-width='full'] { --chat-width: 100%; }
+
 .chat-list {
   position: relative;
   flex: 1;
@@ -3522,9 +3525,13 @@ button.task-tag-updated:hover {
 }
 
 /* A scrollbar that takes room would shift the centred messages off the composer: reserve its room
-   on both sides, once there is room to spare. */
+   on both sides, once there is room to spare. Full width has nothing to centre. */
 @container (min-width: 832px) {
-  .chat-list { scrollbar-gutter: stable both-edges; }
+  .chat-view:not([data-width]) > .chat-list,
+  .chat-view[data-width='narrow'] > .chat-list { scrollbar-gutter: stable both-edges; }
+}
+@container (min-width: 1232px) {
+  .chat-view[data-width='medium'] > .chat-list { scrollbar-gutter: stable both-edges; }
 }
 
 .chat-entry {

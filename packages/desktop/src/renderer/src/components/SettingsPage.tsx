@@ -22,6 +22,7 @@ import { Segmented, SettingsRow, Stepper, Toggle } from './SettingsControls'
 function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
   const fontSize = usePreferences((s) => s.terminalFontSize)
+  const chatWidth = usePreferences((s) => s.chatWidth)
   return (
     <>
       <SettingsRow
@@ -51,6 +52,22 @@ function AppearanceSettings() {
             max={20}
             unit="px"
             onChange={(next) => setPreference('terminalFontSize', next)}
+          />
+        )}
+      />
+      <SettingsRow
+        label="聊天页宽度"
+        description="聊天界面里消息和输入框最宽多少：窄是 800px，中等是 1200px，全宽占满聊天区域。窗口比这窄时都占满。"
+        control={(labelId) => (
+          <Segmented
+            labelId={labelId}
+            value={chatWidth}
+            onChange={(next) => setPreference('chatWidth', next)}
+            options={[
+              { value: 'narrow', label: '窄' },
+              { value: 'medium', label: '中等' },
+              { value: 'full', label: '全宽' }
+            ]}
           />
         )}
       />
@@ -232,8 +249,8 @@ const SECTIONS: readonly Section[] = [
     id: 'appearance',
     group: '界面',
     title: '外观',
-    description: '主题与终端的显示方式。',
-    keywords: ['主题', '浅色', '深色', '跟随系统', '终端', '字号', '字体'],
+    description: '主题、终端和聊天页的显示方式。',
+    keywords: ['主题', '浅色', '深色', '跟随系统', '终端', '字号', '字体', '聊天', '宽度', '全宽'],
     Icon: ContrastIcon,
     Body: AppearanceSettings
   },
