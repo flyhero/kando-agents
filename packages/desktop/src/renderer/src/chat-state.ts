@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { diffCounts } from './chat-tools'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
@@ -122,6 +122,35 @@ export function timeline(
   // A stage that began after the list was read.
   flow.filter((item) => !known.has(item.stageId)).forEach((item) => entries.push({ kind: 'item', item }))
   return entries
+}
+
+// What one update of the agent's todo list changed from the one before it: the steps it finished
+// and started, or steps it added; the whole list when it is the first.
+export function todoChange(previous: readonly ChatTodo[] | null, next: readonly ChatTodo[]): string | null {
+  if (!previous) return next.length ? `列出 ${next.length} 项待办` : null
+  const before = new Map(previous.map((todo) => [todo.content, todo.status]))
+  const finished = next.filter((todo) => todo.status === 'completed' && before.get(todo.content) !== 'completed')
+  const started = next.filter((todo) => todo.status === 'in_progress' && before.get(todo.content) !== 'in_progress')
+  const added = next.filter((todo) => !before.has(todo.content))
+  const quoted = (todos: readonly ChatTodo[]) => todos.map((todo) => `「${todo.content}」`).join('')
+  const said = [
+    finished.length ? `完成${quoted(finished)}` : null,
+    started.length ? `开始${quoted(started)}` : null,
+    added.length && added.length !== started.length ? `新增 ${added.length} 项` : null
+  ].filter(Boolean)
+  return said.length ? said.join('，') : null
+}
+
+// Each todo list update's list before it, by item key: null for the first.
+export function previousTodos(items: readonly ChatItem[]): Map<string, ChatTodo[] | null> {
+  const previous = new Map<string, ChatTodo[] | null>()
+  let last: ChatTodo[] | null = null
+  for (const item of items) {
+    if (item.kind !== 'todos') continue
+    previous.set(itemKey(item), last)
+    last = item.todos
+  }
+  return previous
 }
 
 // How long each finished thought took: from when it began to when the next thing in its stage did.

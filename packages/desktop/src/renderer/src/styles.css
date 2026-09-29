@@ -4406,13 +4406,39 @@ button.task-tag-updated:hover {
   font-size: 13px;
 }
 
-.chat-todos li { display: flex; gap: 6px; line-height: 1.5; }
-.chat-todo-mark { flex: none; width: 1em; text-align: center; color: var(--text-muted); }
-.chat-todos li[data-status='in_progress'] .chat-todo-mark { color: var(--status-running); }
-.chat-todos li[data-status='completed'] { color: var(--text-muted); text-decoration: line-through; }
+.chat-todos li { display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+/* A step's mark: a ring to do, a pulsing dot under way, a tick once done. */
+.chat-todo-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  margin-top: 0.3em;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+.chat-todos li[data-status='in_progress'] .chat-todo-mark {
+  box-shadow: none;
+  background: var(--status-running);
+  transform: scale(0.7);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.chat-todos li[data-status='completed'] .chat-todo-mark { box-shadow: none; background: var(--status-done); color: var(--surface); }
+.chat-todo-mark svg { width: 10px; height: 10px; stroke-width: 2.4; }
+.chat-todos li[data-status='in_progress'] .chat-todo-text { font-weight: 500; }
+.chat-todos li[data-status='completed'] .chat-todo-text { color: var(--text-muted); text-decoration: line-through; }
 
-.chat-todos-line > summary { font-size: 12px; cursor: pointer; }
-.chat-todos-line > .chat-todos { margin-top: 4px; padding-left: 4px; }
+/* How far along the list is. */
+.chat-todos-bar { height: 2px; margin: 2px 0 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.chat-todos-bar > span { display: block; height: 100%; background: var(--status-done); transition: width 0.3s; }
+
+.chat-todos-change { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-todos-body { margin: 4px 0 2px 9px; padding-left: 10px; border-left: 1px solid var(--border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-todos li[data-status='in_progress'] .chat-todo-mark { animation: none; }
+}
 
 /* The queued message sits just above the input, where it will go out. */
 .chat-queued {

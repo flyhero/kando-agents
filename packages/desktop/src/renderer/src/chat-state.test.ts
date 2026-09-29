@@ -6,8 +6,10 @@ import {
   mergeItems,
   pathShortener,
   prependChatPage,
+  previousTodos,
   questionAnswers,
   thoughtDurations,
+  todoChange,
   receiveChatDelta,
   receiveChatItems,
   setChatPage,
@@ -160,5 +162,22 @@ describe('thoughtDurations', () => {
       ({ id, stageId, revision: 1, at: when, kind, text: 'x', streaming })
     const items = [at('t1', 'reasoning', 1_000), at('a1', 'assistant', 9_000), at('t2', 'reasoning', 10_000, true), at('t3', 'reasoning', 12_000)]
     expect([...thoughtDurations(items)]).toEqual([['s/t1', 8_000]])
+  })
+})
+
+describe('todoChange', () => {
+  const todo = (content: string, status: 'pending' | 'in_progress' | 'completed') => ({ content, status, activeForm: null })
+
+  it('says what an update finished, started or added, and lists the first', () => {
+    const first = [todo('读代码', 'in_progress'), todo('改代码', 'pending')]
+    expect(todoChange(null, first)).toBe('列出 2 项待办')
+    expect(todoChange(first, [todo('读代码', 'completed'), todo('改代码', 'in_progress')])).toBe('完成「读代码」，开始「改代码」')
+    expect(todoChange(first, [...first, todo('测试', 'pending')])).toBe('新增 1 项')
+    expect(todoChange(first, first)).toBeNull()
+  })
+
+  it('pairs each update with the list before it', () => {
+    const item = (id: string): ChatItem => ({ id, stageId: 's', revision: 1, at: 0, kind: 'todos', todos: [todo(id, 'pending')] })
+    expect([...previousTodos([item('a'), item('b')])]).toEqual([['s/a', null], ['s/b', [todo('a', 'pending')]]])
   })
 })

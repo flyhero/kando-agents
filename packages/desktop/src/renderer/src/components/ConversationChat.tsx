@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
+import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
@@ -11,7 +11,7 @@ import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
-import { ChatTodosLine, currentTodo } from './ChatTodos'
+import { ChatTodosLine, currentTodo, TodoHistory } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
@@ -291,6 +291,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     }
   }), [openFolds])
   const thoughts = useMemo(() => thoughtDurations(items), [items])
+  const todoHistory = useMemo(() => previousTodos(items), [items])
   // What the user sent, in order, for the dock's list of them.
   const sent = useMemo(() => blocks.flatMap((block) => {
     if (block.kind !== 'entry' || !isUserEntry(block.entry)) return []
@@ -384,6 +385,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     <ChatRoots.Provider value={roots}>
     <Thoughts.Provider value={thoughts}>
     <Folds.Provider value={folds}>
+    <TodoHistory.Provider value={todoHistory}>
     <div className="chat-view" data-width={width}>
       <div
         className="chat-list"
@@ -415,6 +417,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} sent={sent} onJump={jump} />
     </div>
+    </TodoHistory.Provider>
     </Folds.Provider>
     </Thoughts.Provider>
     </ChatRoots.Provider>
