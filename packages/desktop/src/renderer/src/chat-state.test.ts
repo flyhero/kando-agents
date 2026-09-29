@@ -149,6 +149,12 @@ describe('chatBlocks', () => {
     ])
   })
 
+  it('leaves where the context was compacted in view, and folds other info', () => {
+    const notice = (id: string, text: string): ChatItem => ({ ...base, id, kind: 'notice', level: 'info', text })
+    expect(shape(blocksOf([user('u'), notice('c', '对话上下文已压缩'), tool('a'), notice('i', '切换了模型'), reply('answer'), turn('end')])))
+      .toEqual(['u', { fold: ['tools:a', 'i'] }, 'c', 'answer'])
+  })
+
   it('leaves what the user was asked, and empty thinking, out of the fold', () => {
     const question: ChatItem = { ...base, id: 'q', kind: 'question', requestId: 'r', questions: [], answers: {}, resolution: 'answered' }
     expect(shape(blocksOf([user('u'), thought('empty', ' '), tool('a'), question, tool('b'), reply('answer'), turn('end')])))

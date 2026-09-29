@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ChatDecision, ChatDiff, ChatImage, ChatModel, ChatOption, ChatTodo, ChatToolStatus, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import { CONTEXT_COMPACTED, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatPreferences, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
@@ -737,7 +737,7 @@ export class CodexAppServer implements ChatDriver {
         return
       }
       case 'contextCompaction':
-        if (completed) this.items.notice('info', '对话上下文已压缩', at)
+        if (completed) this.items.notice('info', CONTEXT_COMPACTED, at)
     }
   }
 

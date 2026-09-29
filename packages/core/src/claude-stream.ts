@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ChatDiff, ChatImage, ChatModel, ChatOption, ChatTurnActivity, ChatTurnState } from '@kando/protocol'
+import { CONTEXT_COMPACTED, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
@@ -607,7 +607,7 @@ export class ClaudeStream implements ChatDriver {
     if (subtype === 'init' && model) this.reportedModel = model
     if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
     if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
-    if (subtype === 'compact_boundary') this.items.notice('info', '对话上下文已压缩', at)
+    if (subtype === 'compact_boundary') this.items.notice('info', CONTEXT_COMPACTED, at)
   }
 
   private stream(frame: unknown, at: number): void {

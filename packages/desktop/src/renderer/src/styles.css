@@ -4040,6 +4040,22 @@ button.task-tag-updated:hover {
   white-space: pre-wrap;
 }
 .chat-notice[data-level='warning'] { color: var(--warning); }
+/* A notice longer than a line: a chevron, and the first line until it is opened. */
+.chat-notice-long { display: flex; align-items: flex-start; gap: 4px; }
+.chat-notice-toggle { flex-shrink: 0; padding: 1px 0 0; border: 0; background: none; color: inherit; cursor: pointer; }
+.chat-notice-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.chat-notice-text[data-open] { white-space: pre-wrap; overflow-wrap: anywhere; cursor: auto; }
+
+/* A mark across the conversation, such as where its context was compacted. */
+.chat-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.chat-divider::before,
+.chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .chat-notice[data-level='error'] { color: var(--danger); }
 
 /* Scrolled back, a way down to the latest: held at the bottom of the list's view. */

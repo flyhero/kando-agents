@@ -147,6 +147,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
 ])
 export type ChatItem = z.infer<typeof ChatItem>
 
+// The notice either agent leaves where its context was compacted, which a client draws as a divider.
+export const CONTEXT_COMPACTED = '对话上下文已压缩'
+
 // A plan from plan mode waits as an approval: Claude's ExitPlanMode call, or the plan a Codex
 // plan-mode turn ended with.
 export const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])

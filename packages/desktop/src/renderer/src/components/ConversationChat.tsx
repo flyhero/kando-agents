@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
+import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
 import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
@@ -82,6 +83,26 @@ function Reasoning({ item }: { item: ReasoningItem }) {
   )
 }
 
+type NoticeItem = Extract<ChatItem, { kind: 'notice' }>
+
+// A notice is one line, opening onto the rest; where the context was compacted is a divider.
+function ChatNotice({ item }: { item: NoticeItem }) {
+  const [open, setOpen] = useState(false)
+  if (isCompaction(item.text)) return <div className="chat-divider" role="separator">上下文已压缩</div>
+  const text = readableNotice(item.text)
+  const { first, more } = noticeSummary(text)
+  if (!more) return <div className="chat-notice" data-level={item.level}>{text}</div>
+  // The words stay out of the button, so an error's output can be selected and copied.
+  return (
+    <div className="chat-notice chat-notice-long" data-level={item.level}>
+      <button type="button" className="chat-notice-toggle" aria-expanded={open} aria-label={open ? '收起' : '展开全文'} onClick={() => setOpen((current) => !current)}>
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+      </button>
+      <div className="chat-notice-text" data-open={open || undefined} onClick={open ? undefined : () => setOpen(true)}>{open ? text : first}</div>
+    </div>
+  )
+}
+
 function TerminalMessage({ message }: { message: ConversationMessage }) {
   return message.role === 'user'
     ? <div className="chat-user">{message.text}</div>
@@ -118,7 +139,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
     case 'turn':
       return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
     case 'notice':
-      return <div className="chat-notice" data-level={item.level}>{item.text}</div>
+      return <ChatNotice item={item} />
     case 'todos':
       return <ChatTodosLine item={item} />
     case 'state':
@@ -137,8 +158,9 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 // on the way to its answer.
 function foldText(turn: TurnItem): string {
   const worked = turn.durationMs !== null ? `工作了 ${workedFor(turn.durationMs)}` : '工作过程'
-  if (turn.state === 'interrupted') return `${worked}，已中断${turn.error ? `：${turn.error}` : ''}`
-  if (turn.state === 'failed') return `${worked}，失败${turn.error ? `：${turn.error}` : ''}`
+  const error = turn.error ? `：${readableNotice(turn.error)}` : ''
+  if (turn.state === 'interrupted') return `${worked}，已中断${error}`
+  if (turn.state === 'failed') return `${worked}，失败${error}`
   return worked
 }
 

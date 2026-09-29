@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isCompaction } from './chat-notices'
 import { diffCounts } from './chat-tools'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
@@ -234,7 +235,8 @@ function foldable(block: ChatBlock): boolean {
     case 'approval':
       return !isPlanApproval(item)
     case 'notice':
-      return item.level === 'info'
+      // Where the context was compacted stays a mark in the conversation.
+      return item.level === 'info' && !isCompaction(item.text)
     default:
       return false
   }
