@@ -1,5 +1,7 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext } from 'react'
 import type { ChatDiff, ChatItem, ChatToolStatus } from '@kando/protocol'
+import { useDisclosure } from '../chat-disclosure'
+import { itemKey } from '../chat-state'
 import { diffCounts, runSummary, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChevronRightIcon } from './icons'
@@ -82,7 +84,7 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
 
 // One call as a flat line: what it is and what it was given, opening onto its input and output.
 function ToolLine({ tool }: { tool: ToolItem }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`call:${itemKey(tool)}`)
   const shorten = useContext(ChatPaths)
   const details = Boolean(tool.input || tool.output)
   return (
@@ -92,7 +94,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         className="chat-tool-row"
         aria-expanded={details ? open : undefined}
         disabled={!details}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen(!open)}
       >
         <span className="chat-tool-chevron" aria-hidden="true">{details && <ChevronRightIcon />}</span>
         <span className="chat-tool-name">{toolLabel(tool.name)}</span>
@@ -108,15 +110,15 @@ function ToolLine({ tool }: { tool: ToolItem }) {
 // Calls made one after another, as one sentence of what they did: the one still going named beside
 // it, any that failed counted. A lone call is just its line.
 export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
-  const [open, setOpen] = useState(false)
-  const shorten = useContext(ChatPaths)
   const [only] = tools
+  const [open, setOpen] = useDisclosure(`run:${only ? itemKey(only) : ''}`)
+  const shorten = useContext(ChatPaths)
   if (tools.length === 1 && only) return <ToolLine tool={only} />
   const running = tools.find((tool) => tool.status === 'running')
   const failed = tools.filter((tool) => tool.status === 'failed' || tool.status === 'denied').length
   return (
     <div className="chat-tool-run" data-open={open || undefined}>
-      <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         <span className="chat-tool-summary">{runSummary(tools)}</span>
         {running && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
@@ -133,7 +135,7 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
 
 // A call that changed files: its card shows the diff at once, with the lines it added and removed.
 export function ChatToolCard({ item }: { item: ToolItem }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const shorten = useContext(ChatPaths)
   const details = Boolean(item.input || item.output)
   return (
@@ -143,7 +145,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         className="chat-tool-header"
         aria-expanded={details ? open : undefined}
         disabled={!details}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen(!open)}
       >
         <span className="chat-tool-name">{toolLabel(item.name)}</span>
         <span className="chat-tool-title mono" title={item.title}>{shorten(item.title)}</span>

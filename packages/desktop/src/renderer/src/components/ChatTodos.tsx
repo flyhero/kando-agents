@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useState } from 'react'
 import type { ChatItem, ChatTodo } from '@kando/protocol'
+import { useDisclosure } from '../chat-disclosure'
 import { itemKey, todoChange } from '../chat-state'
 import { CheckIcon, ChevronRightIcon } from './icons'
 import { Popover } from './Popover'
@@ -55,12 +56,12 @@ function TodoList({ todos }: { todos: readonly ChatTodo[] }) {
 // Where a turn changed the agent's todo list: what it finished and started there, opening onto the
 // list as that update left it.
 export function ChatTodosLine({ item }: { item: TodosItem }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`todos:${itemKey(item)}`)
   const change = todoChange(useContext(TodoHistory).get(itemKey(item)) ?? null, item.todos)
   if (item.todos.length === 0) return null
   return (
     <div className="chat-todos-line">
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         待办 {progress(item.todos)}
         {change && <span className="chat-todos-change">· {change}</span>}

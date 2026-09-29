@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
+import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
 import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
@@ -52,17 +53,18 @@ type ReasoningItem = Extract<ChatItem, { kind: 'reasoning' }>
 // user opens or closes it, it stays as they left it.
 function Reasoning({ item }: { item: ReasoningItem }) {
   const took = useContext(Thoughts).get(itemKey(item))
-  const [open, setOpen] = useState(item.streaming)
-  const touched = useRef(false)
+  // Open while it streams and a moment after; open for good once the user opens it.
+  const [kept, keep] = useDisclosure(`thought:${itemKey(item)}`)
+  const [streaming, setStreaming] = useState(item.streaming)
   useEffect(() => {
-    if (touched.current) return
     if (item.streaming) {
-      setOpen(true)
+      setStreaming(true)
       return
     }
-    const timer = setTimeout(() => setOpen(false), 1000)
+    const timer = setTimeout(() => setStreaming(false), 1000)
     return () => clearTimeout(timer)
   }, [item.streaming])
+  const open = kept || streaming
   const label = item.streaming ? '思考中' : took !== undefined ? `思考了 ${workedFor(took)}` : '思考过程'
   return (
     <div className="chat-reasoning">
@@ -71,8 +73,8 @@ function Reasoning({ item }: { item: ReasoningItem }) {
         className="chat-fold-header"
         aria-expanded={open}
         onClick={() => {
-          touched.current = true
-          setOpen((current) => !current)
+          keep(!open)
+          if (open) setStreaming(false)
         }}
       >
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
@@ -87,7 +89,7 @@ type UserItem = Extract<ChatItem, { kind: 'user' }>
 
 // A long message the user sent, such as a task's first prompt, shows its start until opened.
 function UserMessage({ item }: { item: UserItem }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`message:${itemKey(item)}`)
   const long = item.text.split('\n').length > 12 || item.text.length > 1200
   return (
     <>
@@ -97,7 +99,7 @@ function UserMessage({ item }: { item: UserItem }) {
       </div>
       {long && (
         <div className="chat-user-more">
-          <button type="button" className="link-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+          <button type="button" className="link-button" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? '收起' : '展开全文'}
           </button>
         </div>
@@ -111,7 +113,7 @@ type NoticeItem = Extract<ChatItem, { kind: 'notice' }>
 
 // A notice is one line, opening onto the rest; where the context was compacted is a divider.
 function ChatNotice({ item }: { item: NoticeItem }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`notice:${itemKey(item)}`)
   if (isCompaction(item.text)) return <div className="chat-divider" role="separator">上下文已压缩</div>
   const text = readableNotice(item.text)
   const { first, more } = noticeSummary(text)
@@ -119,7 +121,7 @@ function ChatNotice({ item }: { item: NoticeItem }) {
   // The words stay out of the button, so an error's output can be selected and copied.
   return (
     <div className="chat-notice chat-notice-long" data-level={item.level}>
-      <button type="button" className="chat-notice-toggle" aria-expanded={open} aria-label={open ? '收起' : '展开全文'} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="chat-notice-toggle" aria-expanded={open} aria-label={open ? '收起' : '展开全文'} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
       </button>
       <div className="chat-notice-text" data-open={open || undefined} onClick={open ? undefined : () => setOpen(true)}>{open ? text : first}</div>
@@ -180,17 +182,15 @@ function foldText(turn: TurnItem): string {
   return worked
 }
 
-// Which folds are open: kept here rather than in each fold, as the files a turn changed open its
-// fold to show one of them.
-type FoldState = { open: ReadonlySet<string>; toggle: (key: string) => void; reveal: (key: string, path: string) => void }
-const Folds = createContext<FoldState>({ open: new Set(), toggle: () => {}, reveal: () => {} })
+// Opens a turn's work at one of the files it changed: for the list of them under its answer.
+type FoldState = { reveal: (key: string, path: string) => void }
+const Folds = createContext<FoldState>({ reveal: () => {} })
 
 function TurnFold({ foldKey, conversationId, turn, blocks, task }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean }) {
-  const folds = useContext(Folds)
-  const open = folds.open.has(foldKey)
+  const [open, setOpen] = useDisclosure(foldKey)
   return (
     <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => folds.toggle(foldKey)}>
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {foldText(turn)}
       </button>
@@ -206,14 +206,14 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task }: { foldKey: st
 // The files a finished turn changed, under its answer: a count to open, then each file with its
 // lines, which opens the turn's work at that file's card. The inspector has them all.
 function TurnChanges({ fold, files }: { fold: string; files: readonly TurnFile[] }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useDisclosure(`changes:${fold}`)
   const folds = useContext(Folds)
   const surface = useChatSurface()
   const shorten = useContext(ChatPaths)
   const { added, removed } = files.reduce((sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }), { added: 0, removed: 0 })
   return (
     <div className="chat-changes-rollup">
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         改了 {files.length} 个文件
         <span className="chat-diff-count mono">
@@ -310,24 +310,17 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
   const blocks = useMemo(() => chatBlocks(entries), [entries])
-  const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(new Set())
   const folds = useMemo<FoldState>(() => ({
-    open: openFolds,
-    toggle: (key) => setOpenFolds((current) => {
-      const next = new Set(current)
-      if (!next.delete(key)) next.add(key)
-      return next
-    }),
     // Opens the turn's work, then brings the file's diff into view once it is there.
     reveal: (key, path) => {
-      setOpenFolds((current) => new Set(current).add(key))
+      setOpened(id, key, true)
       pinned.current = false
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const fold = list.current?.querySelector(`[data-fold="${CSS.escape(key)}"]`)
         fold?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       }))
     }
-  }), [openFolds])
+  }), [id])
   const thoughts = useMemo(() => thoughtDurations(items), [items])
   const todoHistory = useMemo(() => previousTodos(items), [items])
   // What the user sent, in order, for the dock's list of them.
@@ -422,6 +415,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     <ChatPaths.Provider value={shorten}>
     <ChatRoots.Provider value={roots}>
     <Thoughts.Provider value={thoughts}>
+    <ChatDisclosureScope.Provider value={id}>
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
     <div className="chat-view" data-width={width}>
@@ -457,6 +451,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     </div>
     </TodoHistory.Provider>
     </Folds.Provider>
+    </ChatDisclosureScope.Provider>
     </Thoughts.Provider>
     </ChatRoots.Provider>
     </ChatPaths.Provider>
