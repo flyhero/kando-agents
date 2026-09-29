@@ -119,7 +119,7 @@ function TaskDetailBody({ task }: { task: Task }) {
                 locked={checkEditProjects(task) !== null}
                 onChange={(repos) => void updateTask(task.id, { repos })}
               />
-              <p className="muted">主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>
+              <p className="muted">高亮的主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>
             </dd>
             <dt>依赖</dt>
             <dd>

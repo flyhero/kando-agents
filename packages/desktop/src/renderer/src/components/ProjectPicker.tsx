@@ -2,6 +2,7 @@ import { useCallback, useState, type FormEvent } from 'react'
 import { MAX_TASK_REPOS, type TaskRepo } from '@kando/protocol'
 import { perform } from '../core-store'
 import { canPickFolder, pickFolder } from '../desktop-bridge'
+import { ContextMenu, MenuItem, menuPoint, type MenuPoint } from './ContextMenu'
 import { Popover } from './Popover'
 
 export function projectName(projectPath: string): string {
@@ -116,7 +117,14 @@ export function ProjectPicker({
   // Open menu → the recent projects it offers; null while closed.
   const [menu, setMenu] = useState<string[] | null>(null)
   const close = useCallback(() => setMenu(null), [])
+  // An additional project's right-click menu, which makes it the primary one.
+  const [projectMenu, setProjectMenu] = useState<{ path: string; at: MenuPoint } | null>(null)
+  const closeProjectMenu = useCallback(() => setProjectMenu(null), [])
   const paths = projects.map((project) => project.path)
+  const promote = (projectPath: string) => {
+    setProjectMenu(null)
+    onChange([projectPath, ...paths.filter((each) => each !== projectPath)])
+  }
 
   const add = (projectPath: string) => {
     setMenu(null)
@@ -151,27 +159,26 @@ export function ProjectPicker({
 
   return (
     <div className="chip-field">
+      {/* The primary project stands out by colour; another becomes primary from its right-click menu. */}
       {projects.map((project, index) => (
         <span
           key={project.path}
           className="chip project-chip"
-          title={project.worktreePath ? `${project.path}\nworktree：${project.worktreePath}` : project.path}
+          data-primary={index === 0 || undefined}
+          title={[
+            index === 0 ? `主项目：${project.path}` : project.path,
+            project.worktreePath && `worktree：${project.worktreePath}`,
+            !locked && index > 0 && '右键可设为主项目'
+          ].filter(Boolean).join('\n')}
+          onContextMenu={!locked && index > 0 ? (event) => {
+            event.preventDefault()
+            setProjectMenu({ path: project.path, at: menuPoint(event) })
+          } : undefined}
         >
           <span className="chip-main chip-static">
             <span className="project-name">{projectName(project.path)}</span>
-            {index === 0 && <span className="project-primary">主项目</span>}
+            {index === 0 && <span className="visually-hidden">（主项目）</span>}
           </span>
-          {!locked && index > 0 && (
-            <button
-              type="button"
-              className="chip-primary"
-              title={`将 ${projectName(project.path)} 设为主项目`}
-              aria-label={`将 ${projectName(project.path)} 设为主项目`}
-              onClick={() => onChange([project.path, ...paths.filter((each) => each !== project.path)])}
-            >
-              设为主项目
-            </button>
-          )}
           {!locked && (
             <button
               type="button"
@@ -185,6 +192,11 @@ export function ProjectPicker({
           )}
         </span>
       ))}
+      {projectMenu && (
+        <ContextMenu at={projectMenu.at} label={`${projectName(projectMenu.path)} 的操作`} onClose={closeProjectMenu}>
+          <MenuItem label="设为主项目" onSelect={() => promote(projectMenu.path)} />
+        </ContextMenu>
+      )}
       {!locked && paths.length < maxProjects && (
         <span className="menu-anchor">
           <button
