@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { checkEditProjects, shortTaskId, type Task } from '@kando/protocol'
+import { checkChangePrimary, checkEditProjects, shortTaskId, type Task } from '@kando/protocol'
 import { selectTask, updateTask, useCore } from '../core-store'
 import { dayAndTime, STATUS_LABEL } from '../labels'
 import { saveTaskText, unsavedTaskText, useTaskSaveState, type SaveState } from '../unsaved-edits'
@@ -117,6 +117,7 @@ function TaskDetailBody({ task }: { task: Task }) {
               <ProjectPicker
                 projects={task.repos}
                 locked={checkEditProjects(task) !== null}
+                primaryLocked={checkChangePrimary(task) !== null}
                 onChange={(repos) => void updateTask(task.id, { repos })}
               />
               <p className="muted">高亮的主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>

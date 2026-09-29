@@ -774,28 +774,31 @@ describe('TaskService in the chat view', () => {
     expect(conversations.get(running.conversationId ?? '').projectPaths).toEqual([primary, additional])
   })
 
-  it('moves a planning agent to the primary project the user picks meanwhile', async () => {
+  it('keeps a chat task\'s primary project and lets its agent take the projects added meanwhile', async () => {
     const api = path.join(dir, 'api')
     const web = path.join(dir, 'web')
     const dependency = readyTask('First', api)
     execFileSync('git', ['init', '-q', web])
     git(web, 'commit', '-q', '--allow-empty', '-m', 'init')
     const created = service.create({ title: 'Both' })
-    const task = service.update({ id: created.id, details: 'x', repos: [api, web], agent: 'claude', dependsOn: [dependency.id] })
+    const task = service.update({ id: created.id, details: 'x', repos: [api], agent: 'claude', dependsOn: [dependency.id] })
     await service.start(task.id)
     await settle()
     const spawned = daemon.spawns.length
 
-    // Projects stay editable while a task only plans; the next message takes the agent along.
-    service.update({ id: task.id, repos: [web, api] })
+    expect(() => service.update({ id: task.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'primary-fixed' }))
+    expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'primary-fixed' }))
+    // An additional project reaches the agent with the next message.
+    service.update({ id: task.id, repos: [api, web] })
     await service.resumeChat(task.id)
     expect(daemon.spawns).toHaveLength(spawned + 1)
-    expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(web) })
-    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--add-dir', realpathSync(api)]))
+    expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(api) })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--add-dir', realpathSync(web)]))
     // Nothing changed since: the agent is kept.
     await service.resumeChat(task.id)
     expect(daemon.spawns).toHaveLength(spawned + 1)
   })
+
 
   it('keeps a chat task running when its agent goes, hands it in when the user says, and goes on by message', async () => {
     const task = readyTask('Chat me', path.join(dir, 'app'))

@@ -102,16 +102,19 @@ function ProjectMenu({
 
 type ProjectEntry = Pick<TaskRepo, 'path' | 'worktreePath'>
 
-// Controlled: shows `projects` and reports the new path list through `onChange`.
+// Controlled: shows `projects` and reports the new path list through `onChange`. With
+// `primaryLocked`, projects can still be added and removed but the first one stays first.
 export function ProjectPicker({
   projects,
   onChange,
   locked = false,
+  primaryLocked = false,
   maxProjects = MAX_TASK_REPOS
 }: {
   projects: readonly ProjectEntry[]
   onChange: (paths: string[]) => void
   locked?: boolean
+  primaryLocked?: boolean
   maxProjects?: number
 }) {
   // Open menu → the recent projects it offers; null while closed.
@@ -121,6 +124,7 @@ export function ProjectPicker({
   const [projectMenu, setProjectMenu] = useState<{ path: string; at: MenuPoint } | null>(null)
   const closeProjectMenu = useCallback(() => setProjectMenu(null), [])
   const paths = projects.map((project) => project.path)
+  const promotable = !locked && !primaryLocked
   const promote = (projectPath: string) => {
     setProjectMenu(null)
     onChange([projectPath, ...paths.filter((each) => each !== projectPath)])
@@ -168,9 +172,10 @@ export function ProjectPicker({
           title={[
             index === 0 ? `主项目：${project.path}` : project.path,
             project.worktreePath && `worktree：${project.worktreePath}`,
-            !locked && index > 0 && '右键可设为主项目'
+            promotable && index > 0 && '右键可设为主项目',
+            !locked && primaryLocked && index === 0 && '对话开始后不能更换主项目'
           ].filter(Boolean).join('\n')}
-          onContextMenu={!locked && index > 0 ? (event) => {
+          onContextMenu={promotable && index > 0 ? (event) => {
             event.preventDefault()
             setProjectMenu({ path: project.path, at: menuPoint(event) })
           } : undefined}
@@ -179,7 +184,7 @@ export function ProjectPicker({
             <span className="project-name">{projectName(project.path)}</span>
             {index === 0 && <span className="visually-hidden">（主项目）</span>}
           </span>
-          {!locked && (
+          {!locked && !(primaryLocked && index === 0) && (
             <button
               type="button"
               className="chip-remove"

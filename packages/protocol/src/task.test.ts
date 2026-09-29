@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChatResume, checkContinue, checkEditProjects, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
+import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -38,6 +38,14 @@ describe('checkEditProjects', () => {
     for (const status of ['pending', 'review', 'done'] as const) {
       expect(checkEditProjects(task({ status }))).toBeNull()
     }
+  })
+})
+
+describe('checkChangePrimary', () => {
+  it('keeps the primary project once a task\'s chat has begun', () => {
+    expect(checkChangePrimary(task({ conversationId: 'chat' }))).toBe('primary-fixed')
+    expect(checkChangePrimary(task({ sessionId: 'terminal', status: 'review' }))).toBeNull()
+    expect(checkChangePrimary(task())).toBeNull()
   })
 })
 

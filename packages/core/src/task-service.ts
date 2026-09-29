@@ -1,6 +1,7 @@
 import {
   checkChatResume,
   checkContinue,
+  checkChangePrimary,
   checkDependencies,
   checkEditProjects,
   checkMove,
@@ -204,6 +205,10 @@ export class TaskService {
       const blocker = checkEditProjects(task, this.launching.has(task.id))
       if (blocker) throw new Rejection(blocker)
       patch.repos = withKnownWorktrees(task.repos, repos.map(normalizeRepoPath))
+      if (patch.repos[0]?.path !== task.repos[0]?.path) {
+        const fixed = checkChangePrimary(task)
+        if (fixed) throw new Rejection(fixed)
+      }
       const current = new Set(task.repos.map((repo) => repo.path))
       this.projects.remember(patch.repos.map((repo) => repo.path).filter((repoPath) => !current.has(repoPath)))
     }

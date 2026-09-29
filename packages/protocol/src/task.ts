@@ -104,6 +104,16 @@ export function checkEditProjects(task: Pick<Task, 'status' | 'refineSessionId'>
   return task.status === 'abandoned' ? 'task-abandoned' : null
 }
 
+export type PrimaryChangeBlocker = 'primary-fixed'
+
+// An agent's session keeps the cwd it began in, and a task's chat is one session from its first
+// message on: from then, the primary project stays. Additional projects still come and go, as an
+// agent can be given another directory mid-session. A terminal run is a session of its own, so a
+// terminal task may change its primary between runs.
+export function checkChangePrimary(task: Pick<Task, 'conversationId'>): PrimaryChangeBlocker | null {
+  return task.conversationId ? 'primary-fixed' : null
+}
+
 // `running` is entered only by running, continuing or starting, `review` only by a session ending
 // or a chat task handed in (its agent does not end with the work), and `abandoned` only by
 // redoing. A finished task never goes back to pending: it continues in place, or is redone from
