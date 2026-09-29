@@ -3676,7 +3676,6 @@ button.task-tag-updated:hover {
 .chat-markdown td { padding: 2px 8px; border: 1px solid var(--border); }
 .chat-markdown a { color: var(--accent); }
 
-.chat-reasoning summary { cursor: pointer; font-size: 12px; }
 .chat-reasoning-text {
   margin-top: 4px;
   padding-left: 10px;
@@ -4012,6 +4011,8 @@ button.task-tag-updated:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.chat-sheen {
   background: linear-gradient(90deg, var(--text-muted) 35%, var(--text) 50%, var(--text-muted) 65%);
   background-size: 300% 100%;
   background-clip: text;
@@ -4026,7 +4027,7 @@ button.task-tag-updated:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-working-text { animation: none; background: none; color: var(--text-muted); }
+  .chat-sheen { animation: none; background: none; color: var(--text-muted); }
 }
 
 /* Below the list: the project's changes, what waits on the user, and the composer. Only the

@@ -123,6 +123,17 @@ export function timeline(
   return entries
 }
 
+// How long each finished thought took: from when it began to when the next thing in its stage did.
+export function thoughtDurations(items: readonly ChatItem[]): Map<string, number> {
+  const durations = new Map<string, number>()
+  items.forEach((item, index) => {
+    if (item.kind !== 'reasoning' || item.streaming) return
+    const next = items.slice(index + 1).find((each) => each.stageId === item.stageId && each.kind !== 'state')
+    if (next && next.at >= item.at) durations.set(itemKey(item), next.at - item.at)
+  })
+  return durations
+}
+
 export function entryKey(entry: TimelineEntry): string {
   return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
 }

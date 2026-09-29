@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, timeline, useChat, type ChatBlock, type TimelineEntry } from '../chat-state'
+import { chatBlocks, dropChat, itemKey, pathShortener, prependChatPage, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry } from '../chat-state'
 import { workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, type ChatSurface } from './chat-surface'
@@ -42,6 +42,46 @@ function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean
   return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)} · {where}</div>
 }
 
+// How long each finished thought took, by item key.
+const Thoughts = createContext<ReadonlyMap<string, number>>(new Map())
+
+type ReasoningItem = Extract<ChatItem, { kind: 'reasoning' }>
+
+// A thought opens while it streams and closes a moment after, saying how long it took; once the
+// user opens or closes it, it stays as they left it.
+function Reasoning({ item }: { item: ReasoningItem }) {
+  const took = useContext(Thoughts).get(itemKey(item))
+  const [open, setOpen] = useState(item.streaming)
+  const touched = useRef(false)
+  useEffect(() => {
+    if (touched.current) return
+    if (item.streaming) {
+      setOpen(true)
+      return
+    }
+    const timer = setTimeout(() => setOpen(false), 1000)
+    return () => clearTimeout(timer)
+  }, [item.streaming])
+  const label = item.streaming ? '思考中' : took !== undefined ? `思考了 ${workedFor(took)}` : '思考过程'
+  return (
+    <div className="chat-reasoning">
+      <button
+        type="button"
+        className="chat-fold-header"
+        aria-expanded={open}
+        onClick={() => {
+          touched.current = true
+          setOpen((current) => !current)
+        }}
+      >
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+        <span className={item.streaming ? 'chat-sheen' : undefined}>{label}</span>
+      </button>
+      {open && <div className="chat-reasoning-text">{item.text}</div>}
+    </div>
+  )
+}
+
 function TerminalMessage({ message }: { message: ConversationMessage }) {
   return message.role === 'user'
     ? <div className="chat-user">{message.text}</div>
@@ -68,12 +108,7 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
         </div>
       )
     case 'reasoning':
-      return (
-        <details className="chat-reasoning">
-          <summary className="muted">思考过程</summary>
-          <div className="chat-reasoning-text">{item.text}</div>
-        </details>
-      )
+      return <Reasoning item={item} />
     case 'tool':
       return <ChatToolCard item={item} />
     case 'approval':
@@ -193,6 +228,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
   }, [stages, messages, items])
   const blocks = useMemo(() => chatBlocks(entries), [entries])
+  const thoughts = useMemo(() => thoughtDurations(items), [items])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
     [items]
@@ -265,6 +301,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatPaths.Provider value={shorten}>
+    <Thoughts.Provider value={thoughts}>
     <div className="chat-view" data-width={width}>
       <div
         className="chat-list"
@@ -296,6 +333,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>
+    </Thoughts.Provider>
     </ChatPaths.Provider>
     </ChatSurfaceContext.Provider>
   )

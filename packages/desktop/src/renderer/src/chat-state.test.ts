@@ -7,6 +7,7 @@ import {
   pathShortener,
   prependChatPage,
   questionAnswers,
+  thoughtDurations,
   receiveChatDelta,
   receiveChatItems,
   setChatPage,
@@ -136,5 +137,14 @@ describe('chatBlocks', () => {
     const question: ChatItem = { ...base, id: 'q', kind: 'question', requestId: 'r', questions: [], answers: {}, resolution: 'answered' }
     expect(shape(blocksOf([user('u'), thought('empty', ' '), tool('a'), question, tool('b'), reply('answer'), turn('end')])))
       .toEqual(['u', { fold: ['tools:a', 'tools:b'] }, 'q', 'answer'])
+  })
+})
+
+describe('thoughtDurations', () => {
+  it('times a finished thought until the next thing in its stage, and not one still going', () => {
+    const at = (id: string, kind: 'reasoning' | 'assistant', when: number, streaming = false, stageId = 's'): ChatItem =>
+      ({ id, stageId, revision: 1, at: when, kind, text: 'x', streaming })
+    const items = [at('t1', 'reasoning', 1_000), at('a1', 'assistant', 9_000), at('t2', 'reasoning', 10_000, true), at('t3', 'reasoning', 12_000)]
+    expect([...thoughtDurations(items)]).toEqual([['s/t1', 8_000]])
   })
 })

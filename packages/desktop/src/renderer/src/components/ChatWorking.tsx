@@ -15,7 +15,7 @@ export function ChatWorking({ agent, doing, since }: { agent: AgentKind; doing: 
   return (
     <div className="chat-working">
       <span className="chat-spinner" aria-hidden="true" />
-      <span className="chat-working-text" aria-live="polite">{AGENT_LABEL[agent]} 正在处理{doing ? `：${doing}` : ''}</span>
+      <span className="chat-working-text chat-sheen" aria-live="polite">{AGENT_LABEL[agent]} 正在处理{doing ? `：${doing}` : ''}</span>
       <span className="chat-working-time" aria-hidden="true">{workedFor(Math.max(0, now - (since ?? started)))}</span>
     </div>
   )
