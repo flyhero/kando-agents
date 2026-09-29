@@ -7,6 +7,7 @@ import { Conversation, ConversationMessage, ConversationSearchHit, ConversationS
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
+import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 7
@@ -33,7 +34,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -228,6 +229,10 @@ export const rpcMethods = {
   },
   // Project paths any task or conversation has used, most recent first; kept after they are gone.
   'projects.recent': { params: z.object({}), result: z.array(z.string()) },
+  // Every worktree Kando laid out, with what git says of each; sizes come as they are counted.
+  'worktrees.list': { params: z.object({}), result: z.array(ManagedWorktree) },
+  // Removes each worktree checkCleanWorktree allows, as it stands now; branches stay.
+  'worktrees.clean': { params: z.object({ paths: z.array(z.string().min(1)).min(1).max(500) }), result: z.array(WorktreeCleanResult) },
   'projects.forget': { params: z.object({ path: z.string().min(1) }), result: Ok },
   // What older clients call projects.recent / projects.forget.
   'repos.recent': { params: z.object({}), result: z.array(z.string()) },
@@ -275,6 +280,8 @@ export const rpcNotifications = {
   'sessions.exit': z.object({ sessionId: z.string(), exitCode: z.number() }),
   'usage.changed': z.object({ usage: AgentUsage }),
   'terminals.changed': z.object({ terminals: z.array(Terminal) }),
+  // Worktrees were cleaned, or their sizes counted: list them again.
+  'worktrees.changed': z.object({}),
   'sources.listChanged': z.object({ sources: z.array(SourceDescriptor) }),
   'sources.inboxChanged': z.object({ inbox: SourceInbox }),
   // Sent only to the connection that started the flow.

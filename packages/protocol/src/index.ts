@@ -1,4 +1,5 @@
 export * from './task'
+export * from './worktree'
 export * from './changes'
 export * from './terminal'
 export * from './conversation'

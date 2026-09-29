@@ -24,6 +24,7 @@ import { SourceService } from './source-service'
 import { ConversationStore } from './conversation-store'
 import { ConversationService } from './conversation-service'
 import { TerminalService } from './terminal-service'
+import { WorktreeService } from './worktree-service'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
@@ -101,6 +102,7 @@ const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage 
 )
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
+const worktrees = new WorktreeService(paths.worktrees, service, () => server?.broadcast('worktrees.changed', {}))
 
 daemon.onEvent((event) => {
   const { sessionId } = event
@@ -138,7 +140,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals)
+  }, terminals, worktrees)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION })
 daemon.start()

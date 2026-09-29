@@ -247,6 +247,47 @@ export class TaskService {
     })
   }
 
+  // Tasks whose agent is open in their worktrees; a daemon that cannot say leaves out terminals.
+  async inUse(): Promise<ReadonlySet<string>> {
+    const sessions = await this.sessions.request('list', {}).then(({ sessions }) => sessions, () => [])
+    const live = new Set(sessions.filter((session) => !session.exited).map((session) => session.sessionId))
+    return new Set(this.store.list().flatMap((task) => {
+      const terminal = task.sessionId !== null && live.has(task.sessionId)
+      const chatting = task.conversationId !== null && this.chatTurn(task.conversationId) === 'running'
+      return terminal || chatting ? [task.id] : []
+    }))
+  }
+
+  private chatTurn(conversationId: string): string | null {
+    try {
+      return this.chats?.get(conversationId).chat?.turn ?? null
+    } catch {
+      return null
+    }
+  }
+
+  // A worktree is about to go: the task's chat agent, idle in it, is stopped first. One at work, a
+  // terminal agent still open (a running task can be marked done), or a task still starting keeps
+  // it; a daemon that cannot say keeps it too.
+  async releaseAgent(id: string): Promise<void> {
+    const task = this.get(id)
+    if (this.launching.has(task.id)) throw new Rejection('run-in-progress')
+    if (task.sessionId) {
+      const { sessions } = await this.sessions.request('list', {})
+      if (sessions.some((session) => session.sessionId === task.sessionId && !session.exited)) throw new Rejection('worktree-in-use')
+    }
+    if (!task.conversationId || !this.chats) return
+    if (this.chats.get(task.conversationId).chat?.turn === 'running') throw new Rejection('worktree-in-use')
+    await this.chats.stopForTask(task.id)
+  }
+
+  // The worktree was cleaned: running the task again lays it out anew from its branch.
+  forgetWorktree(id: string, worktreePath: string): void {
+    const task = this.store.get(id)
+    if (!task?.repos.some((repo) => repo.worktreePath === worktreePath)) return
+    this.changed(this.store.update(task.id, { repos: task.repos.map((repo) => (repo.worktreePath === worktreePath ? { ...repo, worktreePath: null } : repo)) }))
+  }
+
   startOptions(id: string): Promise<RepoStartOptions[]> {
     const task = this.get(id)
     return startOptions(task, this.dependenciesOf(task))

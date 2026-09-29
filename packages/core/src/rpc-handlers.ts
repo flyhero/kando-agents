@@ -11,6 +11,7 @@ import type { TaskService } from './task-service'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalService } from './terminal-service'
+import type { WorktreeService } from './worktree-service'
 
 const OK = { ok: true } as const
 
@@ -22,7 +23,8 @@ export function createRpcHandlers(
   usage: UsageService,
   sources: SourceService,
   attachments: { store: AttachmentStore; uploads: AttachmentUploads },
-  terminals: TerminalService
+  terminals: TerminalService,
+  worktrees: WorktreeService
 ): RpcHandlers {
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
@@ -139,6 +141,8 @@ export function createRpcHandlers(
       return OK
     },
     'projects.recent': () => projects.recent(),
+    'worktrees.list': () => worktrees.list(),
+    'worktrees.clean': ({ paths }) => worktrees.clean(paths),
     'projects.forget': ({ path }) => {
       projects.forget(path)
       return OK

@@ -16,8 +16,10 @@ import { TaskStore } from './task-store'
 
 type FakeHandlers = { [M in DaemonMethod]: (params: DaemonParams<M>) => DaemonResult<M> }
 
-function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[] } {
+function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[]; live: Set<string> } {
   const spawns: DaemonParams<'spawn'>[] = []
+  // What list reports as still running; tests add to it where that matters.
+  const live = new Set<string>()
   const handlers: FakeHandlers = {
     spawn: (params) => {
       spawns.push(params)
@@ -27,12 +29,13 @@ function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[] } {
     resize: () => ({ ok: true }),
     kill: () => ({ ok: true }),
     attach: ({ sessionId }) => ({ sessionId, exited: false, exitCode: null, buffer: '', bufferStart: 0, endOffset: 0 }),
-    list: () => ({ sessions: [] }),
+    list: () => ({ sessions: [...live].map((sessionId) => ({ sessionId, exited: false, exitCode: null })) }),
     spawnPipe: () => { throw new Error('unused') },
     release: () => ({ ok: true })
   }
   return {
     spawns,
+    live,
     request: async (method, params) => handlers[method](params),
     onEvent: () => () => {}
   }
@@ -186,6 +189,28 @@ describe('TaskService', () => {
     service.move(task.id, 'done')
     const successor = service.redo(task.id, undefined)
     expect(successor.repos.map((each) => [each.startRef, each.branch, each.start])).toEqual([['refs/heads/release/2.4', null, null], [null, null, null]])
+  })
+
+  it('lets a cleaned worktree go, and lays it out again from its branch when the task goes on', async () => {
+    const repo = initRepo('app')
+    const task = readyTask('Clean me', [repo])
+    const run = await service.run(task.id)
+    const worktree = run.repos[0]!.worktreePath!
+    git(worktree, 'commit', '-q', '--allow-empty', '-m', 'work')
+    service.handleSessionExit(run.sessionId ?? '', 0)
+    service.move(task.id, 'done')
+
+    // A terminal agent still open keeps its worktree; one that ended does not.
+    sessions.live.add(run.sessionId ?? '')
+    await expect(service.releaseAgent(task.id)).rejects.toMatchObject({ reason: 'worktree-in-use' })
+    sessions.live.clear()
+    await service.releaseAgent(task.id)
+    git(repo, 'worktree', 'remove', worktree)
+    service.forgetWorktree(task.id, worktree)
+    expect(service.get(task.id).repos[0]).toMatchObject({ worktreePath: null, branch: run.repos[0]!.branch })
+    const continued = await service.continue(task.id)
+    expect(continued.repos[0]?.worktreePath).toBe(worktree)
+    expect(git(worktree, 'log', '-1', '--format=%s')).toBe('work')
   })
 
   it('reads a run\'s changes from its worktree, and diffs only the task\'s own repos', async () => {
