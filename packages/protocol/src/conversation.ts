@@ -83,3 +83,33 @@ export const ProjectHead = z.object({
   changes: z.number().int().nonnegative().optional()
 })
 export type ProjectHead = z.infer<typeof ProjectHead>
+
+// What a conversation's project could switch to, or start a branch from: its checkout is the
+// user's own, so a switch changes what everything else in that folder sees too.
+export const ProjectBranches = z.object({
+  path: z.string(),
+  git: z.boolean(),
+  // The branch checked out; null when HEAD is detached or there is no git.
+  branch: z.string().nullable(),
+  // Uncommitted changes to tracked files, which keep a switch from happening.
+  changes: z.number().int().nonnegative(),
+  // Local branches, then remote-tracking ones, by full name.
+  refs: z.array(z.string()),
+  // Branches another worktree has checked out, which git will not check out here as well: the
+  // full name, and that worktree's folder.
+  elsewhere: z.record(z.string(), z.string()),
+  // Other conversations with an agent open in this folder, by title: a switch moves their files too.
+  sharedWith: z.array(z.string())
+})
+export type ProjectBranches = z.infer<typeof ProjectBranches>
+
+export type BranchSwitchBlocker = 'task-conversation' | 'conversation-running' | 'chat-busy'
+
+// A switch changes the files under the agent, so it waits for a terminal agent to be stopped and
+// a chat one to be idle. A task's conversation runs in the task's worktrees, whose branch is its.
+export function checkSwitchBranch(conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'mode' | 'chat'>): BranchSwitchBlocker | null {
+  if (conversation.taskId) return 'task-conversation'
+  if (!conversation.sessionId) return null
+  if (conversation.mode !== 'chat') return 'conversation-running'
+  return conversation.chat?.turn === 'idle' ? null : 'chat-busy'
+}

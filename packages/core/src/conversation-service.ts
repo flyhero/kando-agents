@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectHead } from '@kando/protocol'
+import { checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -16,6 +16,7 @@ import { CODEX_MODES } from './codex-app-server'
 import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
+import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { TerminalTranscript } from './terminal-transcript'
@@ -65,6 +66,9 @@ function settles(promise: Promise<void>, ms: number): Promise<boolean> {
   })
 }
 
+// How the note of a branch switch begins, which Kando puts before the user's next message.
+const SWITCH_NOTE = '（我切换了分支：'
+
 export class ConversationService {
   private readonly launching = new Set<string>()
   private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
@@ -113,6 +117,47 @@ export class ConversationService {
   branches(id: string): Promise<ProjectHead[]> {
     return Promise.all(this.get(id).projectPaths.map(async (projectPath) => ({ path: projectPath, ...await projectHead(projectPath) })))
   }
+  // Other conversations with an agent open in a folder see its files change with a switch.
+  async branchOptions(id: string): Promise<ProjectBranches[]> {
+    const conversation = this.get(id)
+    const live = this.store.list().filter((other) => other.id !== id && other.sessionId !== null)
+    return Promise.all(conversation.projectPaths.map(async (project) => ({
+      path: project,
+      ...await projectBranches(project),
+      sharedWith: live.filter((other) => other.projectPaths.includes(project)).map((other) => other.title)
+    })))
+  }
+
+  async switchBranch(id: string, project: string, ref: string): Promise<Conversation> {
+    return this.branched(id, project, (dir) => switchProjectBranch(dir, ref))
+  }
+
+  async createBranch(id: string, project: string, name: string): Promise<Conversation> {
+    return this.branched(id, project, (dir) => createProjectBranch(dir, name))
+  }
+
+  // Only while no agent works in the folder (checkSwitchBranch). The conversation's changes then
+  // count from the new HEAD, and its agent hears of the switch with the next message it is sent.
+  private async branched(id: string, project: string, change: (dir: string) => Promise<string>): Promise<Conversation> {
+    const conversation = this.get(id)
+    const blocker = checkSwitchBranch(conversation)
+    if (blocker) throw new Rejection(blocker)
+    if (!conversation.projectPaths.includes(project)) throw new Rejection('repo-not-found', `${project} is not one of the conversation's projects`)
+    const branch = await change(project)
+    const head = await folderHead(project)
+    if (head) this.store.setProjectStart(id, project, head)
+    this.store.setSwitchedBranches(id, { ...this.store.switchedBranches(id), [project]: branch })
+    return this.changed(this.get(id))
+  }
+
+  // What the user switched since the agent last heard, said before their next message.
+  private switchNote(id: string): string | null {
+    const switched = Object.entries(this.store.switchedBranches(id))
+    if (switched.length === 0) return null
+    const lines = switched.map(([project, branch]) => `${path.basename(project)} 现在在分支 ${branch}`)
+    return `${SWITCH_NOTE}${lines.join('；')}。文件已经变了，需要时请重新读。）`
+  }
+
   changes(id: string): Promise<FolderChanges[]> {
     const starts = this.store.projectStarts(id)
     return Promise.all(this.get(id).projectPaths.map((project) => folderChanges(project, starts[project] ?? null)))
@@ -287,6 +332,8 @@ export class ConversationService {
       const stageId = randomUUID()
       const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, mode, launch.planOnly ?? false)
       if (mode === 'chat') return await this.startChat(current, stage, saved !== null, handoffPath, handoff, previous !== null, launch.readable ?? [])
+      // A terminal agent cannot be told of a switch; the user tells it, so a later chat does not.
+      this.store.setSwitchedBranches(id, {})
       const callback = this.callbackCommand(id, stage.id, agent)
       const command = conversationCommand(agent, providerSessionId, saved !== null, callback, handoffPath, current.projectPaths.slice(1))
       const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : previous ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
@@ -482,7 +529,9 @@ export class ConversationService {
 
   async send(id: string, text: string, imageIds: readonly string[] = [], queue = false): Promise<void> {
     this.get(id)
-    await this.chats.send(id, text, await this.chatImages(imageIds), queue)
+    const note = this.switchNote(id)
+    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue)
+    if (note) this.store.setSwitchedBranches(id, {})
   }
 
   // Each image once, checked to be in the store before the agent is asked to look at it.
@@ -642,7 +691,8 @@ export class ConversationService {
     if (!saved) return
     if (message.role === 'assistant' && message.complete) this.store.completePendingUsers(stage.id)
     if (message.role === 'user' && !conversation.titleLocked && conversation.title === '新会话') {
-      const first = text.split(/\r?\n/).map((line) => line.trim().replace(/\s+/g, ' ')).find(Boolean)
+      // The user's own words name it, not Kando's note of a branch switch before them.
+      const first = text.split(/\r?\n/).map((line) => line.trim().replace(/\s+/g, ' ')).find((line) => line && !line.startsWith(SWITCH_NOTE))
       if (first) {
         this.changed(this.store.update(conversation.id, { title: [...first].slice(0, 40).join('') }))
         return

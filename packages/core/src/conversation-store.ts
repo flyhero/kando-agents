@@ -95,8 +95,27 @@ export class ConversationStore {
 
   // Empty for a conversation created before these were recorded.
   projectStarts(id: string): Record<string, string> {
-    const row = this.db.prepare('SELECT project_starts FROM conversations WHERE id = ?').get(id)
-    const parsed: unknown = JSON.parse(String(row?.project_starts ?? '{}'))
+    return this.stringMap(id, 'project_starts')
+  }
+
+  // A project's changes count from here on, as after the user switched its branch.
+  setProjectStart(id: string, projectPath: string, head: string): void {
+    this.db.prepare('UPDATE conversations SET project_starts = ? WHERE id = ?')
+      .run(JSON.stringify({ ...this.projectStarts(id), [projectPath]: head }), id)
+  }
+
+  // The branch each project was switched to since the agent was last told, by project path.
+  switchedBranches(id: string): Record<string, string> {
+    return this.stringMap(id, 'switched_branches')
+  }
+
+  setSwitchedBranches(id: string, branches: Record<string, string>): void {
+    this.db.prepare('UPDATE conversations SET switched_branches = ? WHERE id = ?').run(JSON.stringify(branches), id)
+  }
+
+  private stringMap(id: string, column: 'project_starts' | 'switched_branches'): Record<string, string> {
+    const row = this.db.prepare(`SELECT ${column} AS value FROM conversations WHERE id = ?`).get(id)
+    const parsed: unknown = JSON.parse(String(row?.value ?? '{}'))
     return typeof parsed === 'object' && parsed !== null
       ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
       : {}

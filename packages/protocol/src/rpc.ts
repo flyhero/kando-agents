@@ -3,7 +3,7 @@ import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, RepoStartOptions, Task, 
 import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_CHAT_IMAGES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
-import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectHead } from './conversation'
+import { Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
@@ -34,7 +34,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -181,6 +181,12 @@ export const rpcMethods = {
   // Read on every call: the agent works in the project folders themselves, so either it or
   // the user can switch branches at any time. Older cores lack it.
   'conversations.branches': { params: ConversationRef, result: z.array(ProjectHead) },
+  // What each project could switch to (see checkSwitchBranch); read from git on every call.
+  'conversations.branchOptions': { params: ConversationRef, result: z.array(ProjectBranches) },
+  // Checks out a branch by its full name in one project; a remote one gets a local branch tracking it.
+  'conversations.switchBranch': { params: ConversationRef.extend({ project: z.string().min(1), ref: z.string().min(1).max(500) }), result: Conversation },
+  // Makes a branch at the project's HEAD and checks it out, uncommitted changes and all.
+  'conversations.createBranch': { params: ConversationRef.extend({ project: z.string().min(1), name: z.string().trim().min(1).max(200) }), result: Conversation },
   // Each project's uncommitted changes and the commits since the conversation started.
   'conversations.changes': { params: ConversationRef, result: z.array(FolderChanges) },
   'conversations.diff': { params: ConversationRef.extend({ project: z.string().min(1), file: z.string().min(1) }), result: FileDiff },

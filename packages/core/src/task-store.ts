@@ -130,7 +130,9 @@ export const MIGRATIONS = [
    ALTER TABLE conversation_stages ADD COLUMN plan_only INTEGER NOT NULL DEFAULT 0;`,
   // Where each repo's branch is to start, as the task picked it, and where it did (JSON).
   `ALTER TABLE task_repos ADD COLUMN start_ref TEXT;
-   ALTER TABLE task_repos ADD COLUMN start TEXT;`
+   ALTER TABLE task_repos ADD COLUMN start TEXT;`,
+  // Branches the user switched a conversation's projects to since its agent last heard (JSON).
+  `ALTER TABLE conversations ADD COLUMN switched_branches TEXT NOT NULL DEFAULT '{}';`
 ]
 
 

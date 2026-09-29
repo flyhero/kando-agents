@@ -89,6 +89,21 @@ describe('ConversationService', () => {
     service.recordEvent({ id, stageId, agent, role, text, eventKey: key, complete, providerSessionId: null })
   }
 
+  it('waits for a terminal agent to stop before switching a branch, which the user then tells it of', async () => {
+    const repo = path.join(root, 'app')
+    execFileSync('git', ['init', '-q', '-b', 'main', repo])
+    execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'])
+    const created = await service.create('claude', [repo])
+    const [project] = created.projectPaths
+    await expect(service.createBranch(created.id, project!, 'try')).rejects.toMatchObject({ reason: 'conversation-running' })
+    await service.stop(created.id)
+    await service.createBranch(created.id, project!, 'try')
+    expect(store.switchedBranches(created.id)).toEqual({ [project!]: 'try' })
+    // A terminal agent is not told; a chat later is not told of a switch it predates either.
+    await service.continue(created.id)
+    expect(store.switchedBranches(created.id)).toEqual({})
+  })
+
   it('starts in a persistent isolated workspace and restores its native conversation', async () => {
     const created = await service.create('claude', [])
     expect(created.workspacePath).toBe(path.join(root, 'sessions', created.id, 'workspace'))
@@ -441,6 +456,40 @@ describe('ConversationService in chat mode', () => {
     expect(service.get(created.id).chatOptions?.permissionMode).toBe('plan')
     await expect(service.create('claude', [], 'chat', false, { permissionMode: 'readOnly' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
     expect(service.list()).toHaveLength(1)
+  })
+
+  it('switches a project\'s branch while the agent is idle, counting changes from there and telling the agent next', async () => {
+    const repo = path.join(root, 'app')
+    const git = (...args: string[]) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim()
+    execFileSync('git', ['init', '-q', '-b', 'main', repo])
+    git('commit', '-q', '--allow-empty', '-m', 'init')
+    git('branch', 'feature')
+    git('checkout', '-q', 'feature')
+    git('commit', '-q', '--allow-empty', '-m', 'feature work')
+    git('checkout', '-q', 'main')
+    const created = await service.create('claude', [repo], 'chat')
+    const [project] = created.projectPaths
+    await settle()
+
+    const options = await service.branchOptions(created.id)
+    expect(options).toMatchObject([{ path: project, git: true, branch: 'main', sharedWith: [] }])
+    expect(options[0]?.refs.sort()).toEqual(['refs/heads/feature', 'refs/heads/main'])
+    await service.switchBranch(created.id, project!, 'refs/heads/feature')
+    expect(git('symbolic-ref', '--short', 'HEAD')).toBe('feature')
+    // The feature branch's own commit is not the conversation's doing.
+    expect((await service.changes(created.id))[0]?.commits).toEqual([])
+    await service.createBranch(created.id, project!, 'fix/login')
+
+    await service.send(created.id, 'Carry on')
+    await settle()
+    expect(service.messages(created.id).map((message) => message.text)[0])
+      .toBe('（我切换了分支：app 现在在分支 fix/login。文件已经变了，需要时请重新读。）\n\nCarry on')
+    // The title is the user's own words.
+    expect(service.get(created.id).title).toBe('Carry on')
+    await service.send(created.id, 'And then')
+    await settle()
+    expect(service.messages(created.id).filter((message) => message.role === 'user').map((message) => message.text)[1]).toBe('And then')
+    await expect(service.switchBranch(created.id, root, 'refs/heads/main')).rejects.toMatchObject({ reason: 'repo-not-found' })
   })
 
   it('offers a new chat the models the agent listed last, after a restart too, and starts with one picked', async () => {
