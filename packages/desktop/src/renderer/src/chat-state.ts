@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { isCompaction } from './chat-notices'
-import { diffCounts } from './chat-tools'
+import { diffCounts, isSubagent } from './chat-tools'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -181,13 +181,19 @@ export type TurnFile = { path: string; added: number; removed: number; change: C
 export type ChatBlock =
   | { kind: 'entry'; key: string; entry: TimelineEntry }
   | { kind: 'tools'; key: string; tools: ToolItem[] }
+  | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
   | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[] }
   | { kind: 'changes'; key: string; fold: string; files: TurnFile[] }
 
-// A call that changed files keeps its own card, with its diff; the rest run together.
+// A call that changed files keeps its own card, with its diff, and subagents sent off together have
+// theirs; the rest run together.
 function runTool(entry: TimelineEntry): ToolItem | null {
-  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 ? entry.item : null
+  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) ? entry.item : null
+}
+
+function subagentTool(entry: TimelineEntry): ToolItem | null {
+  return entry.kind === 'item' && entry.item.kind === 'tool' && isSubagent(entry.item.name) ? entry.item : null
 }
 
 // The one file a call edited, if it edited just one.
@@ -197,7 +203,7 @@ function editedFile(tool: ToolItem): string | null {
 }
 
 function toolsOf(block: ChatBlock): ToolItem[] {
-  if (block.kind === 'tools' || block.kind === 'edits') return block.tools
+  if (block.kind === 'tools' || block.kind === 'edits' || block.kind === 'agents') return block.tools
   if (block.kind === 'fold') return block.blocks.flatMap(toolsOf)
   const item = itemOf(block)
   return item?.kind === 'tool' ? [item] : []
@@ -266,12 +272,15 @@ export function chatBlocks(entries: readonly TimelineEntry[]): ChatBlock[] {
     // Claude often thinks without saying anything it keeps.
     if (entry.kind === 'item' && entry.item.kind === 'reasoning' && !entry.item.streaming && !entry.item.text.trim()) continue
     const tool = runTool(entry)
+    const subagent = subagentTool(entry)
     const last = runs.at(-1)
     const edit = entry.kind === 'item' && entry.item.kind === 'tool' ? entry.item : null
     const file = edit ? editedFile(edit) : null
     const previous = last ? itemOf(last) : null
     if (tool && last?.kind === 'tools') last.tools.push(tool)
     else if (tool) runs.push({ kind: 'tools', key: `tools:${entryKey(entry)}`, tools: [tool] })
+    else if (subagent && last?.kind === 'agents') last.tools.push(subagent)
+    else if (subagent) runs.push({ kind: 'agents', key: `agents:${entryKey(entry)}`, tools: [subagent] })
     else if (edit && file && last?.kind === 'edits' && last.path === file) last.tools.push(edit)
     else if (edit && file && last && previous?.kind === 'tool' && editedFile(previous) === file) {
       runs[runs.length - 1] = { kind: 'edits', key: `edits:${last.key}`, path: file, tools: [previous, edit] }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runSummary, workedFor } from './chat-tools'
+import { diffCounts, runSummary, subagentBrief, workedFor } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -20,5 +20,13 @@ describe('workedFor', () => {
     expect(workedFor(70_800)).toBe('1 分 11 秒')
     expect(workedFor(120_000)).toBe('2 分钟')
     expect(workedFor(3_900_000)).toBe('1 小时 5 分')
+  })
+})
+
+describe('subagentBrief', () => {
+  it('reads what a subagent was told and its kind, or keeps an input cut short as it is', () => {
+    expect(subagentBrief(JSON.stringify({ description: 'Find', prompt: 'Look for x', subagent_type: 'Explore' }))).toEqual({ kind: 'Explore', prompt: 'Look for x' })
+    expect(subagentBrief('{"prompt": "cut sho')).toEqual({ kind: null, prompt: '{"prompt": "cut sho' })
+    expect(subagentBrief(null)).toEqual({ kind: null, prompt: null })
   })
 })

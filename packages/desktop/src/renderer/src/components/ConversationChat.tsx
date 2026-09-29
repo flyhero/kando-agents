@@ -13,6 +13,7 @@ import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
+import { ChatSubagents } from './ChatSubagents'
 import { ChatTodosLine, currentTodo, TodoHistory } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
@@ -251,6 +252,7 @@ function TurnChanges({ fold, files }: { fold: string; files: readonly TurnFile[]
 
 function Block({ conversationId, block, task }: { conversationId: string; block: ChatBlock; task: boolean }) {
   if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
+  if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
   if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
   if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} /></div>
   if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} /></div>

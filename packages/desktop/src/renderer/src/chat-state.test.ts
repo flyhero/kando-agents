@@ -117,6 +117,7 @@ describe('chatBlocks', () => {
   const shape = (blocks: ReturnType<typeof chatBlocks>): unknown[] => blocks.map((block) =>
     block.kind === 'tools' ? `tools:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'edits' ? `edits:${block.path}:${block.tools.map((each) => each.id).join('+')}`
+      : block.kind === 'agents' ? `agents:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'fold' ? { fold: shape(block.blocks) }
       : block.kind === 'changes' ? { changes: block.files }
       : block.entry.kind === 'item' ? block.entry.item.id : block.key)
@@ -147,6 +148,11 @@ describe('chatBlocks', () => {
       'answer',
       { changes: [{ path: 'a.ts', added: 2, removed: 1, change: 'update' }, { path: 'b.ts', added: 1, removed: 0, change: 'update' }] }
     ])
+  })
+
+  it('groups subagents sent off together apart from the calls around them', () => {
+    expect(shape(blocksOf([user('u'), tool('a'), tool('t1', 'Task'), tool('t2', 'Agent'), tool('b'), reply('r')])))
+      .toEqual(['u', 'tools:a', 'agents:t1+t2', 'tools:b', 'r'])
   })
 
   it('leaves where the context was compacted in view, and folds other info', () => {

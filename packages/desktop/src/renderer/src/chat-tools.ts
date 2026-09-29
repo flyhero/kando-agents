@@ -37,9 +37,7 @@ const TOOL_KIND: Record<string, { kind: string; say: (count: number) => string }
   webSearch: { kind: 'search', say: (count) => `搜索 ${count} 次` },
   Bash: { kind: 'command', say: (count) => `运行 ${count} 个命令` },
   commandExecution: { kind: 'command', say: (count) => `运行 ${count} 个命令` },
-  WebFetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` },
-  Task: { kind: 'task', say: (count) => `派出 ${count} 个子任务` },
-  Agent: { kind: 'task', say: (count) => `派出 ${count} 个子任务` }
+  WebFetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` }
 }
 
 export function runSummary(tools: readonly Pick<ToolItem, 'name'>[]): string {
@@ -52,6 +50,28 @@ export function runSummary(tools: readonly Pick<ToolItem, 'name'>[]): string {
     counts.set(kind, { count: (current?.count ?? 0) + 1, say })
   }
   return [...counts.values()].map(({ count, say }) => say(count)).join('，')
+}
+
+// A call that hands work to a subagent of its own.
+export function isSubagent(name: string): boolean {
+  return name === 'Task' || name === 'Agent'
+}
+
+// What a subagent was told, and what kind it is, from its call's input: JSON Kando may have cut
+// short, which then stays the prompt as it is.
+export function subagentBrief(input: string | null): { kind: string | null; prompt: string | null } {
+  if (!input) return { kind: null, prompt: null }
+  try {
+    const parsed: unknown = JSON.parse(input)
+    if (parsed && typeof parsed === 'object') {
+      const kind = 'subagent_type' in parsed && typeof parsed.subagent_type === 'string' ? parsed.subagent_type : null
+      const prompt = 'prompt' in parsed && typeof parsed.prompt === 'string' ? parsed.prompt : null
+      return { kind, prompt }
+    }
+  } catch {
+    // Cut short: fall through to the text as it is.
+  }
+  return { kind: null, prompt: input }
 }
 
 // Lines added and removed across a call's diffs, from the patches themselves.
