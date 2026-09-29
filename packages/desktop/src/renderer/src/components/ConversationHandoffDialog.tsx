@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentKind, Conversation, ConversationMode } from '@kando/protocol'
-import { dismissError, perform, useChatSupported, useCore } from '../core-store'
+import type { AgentKind, Conversation } from '@kando/protocol'
+import { dismissError, perform, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
-import { defaultMode, MODE_LABEL, startOptions } from './ConversationActions'
+import { defaultMode, startOptions } from './ConversationActions'
 
 export function ConversationHandoffDialog({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -13,13 +13,12 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   const mustConfirm = conversation.sessionId !== null && !(conversation.mode === 'chat' && conversation.chat?.turn === 'idle')
   const error = useCore((s) => s.error)
   const target: AgentKind = conversation.agent === 'claude' ? 'codex' : 'claude'
-  const chatSupported = useChatSupported()
-  const [mode, setMode] = useState<ConversationMode>(defaultMode)
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
     if (busy || (mustConfirm && !confirmed)) return
     setBusy(true)
-    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(mode) }))
+    // The new agent starts in the interface settings choose, as a new conversation does.
+    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(defaultMode()) }))
     setBusy(false)
     if (result) onClose()
   }
@@ -30,11 +29,6 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
       <label className="modal-field"><span className="modal-label">补充说明 <span className="modal-optional">[可选]</span></span>
         <textarea className="input modal-textarea" rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
       </label>
-      {chatSupported && <label className="modal-field"><span className="modal-label">界面</span>
-        <select className="input modal-input" value={mode} onChange={(event) => setMode(event.target.value === 'chat' ? 'chat' : 'tui')}>
-          {(['tui', 'chat'] as const).map((each) => <option key={each} value={each}>{MODE_LABEL[each]}</option>)}
-        </select>
-      </label>}
       {mustConfirm && <label className="conversation-confirm"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />确认停止当前 {AGENT_LABEL[conversation.agent]}，然后启动 {AGENT_LABEL[target]}</label>}
       {error && <p className="modal-error" role="alert">{error}</p>}
       <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>取消</button><button type="button" className="button primary" disabled={busy || (mustConfirm && !confirmed)} onClick={() => void submit()}>移交</button></footer>
