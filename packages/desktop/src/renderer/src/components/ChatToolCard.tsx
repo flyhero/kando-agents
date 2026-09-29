@@ -119,8 +119,8 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   return (
     <div className="chat-tool-run" data-open={open || undefined}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         <span className="chat-tool-summary">{runSummary(tools)}</span>
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {running && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
         {running ? <ToolStatus status="running" /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
       </button>
