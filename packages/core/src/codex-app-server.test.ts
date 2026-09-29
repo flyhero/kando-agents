@@ -356,12 +356,12 @@ describe('CodexAppServer commands', () => {
   it('puts a command in words from Codex\'s own reading of it, when every part is one Kando knows', () => {
     const read = (name: string) => ({ type: 'read', name, path: `/work/repo/${name}` })
     expect(commandDescription([read('a.ts'), read('b.ts')])).toBe('读取 a.ts、b.ts')
-    expect(commandDescription([{ type: 'listFiles', path: null }, read('a.ts')])).toBe('列出文件，读取 a.ts')
-    expect(commandDescription([{ type: 'listFiles', path: 'src' }])).toBe('列出 src 里的文件')
+    expect(commandDescription([{ type: 'listFiles', path: 'src' }, read('a.ts')])).toBe('列出 src 里的文件，读取 a.ts')
     expect(commandDescription([{ type: 'search', query: 'TODO', path: 'src' }])).toBe('搜索「TODO」（src）')
-    expect(commandDescription([{ type: 'search', query: null, path: null }])).toBe('查找文件')
-    // One part it cannot read leaves the command to speak for itself.
+    // One part it cannot read, or can only half say, leaves the command to speak for itself.
     expect(commandDescription([read('a.ts'), { type: 'unknown' }])).toBeNull()
+    expect(commandDescription([{ type: 'listFiles', path: null }])).toBeNull()
+    expect(commandDescription([{ type: 'search', query: null, path: 'src' }])).toBeNull()
     expect(commandDescription([])).toBeNull()
     expect(commandDescription(undefined)).toBeNull()
   })

@@ -257,7 +257,8 @@ export function unwrapShell(command: string): string {
 type CommandAction = NonNullable<Item['commandActions']>[number]
 
 // What a command does in words, from Codex's own reading of it, but only when every part of it is
-// a read, a listing or a search: anything else is best shown as the command itself.
+// a read of a named file, a listing of a named folder or a search for something: words that leave
+// out what, as "列出文件" four times over, say less than the command itself.
 export function commandDescription(actions: readonly CommandAction[] | undefined): string | null {
   if (!actions?.length) return null
   const parts: string[] = []
@@ -272,9 +273,8 @@ export function commandDescription(actions: readonly CommandAction[] | undefined
       continue
     }
     flush()
-    if (action.type === 'listFiles') parts.push(action.path ? `列出 ${action.path} 里的文件` : '列出文件')
+    if (action.type === 'listFiles' && action.path) parts.push(`列出 ${action.path} 里的文件`)
     else if (action.type === 'search' && action.query) parts.push(`搜索「${action.query}」${action.path ? `（${action.path}）` : ''}`)
-    else if (action.type === 'search') parts.push(action.path ? `在 ${action.path} 里查找文件` : '查找文件')
     else return null
   }
   flush()
