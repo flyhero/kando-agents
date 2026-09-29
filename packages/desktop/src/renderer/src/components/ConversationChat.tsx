@@ -15,12 +15,14 @@ import { ChatTodosLine, currentTodo } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
-import { ChevronRightIcon } from './icons'
+import { ArrowDownIcon, ChevronRightIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
 // Within this many pixels of the bottom, new output keeps the list scrolled to the end.
 const PINNED_SLACK = 48
+// Scrolled back further than this, the list offers a way down to the latest.
+const AWAY_SLACK = 240
 // A message this close under the top edge already counts as the one in view.
 const IN_VIEW_SLACK = 8
 
@@ -149,6 +151,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   const [messages, setMessages] = useState<ConversationMessage[]>([])
   const list = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
+  const [away, setAway] = useState(false)
 
   // Watching makes core send this conversation's item changes to this window until it lets go.
   useEffect(() => {
@@ -268,13 +271,28 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
         ref={list}
         onScroll={(event) => {
           const element = event.currentTarget
-          pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < PINNED_SLACK
+          const below = element.scrollHeight - element.scrollTop - element.clientHeight
+          pinned.current = below < PINNED_SLACK
+          setAway(below > AWAY_SLACK)
         }}
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
         {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} />)}
         {turn === 'running' && <ChatWorking agent={conversation.agent} doing={doing} since={since} />}
+        {away && (
+          <button
+            type="button"
+            className="chat-latest"
+            onClick={() => {
+              pinned.current = true
+              list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' })
+            }}
+          >
+            <ArrowDownIcon />
+            回到最新
+          </button>
+        )}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} />
     </div>

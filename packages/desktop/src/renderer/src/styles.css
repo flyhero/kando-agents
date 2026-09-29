@@ -3982,6 +3982,29 @@ button.task-tag-updated:hover {
 .chat-notice[data-level='warning'] { color: var(--warning); }
 .chat-notice[data-level='error'] { color: var(--danger); }
 
+/* Scrolled back, a way down to the latest: held at the bottom of the list's view. */
+.chat-latest {
+  position: sticky;
+  bottom: 4px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 4px 12px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-latest:hover { background: var(--surface-muted); }
+.chat-latest svg { width: 14px; height: 14px; }
+
 /* While a turn runs: a spinner, what the agent is at under a passing sheen, and a clock. */
 .chat-working { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: var(--text-muted); }
 .chat-working-text {

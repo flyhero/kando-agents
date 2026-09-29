@@ -182,6 +182,14 @@ export function ArrowLeftIcon() {
   )
 }
 
+export function ArrowDownIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M10 4v12M5 11l5 5 5-5" />
+    </svg>
+  )
+}
+
 export function ArrowUpIcon() {
   return (
     <svg {...stroked}>
