@@ -55,6 +55,7 @@ const TurnEvent = z.looseObject({
   })
 })
 const ThreadEvent = z.looseObject({ thread: z.looseObject({ id: z.string() }) })
+const ThreadRef = z.looseObject({ threadId: z.string() })
 const SandboxShape = z.looseObject({ type: z.string() })
 // What a thread was opened with, from the thread/start or thread/resume answer.
 // Codex's plan mode is a collaboration mode, set per turn beside the approval policy and sandbox.
@@ -237,6 +238,8 @@ export class CodexAppServer implements ChatDriver {
   private initializedSent = false
   private threadRequested = false
   private threadId: string | null = null
+  // What files a subagent's pending change touches, to name them when it asks to make it.
+  private readonly childFiles = new Map<string, string>()
   private startError: string | null = null
   private exited = false
   private turn: { ref: string; turnId: string | null; assistant: string | null } | null = null
@@ -414,6 +417,10 @@ export class CodexAppServer implements ChatDriver {
     if (method === undefined) return this.loggedResponse(parsed.data)
     // Server requests are kept whole; of the notifications, only those that change what the chat shows.
     if (id !== undefined) return frame
+    // Of a subagent's thread, only the files it may ask to change.
+    if (this.childThread(method, parsed.data.params)) {
+      return method === 'item/started' && ItemEvent.safeParse(parsed.data.params).data?.item.type === 'fileChange' ? frame : null
+    }
     if (method === 'thread/settings/updated') {
       const update = SettingsUpdated.safeParse(parsed.data.params)
       if (!update.success) return null
@@ -585,7 +592,24 @@ export class CodexAppServer implements ChatDriver {
     }
   }
 
+  // A subagent's thread streams on the connection Kando opened: its calls and replies are not this
+  // chat's. Whether a request it made was resolved still is, as the request shows here.
+  private childThread(method: string, params: unknown): string | null {
+    if (!this.threadId || method === 'serverRequest/resolved') return null
+    const thread = ThreadRef.safeParse(params)
+    return thread.success && thread.data.threadId !== this.threadId ? thread.data.threadId : null
+  }
+
+  private childNotification(method: string, params: unknown): void {
+    if (method !== 'item/started') return
+    const event = ItemEvent.safeParse(params)
+    if (event.success && event.data.item.type === 'fileChange') {
+      this.childFiles.set(event.data.item.id, (event.data.item.changes ?? []).map((change) => change.path).join(', '))
+    }
+  }
+
   private notification(method: string, params: unknown, at: number): void {
+    if (this.childThread(method, params)) return this.childNotification(method, params)
     switch (method) {
       case 'thread/started': {
         const thread = ThreadEvent.safeParse(params)
@@ -748,12 +772,12 @@ export class CodexAppServer implements ChatDriver {
       const offered = (request.availableDecisions ?? []).map((decision) => (typeof decision === 'string' ? decision : ''))
       const available = (decision: string) => request.availableDecisions == null || offered.includes(decision)
       const decisions: ChatDecision[] = ['allow', ...(available('acceptForSession') ? ['allowForSession' as const] : []), 'deny']
-      this.approval(requestId, rawId, 'commandExecution', unwrapShell(request.command ?? ''), request.reason ?? null, request.itemId, decisions, available('decline') ? 'decline' : 'cancel', at)
+      this.approval(requestId, rawId, 'commandExecution', unwrapShell(request.command ?? ''), this.requestDetail(method, params, request.reason ?? null), request.itemId, decisions, available('decline') ? 'decline' : 'cancel', at)
     } else if (method === 'item/fileChange/requestApproval') {
       const request = FileApproval.parse(params)
       const tool = request.itemId ? this.items.get(`t:${request.itemId}`) : undefined
-      const title = tool?.kind === 'tool' && tool.title ? tool.title : '修改文件'
-      this.approval(requestId, rawId, 'fileChange', title, request.reason ?? null, request.itemId, ['allow', 'allowForSession', 'deny'], 'decline', at)
+      const title = tool?.kind === 'tool' && tool.title ? tool.title : ((request.itemId && this.childFiles.get(request.itemId)) || '修改文件')
+      this.approval(requestId, rawId, 'fileChange', title, this.requestDetail(method, params, request.reason ?? null), request.itemId, ['allow', 'allowForSession', 'deny'], 'decline', at)
     } else if (method === 'item/tool/requestUserInput') {
       const request = UserInput.parse(params)
       const itemId = `q:${requestId}`
@@ -769,6 +793,12 @@ export class CodexAppServer implements ChatDriver {
     } else {
       this.unanswered.set(requestId, rawId)
     }
+  }
+
+  // A subagent's request is the user's to answer too, in the chat that sent it off, said to be its.
+  private requestDetail(method: string, params: unknown, reason: string | null): string | null {
+    if (!this.childThread(method, params)) return reason
+    return reason ? `子任务的请求：${reason}` : '子任务的请求'
   }
 
   private approval(

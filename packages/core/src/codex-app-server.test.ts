@@ -393,3 +393,67 @@ describe('CodexAppServer plan mode, as recorded', () => {
     expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBeNull()
   })
 })
+
+describe('CodexAppServer subagents, as recorded', () => {
+  // Codex 0.156.1: a turn that spawned one subagent and waited on it. The subagent's own thread
+  // streams its items and turn on the same connection.
+  const records = fixture('codex-subagent.jsonl')
+  const child = '01a0ec12-779d-7c02-af68-8b645a8012e8'
+  const text = (record: ChatRecord) => (record.dir === 'in' || record.dir === 'out' ? JSON.stringify(record.frame) : '')
+  const childDone = records.findIndex((record) => text(record).startsWith(`{"method":"turn/completed","params":{"threadId":"${child}"`))
+  const logs = (records: readonly ChatRecord[]) => {
+    const logger = new CodexAppServer('stage-1', OPTIONS)
+    return records.flatMap((record): ChatRecord[] => {
+      logger.apply(record)
+      if (record.dir !== 'in') return [record]
+      const frame = logger.logged(record.frame)
+      return frame === null ? [] : [{ ...record, frame }]
+    })
+  }
+
+  it('keeps the subagent\'s own thread out of the chat', () => {
+    const driver = replay(records)
+    const items = driver.items.list()
+    expect(ofKind(items, 'assistant').map((item) => item.text)).toEqual([
+      'I’ll delegate the line count to a subagent and wait for its result.',
+      '`a.txt` contains 1 line.'
+    ])
+    expect(ofKind(items, 'turn').map((turn) => turn.state)).toEqual(['completed'])
+    expect(ofKind(items, 'state')[0]?.context?.used).toBe(18_146)
+    expect(childDone).toBeGreaterThan(0)
+    expect(replay(records.slice(0, childDone + 1)).activity()).toBe('running')
+  })
+
+  it('logs none of the subagent\'s thread but the files it may ask to change, and rebuilds the same items', () => {
+    const kept = logs(records)
+    const ofChild = (record: ChatRecord) => text(record).includes(`"threadId":"${child}"`)
+    expect(records.filter(ofChild).length).toBeGreaterThan(10)
+    expect(kept.filter(ofChild)).toEqual([])
+    expect(shown(replay(kept).items.list())).toEqual(shown(replay(records).items.list()))
+  })
+
+})
+
+describe('CodexAppServer subagents', () => {
+  const thread = 'thread-main'
+  const opened = (): CodexAppServer => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    driver.apply({ dir: 'out', at: 1, frame: { id: 'kando-thread', method: 'thread/start', params: {} } })
+    driver.apply({ dir: 'in', at: 2, frame: { id: 'kando-thread', result: { thread: { id: thread } } } })
+    driver.apply({ dir: 'out', at: 3, frame: { id: 'kando-turn-1', method: 'turn/start', params: { threadId: thread, input: [{ type: 'text', text: 'go' }] } }, ref: 'ref-1' })
+    return driver
+  }
+
+  it('asks for a subagent\'s approval here, naming the files it would change', () => {
+    const driver = opened()
+    const childItem = { type: 'fileChange', id: 'edit-1', status: 'inProgress', changes: [{ path: '/work/repo/b.txt', kind: { type: 'add' }, diff: '+b' }] }
+    const started = { method: 'item/started', params: { threadId: 'child-1', item: childItem } }
+    driver.apply({ dir: 'in', at: 4, frame: started })
+    expect(driver.logged(started)).toEqual(started)
+    driver.apply({ dir: 'in', at: 5, frame: { id: 7, method: 'item/fileChange/requestApproval', params: { threadId: 'child-1', itemId: 'edit-1' } } })
+    expect(ofKind(driver.items.list(), 'tool')).toEqual([])
+    expect(ofKind(driver.items.list(), 'approval')[0]).toMatchObject({ tool: 'fileChange', title: '/work/repo/b.txt', detail: '子任务的请求' })
+    driver.apply({ dir: 'in', at: 6, frame: { method: 'serverRequest/resolved', params: { threadId: 'child-1', requestId: 7 } } })
+    expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBe('cancelled')
+  })
+})
