@@ -15,6 +15,7 @@ import {
 } from '@kando/protocol'
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
 import { serveMcp } from './mcp-server'
+import { repoStartText } from './repo-start'
 import { STATUS_LABEL } from './status-labels'
 import { snapshotImagePaths, taskImageLines, uploadImageFile } from './task-images'
 import { loginInTerminal } from './terminal-login'
@@ -103,7 +104,7 @@ function formatTask(task: Task): string {
     ...(task.repos.length
       ? task.repos.map(
           (repo, index) =>
-            `${index === 0 ? 'repos:   ' : '         '} ${repo.path}${repo.branch ? `  [${repo.branch}] ${repo.worktreePath ?? ''}` : ''}`
+            `${index === 0 ? 'repos:   ' : '         '} ${repo.path}${repo.branch ? `  [${repo.branch}] ${repo.worktreePath ?? ''}` : ''}${repoStartText(repo) ? `  ${repoStartText(repo)}` : ''}`
         )
       : ['repos:    -']),
     `depends:  ${task.dependsOn.length ? task.dependsOn.map(shortTaskId).join(', ') : '-'}`,
