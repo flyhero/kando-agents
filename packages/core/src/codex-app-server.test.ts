@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatItem } from '@kando/protocol'
 import type { ChatRecord, ChatStageOptions } from './chat-driver'
 import { parseChatRecord } from './chat-log'
-import { CodexAppServer, unwrapShell } from './codex-app-server'
+import { CodexAppServer, commandDescription, unwrapShell } from './codex-app-server'
 
 const OPTIONS: ChatStageOptions = { cwd: '/work/repo', extraDirs: [], resume: null }
 
@@ -45,6 +45,7 @@ describe('CodexAppServer', () => {
     ])
     expect(tools[0]?.diffs).toEqual([{ path: '/work/repo/codex.txt', change: 'add', patch: '+hi' }])
     expect(tools[1]?.output).toBe('hi\n')
+    expect(tools[1]?.description).toBe('读取 codex.txt')
     expect(ofKind(items, 'approval').map((approval) => [approval.tool, approval.resolution, approval.toolItemId])).toEqual([
       ['fileChange', 'allowed', tools[0]?.id],
       ['commandExecution', 'allowed', tools[1]?.id]
@@ -350,6 +351,19 @@ describe('CodexAppServer commands', () => {
     expect(unwrapShell("/bin/zsh -lc 'cat codex.txt'")).toBe('cat codex.txt')
     expect(unwrapShell(`bash -lc 'echo '\\''hi'\\'''`)).toBe("echo 'hi'")
     expect(unwrapShell('git status')).toBe('git status')
+  })
+
+  it('puts a command in words from Codex\'s own reading of it, when every part is one Kando knows', () => {
+    const read = (name: string) => ({ type: 'read', name, path: `/work/repo/${name}` })
+    expect(commandDescription([read('a.ts'), read('b.ts')])).toBe('读取 a.ts、b.ts')
+    expect(commandDescription([{ type: 'listFiles', path: null }, read('a.ts')])).toBe('列出文件，读取 a.ts')
+    expect(commandDescription([{ type: 'listFiles', path: 'src' }])).toBe('列出 src 里的文件')
+    expect(commandDescription([{ type: 'search', query: 'TODO', path: 'src' }])).toBe('搜索「TODO」（src）')
+    expect(commandDescription([{ type: 'search', query: null, path: null }])).toBe('查找文件')
+    // One part it cannot read leaves the command to speak for itself.
+    expect(commandDescription([read('a.ts'), { type: 'unknown' }])).toBeNull()
+    expect(commandDescription([])).toBeNull()
+    expect(commandDescription(undefined)).toBeNull()
   })
 
   it('reads the script however Codex quoted it, as its own command actions do', () => {

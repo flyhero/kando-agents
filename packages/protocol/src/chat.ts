@@ -93,6 +93,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     name: z.string(),
     // One line saying what the call does: a command, a path, a pattern.
     title: z.string(),
+    // The same in words, where there are some: as the agent put it (Claude's Bash description), or
+    // as Kando reads Codex's own parse of the command. Older cores leave it out.
+    description: z.string().nullable().optional(),
     input: z.string().nullable(),
     status: ChatToolStatus.catch('done'),
     output: z.string().nullable(),

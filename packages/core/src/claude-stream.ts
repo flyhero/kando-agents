@@ -689,6 +689,7 @@ export class ClaudeStream implements ChatDriver {
       kind: 'tool',
       name,
       title: describeClaudeTool(name, input),
+      description: name === 'Bash' ? (str(input.description)?.trim() || null) : null,
       input: inputText(name, input),
       status: earlier?.status ?? 'running',
       output: earlier?.output ?? null,
@@ -713,7 +714,7 @@ export class ClaudeStream implements ChatDriver {
       const previous = this.items.get(id)
       const tool = previous?.kind === 'tool'
         ? previous
-        : { id, kind: 'tool' as const, name: 'tool', title: '', input: null, status: 'running' as const, output: null, diffs: [] }
+        : { id, kind: 'tool' as const, name: 'tool', title: '', description: null, input: null, status: 'running' as const, output: null, diffs: [] }
       const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
       const output = resultText(block.content)
       this.items.put({
@@ -721,6 +722,7 @@ export class ClaudeStream implements ChatDriver {
         kind: 'tool',
         name: tool.name,
         title: tool.title,
+        description: tool.description ?? null,
         input: tool.input,
         status,
         output: output ? clip(output) : null,

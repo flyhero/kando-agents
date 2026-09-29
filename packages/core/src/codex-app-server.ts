@@ -28,6 +28,13 @@ const Item = z.looseObject({
   summary: z.array(z.string()).catch([]).optional(),
   content: z.array(z.unknown()).catch([]).optional(),
   command: z.string().optional(),
+  // Codex's own reading of the command: each part a read, a listing, a search, or unknown.
+  commandActions: z.array(z.looseObject({
+    type: z.string(),
+    name: z.string().nullish(),
+    path: z.string().nullish(),
+    query: z.string().nullish()
+  })).catch([]).optional(),
   aggregatedOutput: z.string().nullish(),
   exitCode: z.number().nullish(),
   status: z.string().optional(),
@@ -245,6 +252,33 @@ export function unwrapShell(command: string): string {
   const [shell, flag, script] = words
   const wrapped = /^(?:\S*\/)?(?:bash|zsh|sh)$/.test(shell ?? '') && (flag === '-lc' || flag === '-c')
   return wrapped && script ? script : command
+}
+
+type CommandAction = NonNullable<Item['commandActions']>[number]
+
+// What a command does in words, from Codex's own reading of it, but only when every part of it is
+// a read, a listing or a search: anything else is best shown as the command itself.
+export function commandDescription(actions: readonly CommandAction[] | undefined): string | null {
+  if (!actions?.length) return null
+  const parts: string[] = []
+  let reads: string[] = []
+  const flush = () => {
+    if (reads.length) parts.push(`读取 ${reads.join('、')}`)
+    reads = []
+  }
+  for (const action of actions) {
+    if (action.type === 'read' && action.name) {
+      reads.push(action.name)
+      continue
+    }
+    flush()
+    if (action.type === 'listFiles') parts.push(action.path ? `列出 ${action.path} 里的文件` : '列出文件')
+    else if (action.type === 'search' && action.query) parts.push(`搜索「${action.query}」${action.path ? `（${action.path}）` : ''}`)
+    else if (action.type === 'search') parts.push(action.path ? `在 ${action.path} 里查找文件` : '查找文件')
+    else return null
+  }
+  flush()
+  return parts.join('，')
 }
 
 // A subagent's state, as Codex reports it on the calls that deal with it. notFound says nothing.
@@ -776,6 +810,7 @@ export class CodexAppServer implements ChatDriver {
           kind: 'tool',
           name: 'commandExecution',
           title: unwrapShell(command),
+          description: commandDescription(item.commandActions),
           input: unwrapShell(command),
           status: completed ? this.settled(toolStatus(item.status, item.exitCode)) : 'running',
           output: item.aggregatedOutput ? clip(item.aggregatedOutput) : null,

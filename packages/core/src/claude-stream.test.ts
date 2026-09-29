@@ -58,6 +58,8 @@ describe('ClaudeStream', () => {
     ])
     expect(tools[0]?.diffs).toEqual([{ path: '/work/repo/hello.txt', change: 'add', patch: '+hi' }])
     expect(tools[1]?.output).toBe('hi')
+    // The words Claude gave the command, which only Bash carries; the result keeps them.
+    expect(tools.map((tool) => tool.description)).toEqual([null, 'Display contents of hello.txt', null])
 
     const [approval] = ofKind(items, 'approval')
     expect(approval).toMatchObject({ tool: 'Write', title: '/work/repo/hello.txt', resolution: 'allowed', toolItemId: tools[0]?.id })
