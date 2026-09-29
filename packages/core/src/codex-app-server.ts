@@ -870,7 +870,7 @@ export class CodexAppServer implements ChatDriver {
   // A subagent's request is the user's to answer too, in the chat that sent it off, said to be its.
   private requestDetail(method: string, params: unknown, reason: string | null): string | null {
     if (!this.childThread(method, params)) return reason
-    return reason ? `子任务的请求：${reason}` : '子任务的请求'
+    return reason ? `子 agent 的请求：${reason}` : '子 agent 的请求'
   }
 
   private approval(

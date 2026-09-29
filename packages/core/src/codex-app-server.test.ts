@@ -508,7 +508,7 @@ describe('CodexAppServer subagents', () => {
     expect(driver.logged(started)).toEqual(started)
     driver.apply({ dir: 'in', at: 5, frame: { id: 7, method: 'item/fileChange/requestApproval', params: { threadId: 'child-1', itemId: 'edit-1' } } })
     expect(ofKind(driver.items.list(), 'tool')).toEqual([])
-    expect(ofKind(driver.items.list(), 'approval')[0]).toMatchObject({ tool: 'fileChange', title: '/work/repo/b.txt', detail: '子任务的请求' })
+    expect(ofKind(driver.items.list(), 'approval')[0]).toMatchObject({ tool: 'fileChange', title: '/work/repo/b.txt', detail: '子 agent 的请求' })
     driver.apply({ dir: 'in', at: 6, frame: { method: 'serverRequest/resolved', params: { threadId: 'child-1', requestId: 7 } } })
     expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBe('cancelled')
   })

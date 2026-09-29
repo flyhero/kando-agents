@@ -17,9 +17,9 @@ const TOOL_LABEL: Record<string, string> = {
   WebFetch: '读取网页',
   WebSearch: '搜索网页',
   webSearch: '搜索网页',
-  Task: '子任务',
-  Agent: '子任务',
-  spawnAgent: '子任务',
+  Task: '子 agent',
+  Agent: '子 agent',
+  spawnAgent: '子 agent',
   TodoWrite: '待办',
   ExitPlanMode: '计划'
 }
