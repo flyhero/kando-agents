@@ -40,8 +40,8 @@ describe('TaskStore migrations', () => {
     expect(store.list().map((task) => [task.id, task.status, task.repos])).toEqual(
       expect.arrayContaining([
         ['t1', 'pending', []],
-        ['t2', 'pending', [{ path: '/code/app', worktreePath: null, branch: null }]],
-        ['t3', 'done', [{ path: '/code/app', worktreePath: '/wt/app/t3', branch: 'kando/t3' }]]
+        ['t2', 'pending', [{ path: '/code/app', worktreePath: null, branch: null, startRef: null, start: null }]],
+        ['t3', 'done', [{ path: '/code/app', worktreePath: '/wt/app/t3', branch: 'kando/t3', startRef: null, start: null }]]
       ])
     )
     store.close()
@@ -51,7 +51,7 @@ describe('TaskStore migrations', () => {
     const store = new TaskStore(file)
     const a = store.create('A')
     const b = store.create('B')
-    const repos = ['/z', '/a'].map((repoPath) => ({ path: repoPath, worktreePath: null, branch: null }))
+    const repos = ['/z', '/a'].map((repoPath) => ({ path: repoPath, worktreePath: null, branch: null, startRef: null, start: null }))
     store.update(b.id, { repos, dependsOn: [a.id] })
     expect(store.get(b.id)).toMatchObject({ repos, dependsOn: [a.id] })
     expect(store.dependents(a.id).map((task) => task.id)).toEqual([b.id])

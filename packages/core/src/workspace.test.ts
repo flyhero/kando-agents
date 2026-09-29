@@ -86,7 +86,7 @@ describe('prepareWorkspace', () => {
     git(dir, 'commit', '-q', '--allow-empty', '-m', 'init')
     return dir
   }
-  const task = (repoPath: string) => ({ id: '76b8c0de-0000-4000-8000-000000000000', title: 'Fix login', repos: [{ path: repoPath, worktreePath: null, branch: null }], source: null })
+  const task = (repoPath: string) => ({ id: '76b8c0de-0000-4000-8000-000000000000', title: 'Fix login', repos: [{ path: repoPath, worktreePath: null, branch: null, startRef: null, start: null }], source: null })
   const registered = (dir: string) => git(dir, 'worktree', 'list', '--porcelain')
 
   it('lays out again, on its branch, a worktree whose folder was deleted by hand', async () => {
@@ -106,6 +106,36 @@ describe('prepareWorkspace', () => {
     expect(git(again.cwd, 'rev-parse', 'HEAD')).toBe(work)
     expect(git(again.cwd, 'symbolic-ref', '--short', 'HEAD')).toBe(first.repos[0]?.branch)
     expect(registered(source)).toMatch(/^worktree .*elsewhere$/m)
+    expect(again.repos[0]?.start).toEqual(first.repos[0]?.start)
+  })
+
+  it('starts a new branch from origin\'s default branch, not what the project has checked out', async () => {
+    const source = path.join(tempDir(), 'clone')
+    execFileSync('git', ['clone', '-q', repo(), source])
+    git(source, 'checkout', '-q', '-b', 'feature/mine')
+    git(source, 'commit', '-q', '--allow-empty', '-m', 'mine')
+    const main = git(source, 'rev-parse', 'origin/main')
+
+    const workspace = await prepareWorkspace(task(source), [], tempDir(), 5)
+    expect(git(workspace.cwd, 'rev-parse', 'HEAD')).toBe(main)
+    expect(workspace.repos[0]).toMatchObject({ startRef: null, start: { ref: 'origin/main', commit: main, note: null, at: 5 } })
+    // The branch is the task's own: it does not track the branch it started from.
+    expect(() => git(workspace.cwd, 'rev-parse', '--abbrev-ref', '@{upstream}')).toThrow()
+  })
+
+  it('starts where the task picked over a dependency\'s branch, and stacks on that when nothing is picked', async () => {
+    const source = repo()
+    git(source, 'branch', 'kando/aaaaaaaa-dep')
+    git(source, 'branch', 'release')
+    const dependency = { repos: [{ path: source, worktreePath: null, branch: 'kando/aaaaaaaa-dep', startRef: null, start: null }] }
+    const [only] = task(source).repos
+
+    const picked = await prepareWorkspace({ ...task(source), repos: [{ ...only!, startRef: 'refs/heads/release' }] }, [dependency], tempDir())
+    expect(picked.entries[0]?.base).toBeNull()
+    expect(picked.repos[0]?.start).toMatchObject({ ref: 'release', note: null })
+    const stacked = await prepareWorkspace({ ...task(source), id: '5e1a0000-0000-4000-8000-000000000000' }, [dependency], tempDir())
+    expect(stacked.entries[0]?.base).toBe('kando/aaaaaaaa-dep')
+    expect(stacked.repos[0]?.start).toMatchObject({ ref: 'kando/aaaaaaaa-dep', note: null })
   })
 
   it('leaves a worktree the user locked as it is', async () => {

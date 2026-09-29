@@ -4,6 +4,7 @@ import {
   checkChangePrimary,
   checkDependencies,
   checkEditProjects,
+  checkEditStart,
   checkMove,
   checkRedo,
   checkRefine,
@@ -12,6 +13,7 @@ import {
   checkStart,
   checkSubmit,
   imageLabel,
+  isStartRef,
   MAX_CHAT_IMAGES,
   MAX_TASK_IMAGES,
   startKind,
@@ -20,10 +22,12 @@ import {
   type FileDiff,
   type ProjectHead,
   type RepoChanges,
+  type RepoStartOptions,
   type RpcParsedParams,
   type SourceSnapshot,
   type Task,
   type TaskImage,
+  type TaskRepo,
   type TaskSession,
   type TaskSource,
   type TaskStatus
@@ -38,7 +42,7 @@ import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
 import type { TaskPatch, TaskStore } from './task-store'
-import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, withKnownWorktrees } from './workspace'
+import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHead, startOptions, withKnownWorktrees } from './workspace'
 
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
@@ -194,7 +198,7 @@ export class TaskService {
     return this.changed(this.store.update(task.id, { sourceSnapshot: snapshot }))
   }
 
-  update({ id, title, details, repos, dependsOn, agent }: RpcParsedParams<'tasks.update'>): Task {
+  update({ id, title, details, repos, dependsOn, agent, starts }: RpcParsedParams<'tasks.update'>): Task {
     const task = this.get(id)
     const patch: TaskPatch = { title, details, agent }
     // Editing the details commits them, so an accepted proposal can no longer be undone.
@@ -212,6 +216,9 @@ export class TaskService {
       const current = new Set(task.repos.map((repo) => repo.path))
       this.projects.remember(patch.repos.map((repo) => repo.path).filter((repoPath) => !current.has(repoPath)))
     }
+    if (starts !== undefined) {
+      patch.repos = this.withStarts(task, patch.repos ?? task.repos, starts)
+    }
     if (dependsOn !== undefined) {
       const ids = this.resolveIds(dependsOn)
       const blocker = checkDependencies((other) => this.store.dependsOn(other), task.id, ids)
@@ -221,6 +228,28 @@ export class TaskService {
       patch.dependsOn = ids
     }
     return this.changed(this.store.update(task.id, patch))
+  }
+
+  // Only a ref of the form a start takes is kept: whether the repo has it is known when the branch
+  // is made, and the picker only offers what it has.
+  private withStarts(task: Task, repos: readonly TaskRepo[], starts: NonNullable<RpcParsedParams<'tasks.update'>['starts']>): TaskRepo[] {
+    const picked = new Map(starts.map(({ path: repoPath, ref }) => [normalizeRepoPath(repoPath), ref]))
+    for (const [repoPath, ref] of picked) {
+      const repo = repos.find((each) => each.path === repoPath)
+      if (!repo) throw new Rejection('repo-not-found', `${repoPath} is not one of the task's repos`)
+      const blocker = checkEditStart(task, repo, this.launching.has(task.id))
+      if (blocker) throw new Rejection(blocker)
+      if (ref !== null && !isStartRef(ref)) throw new Rejection('invalid-start', `${ref} is not a branch to start from`)
+    }
+    return repos.map((repo) => {
+      const ref = picked.get(repo.path)
+      return ref === undefined ? repo : { ...repo, startRef: ref }
+    })
+  }
+
+  startOptions(id: string): Promise<RepoStartOptions[]> {
+    const task = this.get(id)
+    return startOptions(task, this.dependenciesOf(task))
   }
 
   // Full ids or short prefixes, deduplicated.
@@ -300,7 +329,8 @@ export class TaskService {
     this.store.update(successor.id, {
       details: task.details,
       agent: task.agent,
-      repos: task.repos.map((repo) => ({ path: repo.path, worktreePath: null, branch: null })),
+      // The new attempt starts where this one was asked to, on a branch of its own.
+      repos: task.repos.map((repo) => ({ path: repo.path, worktreePath: null, branch: null, startRef: repo.startRef, start: null })),
       dependsOn: task.dependsOn,
       derivedFrom: task.id,
       source: task.source,

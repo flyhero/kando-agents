@@ -138,9 +138,14 @@ describe('TaskService', () => {
     const running = await service.run(task.id)
     const short = task.id.slice(0, 8)
     expect(running.status).toBe('running')
-    expect(running.repos).toEqual([
-      { path: repo, worktreePath: path.join(dir, 'worktrees', short, 'app'), branch: `kando/${short}-add-dark-mode` }
-    ])
+    expect(running.repos).toEqual([{
+      path: repo,
+      worktreePath: path.join(dir, 'worktrees', short, 'app'),
+      branch: `kando/${short}-add-dark-mode`,
+      startRef: null,
+      // No origin here: the branch starts from what the repo has checked out, and says why.
+      start: { ref: git(repo, 'symbolic-ref', '--short', 'HEAD'), commit: git(repo, 'rev-parse', 'HEAD'), note: 'no-remote-default', at: expect.any(Number) }
+    }])
     expect(sessions.spawns[0]).toMatchObject({
       command: 'claude',
       args: ['--', 'Add dark mode\n\nUse CSS tokens'],
@@ -150,6 +155,37 @@ describe('TaskService', () => {
     service.handleSessionExit(running.sessionId ?? '', 0)
     expect(service.get(task.id).status).toBe('review')
     expect(service.move(task.id, 'done').status).toBe('done')
+  })
+
+  it('starts a run\'s branch where the task picked, which it may change only until the branch exists', async () => {
+    const repo = initRepo('app')
+    const other = initRepo('web')
+    git(repo, 'branch', 'release/2.4')
+    const release = git(repo, 'rev-parse', 'release/2.4')
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'main moved on')
+    const task = readyTask('Patch release', [repo, other])
+
+    const picked = service.update({ id: task.id, starts: [{ path: repo, ref: 'refs/heads/release/2.4' }] })
+    expect(picked.repos.map((each) => each.startRef)).toEqual(['refs/heads/release/2.4', null])
+    expect(() => service.update({ id: task.id, starts: [{ path: repo, ref: 'release/2.4' }] })).toThrow(expect.objectContaining({ reason: 'invalid-start' }))
+    expect(() => service.update({ id: task.id, starts: [{ path: dir, ref: null }] })).toThrow(expect.objectContaining({ reason: 'repo-not-found' }))
+    // Reordering the projects keeps what each picked.
+    expect(service.update({ id: task.id, repos: [other, repo] }).repos.map((each) => each.startRef)).toEqual([null, 'refs/heads/release/2.4'])
+    service.update({ id: task.id, repos: [repo, other] })
+
+    const options = await service.startOptions(task.id)
+    expect(options.map((each) => [each.path, each.git, each.fallback])).toEqual([[repo, true, null], [other, true, null]])
+    expect(options[0]?.refs).toContain('refs/heads/release/2.4')
+
+    const running = await service.run(task.id)
+    expect(git(running.repos[0]!.worktreePath!, 'rev-parse', 'HEAD')).toBe(release)
+    expect(running.repos[0]?.start).toMatchObject({ ref: 'release/2.4', commit: release, note: null })
+    service.handleSessionExit(running.sessionId ?? '', 0)
+    expect(() => service.update({ id: task.id, starts: [{ path: repo, ref: null }] })).toThrow(expect.objectContaining({ reason: 'branch-exists' }))
+    // A redo is a new attempt from the same start, on a branch of its own.
+    service.move(task.id, 'done')
+    const successor = service.redo(task.id, undefined)
+    expect(successor.repos.map((each) => [each.startRef, each.branch, each.start])).toEqual([['refs/heads/release/2.4', null, null], [null, null, null]])
   })
 
   it('reads a run\'s changes from its worktree, and diffs only the task\'s own repos', async () => {
@@ -516,7 +552,7 @@ describe('TaskService', () => {
 
     const refining = await service.refine(task.id)
     expect(refining).toMatchObject({ status: 'pending', refineSessionId: 'session-1' })
-    expect(refining.repos).toEqual([{ path: repo, worktreePath: null, branch: null }])
+    expect(refining.repos).toEqual([{ path: repo, worktreePath: null, branch: null, startRef: null, start: null }])
     expect(git(repo, 'branch', '--list', 'kando/*')).toBe('')
     const spawn = sessions.spawns[0]
     expect(spawn?.cwd).toBe(repo)

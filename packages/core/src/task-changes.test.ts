@@ -43,7 +43,7 @@ describe('task changes', () => {
     writeFileSync(path.join(dir, 'logo.bin'), Buffer.from([0, 1, 2, 0]))
     git(dir, 'add', 'logo.bin')
 
-    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/x' })
+    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/x', startRef: null, start: null })
     expect(changes.commits.map((commit) => commit.subject)).toEqual(['edit a, rename old'])
     expect(changes.files).toEqual([
       { path: 'a.txt', oldPath: null, kind: 'modified', additions: 2, deletions: 1 },
@@ -64,9 +64,24 @@ describe('task changes', () => {
     git(dir, 'add', '.')
     git(dir, 'commit', '-q', '-m', 'task work')
 
-    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/task' })
+    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/task', startRef: null, start: null })
     expect(changes.commits.map((commit) => commit.subject)).toEqual(['task work'])
     expect(changes.files.map((file) => file.path)).toEqual(['task.txt'])
+  })
+
+  it('counts from the start Kando recorded, which need not be anywhere near the repo\'s HEAD', async () => {
+    git(repo, 'branch', 'upstream')
+    const upstream = worktree('upstream-wt', 'upstream')
+    git(upstream, 'commit', '-q', '--allow-empty', '-m', 'upstream moved on')
+    const start = git(upstream, 'rev-parse', 'HEAD')
+    const dir = worktree('kando/x', start)
+    git(dir, 'commit', '-q', '--allow-empty', '-m', 'task')
+    git(repo, 'reflog', 'expire', '--expire=now', '--all')
+
+    const recorded = { ref: 'origin/main', commit: start, note: null, at: 0 }
+    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/x', startRef: null, start: recorded })
+    expect(changes.commits.map((commit) => commit.subject)).toEqual(['task'])
+    expect(changes.base).toBe(start.slice(0, 7))
   })
 
   it('falls back to the fork point with the repo\'s HEAD once the reflog is gone', async () => {
@@ -75,19 +90,19 @@ describe('task changes', () => {
     git(repo, 'commit', '-q', '--allow-empty', '-m', 'main moved on')
     git(repo, 'reflog', 'expire', '--expire=now', '--all')
 
-    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/x' })
+    const changes = await repoChanges({ path: repo, worktreePath: dir, branch: 'kando/x', startRef: null, start: null })
     expect(changes.commits.map((commit) => commit.subject)).toEqual(['task'])
   })
 
   it('has nothing to compare before the task has a worktree', async () => {
-    expect(await repoChanges({ path: repo, worktreePath: null, branch: null })).toMatchObject({ base: null, files: [] })
+    expect(await repoChanges({ path: repo, worktreePath: null, branch: null, startRef: null, start: null })).toMatchObject({ base: null, files: [] })
   })
 
   it('diffs one changed file, new ones included, and refuses any path outside the change list', async () => {
     const dir = worktree('kando/x', 'HEAD')
     writeFileSync(path.join(dir, 'a.txt'), 'one\ntwo\nthree\n')
     writeFileSync(path.join(dir, 'c.txt'), 'new file\n')
-    const task = { path: repo, worktreePath: dir, branch: 'kando/x' }
+    const task = { path: repo, worktreePath: dir, branch: 'kando/x', startRef: null, start: null }
 
     expect((await fileDiff(task, 'a.txt')).diff).toContain('+three')
     expect(await fileDiff(task, 'c.txt')).toMatchObject({ diff: expect.stringContaining('+new file'), truncated: false })

@@ -45,14 +45,56 @@ export const TaskPlan = z.object({
 })
 export type TaskPlan = z.infer<typeof TaskPlan>
 
+// What a task's branch may be picked to start from: a local or remote-tracking branch by its full
+// name, or HEAD for whatever the project has checked out.
+export const START_HEAD = 'HEAD'
+
+export function isStartRef(ref: string): boolean {
+  return ref === START_HEAD || /^refs\/(heads|remotes)\/[^\s]+$/.test(ref)
+}
+
+// Why a branch did not start from the latest of what it was meant to: fetching failed, so the local
+// copy was used, or the repo has no origin default branch, so it started from HEAD.
+export const StartNote = z.enum(['fetch-failed', 'no-remote-default'])
+export type StartNote = z.infer<typeof StartNote>
+
+// Where a task's branch started in one repo, recorded when Kando made the branch.
+export const TaskStart = z.object({
+  // As a person names it: origin/main, release/2.4, or the branch the project was on.
+  ref: z.string(),
+  commit: z.string(),
+  note: StartNote.nullable().catch(null),
+  at: z.number()
+})
+export type TaskStart = z.infer<typeof TaskStart>
+
 export const TaskRepo = z.object({
   // Absolute path of the repo (or plain folder) the user picked.
   path: z.string(),
   // Filled in by the first run and reused by later ones.
   worktreePath: z.string().nullable(),
-  branch: z.string().nullable()
+  branch: z.string().nullable(),
+  // What the user picked for this task's branch to start from. Null is the branch a dependency
+  // left in the repo, when exactly one did, and otherwise origin's default branch.
+  startRef: z.string().nullable().default(null),
+  start: TaskStart.nullable().default(null)
 })
 export type TaskRepo = z.infer<typeof TaskRepo>
+
+// What one of a task's repos could start from, for picking.
+export const RepoStartOptions = z.object({
+  path: z.string(),
+  git: z.boolean(),
+  // The branch the project has checked out, or its short commit when detached.
+  current: z.string().nullable(),
+  // What starts the branch when nothing is picked, by full name; null falls back to HEAD.
+  fallback: z.string().nullable(),
+  // Whether that is a dependency's branch rather than origin's default.
+  stacked: z.boolean(),
+  // Local branches, then remote-tracking ones, by full name.
+  refs: z.array(z.string())
+})
+export type RepoStartOptions = z.infer<typeof RepoStartOptions>
 
 export const Task = z.object({
   id: z.string(),
@@ -102,6 +144,17 @@ export function checkEditProjects(task: Pick<Task, 'status' | 'refineSessionId'>
   if (task.status === 'running') return 'task-running'
   if (task.refineSessionId) return 'refining'
   return task.status === 'abandoned' ? 'task-abandoned' : null
+}
+
+export type StartEditBlocker = ProjectEditBlocker | 'branch-exists'
+
+// A start only matters until the branch exists: a worktree laid out again keeps its branch.
+export function checkEditStart(
+  task: Pick<Task, 'status' | 'refineSessionId'>,
+  repo: Pick<TaskRepo, 'branch'>,
+  launching = false
+): StartEditBlocker | null {
+  return checkEditProjects(task, launching) ?? (repo.branch ? 'branch-exists' : null)
 }
 
 export type PrimaryChangeBlocker = 'primary-fixed'

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
-import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskProposal, TaskRepo, TaskSource, type TaskStatus } from '@kando/protocol'
+import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskProposal, TaskSource, TaskStart, type TaskStatus } from '@kando/protocol'
 
 // Append-only: each entry upgrades PRAGMA user_version by one.
 export const MIGRATIONS = [
@@ -127,7 +127,10 @@ export const MIGRATIONS = [
   `ALTER TABLE tasks ADD COLUMN plan TEXT;
    ALTER TABLE conversations ADD COLUMN task_id TEXT;
    CREATE INDEX conversations_task ON conversations(task_id);
-   ALTER TABLE conversation_stages ADD COLUMN plan_only INTEGER NOT NULL DEFAULT 0;`
+   ALTER TABLE conversation_stages ADD COLUMN plan_only INTEGER NOT NULL DEFAULT 0;`,
+  // Where each repo's branch is to start, as the task picked it, and where it did (JSON).
+  `ALTER TABLE task_repos ADD COLUMN start_ref TEXT;
+   ALTER TABLE task_repos ADD COLUMN start TEXT;`
 ]
 
 
@@ -183,7 +186,14 @@ function jsonOrUndefined(text: string): unknown {
     return undefined
   }
 }
-const RepoRow = TaskRepo.extend({ taskId: z.string() })
+const RepoRow = z.object({
+  taskId: z.string(),
+  path: z.string(),
+  worktreePath: z.string().nullable(),
+  branch: z.string().nullable(),
+  startRef: z.string().nullable(),
+  start: z.string().nullable()
+})
 const DependencyRow = z.object({ taskId: z.string(), dependsOn: z.string() })
 
 export type TaskPatch = Partial<
@@ -287,7 +297,7 @@ export class TaskStore {
     const repos = groupBy(
       this.db
         .prepare(
-          `SELECT task_id AS taskId, path, worktree_path AS worktreePath, branch FROM task_repos
+          `SELECT task_id AS taskId, path, worktree_path AS worktreePath, branch, start_ref AS startRef, start FROM task_repos
            WHERE task_id IN (SELECT value FROM json_each(?)) ORDER BY position`
         )
         .all(ids)
@@ -311,7 +321,9 @@ export class TaskStore {
       lastExit: parseColumn(LastExit, row.lastExit, `last exit of task ${row.id}`),
       awaitingInput: row.awaitingInput !== 0,
       plan: parseColumn(TaskPlan, row.plan, `plan of task ${row.id}`),
-      repos: (repos.get(row.id) ?? []).map(({ path, worktreePath, branch }) => ({ path, worktreePath, branch })),
+      repos: (repos.get(row.id) ?? []).map(({ path, worktreePath, branch, startRef, start }) => ({
+        path, worktreePath, branch, startRef, start: parseColumn(TaskStart, start, `start of ${path} in task ${row.id}`)
+      })),
       dependsOn: (dependencies.get(row.id) ?? []).map((edge) => edge.dependsOn)
     }))
   }
@@ -437,9 +449,10 @@ export class TaskStore {
       if (patch.repos) {
         this.db.prepare('DELETE FROM task_repos WHERE task_id = ?').run(id)
         const insert = this.db.prepare(
-          'INSERT INTO task_repos (task_id, position, path, worktree_path, branch) VALUES (?, ?, ?, ?, ?)'
+          'INSERT INTO task_repos (task_id, position, path, worktree_path, branch, start_ref, start) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
-        patch.repos.forEach((repo, position) => insert.run(id, position, repo.path, repo.worktreePath, repo.branch))
+        patch.repos.forEach((repo, position) =>
+          insert.run(id, position, repo.path, repo.worktreePath, repo.branch, repo.startRef, repo.start && JSON.stringify(repo.start)))
       }
       if (patch.dependsOn) {
         this.db.prepare('DELETE FROM task_dependencies WHERE task_id = ?').run(id)

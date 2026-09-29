@@ -7,7 +7,7 @@ const workspace: Workspace = {
   cwd: '/wt/app',
   extraDirs: [],
   multi: false,
-  entries: [{ name: 'app', source: '/code/app', dir: '/wt/app', branch: 'kando/b-use', base: 'kando/a-add' }],
+  entries: [{ name: 'app', source: '/code/app', dir: '/wt/app', branch: 'kando/b-use', base: 'kando/a-add', startRef: null, start: null }],
   repos: []
 }
 
@@ -23,7 +23,7 @@ function dependency(overrides: Partial<Task> = {}): Task {
     title: 'Add "token" API',
     details: '## 目标\n新增 TokenService',
     status: 'done',
-    repos: [{ path: '/code/app', worktreePath: '/wt/a', branch: 'kando/a-add' }],
+    repos: [{ path: '/code/app', worktreePath: '/wt/a', branch: 'kando/a-add', startRef: null, start: null }],
     dependsOn: [],
     agent: 'claude',
     sessionId: null,
@@ -85,7 +85,7 @@ describe('agentPrompt', () => {
   it('describes sibling worktrees from the primary repo for both run and continue', () => {
     const multi: Workspace = {
       ...workspace, multi: true, extraDirs: ['/wt/web'],
-      entries: [...workspace.entries, { name: 'web', source: '/code/web', dir: '/wt/web', branch: 'kando/web', base: null }]
+      entries: [...workspace.entries, { name: 'web', source: '/code/web', dir: '/wt/web', branch: 'kando/web', base: null, startRef: null, start: null }]
     }
     const task = dependency()
     for (const prompt of [agentPrompt(task, multi, []), continuePrompt(task, multi, [])]) {

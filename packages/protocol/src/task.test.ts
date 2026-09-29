@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, startKind, type Task } from './task'
+import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, isStartRef, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -41,6 +41,22 @@ describe('checkEditProjects', () => {
   })
 })
 
+describe('checkEditStart', () => {
+  it('lets a start be picked until the repo has its branch, when projects may be edited', () => {
+    expect(checkEditStart(task(), { branch: null })).toBeNull()
+    expect(checkEditStart(task({ status: 'review' }), { branch: 'kando/00000000-refactor-login' })).toBe('branch-exists')
+    expect(checkEditStart(task({ status: 'running' }), { branch: null })).toBe('task-running')
+    expect(checkEditStart(task(), { branch: null }, true)).toBe('run-in-progress')
+  })
+})
+
+describe('isStartRef', () => {
+  it('takes HEAD and branches by their full name, nothing a shell or git would read as more', () => {
+    for (const ref of ['HEAD', 'refs/heads/release/2.4', 'refs/remotes/origin/main']) expect(isStartRef(ref)).toBe(true)
+    for (const ref of ['main', 'origin/main', 'refs/tags/v1', '--upload-pack=x', 'refs/heads/a b', 'refs/heads/']) expect(isStartRef(ref)).toBe(false)
+  })
+})
+
 describe('checkChangePrimary', () => {
   it('keeps the primary project once a task\'s chat has begun', () => {
     expect(checkChangePrimary(task({ conversationId: 'chat' }))).toBe('primary-fixed')
@@ -74,7 +90,7 @@ describe('checkMove', () => {
 })
 
 describe('checkRun', () => {
-  const repos = [{ path: '/repo', worktreePath: null, branch: null }]
+  const repos = [{ path: '/repo', worktreePath: null, branch: null, startRef: null, start: null }]
 
   it('reports the first missing prerequisite', () => {
     const ready = { repos, agent: 'claude' } as const
@@ -101,7 +117,7 @@ describe('checkRun', () => {
 })
 
 describe('checkRefine', () => {
-  const repos = [{ path: '/repo', worktreePath: null, branch: null }]
+  const repos = [{ path: '/repo', worktreePath: null, branch: null, startRef: null, start: null }]
 
   it('needs a repo and an agent, but not finished dependencies', () => {
     expect(checkRefine(task({ agent: 'claude' }))).toBe('missing-repo')
@@ -116,7 +132,7 @@ describe('checkRefine', () => {
 })
 
 describe('checkContinue and checkRedo', () => {
-  const repos = [{ path: '/repo', worktreePath: '/wt', branch: 'kando/x' }]
+  const repos = [{ path: '/repo', worktreePath: '/wt', branch: 'kando/x', startRef: null, start: null }]
 
   it('continues only finished tasks, under review or accepted, whose dependencies are still accepted', () => {
     const done = task({ status: 'done', repos, agent: 'claude' })
@@ -135,7 +151,7 @@ describe('checkContinue and checkRedo', () => {
 })
 
 describe('a task in the chat view', () => {
-  const ready = { repos: [{ path: '/code/app', worktreePath: null, branch: null }], agent: 'claude' as const }
+  const ready = { repos: [{ path: '/code/app', worktreePath: null, branch: null, startRef: null, start: null }], agent: 'claude' as const }
   const done = [{ status: 'done' as const }]
   const unfinished = [{ status: 'done' as const }, { status: 'review' as const }]
 

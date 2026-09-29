@@ -3,8 +3,9 @@ import { mkdir, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { isFinished, shortTaskId, type Task, type TaskRepo } from '@kando/protocol'
+import { isFinished, shortTaskId, type RepoStartOptions, type Task, type TaskRepo, type TaskStart } from '@kando/protocol'
 import { Rejection } from './rejection'
+import { repoStartOptions, resolveStart } from './task-start'
 
 const execFileAsync = promisify(execFile)
 
@@ -17,6 +18,8 @@ export type WorkspaceEntry = {
   branch: string | null
   // The dependency branch a new worktree was started from, if any.
   base: string | null
+  startRef: string | null
+  start: TaskStart | null
 }
 
 export type Workspace = { cwd: string; extraDirs: string[]; multi: boolean; entries: WorkspaceEntry[]; repos: TaskRepo[] }
@@ -32,7 +35,7 @@ export function normalizeRepoPath(input: string): string {
 // Keeps what earlier runs recorded for repos that stay on the list.
 export function withKnownWorktrees(current: readonly TaskRepo[], paths: readonly string[]): TaskRepo[] {
   const known = new Map(current.map((repo) => [repo.path, repo]))
-  return [...new Set(paths)].map((repoPath) => known.get(repoPath) ?? { path: repoPath, worktreePath: null, branch: null })
+  return [...new Set(paths)].map((repoPath) => known.get(repoPath) ?? { path: repoPath, worktreePath: null, branch: null, startRef: null, start: null })
 }
 
 // Keys are checked on import, but a branch name gets only what git and every shell take plainly.
@@ -133,7 +136,8 @@ async function dependencyBranches(dependencies: readonly Pick<Task, 'repos'>[]):
   return branches
 }
 
-async function addWorktree(topLevel: string, worktreePath: string, branch: string, base: string): Promise<void> {
+// `start` is the commit a new branch starts from; null checks out the branch as it is.
+async function addWorktree(topLevel: string, worktreePath: string, branch: string, start: string | null): Promise<void> {
   await mkdir(path.dirname(worktreePath), { recursive: true })
   // A folder deleted by hand leaves git's record of it, which refuses the path. Only that record
   // goes, not every lost one as prune would, and without force, so a locked worktree stays.
@@ -142,10 +146,10 @@ async function addWorktree(topLevel: string, worktreePath: string, branch: strin
   } catch {
     // Never recorded, or locked: adding says why if it still cannot.
   }
-  // A branch left by an earlier, since-removed worktree is checked out again rather than recreated.
-  const args = (await branchExists(topLevel, branch))
+  // --no-track: the branch is the task's own, not a copy of the one it started from.
+  const args = start === null
     ? ['worktree', 'add', worktreePath, branch]
-    : ['worktree', 'add', '-b', branch, worktreePath, base]
+    : ['worktree', 'add', '--no-track', '-b', branch, worktreePath, start]
   try {
     await execFileAsync('git', ['-C', topLevel, ...args])
   } catch (error) {
@@ -160,7 +164,8 @@ async function addWorktree(topLevel: string, worktreePath: string, branch: strin
 export async function prepareWorkspace(
   task: Pick<Task, 'id' | 'title' | 'repos' | 'source'>,
   dependencies: readonly Pick<Task, 'repos'>[],
-  worktreesRoot: string
+  worktreesRoot: string,
+  at = Date.now()
 ): Promise<Workspace> {
   const shortId = shortTaskId(task.id)
   // An issue key in the branch name is how Jira links the branch to the issue.
@@ -192,22 +197,29 @@ export async function prepareWorkspace(
   const entries: WorkspaceEntry[] = []
   for (const { repo, topLevel } of resolved) {
     const name = repo.worktreePath ? path.basename(repo.worktreePath) : uniqueName(path.basename(topLevel ?? repo.path), taken)
+    const { startRef } = repo
     if (repo.worktreePath && (await isDirectory(repo.worktreePath))) {
-      entries.push({ name, source: repo.path, dir: repo.worktreePath, branch: repo.branch, base: null })
+      entries.push({ name, source: repo.path, dir: repo.worktreePath, branch: repo.branch, base: null, startRef, start: repo.start })
     } else if (!topLevel) {
-      entries.push({ name, source: repo.path, dir: repo.path, branch: null, base: null })
+      entries.push({ name, source: repo.path, dir: repo.path, branch: null, base: null, startRef, start: null })
     } else {
-      // Stack on a dependency's branch only when exactly one dependency left one here;
-      // with several there is no single right base, so start from HEAD.
-      const candidates = stackable.get(topLevel) ?? []
-      const base = candidates.length === 1 ? (candidates[0] ?? null) : null
+      // A start the task picked wins over a dependency's branch.
+      const base = startRef === null ? onlyBranch(stackable, topLevel) : null
       const worktreePath = repo.worktreePath ?? path.join(taskDir, name)
       const repoBranch = repo.branch ?? branch
-      // A leftover from a run that failed part-way is picked up as is.
+      let start = repo.start
+      // A leftover from a run that failed part-way is picked up as is, and a branch left by an
+      // earlier, since-removed worktree is checked out again rather than recreated.
       if (!(await isDirectory(worktreePath))) {
-        await addWorktree(topLevel, worktreePath, repoBranch, base ?? 'HEAD')
+        if (await branchExists(topLevel, repoBranch)) {
+          await addWorktree(topLevel, worktreePath, repoBranch, null)
+        } else {
+          const resolved = await resolveStart(topLevel, startRef, base, at)
+          await addWorktree(topLevel, worktreePath, repoBranch, resolved.commit)
+          start = resolved.start
+        }
       }
-      entries.push({ name, source: repo.path, dir: worktreePath, branch: repoBranch, base })
+      entries.push({ name, source: repo.path, dir: worktreePath, branch: repoBranch, base, startRef, start })
     }
   }
 
@@ -226,9 +238,26 @@ export async function prepareWorkspace(
     repos: entries.map((entry) => ({
       path: entry.source,
       worktreePath: entry.dir === entry.source ? null : entry.dir,
-      branch: entry.branch
+      branch: entry.branch,
+      startRef: entry.startRef,
+      start: entry.start
     }))
   }
+}
+
+// Stack on a dependency's branch only when exactly one dependency left one in the repo; with
+// several there is no single right base.
+function onlyBranch(stackable: ReadonlyMap<string, string[]>, topLevel: string): string | null {
+  const candidates = stackable.get(topLevel) ?? []
+  return candidates.length === 1 ? (candidates[0] ?? null) : null
+}
+
+export async function startOptions(task: Pick<Task, 'repos'>, dependencies: readonly Pick<Task, 'repos'>[]): Promise<RepoStartOptions[]> {
+  const stackable = await dependencyBranches(dependencies)
+  return Promise.all(task.repos.map(async (repo) => {
+    const topLevel = await gitTopLevel(repo.path)
+    return repoStartOptions(repo.path, topLevel, topLevel ? onlyBranch(stackable, topLevel) : null)
+  }))
 }
 
 export type RefineWorkspace = {

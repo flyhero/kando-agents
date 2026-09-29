@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, Task, TaskSession, TaskStatus } from './task'
+import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, RepoStartOptions, Task, TaskSession, TaskStatus } from './task'
 import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_CHAT_IMAGES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
@@ -33,7 +33,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -58,7 +58,17 @@ export const rpcMethods = {
     params: TaskFields.extend({ title: TaskTitle, images: z.array(ImageRef).max(MAX_TASK_IMAGES).optional() }),
     result: Task
   },
-  'tasks.update': { params: TaskFields.extend({ id: TaskRef.shape.id, title: TaskTitle.optional() }), result: Task },
+  'tasks.update': {
+    params: TaskFields.extend({
+      id: TaskRef.shape.id,
+      title: TaskTitle.optional(),
+      // Where each named repo's branch is to start (see TaskRepo.startRef); others keep theirs.
+      starts: z.array(z.object({ path: z.string().trim().min(1), ref: z.string().min(1).max(500).nullable() })).max(MAX_TASK_REPOS).optional()
+    }),
+    result: Task
+  },
+  // What each of the task's repos could start from, read from git on every call.
+  'tasks.startOptions': { params: TaskRef, result: z.array(RepoStartOptions) },
   'tasks.move': { params: TaskRef.extend({ status: TaskStatus }), result: Task },
   'tasks.run': { params: TaskRef, result: Task },
   // Runs a done task again in its own worktree, starting a fresh agent session.

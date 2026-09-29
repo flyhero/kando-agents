@@ -2,13 +2,14 @@ import type { FileDiff, RepoChanges, TaskRepo } from '@kando/protocol'
 import { changedFiles, commitsSince, diffOf, gitOrNull } from './git-changes'
 import { Rejection } from './rejection'
 
-// Where the task's branch started: `worktree add -b` wrote that commit as the branch's first
-// reflog entry, pulled back to an ancestor in case the branch was rebased since. Without one
-// (expired, or the branch came from elsewhere) the fork point with the repo's own HEAD will do.
-// Either way a branch stacked on a dependency's does not count that dependency's work as its own.
+// Where the task's branch started: the commit Kando recorded when it made the branch, or for a
+// branch made before that was recorded, the first entry of its reflog. Pulled back to an ancestor
+// in case the branch was rebased since. Without either (the reflog expired, or the branch came
+// from elsewhere) the fork point with the repo's own HEAD will do. Either way a branch stacked on
+// a dependency's does not count that dependency's work as its own.
 async function branchBase(repo: TaskRepo & { worktreePath: string }): Promise<string | null> {
-  const reflog = repo.branch ? await gitOrNull(repo.worktreePath, ['reflog', 'show', '--format=%H', `refs/heads/${repo.branch}`]) : null
-  const created = reflog?.split('\n').at(-1)
+  const reflog = !repo.start && repo.branch ? await gitOrNull(repo.worktreePath, ['reflog', 'show', '--format=%H', `refs/heads/${repo.branch}`]) : null
+  const created = repo.start?.commit ?? reflog?.split('\n').at(-1)
   const start = created ?? (await gitOrNull(repo.path, ['rev-parse', 'HEAD']))
   return start ? gitOrNull(repo.worktreePath, ['merge-base', start, 'HEAD']) : null
 }

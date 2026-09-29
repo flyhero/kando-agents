@@ -30,6 +30,7 @@ export function createRpcHandlers(
     'tasks.get': ({ id }) => service.get(id),
     'tasks.create': (params) => service.createTask(params),
     'tasks.update': (params) => service.update(params),
+    'tasks.startOptions': ({ id }) => service.startOptions(id),
     'tasks.move': ({ id, status }) => service.move(id, status),
     'tasks.run': ({ id }) => service.run(id),
     'tasks.continue': ({ id, note }) => service.continue(id, note),
