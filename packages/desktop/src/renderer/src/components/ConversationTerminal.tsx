@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
-import type { ConversationMode } from '@kando/protocol'
 import { usePlans } from '../chat-state'
-import { selectConversation, setConversationInspectorOpen, useChatSupported, useCore } from '../core-store'
+import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { primaryProjectName } from './ProjectPicker'
@@ -17,18 +16,10 @@ import { Popover } from './Popover'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
 
-const MODE_ACTION: Record<ConversationMode, string> = { tui: '以终端界面继续', chat: '以聊天界面继续' }
-
-// Deleting sits a click away from the everyday buttons, as a task's does. A stopped terminal
-// conversation can continue in either view here (the ▷ button uses the one settings name), and a
-// chat one can move to the terminal whenever its agent is not busy.
-function MoreMenu({ disabled, onDelete, continueModes, continueDisabled, onContinue }: {
-  disabled: boolean
-  onDelete: () => void
-  continueModes: readonly ConversationMode[]
-  continueDisabled: boolean
-  onContinue: (mode: ConversationMode) => void
-}) {
+// Deleting sits a click away from the everyday buttons, as a task's does. A conversation goes on
+// in the interface settings choose (the ▷ button), or in its chat (the next message): there is no
+// switching it here.
+function MoreMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   return (
@@ -47,21 +38,6 @@ function MoreMenu({ disabled, onDelete, continueModes, continueDisabled, onConti
       </button>
       {open && (
         <Popover label="更多操作" onClose={close}>
-          {continueModes.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className="menu-item"
-              disabled={continueDisabled}
-              title={continueDisabled ? '等 agent 这一回合结束' : undefined}
-              onClick={() => {
-                close()
-                onContinue(mode)
-              }}
-            >
-              {MODE_ACTION[mode]}
-            </button>
-          ))}
           <button
             type="button"
             className="menu-item menu-item-danger"
@@ -85,13 +61,10 @@ export function ConversationTerminal({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
-  const chatSupported = useChatSupported()
   const plans = usePlans(id)
   if (!conversation) return null
   const chat = conversation.mode === 'chat'
   // A chat agent starts with the next message and goes when idle: no continue or stop to press.
-  const chatBusy = chat && conversation.sessionId !== null && conversation.chat?.turn !== 'idle'
-  const continueModes: readonly ConversationMode[] = !chatSupported ? [] : chat ? ['tui'] : conversation.sessionId ? [] : ['tui', 'chat']
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
   // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
@@ -136,13 +109,7 @@ export function ConversationTerminal({ id }: { id: string }) {
             <InspectorIcon />
           </button>
         )}
-        <MoreMenu
-          disabled={busy}
-          onDelete={remove}
-          continueModes={continueModes}
-          continueDisabled={chatBusy}
-          onContinue={(mode) => void action(() => continueConversation(id, mode))}
-        />
+        <MoreMenu disabled={busy} onDelete={remove} />
         <span className="toolbar-separator" aria-hidden="true" />
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectConversation(null)}><CloseIcon /></button>
       </div>
