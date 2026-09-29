@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog, type ConversationMode } from '@kando/protocol'
+import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
 import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
@@ -56,19 +56,20 @@ export function ConversationDraft() {
     if (agent) setPicks({ ...picks, [agent]: next })
   }
 
-  const create = (mode: ConversationMode) => {
+  // The page is how a chat start begins, as settings choose; a terminal start has its dialog.
+  const create = () => {
     if (!agent) return Promise.resolve(null)
-    const chosen = mode === 'chat' && optionsSupported
+    const chosen = optionsSupported
       ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(mode), ...chosen }))
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions('chat'), ...chosen }))
   }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
   const send = async () => {
     if (!canSend) return
     setBusy(true)
-    const created = await create('chat')
+    const created = await create()
     if (created) {
       const images = attached.images.map((image) => image.id)
       await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: text.trim(), ...(images.length ? { images } : {}) }))
@@ -77,14 +78,6 @@ export function ConversationDraft() {
     }
     setBusy(false)
   }
-  const startInTerminal = async () => {
-    if (busy || !agent) return
-    setBusy(true)
-    const created = await create('tui')
-    setBusy(false)
-    if (created) selectConversation(created.id)
-  }
-
   return (
     <section className="detail terminal-view conversation-view" aria-label="新会话">
       <header className="detail-header conversation-header">
@@ -114,10 +107,7 @@ export function ConversationDraft() {
                   </button>
                 ))}
               </div>
-              <p className="chat-draft-hint muted">
-                发出第一条消息时创建会话并启动 agent。
-                <button type="button" className="link-button" disabled={busy || !agent} onClick={() => void startInTerminal()}>改用终端界面开始</button>
-              </p>
+              <p className="chat-draft-hint muted">发出第一条消息时创建会话并启动 agent。</p>
             </div>
           </div>
           <div className="chat-dock">

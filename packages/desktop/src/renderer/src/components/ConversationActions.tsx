@@ -3,16 +3,14 @@ import { openConversationDraft, perform, setNewConversationOpen, useCore } from 
 import { usePreferences } from '../preferences'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 
-export const MODE_LABEL: Record<ConversationMode, string> = { tui: '终端（agent 自己的 TUI）', chat: '聊天界面' }
-
-// The mode a start takes when the user does not pick one: the setting, where core can run it.
+// The interface every start takes: the setting, where core can run it.
 export function defaultMode(): ConversationMode {
   const chat = useCore.getState().rpc?.features.includes('chat') ?? false
   return chat ? usePreferences.getState().agentView : 'tui'
 }
 
 // With chats the default a new conversation opens as a page its first message starts; otherwise
-// the dialog asks how to start it.
+// a dialog asks for its agent and projects.
 export function newConversation(): void {
   if (defaultMode() === 'chat') openConversationDraft()
   else setNewConversationOpen(true)
