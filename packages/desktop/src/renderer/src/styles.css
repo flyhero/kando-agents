@@ -3670,20 +3670,136 @@ button.task-tag-updated:hover {
 
 .chat-request-line[data-waiting] { color: var(--warning); }
 
-.chat-question { display: flex; flex-direction: column; gap: 6px; }
-.chat-question-header { font-size: 12px; }
-.chat-question-options { display: flex; flex-wrap: wrap; gap: 6px; }
-.chat-question-option {
-  padding: 4px 10px;
-  border: 1px solid var(--border);
+/* A question the agent asks, in the dock: a tab per question, and its options as numbered rows
+   whose descriptions sit under the label. */
+.chat-ask { gap: 10px; }
+.chat-ask-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.chat-ask-tabs { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.chat-ask-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 14em;
+  padding: 2px 8px;
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
+  background: transparent;
+  color: var(--text-muted);
   font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
-.chat-question-option[aria-checked='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.chat-question-option:disabled { cursor: default; }
+.chat-ask-tab:hover,
+.chat-ask-tab[aria-selected='true'] { background: var(--surface-muted); color: var(--text); }
+.chat-ask-tab svg { flex-shrink: 0; width: 12px; height: 12px; color: var(--accent); }
+.chat-ask-chip {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chat-ask-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-ask-question { font-weight: 600; overflow-wrap: anywhere; }
+.chat-ask-hint { margin-left: 8px; font-size: 12px; font-weight: 400; }
+
+.chat-ask-options {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.chat-ask-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-ask-options > .chat-ask-option:first-child { border-top: 0; }
+.chat-ask-option:hover:not(:disabled) { background: var(--surface-muted); }
+.chat-ask-option[aria-checked='true'] { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.chat-ask-option:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.chat-ask-option:disabled { cursor: default; }
+/* The option's number, and the key that picks it; a check once picked, square where several may be. */
+.chat-ask-key {
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-ask-key[data-multi] { border-radius: 5px; }
+.chat-ask-key svg { width: 12px; height: 12px; }
+.chat-ask-option[aria-checked='true'] .chat-ask-key { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.chat-ask-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
+.chat-ask-label { overflow-wrap: anywhere; }
+.chat-ask-recommended {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+.chat-ask-description { color: var(--text-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.chat-ask-other { border-top: 1px dashed var(--border); }
+.chat-ask-other > .chat-ask-option { border-top: 0; color: var(--text-muted); }
+.chat-ask-other[data-open] > .chat-ask-option { color: var(--text); }
+/* Under the label: the row's padding, its number and the gap between. */
+.chat-ask-input { display: block; width: calc(100% - 50px); margin: 0 10px 10px 40px; }
+
+/* Once settled: what was asked and answered, set off by a rule rather than boxed. */
+.chat-ask-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+}
+.chat-ask-receipt-row { display: flex; flex-direction: column; gap: 4px; }
+.chat-ask-receipt-question {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.chat-ask-receipt-answers { display: flex; flex-wrap: wrap; gap: 4px; }
+.chat-ask-answer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.chat-ask-typed { color: var(--text-muted); font-size: 11px; }
 
 .chat-turn { font-size: 12px; color: var(--text-muted); }
 .chat-turn[data-state='failed'] { color: var(--danger); }

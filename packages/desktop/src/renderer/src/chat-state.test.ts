@@ -5,6 +5,7 @@ import {
   mergeItems,
   pathShortener,
   prependChatPage,
+  questionAnswers,
   receiveChatDelta,
   receiveChatItems,
   setChatPage,
@@ -77,5 +78,25 @@ describe('timeline', () => {
   it('marks one where a task stops only planning and starts its work', () => {
     const task = [{ ...stage('plan', 'chat', 1), planOnly: true }, { ...stage('again', 'chat', 2), planOnly: true }, { ...stage('work', 'chat', 3), planOnly: false }]
     expect(timeline(task, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['plan', 'work'])
+  })
+})
+
+describe('questionAnswers', () => {
+  const question = {
+    id: 'q', header: '语言', question: '用哪些语言？', multiSelect: true,
+    options: [{ label: 'Go', description: null }, { label: 'TypeScript', description: null }]
+  }
+
+  it('tells the options picked from words of the user\'s own', () => {
+    expect(questionAnswers(question, ['Go', 'Rust'])).toEqual([{ text: 'Go', typed: false }, { text: 'Rust', typed: true }])
+  })
+
+  it('reads the one string Claude hands back as the options it starts with, then what was typed', () => {
+    expect(questionAnswers(question, ['Go, TypeScript, Rust, Zig'])).toEqual([
+      { text: 'Go', typed: false },
+      { text: 'TypeScript', typed: false },
+      { text: 'Rust, Zig', typed: true }
+    ])
+    expect(questionAnswers(question, ['Go, TypeScript'])).toEqual([{ text: 'Go', typed: false }, { text: 'TypeScript', typed: false }])
   })
 })

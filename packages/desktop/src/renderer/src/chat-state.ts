@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { isPlanApproval, type ChatItem, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isPlanApproval, type ChatItem, type ChatQuestion, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -129,4 +129,21 @@ export function pathShortener(roots: readonly string[]): (text: string) => strin
   const sorted = [...new Set(roots.filter(Boolean))].sort((a, b) => b.length - a.length)
   const name = (root: string) => root.split('/').filter(Boolean).at(-1) ?? root
   return (text) => sorted.reduce((current, root) => current.split(`${root}/`).join(sorted.length > 1 ? `${name(root)}/` : ''), text)
+}
+
+// An answer as the question card shows it: an option picked, or words of the user's own.
+export type QuestionAnswer = { text: string; typed: boolean }
+
+// Claude hands a multi-select answer back as one "A, B" string: read the options it starts with as
+// options, and what follows as typed.
+export function questionAnswers(question: ChatQuestion, answers: readonly string[]): QuestionAnswer[] {
+  const labels = new Set(question.options.map((option) => option.label))
+  return answers.flatMap((answer) => {
+    if (labels.has(answer)) return [{ text: answer, typed: false }]
+    const parts = answer.split(', ')
+    const typedFrom = parts.findIndex((part) => !labels.has(part))
+    const picked = (typedFrom === -1 ? parts : parts.slice(0, typedFrom)).map((text) => ({ text, typed: false }))
+    const typed = typedFrom === -1 ? [] : [{ text: parts.slice(typedFrom).join(', '), typed: true }]
+    return [...picked, ...typed]
+  })
 }

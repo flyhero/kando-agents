@@ -62,9 +62,9 @@ function Item({ conversationId, item }: { conversationId: string; item: ChatItem
     case 'tool':
       return <ChatToolCard item={item} />
     case 'approval':
-      return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine conversationId={conversationId} item={item} />
+      return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine item={item} />
     case 'question':
-      return <ChatRequestLine conversationId={conversationId} item={item} />
+      return <ChatRequestLine item={item} />
     case 'turn':
       return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
     case 'notice':
