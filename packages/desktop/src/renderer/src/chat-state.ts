@@ -188,6 +188,7 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 
 // A file a finished turn changed, with every line it added and removed there.
 export type TurnFile = { path: string; added: number; removed: number; change: ChatDiff['change'] }
+type TurnReply = { key: string; text: string }
 
 // What the conversation shows once its work is grouped: calls made one after another as one run,
 // edits to one file one after another as one card, and a finished turn's work folded behind one
@@ -197,8 +198,8 @@ export type ChatBlock =
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
-  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[] }
-  | { kind: 'changes'; key: string; fold: string; files: TurnFile[] }
+  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; header: boolean }
+  | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean }
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
@@ -262,28 +263,41 @@ function foldable(block: ChatBlock): boolean {
   }
 }
 
+function turnReply(body: readonly ChatBlock[], turn: TurnItem): TurnReply | null {
+  const last = body.at(-1)
+  const item = last ? itemOf(last) : null
+  return turn.state === 'completed' && last && item?.kind === 'assistant' && item.text
+    ? { key: last.key, text: item.text }
+    : null
+}
+
 function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[] {
   // The answer is the replies it ends with, after the last of its work.
-  const reply = (block: ChatBlock | undefined) => block !== undefined && itemOf(block)?.kind === 'assistant'
+  const isReply = (block: ChatBlock | undefined) => block !== undefined && itemOf(block)?.kind === 'assistant'
   let answer = body.length
-  while (answer > 0 && reply(body[answer - 1])) answer--
+  while (answer > 0 && isReply(body[answer - 1])) answer--
   const work = body.slice(0, answer)
   const folded = work.filter(foldable)
   if (folded.length === 0) return [...body, end]
   const key = `fold:${end.key}`
   const files = turnFiles(folded)
+  const reply = turnReply(body, turn)
   return [
-    { kind: 'fold', key, turn, blocks: folded },
+    { kind: 'fold', key, turn, blocks: folded, header: files.length === 0 },
     ...work.filter((block) => !foldable(block)),
     ...body.slice(answer),
-    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files }] : [])
+    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true }] : [])
   ]
 }
 
 // A turn left open still ends with the files it changed, then how it ended.
 function unfoldedTurn(body: ChatBlock[], end: ChatBlock): ChatBlock[] {
   const files = turnFiles(body.filter(foldable))
-  return [...body, ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: `fold:${end.key}`, files }] : []), end]
+  if (files.length === 0) return [...body, end]
+  const turn = itemOf(end)
+  if (!turn || turn.kind !== 'turn') return [...body, end]
+  const reply = turnReply(body, turn)
+  return [...body, { kind: 'changes', key: `changes:${end.key}`, fold: `fold:${end.key}`, files, turn, reply, collapsible: false }]
 }
 
 export function chatBlocks(entries: readonly TimelineEntry[], { foldTurns = true }: { foldTurns?: boolean } = {}): ChatBlock[] {

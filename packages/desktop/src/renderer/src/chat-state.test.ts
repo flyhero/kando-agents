@@ -138,7 +138,7 @@ describe('chatBlocks', () => {
     const edit = tool('e', 'Edit', [{ path: 'a.ts', change: 'update', patch: '+x' }])
     const items = [user('u'), reply('looking'), tool('a'), edit, reply('answer'), turn('end')]
     expect(shape(chatBlocks(items.map((item) => ({ kind: 'item' as const, item })), { foldTurns: false })))
-      .toEqual(['u', 'looking', 'tools:a', 'e', 'answer', { changes: [expect.objectContaining({ path: 'a.ts' })] }, 'end'])
+      .toEqual(['u', 'looking', 'tools:a', 'e', 'answer', { changes: [expect.objectContaining({ path: 'a.ts' })] }])
   })
 
   it('keeps a turn that did nothing but answer as it was, and one still running unfolded', () => {
@@ -156,6 +156,13 @@ describe('chatBlocks', () => {
       'answer',
       { changes: [{ path: 'a.ts', added: 2, removed: 1, change: 'update' }, { path: 'b.ts', added: 1, removed: 0, change: 'update' }] }
     ])
+    const blocks = blocksOf(items)
+    expect(blocks.find((block) => block.kind === 'fold')).toMatchObject({ header: false })
+    expect(blocks.find((block) => block.kind === 'changes')).toMatchObject({
+      collapsible: true,
+      turn: { id: 'end' },
+      reply: { key: 'item:chat-stage/answer', text: 'answer' }
+    })
   })
 
   it('groups subagents sent off together apart from the calls around them', () => {

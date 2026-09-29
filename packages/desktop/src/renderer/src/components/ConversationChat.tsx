@@ -18,7 +18,7 @@ import { ChatTodosLine, currentTodo, TodoHistory } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
-import { ArrowDownIcon, ChevronRightIcon } from './icons'
+import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
@@ -195,66 +195,110 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 // A finished turn's work, behind how long it took; opening it shows the calls, thinking and replies
 // on the way to its answer.
 function foldText(turn: TurnItem): string {
-  const worked = turn.durationMs !== null ? `工作了 ${workedFor(turn.durationMs)}` : '工作过程'
+  const took = turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : ''
   const error = turn.error ? `：${readableNotice(turn.error)}` : ''
-  if (turn.state === 'interrupted') return `${worked}，已中断${error}`
-  if (turn.state === 'failed') return `${worked}，失败${error}`
-  return worked
+  if (turn.state === 'interrupted') return `已中断${took}${error}`
+  if (turn.state === 'failed') return `失败${took}${error}`
+  return `完成${took}`
 }
 
 // Opens a turn's work at one of the files it changed: for the list of them under its answer.
-type FoldState = { reveal: (key: string, path: string) => void }
+type FoldState = { reveal: (key: string | null, path: string) => void }
 const Folds = createContext<FoldState>({ reveal: () => {} })
 
-function TurnFold({ foldKey, conversationId, turn, blocks, task, replies }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number> }) {
+function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number>; header: boolean }) {
   const [open, setOpen] = useDisclosure(foldKey)
+  if (!header && !open) return null
   return (
-    <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-        {foldText(turn)}
-      </button>
-      {open && (
-        <div className="chat-fold-body">
-          {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} replies={replies} />)}
-        </div>
-      )}
+    <div className="chat-entry">
+      <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
+        {header && (
+          <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+            {foldText(turn)}
+          </button>
+        )}
+        {open && (
+          <div className="chat-fold-body">
+            {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} replies={replies} />)}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-// The files a finished turn changed, under its answer: a count to open, then each file with its
-// lines, which opens the turn's work at that file's card. The inspector has them all.
-function TurnChanges({ fold, files }: { fold: string; files: readonly TurnFile[] }) {
-  const [open, setOpen] = useDisclosure(`changes:${fold}`)
+// The files a finished turn changed, under its answer: three up front, then the rest on demand.
+// Each file opens the turn's work at that file's card; the inspector has them all.
+function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; files: readonly TurnFile[]; turn: TurnItem; reply: { text: string } | null; collapsible: boolean }) {
+  const [showAll, setShowAll] = useDisclosure(`changes:${fold}`)
+  const [workOpen, setWorkOpen] = useDisclosure(fold)
   const folds = useContext(Folds)
   const surface = useChatSurface()
   const shorten = useContext(ChatPaths)
   const { added, removed } = files.reduce((sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }), { added: 0, removed: 0 })
+  const hidden = Math.max(files.length - 3, 0)
+  const shown = showAll ? files : files.slice(0, 3)
   return (
-    <div className="chat-changes-rollup">
-      <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-        改了 {files.length} 个文件
-        <span className="chat-diff-count mono">
-          {added > 0 && <span className="chat-diff-added">+{added}</span>}
-          {removed > 0 && <span className="chat-diff-removed">−{removed}</span>}
-        </span>
-      </button>
-      {open && (
-        <div className="chat-changes-files">
-          {files.map((file) => (
-            <button key={file.path} type="button" className="chat-changes-file" title={file.path} onClick={() => folds.reveal(fold, file.path)}>
-              <span className="mono">{file.change === 'add' ? '新建 ' : file.change === 'delete' ? '删除 ' : ''}{shorten(file.path)}</span>
-              <span className="chat-diff-count mono">
-                {file.added > 0 && <span className="chat-diff-added">+{file.added}</span>}
-                {file.removed > 0 && <span className="chat-diff-removed">−{file.removed}</span>}
-              </span>
+    <div className="chat-turn-result">
+      <div className="chat-changes-rollup">
+        <div className="chat-changes-header">
+          <span className="chat-changes-icon" aria-hidden="true"><FileChangesIcon /></span>
+          <div className="chat-changes-summary">
+            <strong>修改了 {files.length} 个文件</strong>
+            <span className="chat-diff-count mono">
+              <span className="chat-diff-added">+{added}</span>
+              <span className="chat-diff-removed">−{removed}</span>
+            </span>
+          </div>
+          {surface.changes && (
+            <button type="button" className="button chat-changes-review" onClick={surface.showChanges} title="在检查器里查看项目的全部改动">
+              审查
             </button>
-          ))}
-          {surface.changes && <button type="button" className="link-button chat-changes-inspect" onClick={surface.showChanges}>在检查器里看项目的全部改动</button>}
+          )}
         </div>
-      )}
+        <div className="chat-changes-files">
+          {shown.map((file) => {
+            const path = shorten(file.path)
+            const slash = path.lastIndexOf('/')
+            const directory = slash === -1 ? '' : path.slice(0, slash + 1)
+            const name = slash === -1 ? path : path.slice(slash + 1)
+            return (
+              <button key={file.path} type="button" className="chat-changes-file" title={file.path} onClick={() => folds.reveal(collapsible ? fold : null, file.path)}>
+                {file.change !== 'update' && (
+                  <span className="chat-changes-kind" data-kind={file.change}>{file.change === 'add' ? '新建' : '删除'}</span>
+                )}
+                <span className="chat-changes-path mono">
+                  {directory && <span className="chat-changes-directory">{directory}</span>}
+                  <span className="chat-changes-name">{name}</span>
+                </span>
+                <span className="chat-diff-count mono">
+                  <span className="chat-diff-added">+{file.added}</span>
+                  <span className="chat-diff-removed">−{file.removed}</span>
+                </span>
+              </button>
+            )
+          })}
+          {hidden > 0 && (
+            <button type="button" className="chat-changes-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+              {showAll ? '收起文件列表' : `显示另外 ${hidden} 个文件`}
+              <span aria-hidden="true"><ChevronDownIcon /></span>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="chat-message-actions chat-turn-actions">
+        {reply && <CopyButton text={reply.text} label="复制回复" />}
+        {reply && <time className="chat-message-time" dateTime={new Date(turn.at).toISOString()} title={dayAndTime(turn.at)}>{timeOfDay(turn.at)}</time>}
+        {collapsible ? (
+          <button type="button" className="chat-fold-header chat-turn-summary" aria-expanded={workOpen} onClick={() => setWorkOpen(!workOpen)}>
+            <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+            {foldText(turn)}
+          </button>
+        ) : (
+          <span className="chat-turn-summary-static" data-state={turn.state}>{foldText(turn)}</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -263,8 +307,8 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
   if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
   if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
   if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
-  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} /></div>
-  if (block.kind === 'fold') return <div className="chat-entry"><TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} /></div>
+  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div>
+  if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} header={block.header} />
   const { entry } = block
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
@@ -332,15 +376,22 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   }, [stages, messages, items])
   const foldTurns = usePreferences((s) => s.foldTurns)
   const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
-  const replies = useMemo(() => finalReplies(entries), [entries])
+  const replies = useMemo(() => {
+    const found = finalReplies(entries)
+    // A turn with a change card moves these actions below that card.
+    for (const block of blocks) {
+      if (block.kind === 'changes' && block.reply) found.delete(block.reply.key)
+    }
+    return found
+  }, [entries, blocks])
   const folds = useMemo<FoldState>(() => ({
     // Opens the turn's work, then brings the file's diff into view once it is there.
     reveal: (key, path) => {
-      setOpened(id, key, true)
+      if (key) setOpened(id, key, true)
       pinned.current = false
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        const fold = list.current?.querySelector(`[data-fold="${CSS.escape(key)}"]`)
-        fold?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+        const scope = key ? list.current?.querySelector(`[data-fold="${CSS.escape(key)}"]`) : list.current
+        scope?.querySelector(`[data-diff-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       }))
     }
   }), [id])

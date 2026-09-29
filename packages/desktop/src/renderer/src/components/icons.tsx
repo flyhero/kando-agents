@@ -161,6 +161,15 @@ export function DocumentIcon() {
   )
 }
 
+export function FileChangesIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="4" y="2.5" width="12" height="15" rx="2" />
+      <path d="M7.5 7h5M10 4.5v5M7.5 13h5" />
+    </svg>
+  )
+}
+
 export function GearIcon() {
   const teeth = [0, 45, 90, 135, 180, 225, 270, 315]
   return (

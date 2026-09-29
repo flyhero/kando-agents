@@ -3864,26 +3864,100 @@ button.task-tag-updated:hover {
 .chat-subagent-label { margin: 0 0 2px; color: var(--text-muted); font-size: 11px; font-weight: 500; }
 .chat-subagent-text { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
 
-/* Under a finished turn's answer: the files it changed, each opening its card in the turn's work. */
-.chat-changes-files { display: flex; flex-direction: column; margin: 2px 0 0 9px; padding-left: 8px; border-left: 1px solid var(--border); }
+/* Under a finished turn's answer: a compact review card for every file the turn changed. */
+.chat-turn-result { display: flex; flex-direction: column; gap: 2px; }
+.chat-changes-rollup {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.chat-changes-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 66px;
+  padding: 11px 12px;
+}
+.chat-changes-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+.chat-changes-icon svg { width: 22px; height: 22px; stroke-width: 1.8; }
+.chat-changes-summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.35;
+}
+.chat-changes-summary strong { font-size: 14px; font-weight: 600; }
+.chat-changes-summary .chat-diff-count { gap: 5px; font-size: 13px; }
+.chat-changes-review { flex-shrink: 0; padding: 5px 11px; }
+.chat-changes-files { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .chat-changes-file {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
-  padding: 3px 6px;
+  min-height: 38px;
+  padding: 7px 12px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 .chat-changes-file:hover { background: var(--surface-muted); }
-.chat-changes-file .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-changes-inspect { align-self: flex-start; margin: 4px 6px; font-size: 12px; }
+.chat-changes-file:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: -2px; }
+.chat-changes-kind { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+.chat-changes-kind[data-kind='add'] { color: var(--status-done); }
+.chat-changes-kind[data-kind='delete'] { color: var(--danger); }
+.chat-changes-path { flex: 1; min-width: 0; display: flex; align-items: baseline; }
+.chat-changes-directory { min-width: 0; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.chat-changes-name { flex-shrink: 0; max-width: 56%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-changes-name:first-child { max-width: 100%; }
+.chat-changes-file > .chat-diff-count { gap: 5px; font-size: 12px; }
+.chat-changes-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-changes-more:hover { background: var(--surface-muted); }
+.chat-changes-more:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.chat-changes-more span { display: grid; place-items: center; width: 14px; height: 14px; }
+.chat-changes-more svg { width: 14px; height: 14px; transition: transform 0.12s; }
+.chat-changes-more[aria-expanded='true'] svg { transform: rotate(180deg); }
+.chat-turn-actions { align-items: center; opacity: 1; }
+.chat-turn-summary { margin-left: 2px; }
+.chat-turn-summary-static {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.chat-turn-summary-static:is([data-state='failed'], [data-state='interrupted']) { color: var(--danger); }
 .chat-fold-body {
   display: flex;
   flex-direction: column;
