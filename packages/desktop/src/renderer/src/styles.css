@@ -1377,8 +1377,11 @@ button.task-tag:hover {
   background: transparent;
 }
 
+/* Sized by what it holds, from a few lines up: the page scrolls, not the editor. The plan and
+   proposals have their own cards now, so the details are short more often than not. */
 .md-editor {
-  flex: 1 0 300px;
+  flex: none;
+  min-height: 180px;
   display: flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
