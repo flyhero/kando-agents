@@ -85,6 +85,16 @@ function Reasoning({ item }: { item: ReasoningItem }) {
   )
 }
 
+// While the chat is read: the shape of a message and a reply, pulsing one row after another.
+function ChatSkeleton() {
+  const rows = ['user', 'line', 'line', 'short', 'user', 'line', 'short']
+  return (
+    <div className="chat-skeleton" role="status" aria-label="正在读取聊天记录">
+      {rows.map((row, index) => <span key={index} className="chat-skeleton-row" data-row={row} style={{ animationDelay: `${index * 120}ms` }} />)}
+    </div>
+  )
+}
+
 type UserItem = Extract<ChatItem, { kind: 'user' }>
 
 // A long message the user sent, such as a task's first prompt, shows its start until opened.
@@ -430,7 +440,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
         }}
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
-        {!page && <p className="muted chat-empty">正在读取聊天记录…</p>}
+        {!page && <ChatSkeleton />}
         {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} />)}
         {turn === 'running' && <ChatWorking agent={conversation.agent} doing={doing} since={since} />}
         {away && (

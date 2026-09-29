@@ -3588,7 +3588,6 @@ button.task-tag-updated:hover {
 /* A message jumped to, marked for a moment. */
 .chat-entry[data-flash] { box-shadow: 0 0 0 2px var(--focus); }
 
-.chat-empty,
 .chat-older {
   align-self: center;
 }
@@ -4065,6 +4064,22 @@ button.task-tag-updated:hover {
 .chat-divider::before,
 .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .chat-notice[data-level='error'] { color: var(--danger); }
+
+/* While the chat is read: rows in the shape of messages and replies. */
+.chat-skeleton { display: flex; flex-direction: column; gap: 10px; }
+.chat-skeleton-row {
+  height: 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  animation: pulse 1.4s ease-in-out infinite both;
+}
+.chat-skeleton-row[data-row='user'] { align-self: flex-end; width: 42%; height: 36px; border-radius: var(--radius); }
+.chat-skeleton-row[data-row='line'] { width: 88%; }
+.chat-skeleton-row[data-row='short'] { width: 56%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-skeleton-row { animation: none; }
+}
 
 /* Scrolled back, a way down to the latest: held at the bottom of the list's view. */
 .chat-latest {
