@@ -57,6 +57,11 @@ function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean
 // How long each finished thought took, by item key.
 const Thoughts = createContext<ReadonlyMap<string, number>>(new Map())
 
+// The turn item that closes a final reply, by the reply's block key: its outcome reads on the
+// reply's own line of actions, and the turn's own line is left out.
+const Endings = createContext<ReadonlyMap<string, TurnItem>>(new Map())
+const MergedTurns = createContext<ReadonlySet<string>>(new Set())
+
 type ReasoningItem = Extract<ChatItem, { kind: 'reasoning' }>
 
 // A thought opens while it streams and closes a moment after, saying how long it took; once the
@@ -156,7 +161,8 @@ function TerminalMessage({ message }: { message: ConversationMessage }) {
     : <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
 }
 
-function Item({ conversationId, item, completedAt }: { conversationId: string; item: ChatItem; completedAt: number | undefined }) {
+function Item({ conversationId, item, completedAt, blockKey }: { conversationId: string; item: ChatItem; completedAt: number | undefined; blockKey: string }) {
+  const ending = useContext(Endings).get(blockKey)
   switch (item.kind) {
     case 'user':
       return <UserMessage item={item} />
@@ -168,6 +174,7 @@ function Item({ conversationId, item, completedAt }: { conversationId: string; i
             <div className="chat-message-actions">
               <CopyButton text={item.text} label="复制回复" />
               <time className="chat-message-time" dateTime={new Date(completedAt).toISOString()} title={dayAndTime(completedAt)}>{timeOfDay(completedAt)}</time>
+              {ending && <span className="chat-turn chat-turn-inline" data-state={ending.state}>{turnText(ending)}</span>}
             </div>
           )}
         </div>
@@ -355,11 +362,13 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
   if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} steps={block.steps} /></div>
   if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} header={block.header} steps={block.steps} />
   const { entry } = block
+  const merged = useContext(MergedTurns)
+  if (entry.kind === 'item' && entry.item.kind === 'turn' && merged.has(block.key)) return null
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
         : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
-        : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} />}
+        : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} blockKey={block.key} />}
     </div>
   )
 }
@@ -431,6 +440,21 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     }
     return found
   }, [entries, blocks])
+  // A turn's own line, when it follows the reply it closes and that reply keeps its actions, joins
+  // that line instead of standing under it.
+  const { endings, mergedTurns } = useMemo(() => {
+    const endings = new Map<string, TurnItem>()
+    const mergedTurns = new Set<string>()
+    blocks.forEach((block, index) => {
+      const previous = blocks[index - 1]
+      const turn = block.kind === 'entry' && block.entry.kind === 'item' && block.entry.item.kind === 'turn' ? block.entry.item : null
+      if (turn && previous && replies.has(previous.key)) {
+        endings.set(previous.key, turn)
+        mergedTurns.add(block.key)
+      }
+    })
+    return { endings, mergedTurns }
+  }, [blocks, replies])
   const folds = useMemo<FoldState>(() => ({
     // Opens the turn's work, then brings the file's diff into view once it is there.
     reveal: (key, path) => {
@@ -554,6 +578,8 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     <ChatPaths.Provider value={shorten}>
     <ChatRoots.Provider value={roots}>
     <Thoughts.Provider value={thoughts}>
+    <Endings.Provider value={endings}>
+    <MergedTurns.Provider value={mergedTurns}>
     <ChatDisclosureScope.Provider value={id}>
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
@@ -607,6 +633,8 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     </TodoHistory.Provider>
     </Folds.Provider>
     </ChatDisclosureScope.Provider>
+    </MergedTurns.Provider>
+    </Endings.Provider>
     </Thoughts.Provider>
     </ChatRoots.Provider>
     </ChatPaths.Provider>
