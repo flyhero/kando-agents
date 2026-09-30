@@ -3978,6 +3978,8 @@ button.task-tag-updated:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-subagent-metrics { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; margin-left: 2px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-subagent-metrics-dot { color: var(--text-3); }
 .chat-subagent-mark { flex-shrink: 0; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--status-done); color: var(--surface); }
 .chat-subagent-mark[data-failed] { background: var(--danger); transform: scale(0.75); }
 .chat-subagent-mark svg { width: 9px; height: 9px; stroke-width: 2.6; }

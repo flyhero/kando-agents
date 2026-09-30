@@ -110,6 +110,19 @@ const UserFrame = z.looseObject({
   message: z.looseObject({ content: z.union([z.string(), Blocks]).catch('') }),
   tool_use_result: z.unknown().optional()
 })
+// What the CLI adds to an Agent call's result: at once, that the subagent runs in the background
+// (async_launched); when it reports back, its report and what it took to write it.
+const SubagentResult = z.looseObject({
+  status: z.string().optional(),
+  isAsync: z.boolean().optional(),
+  content: Blocks.optional().catch(undefined),
+  totalToolUseCount: z.number().optional(),
+  totalTokens: z.number().optional(),
+  totalDurationMs: z.number().optional()
+})
+const SUBAGENT_TOOLS: ReadonlySet<string> = new Set(['Agent', 'Task'])
+// The hand-back's report is framed and indented by the CLI; the report itself is what shows.
+const HAND_BACK = /^\[Subagent hand-back\][\s\S]*?The report follows:\n/
 const ResultFrame = z.looseObject({
   subtype: z.string().optional(),
   is_error: z.boolean().optional(),
@@ -119,6 +132,9 @@ const ResultFrame = z.looseObject({
   duration_ms: z.number().nullish(),
   // What the whole turn sent and received, cached input included.
   usage: Usage.optional().catch(undefined),
+  // How many subagents have finished so far, over the whole session: the CLI does not always hand
+  // a background subagent's report back as a frame, so this count is what says one is done.
+  subagent_stats: z.looseObject({ completed: z.number().optional() }).optional().catch(undefined),
   // Every model the turn used, the main one and any the CLI ran for itself.
   modelUsage: z.record(z.string(), z.looseObject({ contextWindow: z.number().optional() })).optional().catch(undefined)
 })
@@ -286,7 +302,14 @@ export class ClaudeStream implements ChatDriver {
   private initError: string | null = null
   private exited = false
   private sessionId: string | null
-  private turn: { ref: string; assistant: string | null } | null = null
+  // resumed: the turn began on its own, when a background subagent reported, not from a message.
+  private turn: { ref: string; assistant: string | null; resumed?: boolean } | null = null
+  private turnsSeen = 0
+  private resumes = 0
+  // Subagents the CLI has reported finished, and the last thing each said while it worked (its
+  // frames come with parent_tool_use_id), which stands as its report when no hand-back frame does.
+  private agentsCompleted = 0
+  private readonly subagentText = new Map<string, string>()
   private readonly pending = new Map<string, Pending>()
   // Control requests Kando does not handle, still owed an error reply.
   private readonly unanswered = new Set<string>()
@@ -373,9 +396,15 @@ export class ClaudeStream implements ChatDriver {
     return this.exited && !this.initialized ? 'exited' : null
   }
 
+  // Between turns, subagents the agent left working in the background keep it busy: the CLI will
+  // start a turn of its own when they report.
   activity(): ChatTurnActivity {
-    if (!this.turn) return 'idle'
+    if (!this.turn) return this.backgroundAgents() > 0 ? 'running' : 'idle'
     return this.pending.size > 0 ? 'awaiting' : 'running'
+  }
+
+  private backgroundAgents(): number {
+    return this.items.list().filter((item) => item.kind === 'tool' && SUBAGENT_TOOLS.has(item.name) && item.status === 'running').length
   }
 
   providerSessionId(): string | null {
@@ -391,9 +420,9 @@ export class ClaudeStream implements ChatDriver {
   }
 
   // The CLI takes a user message while a turn runs and works it in after the step under way.
+  // Between turns, while subagents work in the background, the message starts a turn as usual.
   steer(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
     if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
-    if (!this.turn) throw new Rejection('chat-idle', 'no turn is running')
     return this.userMessage(text, images)
   }
 
@@ -625,6 +654,12 @@ export class ClaudeStream implements ChatDriver {
     const { subtype, session_id, model, permissionMode, detail } = system.data
     if (subtype === 'init' && session_id) this.sessionId = session_id
     if (subtype === 'init' && model) this.reportedModel = model
+    // After the first turn, an init with no message before it is the CLI starting a turn of its
+    // own: a subagent left working in the background has reported back.
+    if (subtype === 'init' && !this.turn && this.turnsSeen > 0) {
+      this.turn = { ref: `resume-${++this.resumes}`, assistant: null, resumed: true }
+      this.state.set({ activity: null })
+    }
     if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
     if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
     if (subtype === 'compact_boundary') this.items.notice('info', CONTEXT_COMPACTED, at)
@@ -656,7 +691,12 @@ export class ClaudeStream implements ChatDriver {
 
   private assistant(frame: unknown, at: number): void {
     const parsed = AssistantFrame.safeParse(frame)
-    if (!parsed.success || parsed.data.parent_tool_use_id) return
+    if (!parsed.success) return
+    if (parsed.data.parent_tool_use_id) {
+      const text = parsed.data.message.content.flatMap((block) => (block.type === 'text' && block.text?.trim() ? [block.text.trim()] : [])).at(-1)
+      if (text) this.subagentText.set(`t:${parsed.data.parent_tool_use_id}`, text)
+      return
+    }
     const { id: message, content, usage } = parsed.data.message
     // What the latest request sent is what the conversation now fills of the context.
     if (usage) {
@@ -734,9 +774,20 @@ export class ClaudeStream implements ChatDriver {
       const previous = this.items.get(id)
       const tool = previous?.kind === 'tool'
         ? previous
-        : { id, kind: 'tool' as const, name: 'tool', title: '', description: null, input: null, status: 'running' as const, output: null, diffs: [] }
+        : { id, kind: 'tool' as const, name: 'tool', title: '', description: null, input: null, status: 'running' as const, output: null, diffs: [], metrics: null }
+      // A subagent sent to the background answers at once that it runs, and again when it is done.
+      const subagent = SUBAGENT_TOOLS.has(tool.name) ? SubagentResult.safeParse(parsed.data.tool_use_result) : null
+      const launched = !block.is_error && subagent?.success && (subagent.data.status === 'async_launched' || subagent.data.isAsync === true)
+      if (launched) {
+        this.items.put({ ...tool, status: 'running', output: null }, at)
+        continue
+      }
       const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
-      const output = resultText(block.content)
+      const report = subagent?.success && subagent.data.content ? resultText(subagent.data.content) : null
+      const output = report ?? resultText(block.content).replace(HAND_BACK, '').replace(/^ {2}/gm, '')
+      const metrics = subagent?.success && subagent.data.status === 'completed'
+        ? { tools: subagent.data.totalToolUseCount ?? 0, tokens: subagent.data.totalTokens ?? 0, durationMs: subagent.data.totalDurationMs ?? 0 }
+        : (tool.metrics ?? null)
       this.items.put({
         id,
         kind: 'tool',
@@ -746,7 +797,8 @@ export class ClaudeStream implements ChatDriver {
         input: tool.input,
         status,
         output: output ? clip(output) : null,
-        diffs: status === 'done' ? resultDiffs(tool.diffs, parsed.data.tool_use_result) : tool.diffs
+        diffs: status === 'done' ? resultDiffs(tool.diffs, parsed.data.tool_use_result) : tool.diffs,
+        ...(metrics ? { metrics } : {})
       }, at)
     }
   }
@@ -767,6 +819,7 @@ export class ClaudeStream implements ChatDriver {
         ? 'failed'
         : 'completed'
     const error = state === 'failed' ? (str(result.result) ?? result.errors?.join('\n') ?? result.subtype ?? null) : null
+    this.settleAgents(result.subagent_stats?.completed ?? this.agentsCompleted, at)
     // Input counts what the model read, cached or not; the dock's context ring uses the same sum.
     const used = result.usage
     const usage = used
@@ -790,6 +843,19 @@ export class ClaudeStream implements ChatDriver {
     return names.some((name) => name.includes('[1m]')) ? ONE_MILLION : null
   }
 
+  // Background subagents the CLI counts as finished, oldest first, are done: their report is the
+  // hand-back's where one came, else the last thing they said.
+  private settleAgents(completed: number, at: number): void {
+    let newly = completed - this.agentsCompleted
+    this.agentsCompleted = Math.max(this.agentsCompleted, completed)
+    for (const item of this.items.list()) {
+      if (newly <= 0) break
+      if (item.kind !== 'tool' || !SUBAGENT_TOOLS.has(item.name) || item.status !== 'running') continue
+      this.items.put({ ...item, status: 'done', output: item.output ?? this.subagentText.get(item.id) ?? null }, at)
+      newly--
+    }
+  }
+
   private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number, usage: { input: number; output: number } | null = null): void {
     this.finishStreaming(at)
     if (state !== 'completed') this.items.settleTools(state, at)
@@ -799,11 +865,14 @@ export class ClaudeStream implements ChatDriver {
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
-    this.items.put({ id, kind: 'turn', state, error, durationMs, usage }, at)
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true } : {}) }, at)
     if (turn?.assistant) {
       this.messages.push({ role: 'assistant', text: turn.assistant, eventKey: `chat:${turn.ref}:assistant`, complete: true })
     }
     this.turn = null
+    // Subagents still out keep the stage busy; the working line says what it waits for.
+    const background = state === 'completed' ? this.backgroundAgents() : 0
+    if (background > 0) this.state.set({ activity: `等 ${background} 个子 agent 回来` })
   }
 
   private finishStreaming(at: number): void {
@@ -912,6 +981,7 @@ export class ClaudeStream implements ChatDriver {
       }
       this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images] }, at)
       this.turn = { ref, assistant: null }
+      this.turnsSeen++
       return
     }
     if (head.data.type === 'control_request') {

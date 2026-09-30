@@ -105,7 +105,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     input: z.string().nullable(),
     status: ChatToolStatus.catch('done'),
     output: z.string().nullable(),
-    diffs: z.array(ChatDiff).default([])
+    diffs: z.array(ChatDiff).default([]),
+    // What a subagent did, once it reports back: its calls, tokens and time. Older cores leave it out.
+    metrics: z.object({ tools: z.number(), tokens: z.number(), durationMs: z.number() }).nullable().optional()
   }),
   Base.extend({
     kind: z.literal('approval'),
@@ -133,7 +135,10 @@ export const ChatItem = z.discriminatedUnion('kind', [
     error: z.string().nullable(),
     durationMs: z.number().nullable(),
     // Tokens the turn sent and received, where the agent reports them; older cores leave it out.
-    usage: z.object({ input: z.number(), output: z.number() }).nullable().optional()
+    usage: z.object({ input: z.number(), output: z.number() }).nullable().optional(),
+    // The turn began on its own, when a subagent working in the background reported back, not
+    // from a message. Older cores leave it out.
+    resumed: z.boolean().optional()
   }),
   Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
   // A turn's checklist as it last stood, where the turn first touched it.

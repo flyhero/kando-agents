@@ -71,6 +71,57 @@ describe('ClaudeStream', () => {
     expect(driver.providerSessionId()).toBe('6f81960b-d2d8-4380-a15d-efb1386b5db5')
   })
 
+  it('keeps a background subagent running until it reports, and opens the turn the CLI starts for it', () => {
+    const at = 1_790_000_000_000
+    const tool = (id: string, input: Record<string, unknown>) => ({ type: 'tool_use', id, name: 'Agent', input })
+    const records: ChatRecord[] = [
+      { dir: 'out', at, frame: { type: 'user', message: { role: 'user', content: '派个 agent 去数' } }, ref: 'ref-1' },
+      { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1', model: 'claude-x' } },
+      { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm1', content: [tool('A1', { subagent_type: 'Explore', description: 'Count packages', prompt: 'count' })] } } },
+      { dir: 'in', at, frame: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'A1', content: [{ type: 'text', text: 'Async agent launched successfully. (internal)' }] }] }, tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1' } } },
+      { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm2', content: [{ type: 'text', text: '等它回来。' }] } } },
+      { dir: 'in', at, frame: { type: 'result', subtype: 'success', is_error: false, duration_ms: 1000 } }
+    ]
+    const driver = replay(records)
+    // The turn ended, but the subagent is still out: the tool stays running and so does the stage.
+    expect(ofKind(driver.items.list(), 'tool')).toMatchObject([{ name: 'Agent', status: 'running', output: null }])
+    expect(driver.activity()).toBe('running')
+    expect(ofKind(driver.items.list(), 'state')[0]).toMatchObject({ activity: '等 1 个子 agent 回来' })
+
+    const resumed: ChatRecord[] = [
+      { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1', model: 'claude-x' } },
+      { dir: 'in', at, frame: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'A1', content: [{ type: 'text', text: '[Subagent hand-back] The text below is the final report.\nThe report follows:\n  Seven packages.\n  Done.' }] }] }, tool_use_result: { status: 'completed', agentId: 'a1', content: [{ type: 'text', text: 'Seven packages.\nDone.' }], totalToolUseCount: 7, totalTokens: 2300, totalDurationMs: 5000 } } },
+      { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm3', content: [{ type: 'text', text: '有 7 个。' }] } } }
+    ]
+    resumed.slice(0, 1).forEach((record) => driver.apply(record))
+    expect(driver.activity()).toBe('running')
+    resumed.slice(1).forEach((record) => driver.apply(record))
+    expect(ofKind(driver.items.list(), 'tool')[0]).toMatchObject({ status: 'done', output: 'Seven packages.\nDone.', metrics: { tools: 7, tokens: 2300, durationMs: 5000 } })
+    driver.apply({ dir: 'in', at, frame: { type: 'result', subtype: 'success', is_error: false, duration_ms: 800, origin: { kind: 'task-notification' } } })
+    expect(ofKind(driver.items.list(), 'turn').map((turn) => [turn.state, turn.resumed ?? false])).toEqual([['completed', false], ['completed', true]])
+    expect(driver.activity()).toBe('idle')
+    expect(ofKind(driver.items.list(), 'state')[0]).toMatchObject({ activity: null })
+  })
+
+  it('settles a background subagent from the result\'s count when no hand-back frame comes', () => {
+    const at = 1_790_000_000_000
+    const records: ChatRecord[] = [
+      { dir: 'out', at, frame: { type: 'user', message: { role: 'user', content: '数一下' } }, ref: 'ref-1' },
+      { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1' } },
+      { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 'A1', name: 'Agent', input: { subagent_type: 'Explore', description: 'Count', prompt: 'p', run_in_background: true } }] } } },
+      { dir: 'in', at, frame: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'A1', content: [{ type: 'text', text: 'Async agent launched successfully.' }] }] }, tool_use_result: { isAsync: true, status: 'async_launched' } } },
+      { dir: 'in', at, frame: { type: 'result', subtype: 'success', is_error: false, duration_ms: 900, subagent_stats: { completed: 0 } } },
+      { dir: 'in', at, frame: { type: 'assistant', parent_tool_use_id: 'A1', message: { id: 's1', content: [{ type: 'text', text: 'There are 5 files.' }] } } },
+      { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1' } },
+      { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm2', content: [{ type: 'text', text: '有 5 个。' }] } } },
+      { dir: 'in', at, frame: { type: 'result', subtype: 'success', is_error: false, duration_ms: 300, origin: { kind: 'task-notification' }, subagent_stats: { completed: 1 } } }
+    ]
+    const driver = replay(records)
+    expect(ofKind(driver.items.list(), 'tool')[0]).toMatchObject({ name: 'Agent', status: 'done', output: 'There are 5 files.' })
+    expect(ofKind(driver.items.list(), 'turn').map((turn) => turn.resumed ?? false)).toEqual([false, true])
+    expect(driver.activity()).toBe('idle')
+  })
+
   it('records one user and one final assistant message per turn under keys a replay repeats', () => {
     const messages = replay(fixture('claude-session.jsonl')).takeMessages()
     expect(messages.filter((message) => message.role === 'user').map((message) => message.eventKey))

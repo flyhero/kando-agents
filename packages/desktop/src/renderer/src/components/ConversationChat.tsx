@@ -229,10 +229,10 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 // expanded list's business; the fold only says the scale.
 function foldText(turn: TurnItem, steps: number): string {
   const took = (steps > 0 ? ` · ${steps} 步` : '') + (turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : '') + tokensText(turn)
-  const error = turn.error ? `：${readableNotice(turn.error)}` : ''
-  if (turn.state === 'interrupted') return `已中断${took}${error}`
-  if (turn.state === 'failed') return `失败${took}${error}`
-  return `完成${took}`
+  const why = turn.resumed ? '子 agent 回来后继续，' : ''
+  if (turn.state === 'interrupted') return `${why}已中断${took}${turn.error ? `：${readableNotice(turn.error)}` : ''}`
+  if (turn.state === 'failed') return `${why}失败${took}${turn.error ? `：${readableNotice(turn.error)}` : ''}`
+  return `${why}完成${took}`
 }
 
 // Opens a turn's work at one of the files it changed: for the list of them under its answer.
