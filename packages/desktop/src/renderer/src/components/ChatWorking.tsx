@@ -3,8 +3,8 @@ import { formatTokens, workedFor } from '../chat-tools'
 import { Spinner } from './Spinner'
 
 // What kind of thing the agent is at, when nothing more specific is known.
-export type WorkingPhase = 'tools' | 'thinking' | 'replying' | 'waiting' | 'working'
-const PHASE: Record<WorkingPhase, string> = { tools: '运行工具', thinking: '思考', replying: '写回复', waiting: '等子 agent', working: '处理' }
+export type WorkingPhase = 'tools' | 'thinking' | 'replying' | 'waiting' | 'asking' | 'working'
+const PHASE: Record<WorkingPhase, string> = { tools: '运行工具', thinking: '思考', replying: '写回复', waiting: '等子 agent', asking: '等你回答', working: '处理' }
 
 // While a turn runs, at the end of the conversation: the numbers that say how it goes, as Claude
 // Code's own status reads: how long, how many tokens written, how many subagents out, and what
@@ -38,7 +38,7 @@ export function ChatWorking({ phase, tokens, background, since }: {
           {part}
         </span>
       ))}
-      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className="chat-sheen">{PHASE[phase]}中…</span></span>
+      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className={phase === 'asking' ? undefined : 'chat-sheen'}>{PHASE[phase]}{phase === 'asking' ? '' : '中…'}</span></span>
     </div>
   )
 }

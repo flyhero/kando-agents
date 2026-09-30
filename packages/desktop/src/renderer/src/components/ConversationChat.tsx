@@ -533,12 +533,13 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   const running = useMemo(() => {
     const tools = items.filter((item): item is Extract<ChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.status === 'running')
     const last = items.at(-1)
-    const phase: WorkingPhase = tools.some((tool) => !isSubagent(tool.name)) ? 'tools'
+    const phase: WorkingPhase = turn === 'awaiting' ? 'asking'
+      : tools.some((tool) => !isSubagent(tool.name)) ? 'tools'
       : last?.kind === 'reasoning' && last.streaming ? 'thinking'
         : last?.kind === 'assistant' && last.streaming ? 'replying'
           : tools.length > 0 ? 'waiting' : 'working'
     return { phase, background: tools.filter((tool) => isSubagent(tool.name)).length }
-  }, [items])
+  }, [items, turn])
   // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
   const modelId = state?.model ?? conversation.chatOptions?.model ?? null
   const agentInfo = useMemo(
@@ -579,7 +580,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
             </Fragment>
           )
         })}
-        {turn === 'running' && (
+        {(turn === 'running' || turn === 'awaiting') && (
           <ChatWorking
             phase={running.phase}
             tokens={state?.turnUsage?.output ?? null}
