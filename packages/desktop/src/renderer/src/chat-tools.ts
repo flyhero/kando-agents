@@ -62,6 +62,38 @@ export function runHeadline(tools: readonly Pick<ToolItem, 'name' | 'status' | '
 
 // A call that hands work to a subagent of its own: Claude's Task (Agent in newer versions), or a
 // Codex spawn.
+export function isCommandTool(name: string): boolean {
+  return name === 'Bash' || name === 'commandExecution'
+}
+
+// Shell words that never name the program being run; the ones with an argument take it along.
+const SHELL_NOISE = new Set(['env', 'exec', 'nice', 'nohup', 'set', 'sudo', 'time'])
+const SHELL_NOISE_WITH_ARG = new Set(['.', 'cd', 'source'])
+// Launchers whose next word, or a later path, is the real subject.
+const SHELL_RUNNERS = new Set(['bash', 'bun', 'bunx', 'deno', 'node', 'npm', 'npx', 'pnpm', 'python', 'python3', 'run', 'sh', 'ts-node', 'tsx', 'uv', 'uvx', 'yarn', 'zsh'])
+
+// The program a command runs, for a line that stands for the command: `cd repo && FOO=1 npx tsx
+// scripts/report.ts | head` → `report.ts`. Env assignments, flags, noise and launchers are skipped.
+export function commandKeyword(command: string): string {
+  const words = command.split(/[\s;&|()]+/).filter(Boolean)
+  let skip = false
+  for (const word of words) {
+    if (skip) {
+      skip = false
+      continue
+    }
+    if (/^[A-Z_]\w*=/i.test(word)) continue
+    if (/^[+-]/.test(word)) continue
+    if (SHELL_NOISE_WITH_ARG.has(word)) {
+      skip = true
+      continue
+    }
+    if (SHELL_NOISE.has(word) || SHELL_RUNNERS.has(word)) continue
+    return word.includes('/') ? (word.split('/').pop() || word) : word
+  }
+  return words[0] ?? command
+}
+
 export function isSubagent(name: string): boolean {
   return name === 'Task' || name === 'Agent' || name === 'spawnAgent'
 }

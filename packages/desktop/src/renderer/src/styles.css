@@ -4997,6 +4997,24 @@ button.task-tag-updated:hover {
 .chat-file-ext[data-ext='html'], .chat-file-ext[data-ext='vue'] { background: #e34c26; }
 .chat-file-ext[data-ext='swift'] { background: #f05138; }
 
+/* The command an approval asks about: a code block, clipped to a few lines until opened. */
+.chat-approve-command { position: relative; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.chat-approve-command pre {
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  font: 12px/1.6 var(--mono);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-approve-command[data-clipped] pre {
+  max-height: calc(1.6em * 3 + 16px);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+.chat-approve-command-more { display: block; margin: 0 0 6px 12px; font-size: 12px; }
+
 /* An approval's answers as numbered rows, the reason for refusing typed on its own row; the
    number keys pick, Enter submits. */
 .chat-approve-options { display: flex; flex-direction: column; gap: 2px; }

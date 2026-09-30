@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState, type KeyboardEvent } from 'rea
 import type { ChatDecision, ChatItem, ChatQuestion } from '@kando/protocol'
 import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
-import { toolLabel } from '../chat-tools'
+import { commandKeyword, isCommandTool, toolLabel } from '../chat-tools'
 import { ChatPaths } from './ChatToolCard'
 import { CheckIcon } from './icons'
 
@@ -38,17 +38,39 @@ export function ChatRequestLine({ item }: { item: RequestItem }) {
     if (item.resolution !== null) return <ChatQuestionReceipt item={item} />
     return <div className="chat-request-line" data-waiting>agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
   }
-  const what = <>{toolLabel(item.tool)} <span className="mono">{shorten(item.title)}</span></>
+  // A command is named by the program it runs; the card below has it in full.
+  const what = <>{toolLabel(item.tool)} <span className="mono">{isCommandTool(item.tool) ? commandKeyword(item.title) : shorten(item.title)}</span></>
   return item.resolution === null
     ? <div className="chat-request-line" data-waiting>需要你确认：{what} · 在下方回答</div>
     : <div className="chat-request-line">{what} · {RESOLUTION_TEXT[item.resolution]}</div>
 }
 
+// A command in full, in a block of its own: three lines of it until opened, since one that chains
+// several steps runs long, and the headline above already says what it is for.
+const COMMAND_LINES = 3
+
+function CommandBlock({ command }: { command: string }) {
+  const [open, setOpen] = useState(false)
+  const lines = command.split('\n')
+  const long = lines.length > COMMAND_LINES || command.length > 200
+  return (
+    <div className="chat-approve-command" data-clipped={(long && !open) || undefined}>
+      <pre>{command}</pre>
+      {long && (
+        <button type="button" className="link-button chat-approve-command-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? '收起' : '展开全部'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // A waiting approval, docked above the composer: what the agent wants to do and the answers it
-// takes. The call's own card in the list has its diff; a command is repeated here in full, since
-// that card shows only its first line.
-// The answers come as numbered rows, allowing first and refusing last, the reason for refusing
-// typed on its own row; a number key picks a row, Enter sends the one picked.
+// takes. The headline is the agent's own words for the call where it gave them, else the tool
+// and what it acts on; a command is named by its program there and shown in full below, since
+// the call's own line in the list has only its first line. The answers come as numbered rows,
+// allowing first and refusing last, the reason for refusing typed on its own row; a number key
+// picks a row, Enter sends the one picked.
 const DECISION_ORDER: readonly ChatDecision[] = ['allow', 'allowForSession', 'deny']
 
 export function ChatApprovalCard({ conversationId, item, tool }: { conversationId: string; item: ApprovalItem; tool: ToolItem | undefined }) {
@@ -58,9 +80,11 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   const [choice, setChoice] = useState<ChatDecision>(decisions[0] ?? 'deny')
   const reasonInput = useRef<HTMLInputElement>(null)
   const shorten = useContext(ChatPaths)
-  const title = shorten(item.title)
+  const command = isCommandTool(item.tool)
+  const title = command ? commandKeyword(item.title) : shorten(item.title)
   // Claude describes a file call by the file's name, which the title already has.
   const detail = item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
+  const what = <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
   const submit = () => void respond(choice, choice === 'deny' && reason.trim() ? { message: reason.trim() } : {})
   const pick = (decision: ChatDecision) => {
     setChoice(decision)
@@ -87,11 +111,11 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   }
   return (
     <div className="chat-request" data-waiting onKeyDown={onKeyDown}>
-      <div className="chat-request-title">
-        需要你确认：{toolLabel(item.tool)} <span className="mono">{title}</span>
-      </div>
-      {detail && <p className="chat-request-detail muted">{detail}</p>}
-      {tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
+      <div className="chat-request-title">需要你确认：{detail ?? what}</div>
+      {detail && <p className="chat-request-detail muted">{what}</p>}
+      {command && tool?.input
+        ? <CommandBlock command={tool.input} />
+        : tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
       <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">
         {decisions.map((decision, index) => (
           <div

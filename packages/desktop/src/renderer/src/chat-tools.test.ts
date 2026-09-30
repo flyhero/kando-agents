@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, proseHeadline, elapsedText, thoughtFor } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, proseHeadline, elapsedText, thoughtFor, commandKeyword } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -56,6 +56,15 @@ describe('proseHeadline', () => {
   })
   it('says nothing for a fragment', () => {
     expect(proseHeadline('好的')).toBeNull()
+  })
+})
+
+describe('commandKeyword', () => {
+  it('names the program, past cd, env and launchers', () => {
+    expect(commandKeyword('cd /Users/me/repo && git branch --show-current && grep -rn foo . | head -40')).toBe('git')
+    expect(commandKeyword('set -a && source .env && FOO=1 npx tsx scripts/report/monthly.ts')).toBe('monthly.ts')
+    expect(commandKeyword('pnpm vitest run orders --reporter=dot')).toBe('vitest')
+    expect(commandKeyword('sudo -n true')).toBe('true')
   })
 })
 
