@@ -3,7 +3,7 @@ import Markdown, { type Components, type ExtraProps } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
-import { showError } from '../core-store'
+import { perform, showError, useFindFileSupported } from '../core-store'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { fileCandidates, fileReference, type FileReference } from '../file-links'
 import { CopyButton } from './CopyButton'
@@ -14,19 +14,27 @@ export const ChatRoots = createContext<readonly string[]>([])
 const FILE_MANAGER = window.kando?.platform === 'darwin' ? '访达' : window.kando?.platform === 'win32' ? '资源管理器' : '文件管理器'
 
 // A file a reply names, shown in the file manager on a click; never opened, as a reply can name
-// anything.
+// anything. Agents often write a bare name, so when it is nowhere it was tried directly, core
+// looks it up in the projects; the shallowest of several files by that name is shown.
 function FileLink({ reference, children }: { reference: FileReference; children: ReactNode }) {
   const roots = useContext(ChatRoots)
+  const searchable = useFindFileSupported()
   const candidates = fileCandidates(reference.path, roots)
   if (candidates.length === 0) return <code>{children}</code>
+  const reveal = async () => {
+    if (await revealFile(candidates)) return
+    const found = searchable && roots.length > 0 && !reference.path.startsWith('/')
+      ? await perform((rpc) => rpc.call('projects.findFile', { roots: [...roots], path: reference.path }))
+      : null
+    if (found && found.length > 0 && await revealFile(found)) return
+    showError(`找不到文件：${reference.path}`)
+  }
   return (
     <button
       type="button"
       className="chat-file-link"
       title={`在${FILE_MANAGER}中显示 ${reference.path}`}
-      onClick={() => void revealFile(candidates).then((shown) => {
-        if (!shown) showError(`找不到文件：${reference.path}`)
-      })}
+      onClick={() => void reveal()}
     >
       <code>{children}</code>
     </button>

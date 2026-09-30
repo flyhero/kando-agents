@@ -34,7 +34,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -249,6 +249,12 @@ export const rpcMethods = {
   // Removes each worktree checkCleanWorktree allows, as it stands now; branches stay.
   'worktrees.clean': { params: z.object({ paths: z.array(z.string().min(1)).min(1).max(500) }), result: z.array(WorktreeCleanResult) },
   'projects.forget': { params: z.object({ path: z.string().min(1) }), result: Ok },
+  // Files in these project folders whose path ends in `path` (a bare name, or a tail of one),
+  // tracked or untracked but not ignored: absolute, the shallowest first, at most 20.
+  'projects.findFile': {
+    params: z.object({ roots: z.array(z.string().min(1)).min(1).max(20), path: z.string().min(1).max(1000) }),
+    result: z.array(z.string())
+  },
   // What older clients call projects.recent / projects.forget.
   'repos.recent': { params: z.object({}), result: z.array(z.string()) },
   'repos.forget': { params: z.object({ path: z.string().min(1) }), result: Ok },

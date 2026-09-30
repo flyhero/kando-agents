@@ -335,6 +335,11 @@ export function useChatImagesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('chat-images') ?? false)
 }
 
+// Whether core can look a file up by name in the projects (projects.findFile).
+export function useFindFileSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('find-file') ?? false)
+}
+
 // Whether a task can start in the chat view.
 export function useTaskChatSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
