@@ -4,7 +4,7 @@ import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
 import { toolLabel } from '../chat-tools'
 import { ChatPaths } from './ChatToolCard'
-import { CheckIcon, PencilIcon } from './icons'
+import { CheckIcon } from './icons'
 
 type ApprovalItem = Extract<ChatItem, { kind: 'approval' }>
 type QuestionItem = Extract<ChatItem, { kind: 'question' }>
@@ -162,6 +162,11 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
   const [picked, setPicked] = useState<Record<string, string[]>>({})
   const [typed, setTyped] = useState<Record<string, string>>({})
   const [typing, setTyping] = useState<Record<string, boolean>>({})
+  // Two more ways to answer, each behind a tab of its own: a note that goes with every pick, or
+  // one reply in place of all the picks.
+  const [mode, setMode] = useState<'question' | 'note' | 'reply'>('question')
+  const [note, setNote] = useState('')
+  const [reply, setReply] = useState('')
   const card = useRef<HTMLDivElement>(null)
 
   // The card takes the keys when it comes up, unless the user is writing something; and it keeps
@@ -177,12 +182,18 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
 
   const question = questions[index]
   if (!question) return null
-  const answer = (each: ChatQuestion) => answerOf(picked[each.id] ?? [], typing[each.id] ? typed[each.id] : undefined)
+  const replying = reply.trim() !== ''
+  const answer = (each: ChatQuestion) => {
+    if (replying) return [reply.trim()]
+    const own = answerOf(picked[each.id] ?? [], typing[each.id] ? typed[each.id] : undefined)
+    return own.length > 0 && note.trim() ? [...own, note.trim()] : own
+  }
   const answered = (each: ChatQuestion) => answer(each).length > 0
   const last = index === questions.length - 1
   const unanswered = questions.filter((each) => !answered(each)).length
   const submit = () => void respond('allow', { answers: Object.fromEntries(questions.map((each) => [each.id, answer(each)])) })
   const chosen = picked[question.id] ?? []
+  const free = mode !== 'question'
 
   const choose = (label: string) => {
     if (question.multiSelect) {
@@ -206,6 +217,18 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
     else if (unanswered === 0) submit()
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      if (!busy) void respond('deny')
+      return
+    }
+    if (event.target instanceof HTMLTextAreaElement) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && unanswered === 0) {
+        event.preventDefault()
+        submit()
+      }
+      return
+    }
     if (event.target instanceof HTMLInputElement) {
       if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
         event.preventDefault()
@@ -219,13 +242,13 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
       event.preventDefault()
       const at = rows.findIndex((row) => row === document.activeElement)
       rows[(at + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length]?.focus()
-    } else if (/^[1-9]$/.test(event.key)) {
+    } else if (/^[1-9]$/.test(event.key) && !free) {
       const option = question.options[Number(event.key) - 1]
       if (option) {
         event.preventDefault()
         choose(option.label)
       }
-    } else if (event.key === '0') {
+    } else if (event.key === '0' && !free) {
       event.preventDefault()
       toggleTyping()
     }
@@ -234,33 +257,59 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
   return (
     <div className="chat-request chat-ask" data-waiting ref={card} onKeyDown={onKeyDown}>
       <div className="chat-ask-head">
-        {questions.length > 1 ? (
-          <div className="chat-ask-tabs" role="tablist" aria-label="问题">
-            {questions.map((each, at) => (
-              <button
-                key={each.id}
-                type="button"
-                role="tab"
-                aria-selected={at === index}
-                className="chat-ask-tab"
-                onClick={() => setIndex(at)}
-              >
-                {answered(each) && <CheckIcon />}
-                {each.header || `问题 ${at + 1}`}
-              </button>
-            ))}
-          </div>
-        ) : (
-          question.header && <span className="chat-ask-chip">{question.header}</span>
-        )}
+        <div className="chat-ask-tabs" role="tablist" aria-label="问题">
+          {questions.map((each, at) => (
+            <button
+              key={each.id}
+              type="button"
+              role="tab"
+              aria-selected={!free && at === index}
+              className="chat-ask-tab"
+              onClick={() => { setMode('question'); setIndex(at) }}
+            >
+              {answered(each) && !replying && <CheckIcon />}
+              {questions.length > 1 ? (each.header || `Q${at + 1}`) : (each.header || '问题')}
+            </button>
+          ))}
+          <button type="button" role="tab" aria-selected={mode === 'note'} className="chat-ask-tab chat-ask-tab-alt" onClick={() => setMode('note')}>
+            ✎ 补充说明{note.trim() && <CheckIcon />}
+          </button>
+          <button type="button" role="tab" aria-selected={mode === 'reply'} className="chat-ask-tab" onClick={() => setMode('reply')}>
+            ⇄ 直接回复{replying && <CheckIcon />}
+          </button>
+        </div>
         <span className="chat-dock-spacer" />
-        {questions.length > 1 && <span className="chat-ask-count muted">{index + 1}/{questions.length}</span>}
+        {questions.length > 1 && !free && <span className="chat-ask-count muted">{index + 1}/{questions.length}</span>}
       </div>
-      <div className="chat-ask-question" id={`${item.requestId}-question`}>
+      {mode === 'note' && (
+        <textarea
+          className="chat-ask-free"
+          rows={3}
+          autoFocus
+          value={note}
+          placeholder="给 agent 的补充说明，会附在每个问题的回答后面；Enter 提交，Shift+Enter 换行"
+          aria-label="补充说明"
+          disabled={busy}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      )}
+      {mode === 'reply' && (
+        <textarea
+          className="chat-ask-free"
+          rows={3}
+          autoFocus
+          value={reply}
+          placeholder="不选选项，直接用一段话回答全部问题；Enter 提交，Shift+Enter 换行"
+          aria-label="直接回复"
+          disabled={busy}
+          onChange={(event) => setReply(event.target.value)}
+        />
+      )}
+      {!free && <div className="chat-ask-question" id={`${item.requestId}-question`}>
         {question.question}
         {question.multiSelect && <span className="chat-ask-hint muted">可多选</span>}
-      </div>
-      <div
+      </div>}
+      {!free && <div
         className="chat-ask-options"
         role={question.multiSelect ? 'group' : 'radiogroup'}
         aria-labelledby={`${item.requestId}-question`}
@@ -296,7 +345,7 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
             disabled={busy}
             onClick={toggleTyping}
           >
-            <span className="chat-ask-key" data-multi={question.multiSelect || undefined}><PencilIcon /></span>
+            <span className="chat-ask-key" data-multi={question.multiSelect || undefined}>{question.options.length < 9 ? question.options.length + 1 : '…'}</span>
             <span className="chat-ask-text"><span className="chat-ask-label">其他，自己填写</span></span>
           </button>
           {typing[question.id] && (
@@ -311,12 +360,12 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
             />
           )}
         </div>
-      </div>
+      </div>}
       <div className="chat-request-actions">
-        <button type="button" className="button ghost" disabled={busy} onClick={() => void respond('deny')}>不回答</button>
+        <button type="button" className="button ghost" disabled={busy} onClick={() => void respond('deny')}>不回答<kbd>Esc</kbd></button>
         <span className="chat-dock-spacer" />
-        {index > 0 && <button type="button" className="button ghost" disabled={busy} onClick={() => setIndex(index - 1)}>上一个</button>}
-        {last ? (
+        {!free && index > 0 && <button type="button" className="button ghost" disabled={busy} onClick={() => setIndex(index - 1)}>上一个</button>}
+        {free || last ? (
           <button
             type="button"
             className="button primary"
@@ -324,7 +373,7 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
             title={unanswered > 0 ? `还有 ${unanswered} 个问题没回答` : undefined}
             onClick={submit}
           >
-            提交
+            提交<kbd>↵</kbd>
           </button>
         ) : (
           <button type="button" className="button primary" disabled={busy || !answered(question)} onClick={goOn}>下一个</button>

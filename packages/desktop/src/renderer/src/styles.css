@@ -4384,13 +4384,63 @@ button.task-tag-updated:hover {
 
 .chat-changes:hover { background: var(--fill-2); }
 
-.chat-dock-requests {
+/* A request in the composer's place: the same shell as the input, a tab bar across the top when
+   several wait, and the card without a frame of its own inside. */
+.chat-intervention {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 45vh;
-  overflow-y: auto;
+  max-height: 60vh;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
 }
+.chat-intervention > .chat-request { flex: 1; min-height: 0; overflow-y: auto; border: 0; border-radius: 0; }
+.chat-intervention-tabs {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+.chat-intervention-tab {
+  flex-shrink: 0;
+  max-width: 20em;
+  padding: 6px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.chat-intervention-tab:hover { color: var(--text); }
+.chat-intervention-tab[aria-selected='true'] { border-bottom-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+.chat-intervention-count { flex-shrink: 0; margin-left: auto; padding: 4px 12px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-dock-composer[hidden] { display: none; }
+/* The two other ways to answer sit at the end of the question tabs. */
+.chat-ask-tab-alt { margin-left: auto; }
+.chat-ask-free {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  resize: none;
+}
+.chat-ask-free:focus { box-shadow: 0 0 0 2px var(--focus); }
+.chat-request-actions .button.primary,
+.chat-approve-footer .button.primary { min-width: 88px; }
 
 .chat-input-card {
   position: relative;
