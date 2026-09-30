@@ -4510,6 +4510,10 @@ button.task-tag-updated:hover {
   cursor: pointer;
 }
 
+/* The row's 2px gap is right between the option pills, but a filled button needs air before it:
+   the context ring and the steer button, which sit last before it, keep their distance. */
+.chat-options > .chat-context,
+.chat-options > .chat-steer-button { margin-right: 8px; }
 .chat-input-button svg { width: 16px; height: 16px; }
 .chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
 .chat-input-button[data-stop] { background: var(--text); color: var(--surface); }
