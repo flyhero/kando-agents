@@ -5,7 +5,7 @@ import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { ChevronDownIcon, EnterIcon, StopIcon } from './icons'
+import { ChevronDownIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -45,10 +45,14 @@ function QueuedRow({ entry, index, steerable, onEdit, onRelease, onNow, onCancel
       <span className="chat-queued-text" title={entry.text}>{entry.text || '（只有图片）'}</span>
       {entry.images.length > 0 && <span className="chat-queued-images">{entry.images.length} 张图片</span>}
       <span className="chat-queued-actions">
-        {entry.held && index > 0 && <button type="button" className="link-button" onClick={() => onRelease(entry.ref)}>发送</button>}
-        {steerable && <button type="button" className="link-button" title="不等回合结束，现在就交给 agent" onClick={() => onNow(entry.ref)}>立刻插入</button>}
-        <button type="button" className="link-button" onClick={() => onEdit(entry)}>编辑</button>
-        <button type="button" className="link-button" onClick={() => onCancel(entry.ref)}>删除</button>
+        {entry.held && index > 0 && (
+          <button type="button" className="chat-queued-action" aria-label="发送这条" data-tooltip="发送这条" data-tooltip-side="top-end" onClick={() => onRelease(entry.ref)}><EnterIcon /></button>
+        )}
+        {steerable && (
+          <button type="button" className="chat-queued-action" aria-label="立刻插入到进行中的回合" data-tooltip="立刻插入" data-tooltip-side="top-end" onClick={() => onNow(entry.ref)}><EnterIcon /></button>
+        )}
+        <button type="button" className="chat-queued-action" aria-label="编辑，放回输入框" data-tooltip="编辑" data-tooltip-side="top-end" onClick={() => onEdit(entry)}><PencilIcon /></button>
+        <button type="button" className="chat-queued-action" aria-label="删除" data-tooltip="删除" data-tooltip-side="top-end" onClick={() => onCancel(entry.ref)}><CloseIcon /></button>
       </span>
     </>
   )

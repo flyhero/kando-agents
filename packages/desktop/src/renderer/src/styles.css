@@ -4819,16 +4819,20 @@ button.task-tag-updated:hover {
 .chat-queue-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .chat-queued {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-height: 26px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: var(--radius-sm);
 }
 .chat-queued:hover { background: var(--fill); }
 .chat-queued-index { flex: none; width: 18px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .chat-queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-queued-actions { flex: none; display: flex; gap: 8px; opacity: 0; transition: opacity 0.12s; }
+.chat-queued-actions { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
+/* Send now, edit, drop: icons, named on hover. */
+.chat-queued-action { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--text-muted); cursor: pointer; }
+.chat-queued-action:hover, .chat-queued-action:focus-visible { background: var(--fill-2); color: var(--text); }
+.chat-queued-action svg { width: 14px; height: 14px; }
 .chat-queued:hover .chat-queued-actions,
 .chat-queued:focus-within .chat-queued-actions { opacity: 1; }
 .chat-queue .link-button { margin-left: 0; }
