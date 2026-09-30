@@ -31,7 +31,10 @@ const IN_VIEW_SLACK = 8
 
 // What a turn sent and received, when the agent counted: "↑ 42k ↓ 6.8k".
 function tokensText(item: Extract<ChatItem, { kind: 'turn' }>): string {
-  return item.usage ? ` · ↑ ${formatTokens(item.usage.input)} ↓ ${formatTokens(item.usage.output)}` : ''
+  if (!item.usage) return ''
+  return 'total' in item.usage
+    ? ` · 总 ${formatTokens(item.usage.total)} tokens`
+    : ` · ↑ ${formatTokens(item.usage.input)} ↓ ${formatTokens(item.usage.output)}`
 }
 
 function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {

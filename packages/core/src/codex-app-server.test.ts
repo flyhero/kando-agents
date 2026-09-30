@@ -57,12 +57,24 @@ describe('CodexAppServer', () => {
 
   it('keeps each turn its own token count from the thread usage updates', () => {
     const turns = ofKind(replay(fixture('codex-session.jsonl')).items.list(), 'turn')
-    expect(turns.length).toBeGreaterThan(0)
-    for (const turn of turns) {
-      expect(turn.usage).not.toBeNull()
-      expect(turn.usage!.input).toBeGreaterThan(0)
-      expect(turn.usage!.output).toBeGreaterThan(0)
-    }
+    expect(turns.map((turn) => turn.usage)).toEqual([
+      { input: 30_105, output: 223 },
+      null,
+      { input: 15_289, output: 5 }
+    ])
+  })
+
+  it('shows a total when older Codex usage updates have no input or output split', () => {
+    const turns = ofKind(replay(fixture('codex-plan.jsonl')).items.list(), 'turn')
+    expect(turns.map((turn) => turn.usage)).toEqual([
+      { total: 37_829 },
+      { total: 74_969 }
+    ])
+  })
+
+  it('does not charge a resumed turn for usage replayed from the previous turn', () => {
+    const turns = ofKind(replay(fixture('codex-resume.jsonl')).items.list(), 'turn')
+    expect(turns.map((turn) => turn.usage)).toEqual([{ input: 17_613, output: 11 }])
   })
 
   it('records the final answer of each turn, not its commentary', () => {

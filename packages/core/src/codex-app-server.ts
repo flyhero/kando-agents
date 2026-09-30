@@ -100,10 +100,17 @@ const TurnParams = z.looseObject({
   sandboxPolicy: SandboxShape.optional().catch(undefined),
   collaborationMode: Collaboration
 })
-// last: the running turn so far; inputTokens counts the cached input too, outputTokens the reasoning.
+// last is one model call; total accumulates calls across the thread.
+const TokenCount = z.looseObject({
+  totalTokens: z.number(),
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional()
+})
 const TokenUsage = z.looseObject({
+  turnId: z.string().optional(),
   tokenUsage: z.looseObject({
-    last: z.looseObject({ totalTokens: z.number(), inputTokens: z.number().optional(), outputTokens: z.number().optional() }),
+    last: TokenCount,
+    total: TokenCount.optional(),
     modelContextWindow: z.number().nullish()
   })
 })
@@ -344,8 +351,9 @@ export class CodexAppServer implements ChatDriver {
   private startError: string | null = null
   private exited = false
   private turn: { ref: string; turnId: string | null; assistant: string | null } | null = null
-  // What the running turn has read and written, as the thread's token updates last said.
-  private turnUsage: { input: number; output: number } | null = null
+  // What this turn used, summed across its model calls.
+  private turnUsage: { input: number; output: number } | { total: number } | null = null
+  private threadUsage: z.infer<typeof TokenCount> | null = null
   private readonly pending = new Map<string, Pending>()
   private readonly unanswered = new Map<string, string | number>()
   private turns = 0
@@ -543,8 +551,9 @@ export class CodexAppServer implements ChatDriver {
     if (method === 'thread/tokenUsage/updated') {
       const usage = TokenUsage.safeParse(parsed.data.params)
       if (!usage.success) return null
-      const { last, modelContextWindow } = usage.data.tokenUsage
-      return { method, params: { tokenUsage: { last: { totalTokens: last.totalTokens, inputTokens: last.inputTokens, outputTokens: last.outputTokens }, modelContextWindow } } }
+      const { last, total, modelContextWindow } = usage.data.tokenUsage
+      const counts = ({ totalTokens, inputTokens, outputTokens }: z.infer<typeof TokenCount>) => ({ totalTokens, inputTokens, outputTokens })
+      return { method, params: { turnId: usage.data.turnId, tokenUsage: { last: counts(last), total: total ? counts(total) : undefined, modelContextWindow } } }
     }
     const kept = ['thread/started', 'turn/started', 'turn/completed', 'turn/plan/updated', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
     return kept.includes(method) ? frame : null
@@ -782,12 +791,31 @@ export class CodexAppServer implements ChatDriver {
       case 'thread/tokenUsage/updated': {
         const usage = TokenUsage.safeParse(params)
         if (!usage.success) return
-        const { last, modelContextWindow } = usage.data.tokenUsage
+        const { last, total, modelContextWindow } = usage.data.tokenUsage
+        const previous = this.threadUsage
+        if (total) this.threadUsage = total
         this.state.setContext({ used: last.totalTokens, window: modelContextWindow ?? null })
-        // The turn's own count so far: on the working line as it goes, on the turn's line at its end.
-        if (last.inputTokens !== undefined && last.outputTokens !== undefined) {
-          this.turnUsage = { input: last.inputTokens, output: last.outputTokens }
-          if (this.turn) this.state.set({ turnUsage: this.turnUsage })
+        // A resumed thread may first replay usage from its previous turn.
+        if (!this.turn || (usage.data.turnId && usage.data.turnId !== this.turn.turnId)) return
+        const increment = (key: 'totalTokens' | 'inputTokens' | 'outputTokens'): number | undefined => {
+          const current = total?.[key]
+          const before = previous?.[key]
+          return current !== undefined && before !== undefined && current >= before ? current - before : last[key]
+        }
+        const input = increment('inputTokens')
+        const output = increment('outputTokens')
+        if (input !== undefined && output !== undefined) {
+          if (input === 0 && output === 0 && !this.turnUsage) return
+          const before = this.turnUsage && 'input' in this.turnUsage ? this.turnUsage : null
+          this.turnUsage = { input: (before?.input ?? 0) + input, output: (before?.output ?? 0) + output }
+          this.state.set({ turnUsage: this.turnUsage })
+        } else {
+          const count = increment('totalTokens')
+          if (count !== undefined && (count > 0 || this.turnUsage)) {
+            const before = this.turnUsage
+            this.turnUsage = { total: (before ? 'total' in before ? before.total : before.input + before.output : 0) + count }
+            this.state.set({ turnUsage: null })
+          }
         }
         return
       }

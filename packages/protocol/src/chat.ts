@@ -135,7 +135,10 @@ export const ChatItem = z.discriminatedUnion('kind', [
     error: z.string().nullable(),
     durationMs: z.number().nullable(),
     // Tokens the turn sent and received, where the agent reports them; older cores leave it out.
-    usage: z.object({ input: z.number(), output: z.number() }).nullable().optional(),
+    usage: z.union([
+      z.object({ input: z.number(), output: z.number() }),
+      z.object({ total: z.number() })
+    ]).nullable().optional(),
     // The turn began on its own, when a subagent working in the background reported back, not
     // from a message. Older cores leave it out.
     resumed: z.boolean().optional()
