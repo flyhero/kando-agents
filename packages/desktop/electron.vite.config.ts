@@ -12,7 +12,9 @@ const CSP = [
   // Task images arrive from core as blob: URLs; nothing is ever loaded from the web.
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  'connect-src ws://127.0.0.1:*'
+  'connect-src ws://127.0.0.1:*',
+  // The preview frames in the chat: files the agent asked to show, served by main (kando-preview:).
+  'frame-src kando-preview:'
 ].join('; ')
 
 // Build-only: the dev server injects an inline React Refresh preamble a strict CSP would block.
