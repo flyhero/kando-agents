@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -38,5 +38,11 @@ describe('runHeadline', () => {
     expect(runHeadline([call('done', 'List files'), call('running', 'Read the config')])).toEqual({ text: 'Read the config', described: true })
     expect(runHeadline([call('done', 'List files'), call('done', 'Read the config')])).toEqual({ text: '运行 2 个命令', described: false })
     expect(runHeadline([call('done'), call('running')])).toEqual({ text: '运行 2 个命令', described: false })
+  })
+})
+
+describe('formatTokens', () => {
+  it('reads at a glance at every size', () => {
+    expect([842, 2340, 42_100, 1_200_000].map(formatTokens)).toEqual(['842', '2.3k', '42k', '1.2M'])
   })
 })

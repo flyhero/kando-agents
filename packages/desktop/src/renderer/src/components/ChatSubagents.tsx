@@ -24,8 +24,9 @@ function Subagent({ tool }: { tool: ToolItem }) {
     <div className="chat-subagent">
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <SubagentMark tool={tool} />
-        <span className="chat-tool-name">{brief.kind ?? '子 agent'}</span>
-        <span className="chat-tool-title" title={tool.title}>{tool.title}</span>
+        <span className="chat-subagent-prefix">子 agent:</span>
+        {brief.kind && <span className="chat-tool-name">{brief.kind}</span>}
+        <span className="chat-subagent-chip" title={tool.title}>{tool.title}</span>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
       </button>
       {open && (
@@ -38,7 +39,9 @@ function Subagent({ tool }: { tool: ToolItem }) {
           )}
           <section>
             <h4 className="chat-subagent-label">结果</h4>
-            {tool.output ? <ChatMarkdown text={tool.output} /> : <p className="muted">{tool.status === 'running' ? '还在进行…' : '没有结果'}</p>}
+            {tool.output
+              ? <div className="chat-subagent-result"><ChatMarkdown text={tool.output} /></div>
+              : <p className="muted">{tool.status === 'running' ? '还在进行…' : '没有结果'}</p>}
           </section>
         </div>
       )}

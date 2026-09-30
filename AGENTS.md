@@ -29,6 +29,7 @@ Task-first multi-agent manager. See README.md for the architecture diagram.
 - Avoid type assertions except `as const`.
 - Name files after the concept they hold, never `utils` or `helpers`.
 - Cross-platform: keep platform checks explicit (named pipes on Windows, `spawn-helper` on macOS).
+- Visual decisions (colour, type, spacing, radius, the chat's row rhythm) follow `DESIGN.md`; read tokens from `styles.css`'s `:root`, never hard-code a colour.
 
 ## Verify
 

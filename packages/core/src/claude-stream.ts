@@ -86,6 +86,7 @@ const InitResponse = z.looseObject({
 const SettingsResponse = z.looseObject({ effective: z.looseObject({ effortLevel: z.string().nullish() }).optional() })
 const Usage = z.looseObject({
   input_tokens: z.number().optional(),
+  output_tokens: z.number().optional(),
   cache_creation_input_tokens: z.number().optional(),
   cache_read_input_tokens: z.number().optional()
 })
@@ -116,6 +117,8 @@ const ResultFrame = z.looseObject({
   terminal_reason: z.string().nullish(),
   errors: z.array(z.string()).nullish().catch(null),
   duration_ms: z.number().nullish(),
+  // What the whole turn sent and received, cached input included.
+  usage: Usage.optional().catch(undefined),
   // Every model the turn used, the main one and any the CLI ran for itself.
   modelUsage: z.record(z.string(), z.looseObject({ contextWindow: z.number().optional() })).optional().catch(undefined)
 })
@@ -747,7 +750,12 @@ export class ClaudeStream implements ChatDriver {
         ? 'failed'
         : 'completed'
     const error = state === 'failed' ? (str(result.result) ?? result.errors?.join('\n') ?? result.subtype ?? null) : null
-    this.endTurn(state, error, result.duration_ms ?? null, at)
+    // Input counts what the model read, cached or not; the dock's context ring uses the same sum.
+    const used = result.usage
+    const usage = used
+      ? { input: (used.input_tokens ?? 0) + (used.cache_creation_input_tokens ?? 0) + (used.cache_read_input_tokens ?? 0), output: used.output_tokens ?? 0 }
+      : null
+    this.endTurn(state, error, result.duration_ms ?? null, at, usage)
   }
 
   // The window of the model the stage runs; a turn's usage also lists models the CLI ran for itself.
@@ -765,7 +773,7 @@ export class ClaudeStream implements ChatDriver {
     return names.some((name) => name.includes('[1m]')) ? ONE_MILLION : null
   }
 
-  private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
+  private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number, usage: { input: number; output: number } | null = null): void {
     this.finishStreaming(at)
     if (state !== 'completed') this.items.settleTools(state, at)
     this.stopping = false
@@ -774,7 +782,7 @@ export class ClaudeStream implements ChatDriver {
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
-    this.items.put({ id, kind: 'turn', state, error, durationMs }, at)
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage }, at)
     if (turn?.assistant) {
       this.messages.push({ role: 'assistant', text: turn.assistant, eventKey: `chat:${turn.ref}:assistant`, complete: true })
     }

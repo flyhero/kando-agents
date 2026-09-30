@@ -1,6 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@xterm/xterm/css/xterm.css'
+// Geist, for the chat's font setting; the system font needs no file.
+import '@fontsource-variable/geist/index.css'
+import '@fontsource-variable/geist-mono/index.css'
 import './styles.css'
 import { App } from './App'
 import { startAppearance } from './appearance'

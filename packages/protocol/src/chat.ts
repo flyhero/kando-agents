@@ -125,7 +125,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     kind: z.literal('turn'),
     state: ChatTurnState.catch('completed'),
     error: z.string().nullable(),
-    durationMs: z.number().nullable()
+    durationMs: z.number().nullable(),
+    // Tokens the turn sent and received, where the agent reports them; older cores leave it out.
+    usage: z.object({ input: z.number(), output: z.number() }).nullable().optional()
   }),
   Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
   // A turn's checklist as it last stood, where the turn first touched it.

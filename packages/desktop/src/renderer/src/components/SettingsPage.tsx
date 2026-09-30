@@ -21,7 +21,9 @@ import { Segmented, SettingsRow, Stepper, Toggle } from './SettingsControls'
 
 function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
-  const fontSize = usePreferences((s) => s.terminalFontSize)
+  const terminalFontSize = usePreferences((s) => s.terminalFontSize)
+  const chatFontSize = usePreferences((s) => s.chatFontSize)
+  const chatFont = usePreferences((s) => s.chatFont)
   const chatWidth = usePreferences((s) => s.chatWidth)
   const foldTurns = usePreferences((s) => s.foldTurns)
   return (
@@ -48,11 +50,41 @@ function AppearanceSettings() {
         control={(labelId) => (
           <Stepper
             labelId={labelId}
-            value={fontSize}
+            value={terminalFontSize}
             min={10}
             max={20}
             unit="px"
             onChange={(next) => setPreference('terminalFontSize', next)}
+          />
+        )}
+      />
+      <SettingsRow
+        label="聊天字号"
+        description="聊天消息、过程信息和输入框文字的大小，会立即生效。"
+        control={(labelId) => (
+          <Stepper
+            labelId={labelId}
+            value={chatFontSize}
+            min={10}
+            max={20}
+            unit="px"
+            onChange={(next) => setPreference('chatFontSize', next)}
+          />
+        )}
+      />
+      <SettingsRow
+        label="聊天字体"
+        description="聊天消息和过程信息用的字体。系统跟随 macOS / Windows 的界面字体；Geist 是随 Kando 打包的无衬线体，中文仍回落到系统字体；衬线只改正文，代码不变。"
+        control={(labelId) => (
+          <Segmented
+            labelId={labelId}
+            value={chatFont}
+            onChange={(next) => setPreference('chatFont', next)}
+            options={[
+              { value: 'system', label: '系统' },
+              { value: 'geist', label: 'Geist' },
+              { value: 'serif', label: '衬线' }
+            ]}
           />
         )}
       />

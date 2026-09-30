@@ -14,7 +14,7 @@ catalog:
 # so nothing here needs electron-rebuild. Electron downloads its binary lazily, but electron-vite
 # reads path.txt without triggering that, so desktop's dev script runs install-electron first.
 allowBuilds:
-  electron-winstaller: set this to true or false
+  electron-winstaller: false
   esbuild: true
   node-pty: true
 

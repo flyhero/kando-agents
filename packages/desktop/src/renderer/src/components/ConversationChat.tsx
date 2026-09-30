@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
-import { workedFor } from '../chat-tools'
+import { workedFor, formatTokens } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
@@ -18,7 +18,7 @@ import { ChatTodosLine, currentTodo, TodoHistory } from './ChatTodos'
 import { ChatWorking } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
-import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon } from './icons'
+import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
@@ -29,8 +29,13 @@ const AWAY_SLACK = 240
 // A message this close under the top edge already counts as the one in view.
 const IN_VIEW_SLACK = 8
 
+// What a turn sent and received, when the agent counted: "↑ 42k ↓ 6.8k".
+function tokensText(item: Extract<ChatItem, { kind: 'turn' }>): string {
+  return item.usage ? ` · ↑ ${formatTokens(item.usage.input)} ↓ ${formatTokens(item.usage.output)}` : ''
+}
+
 function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
-  const seconds = item.durationMs !== null ? ` · ${(item.durationMs / 1000).toFixed(1)} 秒` : ''
+  const seconds = (item.durationMs !== null ? ` · ${(item.durationMs / 1000).toFixed(1)} 秒` : '') + tokensText(item)
   if (item.state === 'completed') return `完成${seconds}`
   if (item.state === 'interrupted') return `已中断${item.error ? `：${item.error}` : ''}`
   return `失败${item.error ? `：${item.error}` : ''}`
@@ -185,6 +190,31 @@ function Item({ conversationId, item, completedAt }: { conversationId: string; i
   }
 }
 
+// Who answers and on what: for the head that opens each of the agent's turns.
+const ChatAgent = createContext<{ agent: Conversation['agent']; model: string | null }>({ agent: 'claude', model: null })
+
+// Opens the agent's turn under the user's message: its icon and name, the model it runs, and when
+// the message it answers came in.
+function TurnHead({ at }: { at: number }) {
+  const { agent, model } = useContext(ChatAgent)
+  return (
+    <div className="chat-turn-head">
+      <span className="chat-turn-head-icon" aria-hidden="true"><AgentIcon agent={agent} /></span>
+      <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
+      {model && <span className="chat-turn-head-model" title={model}>{model}</span>}
+      <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={dayAndTime(at)}>{timeOfDay(at)}</time>
+    </div>
+  )
+}
+
+// The user's message a block is, if it is one: the head goes under it.
+function userAt(block: ChatBlock): number | null {
+  const item = block.kind === 'entry' && block.entry.kind === 'item' ? block.entry.item : null
+  if (item?.kind === 'user') return item.at
+  if (block.kind === 'entry' && block.entry.kind === 'message' && block.entry.message.role === 'user') return block.entry.message.createdAt
+  return null
+}
+
 // The user's own messages are what ↑ steps back through.
 function isUserEntry(entry: TimelineEntry): boolean {
   return entry.kind === 'item' ? entry.item.kind === 'user' : entry.kind === 'message' && entry.message.role === 'user'
@@ -195,7 +225,7 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 // A finished turn's work, behind how long it took; opening it shows the calls, thinking and replies
 // on the way to its answer.
 function foldText(turn: TurnItem): string {
-  const took = turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : ''
+  const took = (turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : '') + tokensText(turn)
   const error = turn.error ? `：${readableNotice(turn.error)}` : ''
   if (turn.state === 'interrupted') return `已中断${took}${error}`
   if (turn.state === 'failed') return `失败${took}${error}`
@@ -325,6 +355,8 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
 export function ConversationChat({ conversation, surface }: { conversation: Conversation; surface?: ChatSurface }) {
   const { id } = conversation
   const width = usePreferences((s) => s.chatWidth)
+  const fontSize = usePreferences((s) => s.chatFontSize)
+  const font = usePreferences((s) => s.chatFont)
   const own = useMemo(() => conversationSurface(conversation), [conversation])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
@@ -482,17 +514,24 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   const shorten = useMemo(() => pathShortener(roots), [roots])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
   const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
+  // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
+  const modelId = state?.model ?? conversation.chatOptions?.model ?? null
+  const agentInfo = useMemo(
+    () => ({ agent: conversation.agent, model: modelId ? (state?.models.find((each) => each.id === modelId)?.label ?? modelId) : null }),
+    [conversation.agent, modelId, state?.models]
+  )
   // A turn runs from the message that set it going.
   const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
   return (
     <ChatSurfaceContext.Provider value={shown}>
+    <ChatAgent.Provider value={agentInfo}>
     <ChatPaths.Provider value={shorten}>
     <ChatRoots.Provider value={roots}>
     <Thoughts.Provider value={thoughts}>
     <ChatDisclosureScope.Provider value={id}>
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
-    <div className="chat-view" data-width={width}>
+    <div className="chat-view" data-width={width} data-font-size={fontSize} data-font={font}>
       <div
         className="chat-list"
         ref={list}
@@ -505,7 +544,16 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <ChatSkeleton />}
-        {blocks.map((block) => <Block key={block.key} conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} />)}
+        {blocks.map((block, index) => {
+          const previous = index > 0 ? blocks[index - 1] : undefined
+          const answers = previous ? userAt(previous) : null
+          return (
+            <Fragment key={block.key}>
+              {answers !== null && userAt(block) === null && <div className="chat-entry"><TurnHead at={answers} /></div>}
+              <Block conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} />
+            </Fragment>
+          )
+        })}
         {turn === 'running' && <ChatWorking agent={conversation.agent} doing={doing} since={since} />}
         {away && (
           <button
@@ -529,6 +577,7 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     </Thoughts.Provider>
     </ChatRoots.Provider>
     </ChatPaths.Provider>
+    </ChatAgent.Provider>
     </ChatSurfaceContext.Provider>
   )
 }

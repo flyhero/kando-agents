@@ -97,6 +97,14 @@ export function diffCounts(diffs: readonly Pick<ChatDiff, 'patch'>[]): { added: 
 }
 
 // How long a turn worked, as a person says it.
+// A token count at a glance: 842, 2.3k, 42k, 1.2M.
+export function formatTokens(count: number): string {
+  if (count < 1000) return String(count)
+  if (count < 10_000) return `${(count / 1000).toFixed(1)}k`
+  if (count < 1_000_000) return `${Math.round(count / 1000)}k`
+  return `${(count / 1_000_000).toFixed(1)}M`
+}
+
 export function workedFor(durationMs: number): string {
   const seconds = Math.max(1, Math.round(durationMs / 1000))
   if (seconds < 60) return `${seconds} 秒`

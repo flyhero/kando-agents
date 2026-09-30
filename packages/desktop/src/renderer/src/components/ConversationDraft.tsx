@@ -36,6 +36,8 @@ export function ConversationDraft() {
   const attached = useComposerImages()
   const allowBypass = usePreferences((s) => s.allowBypass)
   const width = usePreferences((s) => s.chatWidth)
+  const fontSize = usePreferences((s) => s.chatFontSize)
+  const font = usePreferences((s) => s.chatFont)
   const canSend = agent !== null && !busy && attached.uploading === 0 && (text.trim() !== '' || attached.images.length > 0)
 
   useEffect(() => {
@@ -87,7 +89,7 @@ export function ConversationDraft() {
         </div>
       </header>
       <div className="terminal-body">
-        <div className="chat-view" data-width={width}>
+        <div className="chat-view" data-width={width} data-font-size={fontSize} data-font={font}>
           <div className="chat-list chat-draft">
             <div className="chat-draft-start">
               <h2 className="chat-draft-title">用哪个 agent 开始</h2>

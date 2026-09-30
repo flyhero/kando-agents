@@ -12,6 +12,15 @@ type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 // Turns the conversation's project paths in a title or diff header into short, relative ones.
 export const ChatPaths = createContext<(text: string) => string>((text) => text)
 
+// A file's type as a small badge: its extension, coloured by the stylesheet for the common ones.
+export function FileExt({ path }: { path: string }) {
+  const name = path.split('/').pop() ?? path
+  const dot = name.lastIndexOf('.')
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+  if (!ext || ext.length > 4) return null
+  return <span className="chat-file-ext" data-ext={ext} aria-hidden="true">{ext.slice(0, 3)}</span>
+}
+
 
 // Only what did not simply work is said; a finished call needs no word.
 const STATUS_TEXT: Partial<Record<ChatToolStatus, string>> = { failed: '失败', denied: '已拒绝', interrupted: '已中断' }
@@ -64,8 +73,9 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
   return (
     <div className="chat-tool" data-diff-path={path}>
       <button type="button" className="chat-tool-header" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="chat-tool-name">编辑</span>
-        <span className="chat-tool-title mono" title={path}>{shorten(path)} · {tools.length} 次修改</span>
+        <span className="chat-tool-name">编辑:</span>
+        <FileExt path={path} />
+        <span className="chat-tool-title" title={path}>{shorten(path)}<span className="chat-tool-count"> · {tools.length} 次</span></span>
         <DiffCount diffs={tools.flatMap((tool) => tool.diffs)} />
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
       </button>
@@ -158,8 +168,9 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
-        <span className="chat-tool-name">{toolLabel(item.name)}</span>
-        <span className="chat-tool-title mono" title={item.title}>{shorten(item.title)}</span>
+        <span className="chat-tool-name">{toolLabel(item.name)}:</span>
+        {item.diffs.length > 0 && <FileExt path={item.diffs[0]?.path ?? item.title} />}
+        <span className="chat-tool-title" title={item.title}>{shorten(item.title)}</span>
         <DiffCount diffs={item.diffs} />
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={item.status} />

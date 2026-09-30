@@ -47,38 +47,85 @@ export function ChatRequestLine({ item }: { item: RequestItem }) {
 // A waiting approval, docked above the composer: what the agent wants to do and the answers it
 // takes. The call's own card in the list has its diff; a command is repeated here in full, since
 // that card shows only its first line.
+// The answers come as numbered rows, allowing first and refusing last, the reason for refusing
+// typed on its own row; a number key picks a row, Enter sends the one picked.
+const DECISION_ORDER: readonly ChatDecision[] = ['allow', 'allowForSession', 'deny']
+
 export function ChatApprovalCard({ conversationId, item, tool }: { conversationId: string; item: ApprovalItem; tool: ToolItem | undefined }) {
   const { busy, respond } = useResponder(conversationId, item.requestId)
   const [reason, setReason] = useState('')
+  const decisions = DECISION_ORDER.filter((decision) => item.decisions.includes(decision))
+  const [choice, setChoice] = useState<ChatDecision>(decisions[0] ?? 'deny')
+  const reasonInput = useRef<HTMLInputElement>(null)
   const shorten = useContext(ChatPaths)
   const title = shorten(item.title)
   // Claude describes a file call by the file's name, which the title already has.
   const detail = item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
+  const submit = () => void respond(choice, choice === 'deny' && reason.trim() ? { message: reason.trim() } : {})
+  const pick = (decision: ChatDecision) => {
+    setChoice(decision)
+    if (decision === 'deny') reasonInput.current?.focus()
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (!busy) submit()
+    } else if (/^[1-9]$/.test(event.key) && !(event.target instanceof HTMLInputElement)) {
+      const decision = decisions[Number(event.key) - 1]
+      if (decision) {
+        event.preventDefault()
+        pick(decision)
+      }
+    } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && decisions.length > 1) {
+      event.preventDefault()
+      const at = decisions.indexOf(choice)
+      const next = decisions[(at + (event.key === 'ArrowDown' ? 1 : -1) + decisions.length) % decisions.length]
+      if (next) pick(next)
+      if (next !== 'deny') reasonInput.current?.blur()
+    }
+  }
   return (
-    <div className="chat-request" data-waiting>
+    <div className="chat-request" data-waiting onKeyDown={onKeyDown}>
       <div className="chat-request-title">
         需要你确认：{toolLabel(item.tool)} <span className="mono">{title}</span>
       </div>
       {detail && <p className="chat-request-detail muted">{detail}</p>}
       {tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
-      <div className="chat-request-actions">
-        <input
-          className="input chat-request-reason"
-          placeholder="拒绝的理由（可选，会告诉 agent）"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-        />
-        {item.decisions.map((decision) => (
-          <button
+      <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">
+        {decisions.map((decision, index) => (
+          <div
             key={decision}
-            type="button"
-            className={decision === 'deny' ? 'button ghost' : decision === 'allow' ? 'button primary' : 'button'}
-            disabled={busy}
-            onClick={() => void respond(decision, decision === 'deny' && reason.trim() ? { message: reason.trim() } : {})}
+            role="radio"
+            tabIndex={decision === 'deny' ? -1 : 0}
+            aria-checked={choice === decision}
+            className="chat-approve-option"
+            onClick={() => pick(decision)}
           >
-            {DECISION_LABEL[decision]}
-          </button>
+            <span className="chat-approve-number">{index + 1}.</span>
+            {decision === 'deny' ? (
+              <input
+                ref={reasonInput}
+                className="chat-approve-reason"
+                aria-label="拒绝，并说明理由"
+                placeholder="拒绝，并告诉 agent 为什么（可不填）"
+                value={reason}
+                disabled={busy}
+                onFocus={() => setChoice('deny')}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            ) : (
+              <span>{DECISION_LABEL[decision]}</span>
+            )}
+          </div>
         ))}
+      </div>
+      <div className="chat-approve-footer">
+        <span className="chat-approve-hint">数字键选择 · Enter 提交</span>
+        <button type="button" className="button primary" disabled={busy} onClick={submit}>
+          {DECISION_LABEL[choice]}<kbd>↵</kbd>
+        </button>
       </div>
     </div>
   )
@@ -231,11 +278,12 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
               disabled={busy}
               onClick={() => choose(option.label)}
             >
-              <span className="chat-ask-key" data-multi={question.multiSelect || undefined}>{on ? <CheckIcon /> : at < 9 ? at + 1 : ''}</span>
+              <span className="chat-ask-key" data-multi={question.multiSelect || undefined}>{at < 9 ? at + 1 : ''}</span>
               <span className="chat-ask-text">
                 <OptionLabel label={option.label} />
                 {option.description && <span className="chat-ask-description">{option.description}</span>}
               </span>
+              {on && <span className="chat-ask-check" aria-hidden="true"><CheckIcon /></span>}
             </button>
           )
         })}
