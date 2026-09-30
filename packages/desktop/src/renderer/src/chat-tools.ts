@@ -97,6 +97,11 @@ export function diffCounts(diffs: readonly Pick<ChatDiff, 'patch'>[]): { added: 
 }
 
 // How long a turn worked, as a person says it.
+// How long a thought took: most last seconds, so tenths matter under a minute; minutes after.
+export function thoughtFor(durationMs: number): string {
+  return durationMs < 60_000 ? `${Math.max(0.1, durationMs / 1000).toFixed(1)} 秒` : workedFor(durationMs)
+}
+
 // How long a call has run, at a glance: tenths of a second under a minute, then minutes.
 export function elapsedText(ms: number): string {
   return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : workedFor(ms)

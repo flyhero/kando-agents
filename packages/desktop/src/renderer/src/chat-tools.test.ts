@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, proseHeadline, elapsedText } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, proseHeadline, elapsedText, thoughtFor } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -56,6 +56,12 @@ describe('proseHeadline', () => {
   })
   it('says nothing for a fragment', () => {
     expect(proseHeadline('好的')).toBeNull()
+  })
+})
+
+describe('thoughtFor', () => {
+  it('keeps tenths under a minute, where most thoughts end', () => {
+    expect([40, 2640, 12_400, 75_000].map(thoughtFor)).toEqual(['0.1 秒', '2.6 秒', '12.4 秒', '1 分 15 秒'])
   })
 })
 

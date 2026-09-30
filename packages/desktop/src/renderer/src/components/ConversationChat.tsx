@@ -3,7 +3,7 @@ import { isPlanApproval, type ChatItem, type Conversation, type ConversationMess
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
-import { formatTokens, proseHeadline, workedFor } from '../chat-tools'
+import { formatTokens, proseHeadline, thoughtFor, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
@@ -75,7 +75,7 @@ function Reasoning({ item }: { item: ReasoningItem }) {
     return () => clearTimeout(timer)
   }, [item.streaming])
   const open = kept || streaming
-  const label = item.streaming ? '思考中' : took !== undefined ? `思考了 ${workedFor(took)}` : '思考过程'
+  const label = item.streaming ? '思考中' : took !== undefined ? `思考了 ${thoughtFor(took)}` : '思考过程'
   return (
     <div className="chat-reasoning">
       <button

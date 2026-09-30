@@ -3825,12 +3825,18 @@ button.task-tag-updated:hover {
 .chat-markdown td { padding: 2px 8px; border: 1px solid var(--border); }
 .chat-markdown a { color: var(--accent); }
 
+/* The thought itself: quieter than the reply it leads to, and no taller than a screen's share. */
 .chat-reasoning-text {
-  margin-top: 4px;
-  padding-left: 10px;
-  border-left: 2px solid var(--border);
-  color: var(--text-muted);
+  margin: 4px 0 4px 8px;
+  padding-left: 12px;
+  max-height: 240px;
+  overflow: auto;
+  border-left: 1px solid var(--border-2);
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-tool,
