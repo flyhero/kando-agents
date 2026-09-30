@@ -4,7 +4,7 @@ import { Spinner } from './Spinner'
 
 // What kind of thing the agent is at, when nothing more specific is known.
 export type WorkingPhase = 'tools' | 'thinking' | 'replying' | 'waiting' | 'asking' | 'working'
-const PHASE: Record<WorkingPhase, string> = { tools: '运行工具', thinking: '思考', replying: '写回复', waiting: '等子 agent', asking: '等你回答', working: '处理' }
+const PHASE: Record<WorkingPhase, string> = { tools: '运行工具', thinking: '思考', replying: '写回复', waiting: '等待', asking: '等你回答', working: '处理' }
 
 // While a turn runs, at the end of the conversation: the numbers that say how it goes, as Claude
 // Code's own status reads: how long, how many tokens written, how many subagents out, and what
@@ -24,11 +24,15 @@ export function ChatWorking({ phase, tokens, background, since }: {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
+  // With the turn over and only subagents out, they are the step: "2 个子 agent 后台运行中…".
+  // While the turn itself runs, they are a count beside its step.
+  const waiting = phase === 'waiting' && background > 0
   const parts = [
     workedFor(Math.max(0, now - (since ?? started))),
     ...(tokens !== null && tokens > 0 ? [`${formatTokens(tokens)} tokens`] : []),
-    ...(background > 0 ? [`${background} 个子 agent`] : [])
+    ...(background > 0 && !waiting ? [`${background} 个子 agent 后台运行`] : [])
   ]
+  const step = waiting ? `${background} 个子 agent 后台运行中…` : `${PHASE[phase]}${phase === 'asking' ? '' : '中…'}`
   return (
     <div className="chat-working" role="status">
       <Spinner />
@@ -38,7 +42,7 @@ export function ChatWorking({ phase, tokens, background, since }: {
           {part}
         </span>
       ))}
-      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className={phase === 'asking' ? undefined : 'chat-sheen'}>{PHASE[phase]}{phase === 'asking' ? '' : '中…'}</span></span>
+      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className={phase === 'asking' ? undefined : 'chat-sheen'}>{step}</span></span>
     </div>
   )
 }
