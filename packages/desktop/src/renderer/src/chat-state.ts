@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { isPlanApproval, type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { isCompaction } from './chat-notices'
 import { diffCounts, isSubagent } from './chat-tools'
+import { type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage, isPlanApproval, isPreviewTool } from '@kando/protocol'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -204,8 +204,11 @@ export type ChatBlock =
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
+// A preview the agent asked for is its own card, never one of a run.
 function runTool(entry: TimelineEntry): ToolItem | null {
-  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) ? entry.item : null
+  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) && !isPreviewTool(entry.item.name)
+    ? entry.item
+    : null
 }
 
 function subagentTool(entry: TimelineEntry): ToolItem | null {

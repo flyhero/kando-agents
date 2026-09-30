@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Task } from '@kando/protocol'
-import { createMcpHandler, describeTask } from './mcp-server'
+import { checkPreviewFile, createMcpHandler, describeTask } from './mcp-server'
 
 const frame = (method: string, params?: unknown) => JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
 const notification = (method: string) => JSON.stringify({ jsonrpc: '2.0', method })
@@ -19,7 +22,8 @@ describe('kando MCP server', () => {
         throw new Error('只能读取当前任务依赖链上的任务')
       }
       return '# Add API'
-    }
+    },
+    preview: checkPreviewFile
   })
 
   it('answers the handshake with the client version and a tools capability', async () => {
@@ -28,14 +32,36 @@ describe('kando MCP server', () => {
     expect(await handle(notification('notifications/initialized'))).toBeNull()
   })
 
-  it('lists a read-only reader and the proposer', async () => {
+  it('lists the preview tool, then a read-only reader and the proposer for a task', async () => {
     const response = await handle(frame('tools/list'))
     expect(response?.result).toMatchObject({
       tools: [
+        { name: 'show_preview', annotations: { readOnlyHint: true } },
         { name: 'read_task_details', annotations: { readOnlyHint: true } },
         { name: 'propose_task_details', annotations: { readOnlyHint: false } }
       ]
     })
+    const chat = createMcpHandler({ preview: checkPreviewFile })
+    const alone = await chat(frame('tools/list'))
+    expect((alone?.result as { tools: { name: string }[] }).tools.map((tool) => tool.name)).toEqual(['show_preview'])
+  })
+
+  it('shows an HTML file that exists and refuses anything else', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'kando-preview-'))
+    try {
+      const page = path.join(dir, 'index.html')
+      writeFileSync(page, '<h1>hi</h1>')
+      const ok = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: page } }))
+      expect(ok?.result).toMatchObject({ isError: false })
+      const missing = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: path.join(dir, 'gone.html') } }))
+      expect(missing?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('文件不存在') }] })
+      const other = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: path.join(dir, 'notes.md') } }))
+      expect(other?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('.html') }] })
+      const relative = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: 'index.html' } }))
+      expect(relative?.result).toMatchObject({ isError: true })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('reads a dependency and refuses anything off the chain', async () => {

@@ -13,6 +13,7 @@ import { ConversationStore } from './conversation-store'
 import { folderChanges, folderDiff, folderHead } from './conversation-changes'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 import { CODEX_MODES } from './codex-app-server'
+import type { McpServer } from './agent-command'
 import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
@@ -86,7 +87,9 @@ export class ConversationService {
     private readonly callbackCommand: (conversationId: string, stageId: string, agent: AgentKind) => string[],
     private readonly emit: (event: ConversationEvent) => void,
     private readonly projects: ProjectRegistry,
-    private readonly attachments: AttachmentStore
+    private readonly attachments: AttachmentStore,
+    // Kando's MCP server for a chat's agent; null leaves the agent without Kando's tools.
+    private readonly mcp: McpServer | null = null
   ) {
     this.transcript = new TerminalTranscript(sessionsRoot)
     this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
@@ -385,7 +388,8 @@ export class ConversationService {
       preferred: options.preferred,
       allowBypass: options.allowBypass,
       planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined,
-      readable
+      readable,
+      ...(this.mcp ? { mcp: this.mcp } : {})
     })
     let sessionId: string
     try {

@@ -1,4 +1,4 @@
-import type { ChatDiff, ChatItem } from '@kando/protocol'
+import { isPreviewTool, type ChatDiff, type ChatItem } from '@kando/protocol'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -25,6 +25,7 @@ const TOOL_LABEL: Record<string, string> = {
 }
 
 export function toolLabel(name: string): string {
+  if (isPreviewTool(name)) return '预览'
   return TOOL_LABEL[name] ?? name
 }
 

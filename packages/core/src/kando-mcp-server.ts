@@ -7,3 +7,10 @@ export function kandoMcpServer(taskId: string, home: string): McpServer {
   if (!command) throw new Error('empty CLI command')
   return { command, args }
 }
+
+// For a chat: the tools every conversation has, such as showing a file the agent wrote.
+export function kandoChatMcpServer(home: string): McpServer {
+  const [command, ...args] = cliCommand('mcp', '--home', home)
+  if (!command) throw new Error('empty CLI command')
+  return { command, args }
+}

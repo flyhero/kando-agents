@@ -1,5 +1,6 @@
 import type { AgentKind } from '@kando/protocol'
-import { claudeEditDenials, claudeHookArgs, claudeReadRules, codexNotifyArgs, GIT_READ_TOOLS, type AgentCommand } from './agent-command'
+import { claudeEditDenials, claudeHookArgs, claudeReadRules, codexNotifyArgs, GIT_READ_TOOLS, type AgentCommand, type McpServer } from './agent-command'
+import { SHOW_PREVIEW_TOOL } from '@kando/protocol'
 import type { ChatPreferences } from './chat-driver'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 
@@ -32,10 +33,12 @@ export function chatCommand(
     planOnly?: { dirs: readonly string[] }
     // Files the agent may read without asking, such as a task's images.
     readable?: readonly string[]
+    // Kando's own tools for the agent (showing a file it wrote); none for an older setup.
+    mcp?: McpServer
   } = {}
 ): AgentCommand {
   if (agent === 'claude') {
-    const { preferred = {}, planOnly, readable = [] } = launch
+    const { preferred = {}, planOnly, readable = [], mcp } = launch
     const allowBypass = (launch.allowBypass ?? false) && !planOnly
     // A remembered bypass needs the user's say-so for this start too. Asking goes by manual on
     // the command line, and is passed too, so Claude Code's own default mode cannot override it.
@@ -46,7 +49,9 @@ export function chatCommand(
       ...(handoffPath ? [`Read(/${handoffPath})`] : []),
       ...claudeReadRules(readable),
       // Planning around what dependencies left on their branches means reading git history.
-      ...(planOnly ? GIT_READ_TOOLS : [])
+      ...(planOnly ? GIT_READ_TOOLS : []),
+      // Showing a file the agent wrote asks nothing of the user.
+      ...(mcp ? [`mcp__kando__${SHOW_PREVIEW_TOOL}`] : [])
     ]
     const denials = planOnly ? claudeEditDenials(planOnly.dirs) : []
     return { command: 'claude', args: [
@@ -60,11 +65,17 @@ export function chatCommand(
       ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
       ...extraProjects.flatMap((project) => ['--add-dir', project]),
       ...(denials.length ? ['--disallowedTools', denials.join(',')] : []),
-      ...(reads.length ? ['--allowedTools', reads.join(',')] : [])
+      ...(reads.length ? ['--allowedTools', reads.join(',')] : []),
+      ...(mcp ? ['--mcp-config', JSON.stringify({ mcpServers: { kando: { type: 'stdio', command: mcp.command, args: mcp.args } } })] : [])
     ] }
   }
-  // app-server takes the thread, sandbox and extra roots over the protocol instead.
-  return { command: 'codex', args: ['app-server'] }
+  // app-server takes the thread, sandbox and extra roots over the protocol instead; Kando's MCP
+  // server goes in as a config override, as the TUI takes it.
+  const { mcp } = launch
+  return { command: 'codex', args: [
+    'app-server',
+    ...(mcp ? ['-c', `mcp_servers.kando.command=${JSON.stringify(mcp.command)}`, '-c', `mcp_servers.kando.args=${JSON.stringify(mcp.args)}`] : [])
+  ] }
 }
 
 export function conversationCommand(

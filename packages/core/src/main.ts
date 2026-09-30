@@ -16,7 +16,7 @@ import { TaskService } from './task-service'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 import { UsageService } from './usage-service'
-import { kandoMcpServer } from './kando-mcp-server'
+import { kandoChatMcpServer, kandoMcpServer } from './kando-mcp-server'
 import { SourceConfigStore } from './source-config'
 import { LoginFlows } from './source-login-flow'
 import { migrateLegacyJira } from './source-migration'
@@ -61,7 +61,8 @@ const conversations = new ConversationService(
     }
   },
   projects,
-  attachments
+  attachments,
+  kandoChatMcpServer(paths.home)
 )
 
 const service = new TaskService(

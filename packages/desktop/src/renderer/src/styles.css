@@ -5042,6 +5042,18 @@ button.task-tag-updated:hover {
 }
 .chat-approve-command-more { display: block; margin: 0 0 6px 12px; font-size: 12px; }
 
+/* A file the agent asked to show, framed where it asked: a head naming it, then the page itself,
+   tall enough to read and draggable taller. */
+.chat-preview { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.chat-preview-head { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.chat-preview-title { color: var(--text); font-weight: 500; }
+.chat-preview-path { min-width: 0; overflow: hidden; color: var(--text-3); font-family: var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.chat-preview-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.chat-preview-actions .tool-button { width: 24px; height: 24px; }
+.chat-preview-actions .tool-button svg { width: 14px; height: 14px; }
+.chat-preview-frame { display: block; width: 100%; height: 480px; min-height: 160px; border: 0; background: var(--bg); resize: vertical; overflow: auto; }
+.chat-preview-note { padding: 8px 12px; }
+
 /* The plan waiting for an answer: read where it is decided, clipped to a screen's share until opened. */
 .chat-plan-preview { position: relative; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
 .chat-plan-preview .chat-markdown { font-size: var(--chat-font-small, 12px); line-height: 1.65; color: var(--text-muted); }

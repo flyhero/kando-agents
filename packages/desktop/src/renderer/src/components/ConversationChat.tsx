@@ -1,5 +1,5 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
@@ -18,6 +18,7 @@ import { ChatTodosLine, TodoHistory } from './ChatTodos'
 import { ChatWorking, type WorkingPhase } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
+import { ChatPreviewCard } from './ChatPreviewCard'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -185,7 +186,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'reasoning':
       return <Reasoning item={item} />
     case 'tool':
-      return <ChatToolCard item={item} />
+      return isPreviewTool(item.name) ? <ChatPreviewCard item={item} /> : <ChatToolCard item={item} />
     case 'approval':
       return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine item={item} />
     case 'question':

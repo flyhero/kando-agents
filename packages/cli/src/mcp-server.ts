@@ -1,15 +1,19 @@
 import readline from 'node:readline'
+import { stat } from 'node:fs/promises'
+import { extname, isAbsolute } from 'node:path'
 import { z } from 'zod'
 import {
-  MAX_DETAILS_LENGTH,
-  PROPOSE_DETAILS_TOOL,
-  READ_TASK_TOOL,
   connectRpc,
   coreUrl,
+  MAX_DETAILS_LENGTH,
+  PREVIEW_EXTENSIONS,
+  PROPOSE_DETAILS_TOOL,
+  READ_TASK_TOOL,
   shortTaskId,
-  untrustedSource,
+  SHOW_PREVIEW_TOOL,
   type RpcConnection,
-  type Task
+  type Task,
+  untrustedSource
 } from '@kando/protocol'
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
 import { STATUS_LABEL } from './status-labels'
@@ -29,6 +33,7 @@ const InitializeParams = z.object({ protocolVersion: z.string() })
 const CallParams = z.object({ name: z.string(), arguments: z.record(z.string(), z.unknown()).optional() })
 const ProposeArguments = z.object({ markdown: z.string().trim().min(1).max(MAX_DETAILS_LENGTH) })
 const ReadArguments = z.object({ task_id: z.string().trim().min(4) })
+const PreviewArguments = z.object({ path: z.string().trim().min(1), title: z.string().trim().max(200).optional() })
 
 // Tools and basic lifecycle are the same in every published MCP revision.
 const FALLBACK_PROTOCOL_VERSION = '2025-06-18'
@@ -62,10 +67,32 @@ const READ_TOOL = {
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
 } as const
 
+const PREVIEW_TOOL = {
+  name: SHOW_PREVIEW_TOOL,
+  title: '在对话里展示 HTML 或 SVG 文件',
+  description:
+    '把你写好的 HTML 或 SVG 文件直接渲染在用户的对话里，用户能看到、能点，不需要截图。' +
+    '做完样稿、原型、图表想让用户看时调用；中间产物不要调。文件要已经写到磁盘上，用绝对路径。' +
+    '文件里可以用相对路径引用同目录的样式和图片；页面跟随用户的浅色/深色主题，不能访问网络。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '文件的绝对路径，.html / .htm / .svg' },
+      title: { type: 'string', description: '给用户看的标题，可选' }
+    },
+    required: ['path'],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+} as const
+
 export type McpTools = {
-  propose: (markdown: string) => Promise<void>
+  // The task tools are there only when the server was started for a task.
+  propose?: (markdown: string) => Promise<void>
   // Resolves to the text shown to the model; throws when the task may not be read.
-  readTask: (taskId: string) => Promise<string>
+  readTask?: (taskId: string) => Promise<string>
+  // Checks the file may be shown (it exists, and is HTML or SVG); throws with the reason if not.
+  preview: (path: string) => Promise<void>
 }
 
 export type McpResponse = {
@@ -79,7 +106,8 @@ function textResult(text: string, isError = false) {
   return { content: [{ type: 'text', text }], isError }
 }
 
-export function createMcpHandler({ propose, readTask }: McpTools) {
+export function createMcpHandler({ propose, readTask, preview }: McpTools) {
+  const tools = [PREVIEW_TOOL, ...(readTask ? [READ_TOOL] : []), ...(propose ? [PROPOSE_TOOL] : [])]
   return async (line: string): Promise<McpResponse | null> => {
     let raw: unknown
     try {
@@ -109,10 +137,20 @@ export function createMcpHandler({ propose, readTask }: McpTools) {
       case 'ping':
         return reply({})
       case 'tools/list':
-        return reply({ tools: [READ_TOOL, PROPOSE_TOOL] })
+        return reply({ tools })
       case 'tools/call': {
         const call = CallParams.safeParse(params)
-        if (call.success && call.data.name === READ_TASK_TOOL) {
+        if (call.success && call.data.name === SHOW_PREVIEW_TOOL) {
+          const args = PreviewArguments.safeParse(call.data.arguments ?? {})
+          if (!args.success) return reply(textResult('path 需要是文件的绝对路径。', true))
+          try {
+            await preview(args.data.path)
+            return reply(textResult('已在对话里展示给用户，不用再截图。用户会在这一条下面看到页面。'))
+          } catch (error) {
+            return reply(textResult(`没能展示：${error instanceof Error ? error.message : String(error)}`, true))
+          }
+        }
+        if (call.success && call.data.name === READ_TASK_TOOL && readTask) {
           const args = ReadArguments.safeParse(call.data.arguments ?? {})
           if (!args.success) {
             return reply(textResult('task_id 需要是任务 id（完整 id 或前 8 位）。', true))
@@ -123,7 +161,7 @@ export function createMcpHandler({ propose, readTask }: McpTools) {
             return reply(textResult(`读取失败：${error instanceof Error ? error.message : String(error)}`, true))
           }
         }
-        if (!call.success || call.data.name !== PROPOSE_DETAILS_TOOL) {
+        if (!call.success || call.data.name !== PROPOSE_DETAILS_TOOL || !propose) {
           return { jsonrpc: '2.0', id, error: { code: -32602, message: `unknown tool` } }
         }
         // Bad arguments are the model's to fix, so they come back as a tool error it can read.
@@ -175,10 +213,19 @@ async function dependencyChain(rpc: RpcConnection, taskId: string): Promise<Set<
   return seen
 }
 
-// The task is fixed by whoever started the server: the agent proposes only for it and
-// reads only along its dependency chain. Each call connects anew, so a core restart
-// between calls is harmless.
-export async function serveMcp(taskId: string, home: string | undefined): Promise<void> {
+// A file the agent wants shown: it exists, is a file, and is the kind the desktop renders.
+export async function checkPreviewFile(path: string): Promise<void> {
+  if (!isAbsolute(path)) throw new Error('要用绝对路径')
+  const extension = extname(path).slice(1).toLowerCase()
+  if (!PREVIEW_EXTENSIONS.has(extension)) throw new Error('只能展示 .html、.htm 或 .svg 文件')
+  const info = await stat(path).catch(() => null)
+  if (!info?.isFile()) throw new Error(`文件不存在：${path}`)
+}
+
+// The task is fixed by whoever started the server: the agent proposes only for it and reads only
+// along its dependency chain; a server started for a chat with no task has the preview tool alone.
+// Each call connects anew, so a core restart between calls is harmless.
+export async function serveMcp(taskId: string | undefined, home: string | undefined): Promise<void> {
   const withCore = async <T>(work: (rpc: RpcConnection) => Promise<T>): Promise<T> => {
     const endpoint = await readCoreEndpoint(home)
     if (!endpoint) {
@@ -192,16 +239,19 @@ export async function serveMcp(taskId: string, home: string | undefined): Promis
     }
   }
   const handle = createMcpHandler({
-    propose: (markdown) => withCore(async (rpc) => void (await rpc.call('tasks.propose', { id: taskId, markdown }))),
-    readTask: (ref) =>
-      withCore(async (rpc) => {
-        const allowed = await dependencyChain(rpc, taskId)
-        const target = await rpc.call('tasks.get', { id: ref })
-        if (!allowed.has(target.id)) {
-          throw new Error('只能读取当前任务依赖链上的任务')
-        }
-        return describeTask(target, kandoPaths(home).attachments)
-      })
+    preview: checkPreviewFile,
+    ...(taskId ? {
+      propose: (markdown: string) => withCore(async (rpc) => void (await rpc.call('tasks.propose', { id: taskId, markdown }))),
+      readTask: (ref: string) =>
+        withCore(async (rpc) => {
+          const allowed = await dependencyChain(rpc, taskId)
+          const target = await rpc.call('tasks.get', { id: ref })
+          if (!allowed.has(target.id)) {
+            throw new Error('只能读取当前任务依赖链上的任务')
+          }
+          return describeTask(target, kandoPaths(home).attachments)
+        })
+    } : {})
   })
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY })
   for await (const line of lines) {

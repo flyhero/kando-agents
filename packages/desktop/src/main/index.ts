@@ -1,9 +1,46 @@
-import { stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, type OpenDialogOptions } from 'electron'
+import { extname, isAbsolute, join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, shell, type OpenDialogOptions } from 'electron'
 import { readCoreEndpoint } from '@kando/protocol/node'
 import { ensureBackend } from './backend'
+
+// Files an agent wrote, served to the preview frames in the chat: kando-preview://file/<path>.
+// Registered before the app is ready, as a standard scheme so relative links inside a page resolve.
+const PREVIEW_SCHEME = 'kando-preview'
+protocol.registerSchemesAsPrivileged([{ scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }])
+
+const PREVIEW_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf'
+}
+// The page may style itself and run its own scripts, but reach nothing else: no network, no other
+// frames, no forms, no parent. The renderer's sandbox on the frame keeps it off the app too. The
+// frame has no origin of its own (sandboxed), so its files are named by scheme rather than 'self'.
+const PREVIEW_POLICY = [
+  "default-src 'none'", `style-src ${PREVIEW_SCHEME}: 'unsafe-inline'`, `img-src ${PREVIEW_SCHEME}: data: blob:`, `font-src ${PREVIEW_SCHEME}: data:`,
+  `script-src ${PREVIEW_SCHEME}: 'unsafe-inline'`, `media-src ${PREVIEW_SCHEME}: data: blob:`, "connect-src 'none'", "frame-src 'none'",
+  "base-uri 'none'", "form-action 'none'"
+].join('; ')
+
+async function servePreview(request: Request): Promise<Response> {
+  const url = new URL(request.url)
+  const path = decodeURIComponent(url.pathname)
+  if (url.host !== 'file' || !isAbsolute(path)) return new Response('not found', { status: 404 })
+  try {
+    // The path as it really is: a link may not lead the frame somewhere else under a page's name.
+    const real = await realpath(path)
+    const info = await stat(real)
+    if (!info.isFile() || info.size > 32 * 1024 * 1024) return new Response('not found', { status: 404 })
+    const body = await readFile(real)
+    const type = PREVIEW_TYPES[extname(real).toLowerCase()] ?? 'application/octet-stream'
+    return new Response(body, { headers: { 'content-type': type, 'content-security-policy': PREVIEW_POLICY, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } })
+  } catch {
+    return new Response('not found', { status: 404 })
+  }
+}
 
 // Main stays thin: tasks, git and PTYs live in core/daemon, so the window
 // can close or crash without touching running agents.
@@ -111,6 +148,7 @@ app.on('second-instance', () => {
 
 void app.whenReady().then(() => {
   if (!primary) return
+  protocol.handle(PREVIEW_SCHEME, servePreview)
   void ensureBackend()
   createWindow()
   app.on('activate', () => {

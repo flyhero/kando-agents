@@ -172,6 +172,14 @@ export const ChatItem = z.discriminatedUnion('kind', [
 ])
 export type ChatItem = z.infer<typeof ChatItem>
 
+// Kando's own tool an agent calls to show the user an HTML or SVG file it wrote, in the
+// conversation: Claude Code names an MCP tool mcp__<server>__<tool>, Codex <server>.<tool>.
+export const SHOW_PREVIEW_TOOL = 'show_preview'
+export const PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm', 'svg'])
+export function isPreviewTool(name: string): boolean {
+  return name === `mcp__kando__${SHOW_PREVIEW_TOOL}` || name === `kando.${SHOW_PREVIEW_TOOL}`
+}
+
 // The notice either agent leaves where its context was compacted, which a client draws as a divider.
 export const CONTEXT_COMPACTED = '对话上下文已压缩'
 
