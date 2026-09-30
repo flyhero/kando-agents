@@ -1,12 +1,12 @@
-import { useCallback, useMemo, useState } from 'react'
-import { shortTaskId, type Task } from '@kando/protocol'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { AGENT_KINDS, shortTaskId, TASK_STATUSES, type Task } from '@kando/protocol'
 import { openInbox, selectTask, setNewTaskOpen, useCore } from '../core-store'
-import { AGENT_LABEL } from '../labels'
+import { AGENT_LABEL, STATUS_LABEL } from '../labels'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { setPreference, usePreferences } from '../preferences'
+import { setPreference, TASK_GROUPS, TASK_SORTS, usePreferences, type Preferences } from '../preferences'
 import { saveTaskText } from '../unsaved-edits'
-import { menuPoint, type MenuPoint } from './ContextMenu'
-import { FilterIcon, InboxIcon } from './icons'
+import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
+import { FilterIcon, InboxIcon, SlidersIcon } from './icons'
 import { StatusIcon } from './StatusIcon'
 import { hasTaskAlerts, TaskAlerts } from './TaskAlerts'
 import { projectNames } from './ProjectPicker'
@@ -15,11 +15,45 @@ import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
 import { TaskContextMenu } from './TaskActions'
 import { TitleEditor } from './TitleEditor'
 
-// Creation order, not updatedAt: autosave while typing would keep reshuffling the list.
-// Abandoned attempts sink to the bottom; they stay only as history.
-function newestFirst(tasks: Record<string, Task>): Task[] {
-  const abandoned = (task: Task) => (task.status === 'abandoned' ? 1 : 0)
-  return Object.values(tasks).sort((a, b) => abandoned(a) - abandoned(b) || b.createdAt - a.createdAt)
+type GroupBy = Preferences['taskGroup']
+type SortBy = Preferences['taskSort']
+
+const GROUP_LABEL: Record<GroupBy, string> = { none: '不分组', project: '项目', agent: '智能体', status: '任务状态' }
+const SORT_LABEL: Record<SortBy, string> = { recent: '最近活动', created: '创建时间', title: '标题' }
+
+const COMPARE: Record<SortBy, (a: Task, b: Task) => number> = {
+  recent: (a, b) => b.updatedAt - a.updatedAt,
+  // Preserve the old default: abandoned attempts stay below the useful history.
+  created: (a, b) => Number(a.status === 'abandoned') - Number(b.status === 'abandoned') || b.createdAt - a.createdAt,
+  title: (a, b) => a.title.localeCompare(b.title, 'zh-CN')
+}
+
+function groupOf(task: Task, by: Exclude<GroupBy, 'none'>): { label: string; rank: number } {
+  switch (by) {
+    case 'project':
+      return { label: projectNames(task.repos.map((repo) => repo.path)), rank: task.repos.length > 0 ? 0 : 1 }
+    case 'agent':
+      return task.agent
+        ? { label: AGENT_LABEL[task.agent], rank: AGENT_KINDS.indexOf(task.agent) }
+        : { label: '未选择智能体', rank: AGENT_KINDS.length }
+    case 'status':
+      return { label: STATUS_LABEL[task.status], rank: TASK_STATUSES.indexOf(task.status) }
+  }
+}
+
+type Group = { label: string | null; rank: number; items: Task[] }
+
+function arrange(tasks: Task[], by: GroupBy, sort: SortBy): Group[] {
+  const sorted = [...tasks].sort(COMPARE[sort])
+  if (by === 'none') return [{ label: null, rank: 0, items: sorted }]
+  const groups = new Map<string, Group>()
+  for (const task of sorted) {
+    const { label, rank } = groupOf(task, by)
+    const group = groups.get(label) ?? { label, rank, items: [] }
+    group.items.push(task)
+    groups.set(label, group)
+  }
+  return [...groups.values()].sort((a, b) => a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '', 'zh-CN'))
 }
 
 // Under review still needs the user, so it stays in the unfinished list.
@@ -51,13 +85,42 @@ function taskMeta(task: Task): string {
   return parts.join(' · ')
 }
 
+function ViewMenu({ at, trigger, onClose }: { at: MenuPoint; trigger: HTMLElement | null; onClose: () => void }) {
+  const groupBy = usePreferences((p) => p.taskGroup)
+  const sortBy = usePreferences((p) => p.taskSort)
+  const [open, setOpen] = useState<'group' | 'sort' | null>(null)
+  const closeSubmenu = () => setOpen(null)
+  return (
+    <ContextMenu at={at} align="end" trigger={trigger} label="任务的分组和排序" onClose={onClose}>
+      <MenuSubmenu label="分组方式" value={GROUP_LABEL[groupBy]} open={open === 'group'} onOpen={() => setOpen('group')} onClose={closeSubmenu}>
+        {TASK_GROUPS.map((value) => (
+          <MenuRadioItem key={value} label={GROUP_LABEL[value]} checked={value === groupBy} onSelect={() => {
+            setPreference('taskGroup', value)
+            onClose()
+          }} />
+        ))}
+      </MenuSubmenu>
+      <MenuSubmenu label="排序方式" value={SORT_LABEL[sortBy]} open={open === 'sort'} onOpen={() => setOpen('sort')} onClose={closeSubmenu}>
+        {TASK_SORTS.map((value) => (
+          <MenuRadioItem key={value} label={SORT_LABEL[value]} checked={value === sortBy} onSelect={() => {
+            setPreference('taskSort', value)
+            onClose()
+          }} />
+        ))}
+      </MenuSubmenu>
+    </ContextMenu>
+  )
+}
+
 export function TaskList() {
   const [collapsed, setCollapsed] = useState(false)
   const tasks = useCore((s) => s.tasks)
   const selectedId = useCore((s) => s.selectedId)
   const section = useCore((s) => s.section)
-  const sorted = useMemo(() => newestFirst(tasks), [tasks])
   const showAll = usePreferences((p) => p.showAllTasks)
+  const groupBy = usePreferences((p) => p.taskGroup)
+  const sortBy = usePreferences((p) => p.taskSort)
+  const sorted = useMemo(() => arrange(Object.values(tasks), groupBy, sortBy).flatMap((group) => group.items), [tasks, groupBy, sortBy])
   // Null while the search box is closed. A search looks through every task: the one being
   // looked for is often long done, and the open-only filter would hide it.
   const [query, setQuery] = useState<string | null>(null)
@@ -75,6 +138,61 @@ export function TaskList() {
   const closeMenu = useCallback(() => setMenu(null), [])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const menuTask = menu ? tasks[menu.id] : undefined
+  const groups = arrange(visible, groupBy, sortBy)
+  const [viewAt, setViewAt] = useState<MenuPoint | null>(null)
+  const closeView = useCallback(() => setViewAt(null), [])
+  const viewButton = useRef<HTMLButtonElement>(null)
+
+  const row = (task: Task) => {
+    const waiting = waitingOn(task, tasks)
+    // A chat task that has not started its work: planning, or holding the plan it saved.
+    const planning = task.status === 'pending' && task.conversationId !== null
+    const meta = taskMeta(task)
+    return (
+      <li key={task.id}>
+        {renamingId === task.id ? (
+          <div className="task-row" data-renaming>
+            <StatusIcon status={task.status} />
+            <TitleEditor
+              title={task.title}
+              label="任务标题"
+              onSave={(title) => saveTaskText(task.id, 'title', title)}
+              onDone={() => setRenamingId(null)}
+            />
+            {meta && <span className="task-row-meta">{meta}</span>}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="task-row"
+            data-abandoned={task.status === 'abandoned' || undefined}
+            data-menu-open={menu?.id === task.id || undefined}
+            aria-current={section === 'tasks' && !inboxOpen && task.id === selectedId}
+            onClick={() => selectTask(task.id)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              setMenu({ id: task.id, at: menuPoint(event) })
+            }}
+          >
+            <StatusIcon status={task.status} />
+            <span className="task-row-title">{task.title}</span>
+            {meta && <span className="task-row-meta">{meta}</span>}
+            {(waiting > 0 || task.refineSessionId || task.proposal || planning || hasTaskAlerts(task)) && (
+              <span className="task-row-tags">
+                <TaskAlerts task={task} />
+                {waiting > 0 && <span className="task-row-waiting">等待 {waiting} 个任务</span>}
+                {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
+                {task.proposal && <span className="task-tag task-tag-proposal">方案待确认</span>}
+                {planning && (
+                  <span className="task-tag task-tag-refining">{task.plan && !task.plan.approved ? '计划已保存' : '规划中'}</span>
+                )}
+              </span>
+            )}
+          </button>
+        )}
+      </li>
+    )
+  }
 
   return (
     <nav className="task-list" data-collapsed={collapsed} aria-label="任务列表">
@@ -97,6 +215,21 @@ export function TaskList() {
           onClick={() => setPreference('showAllTasks', !showAll)}
         >
           <FilterIcon />
+        </button>
+        <button
+          ref={viewButton}
+          type="button"
+          className="icon-button sidebar-tool"
+          aria-label="分组和排序"
+          aria-haspopup="menu"
+          aria-expanded={viewAt !== null}
+          data-tooltip="分组和排序"
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect()
+            setViewAt((current) => (current ? null : { x: box.right, y: box.bottom + 4 }))
+          }}
+        >
+          <SlidersIcon />
         </button>
         <button
           type="button"
@@ -139,60 +272,15 @@ export function TaskList() {
           </button>
         </p>
       ) : (
-        <ul>
-          {visible.map((task) => {
-            const waiting = waitingOn(task, tasks)
-            // A chat task that has not started its work: planning, or holding the plan it saved.
-            const planning = task.status === 'pending' && task.conversationId !== null
-            const meta = taskMeta(task)
-            return (
-              <li key={task.id}>
-                {renamingId === task.id ? (
-                  <div className="task-row" data-renaming>
-                    <StatusIcon status={task.status} />
-                    <TitleEditor
-                      title={task.title}
-                      label="任务标题"
-                      onSave={(title) => saveTaskText(task.id, 'title', title)}
-                      onDone={() => setRenamingId(null)}
-                    />
-                    {meta && <span className="task-row-meta">{meta}</span>}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="task-row"
-                    data-abandoned={task.status === 'abandoned' || undefined}
-                    data-menu-open={menu?.id === task.id || undefined}
-                    aria-current={section === 'tasks' && !inboxOpen && task.id === selectedId}
-                    onClick={() => selectTask(task.id)}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setMenu({ id: task.id, at: menuPoint(event) })
-                    }}
-                  >
-                    <StatusIcon status={task.status} />
-                    <span className="task-row-title">{task.title}</span>
-                    {meta && <span className="task-row-meta">{meta}</span>}
-                    {(waiting > 0 || task.refineSessionId || task.proposal || planning || hasTaskAlerts(task)) && (
-                      <span className="task-row-tags">
-                        <TaskAlerts task={task} />
-                        {waiting > 0 && <span className="task-row-waiting">等待 {waiting} 个任务</span>}
-                        {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
-                        {task.proposal && <span className="task-tag task-tag-proposal">方案待确认</span>}
-                        {planning && (
-                          <span className="task-tag task-tag-refining">{task.plan && !task.plan.approved ? '计划已保存' : '规划中'}</span>
-                        )}
-                      </span>
-                    )}
-                  </button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        groups.map((group) => group.label === null
+          ? <ul key="all">{group.items.map(row)}</ul>
+          : <section key={group.label} className="conversation-group" aria-label={group.label}>
+            <h3 className="conversation-group-title">{group.label}<span className="count">{group.items.length}</span></h3>
+            <ul>{group.items.map(row)}</ul>
+          </section>)
       )}
       </div>
+      {viewAt && <ViewMenu at={viewAt} trigger={viewButton.current} onClose={closeView} />}
       {menu && menuTask && (
         <TaskContextMenu task={menuTask} at={menu.at} onClose={closeMenu} onRename={() => setRenamingId(menuTask.id)} />
       )}

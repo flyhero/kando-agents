@@ -3,6 +3,8 @@ import { create } from 'zustand'
 
 export const CONVERSATION_GROUPS = ['none', 'project', 'agent', 'status'] as const
 export const CONVERSATION_SORTS = ['recent', 'created', 'title'] as const
+export const TASK_GROUPS = ['none', 'project', 'agent', 'status'] as const
+export const TASK_SORTS = ['recent', 'created', 'title'] as const
 
 // This window's UI preferences. They shape how the desktop looks and behaves,
 // not what a task is, so they stay on this client instead of going to core.
@@ -25,6 +27,9 @@ const Preferences = z.object({
   allowBypass: z.boolean().catch(false),
   // Off, the sidebar lists only pending and running tasks.
   showAllTasks: z.boolean().catch(false),
+  taskGroup: z.enum(TASK_GROUPS).catch('none'),
+  // Creation order preserves the task list's original behavior.
+  taskSort: z.enum(TASK_SORTS).catch('created'),
   conversationGroup: z.enum(CONVERSATION_GROUPS).catch('none'),
   conversationSort: z.enum(CONVERSATION_SORTS).catch('recent')
 })
