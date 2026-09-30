@@ -3,7 +3,7 @@ import { isPlanApproval, type ChatItem, type Conversation, type ConversationMess
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
-import { commandKeyword, formatTokens, isCommandTool, isSubagent, proseHeadline, thoughtFor, toolLabel, workedFor } from '../chat-tools'
+import { formatTokens, isSubagent, thoughtFor, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
@@ -14,7 +14,7 @@ import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatSubagents } from './ChatSubagents'
-import { ChatTodosLine, currentTodo, TodoHistory } from './ChatTodos'
+import { ChatTodosLine, TodoHistory } from './ChatTodos'
 import { ChatWorking, type WorkingPhase } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
@@ -528,27 +528,17 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   )
   const shorten = useMemo(() => pathShortener(roots), [roots])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
-  // What the agent is at: as it reports, else the last thing it said as it works, else its step.
-  const said = useMemo(() => {
-    const last = items.findLast((item) => item.kind === 'assistant' || item.kind === 'user')
-    return last?.kind === 'assistant' && last.streaming ? proseHeadline(last.text) : null
-  }, [items])
-  // The step under way, as the agent reports it, else the call running, else what it is saying,
-  // else its todo; and what kind of step that is, for the numbers line.
+  // What kind of step the turn is at, and how many subagents it has out, for the working line;
+  // the step itself shows in the conversation, just above it.
   const running = useMemo(() => {
     const tools = items.filter((item): item is Extract<ChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.status === 'running')
-    const call = tools.find((tool) => !isSubagent(tool.name))
     const last = items.at(-1)
-    const phase: WorkingPhase = call ? 'tools'
+    const phase: WorkingPhase = tools.some((tool) => !isSubagent(tool.name)) ? 'tools'
       : last?.kind === 'reasoning' && last.streaming ? 'thinking'
         : last?.kind === 'assistant' && last.streaming ? 'replying'
           : tools.length > 0 ? 'waiting' : 'working'
-    const headline = call
-      ? (call.description ?? `${toolLabel(call.name)} ${isCommandTool(call.name) ? commandKeyword(call.title) : shorten(call.title)}`)
-      : null
-    return { phase, headline, background: tools.filter((tool) => isSubagent(tool.name)).length }
-  }, [items, shorten])
-  const doing = state?.activity ?? running.headline ?? said ?? (state ? currentTodo(state.todos) : null)
+    return { phase, background: tools.filter((tool) => isSubagent(tool.name)).length }
+  }, [items])
   // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
   const modelId = state?.model ?? conversation.chatOptions?.model ?? null
   const agentInfo = useMemo(
@@ -591,8 +581,6 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
         })}
         {turn === 'running' && (
           <ChatWorking
-            agent={conversation.agent}
-            doing={doing}
             phase={running.phase}
             tokens={state?.turnUsage?.output ?? null}
             background={running.background}

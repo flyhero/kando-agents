@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, proseHeadline, elapsedText, thoughtFor, commandKeyword } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
@@ -38,24 +38,6 @@ describe('runHeadline', () => {
     expect(runHeadline([call('done', 'List files'), call('running', 'Read the config')])).toEqual({ text: 'Read the config', described: true })
     expect(runHeadline([call('done', 'List files'), call('done', 'Read the config')])).toEqual({ text: '运行 2 个命令', described: false })
     expect(runHeadline([call('done'), call('running')])).toEqual({ text: '运行 2 个命令', described: false })
-  })
-})
-
-describe('proseHeadline', () => {
-  it('takes the last whole sentence', () => {
-    expect(proseHeadline('先看现有实现。现在把排序键换成复合键，避免同一毫秒的订单翻页重复。')).toBe('现在把排序键换成复合键，避免同一毫秒的订单翻页重复。')
-  })
-  it('drops markdown and code', () => {
-    expect(proseHeadline('## 计划\n\n- 先改 `list.ts` 的查询，再补测试。\n```ts\nconst x = 1\n```')).toBe('先改 list.ts 的查询，再补测试。')
-  })
-  it('keeps the tail of a long unfinished thought', () => {
-    const long = `${'一'.repeat(150)} 结尾`
-    const headline = proseHeadline(long)
-    expect(headline?.startsWith('…')).toBe(true)
-    expect(headline?.length).toBeLessThanOrEqual(102)
-  })
-  it('says nothing for a fragment', () => {
-    expect(proseHeadline('好的')).toBeNull()
   })
 })
 

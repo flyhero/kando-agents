@@ -4330,18 +4330,10 @@ button.task-tag-updated:hover {
 .chat-latest svg { width: 14px; height: 14px; }
 
 /* While a turn runs: a spinner, what the agent is at under a passing sheen, and a clock. */
-/* Two lines: what the agent is at, then the numbers that say how it goes. */
-.chat-working { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 4px 4px 0; font-size: 12px; color: var(--text-muted); }
-.chat-working-head { display: flex; align-items: center; min-width: 0; min-height: 20px; font-size: var(--chat-font-size, 14px); }
-.chat-working-meta { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* The numbers that say how the running turn goes; what it is at shows in the conversation above. */
+.chat-working { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 4px 0; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .chat-working-part { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.chat-working-dot { color: var(--text-3); opacity: 0.6; }
-.chat-working-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.chat-working-dot { opacity: 0.6; }
 .chat-sheen {
   background: linear-gradient(90deg, var(--text-muted) 35%, var(--text) 50%, var(--text-muted) 65%);
   background-size: 300% 100%;
