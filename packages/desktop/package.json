@@ -1,6 +1,6 @@
 {
   "name": "@kando/desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Kando desktop client",
   "main": "./out/main/index.js",
@@ -10,7 +10,7 @@
     "preview": "install-electron && electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "bundle:backend": "node scripts/bundle-backend.mjs",
-    "dist:mac": "electron-vite build && node scripts/bundle-backend.mjs && electron-builder --mac"
+    "dist:mac": "electron-vite build && node scripts/bundle-backend.mjs && electron-builder --mac --publish never"
   },
   "devDependencies": {
     "@codemirror/commands": "6.11.1",
