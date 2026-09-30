@@ -1,31 +1,61 @@
-import type { ChatImage, ChatTurnState } from '@kando/protocol'
+import type { ChatImage, ChatQueued, ChatTurnState } from '@kando/protocol'
+import type { ChatRecord } from './chat-driver'
 
 type Entry = { text: string; images: ChatImage[]; ref: string; held: boolean }
 
-// One message the user wrote while the agent worked, sent once the turn is over. A turn that was
-// interrupted or failed does not send it: it waits, held, for the user to send or drop it.
+// The messages the user wrote while the agent worked, sent one at a time as each turn completes:
+// the next waits for the turn the one before it started. A turn that was interrupted or failed
+// holds them all; the user releases them one by one, or drops them.
 export class ChatQueue {
-  private entry: Entry | null = null
+  private entries: Entry[] = []
 
-  // A queue record: text to wait (replacing what waited), or null to drop it.
-  set(text: string | null, ref: string | undefined, images: readonly ChatImage[] = []): void {
-    this.entry = text === null || !ref ? null : { text, images: [...images], ref, held: false }
+  // A queue record from the log: a message to wait, one released from being held, one dropped,
+  // or, with no ref, every one dropped.
+  apply(record: Extract<ChatRecord, { dir: 'queue' }>): void {
+    if (record.text !== null && record.ref) this.add(record.text, record.ref, record.images)
+    else if (record.release && record.ref) this.release(record.ref)
+    else this.drop(record.ref)
+  }
+
+  add(text: string, ref: string, images: readonly ChatImage[] = []): void {
+    this.entries = [...this.entries.filter((entry) => entry.ref !== ref), { text, images: [...images], ref, held: false }]
+  }
+
+  drop(ref: string | undefined): void {
+    this.entries = ref === undefined ? [] : this.entries.filter((entry) => entry.ref !== ref)
+  }
+
+  release(ref: string): void {
+    this.entries = this.entries.map((entry) => (entry.ref === ref ? { ...entry, held: false } : entry))
   }
 
   // The message went out as the user message with this ref.
   sent(ref: string | undefined): void {
-    if (ref && this.entry?.ref === ref) this.entry = null
+    if (ref) this.drop(ref)
   }
 
   turnEnded(state: ChatTurnState): void {
-    if (this.entry && state !== 'completed') this.entry = { ...this.entry, held: true }
+    if (state !== 'completed') this.entries = this.entries.map((entry) => ({ ...entry, held: true }))
   }
 
+  // The next to go: the first not held.
   next(): { text: string; images: ChatImage[]; ref: string } | null {
-    return this.entry && !this.entry.held ? { text: this.entry.text, images: this.entry.images, ref: this.entry.ref } : null
+    const entry = this.entries.find((each) => !each.held)
+    return entry ? { text: entry.text, images: entry.images, ref: entry.ref } : null
   }
 
-  get view(): { text: string; held: boolean; images: ChatImage[] } | null {
-    return this.entry && { text: this.entry.text, held: this.entry.held, images: this.entry.images }
+  get(ref: string | undefined): ChatQueued | null {
+    const entry = ref === undefined ? this.entries[0] : this.entries.find((each) => each.ref === ref)
+    return entry ? { ...entry, images: [...entry.images] } : null
+  }
+
+  get view(): ChatQueued[] {
+    return this.entries.map((entry) => ({ ...entry, images: [...entry.images] }))
+  }
+
+  // The first waiting message alone, as older clients read it.
+  get first(): { text: string; held: boolean; images: ChatImage[] } | null {
+    const [entry] = this.entries
+    return entry ? { text: entry.text, held: entry.held, images: [...entry.images] } : null
   }
 }

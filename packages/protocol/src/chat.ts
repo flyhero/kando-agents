@@ -80,11 +80,17 @@ export type ChatQuestion = z.infer<typeof ChatQuestion>
 export const ChatImage = z.object({ id: AttachmentId, width: z.number().int().positive(), height: z.number().int().positive() })
 export type ChatImage = z.infer<typeof ChatImage>
 
+// A message waiting for the turn to end, in the order the user wrote them; held after an
+// interrupted or failed turn until the user sends or drops it. ref names the user item it becomes.
+export const ChatQueued = z.object({ ref: z.string(), text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) })
+export type ChatQueued = z.infer<typeof ChatQueued>
+
 // Every item has a stable id; a newer revision of it replaces the one the client holds.
 const Base = z.object({ id: z.string(), stageId: z.string(), revision: z.number().int(), at: z.number() })
 
 export const ChatItem = z.discriminatedUnion('kind', [
-  Base.extend({ kind: z.literal('user'), text: z.string(), images: z.array(ChatImage).default([]) }),
+  // steer: sent into a running turn rather than starting one; the agent took it mid-way.
+  Base.extend({ kind: z.literal('user'), text: z.string(), images: z.array(ChatImage).default([]), steer: z.boolean().optional() }),
   Base.extend({ kind: z.literal('assistant'), text: z.string(), streaming: z.boolean() }),
   Base.extend({ kind: z.literal('reasoning'), text: z.string(), streaming: z.boolean() }),
   Base.extend({
@@ -146,8 +152,11 @@ export const ChatItem = z.discriminatedUnion('kind', [
     todos: z.array(ChatTodo),
     // What the agent says it is doing right now.
     activity: z.string().nullable(),
-    // A message waiting for the turn to end; held after an interrupted or failed turn.
-    queued: z.object({ text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) }).nullable()
+    // The first message waiting for the turn to end, for older clients; queue has them all.
+    queued: z.object({ text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) }).nullable(),
+    queue: z.array(ChatQueued).default([]),
+    // Whether the agent takes a message into a running turn (Claude Code does, Codex does not).
+    steerable: z.boolean().default(false)
   })
 ])
 export type ChatItem = z.infer<typeof ChatItem>

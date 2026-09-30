@@ -536,10 +536,10 @@ export class ConversationService {
     }
   }
 
-  async send(id: string, text: string, imageIds: readonly string[] = [], queue = false): Promise<void> {
+  async send(id: string, text: string, imageIds: readonly string[] = [], queue = false, steer = false): Promise<void> {
     this.get(id)
     const note = this.switchNote(id)
-    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue)
+    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer)
     if (note) this.store.setSwitchedBranches(id, {})
   }
 
@@ -554,14 +554,14 @@ export class ConversationService {
     return images
   }
 
-  cancelQueued(id: string): void {
+  cancelQueued(id: string, ref?: string): void {
     this.get(id)
-    this.chats.cancelQueued(id)
+    this.chats.cancelQueued(id, ref)
   }
 
-  sendQueued(id: string): void {
+  async sendQueued(id: string, ref?: string, now = false): Promise<void> {
     this.get(id)
-    this.chats.sendQueued(id)
+    await this.chats.sendQueued(id, ref, now)
   }
 
   async respond(id: string, requestId: string, answer: ChatAnswer): Promise<void> {

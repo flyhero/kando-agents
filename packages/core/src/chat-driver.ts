@@ -11,8 +11,9 @@ export type ChatRecord =
   | { dir: 'note'; at: number; level: 'info' | 'warning' | 'error'; text: string }
   // The user switched an option; an agent that takes options per turn applies it from here.
   | { dir: 'option'; at: number; option: ChatOption; value: string }
-  // A message to send once the turn ends (ref names its user item), or null to drop it.
-  | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[] }
+  // A message to wait for the turn to end (ref names its user item); text null with a ref drops
+  // that one, or with release lets a held one go; text null alone drops them all.
+  | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[]; release?: boolean }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
@@ -70,6 +71,9 @@ export interface ChatDriver {
   providerSessionId(): string | null
   // Frames for the user's actions; each throws a Rejection when the stage cannot take it now.
   send(text: string, images?: readonly ChatImageFile[]): ChatOutgoing
+  // A message into the running turn, for an agent that takes one (canSteer); a Rejection otherwise.
+  steer(text: string, images?: readonly ChatImageFile[]): ChatOutgoing
+  canSteer(): boolean
   respond(requestId: string, answer: ChatAnswer): unknown[]
   interrupt(): unknown[]
   // Frames that switch an option, after checking the stage offers the value (a Rejection if not).

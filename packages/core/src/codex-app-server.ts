@@ -390,7 +390,7 @@ export class CodexAppServer implements ChatDriver {
         this.choose(record.option, record.value)
         break
       case 'queue':
-        this.queue.set(record.text, record.ref, record.images)
+        this.queue.apply(record)
         break
       case 'exit':
         this.ended(record.stderr, record.at)
@@ -443,6 +443,15 @@ export class CodexAppServer implements ChatDriver {
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
     const frame = this.turnStart(this.threadId, text, this.chosen.permissionMode, images)
     return { wire: frame, logged: frame }
+  }
+
+  // The app server takes a message only as a new turn; one for the running turn waits in the queue.
+  steer(): ChatOutgoing {
+    throw new Rejection('chat-no-steer', 'Codex takes no message into a running turn')
+  }
+
+  canSteer(): boolean {
+    return false
   }
 
   private turnStart(threadId: string, text: string, permissionMode: string | undefined, images: readonly ChatImageFile[] = []): unknown {
@@ -580,7 +589,9 @@ export class CodexAppServer implements ChatDriver {
     }))
     const current = this.catalog.find((entry) => entry.id === this.model)
     this.state.set({
-      queued: this.queue.view,
+      queued: this.queue.first,
+      queue: this.queue.view,
+      steerable: false,
       models,
       model: this.model,
       // A thread on its model's default effort reports none.

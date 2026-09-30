@@ -336,7 +336,7 @@ export class ClaudeStream implements ChatDriver {
         this.items.notice(record.level, record.text, record.at)
         break
       case 'queue':
-        this.queue.set(record.text, record.ref, record.images)
+        this.queue.apply(record)
         break
       case 'option':
         // Claude Code takes options through its own control requests, which the log also holds.
@@ -387,6 +387,21 @@ export class ClaudeStream implements ChatDriver {
   send(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
     if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
+    return this.userMessage(text, images)
+  }
+
+  // The CLI takes a user message while a turn runs and works it in after the step under way.
+  steer(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
+    if (!this.ready()) throw new Rejection('chat-starting', 'the agent is still starting')
+    if (!this.turn) throw new Rejection('chat-idle', 'no turn is running')
+    return this.userMessage(text, images)
+  }
+
+  canSteer(): boolean {
+    return true
+  }
+
+  private userMessage(text: string, images: readonly ChatImageFile[]): ChatOutgoing {
     const logged = { type: 'user', message: { role: 'user', content: text } }
     if (images.length === 0) return { wire: logged, logged }
     const blocks = images.map((image) => {
@@ -519,7 +534,9 @@ export class ClaudeStream implements ChatDriver {
     }))
     const current = this.currentModel()
     this.state.set({
-      queued: this.queue.view,
+      queued: this.queue.first,
+      queue: this.queue.view,
+      steerable: true,
       models,
       model: current?.value ?? this.reportedModel,
       effort: this.effort,
@@ -886,10 +903,15 @@ export class ClaudeStream implements ChatDriver {
       const user = OutgoingUser.safeParse(frame)
       if (!user.success || !ref) return
       const text = user.data.message.content
-      this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images] }, at)
       this.queue.sent(ref)
-      this.turn = { ref, assistant: null }
       this.messages.push({ role: 'user', text: messageText(text, images), eventKey: `chat:${ref}:user`, complete: false })
+      // Into a running turn, the message is the user steering it, and the turn stays the same one.
+      if (this.turn) {
+        this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images], steer: true }, at)
+        return
+      }
+      this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images] }, at)
+      this.turn = { ref, assistant: null }
       return
     }
     if (head.data.type === 'control_request') {

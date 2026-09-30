@@ -113,7 +113,8 @@ function UserMessage({ item }: { item: UserItem }) {
   const long = item.text.split('\n').length > 12 || item.text.length > 1200
   return (
     <>
-      <div className="chat-user" data-clipped={(long && !open) || undefined}>
+      <div className="chat-user" data-clipped={(long && !open) || undefined} data-steer={item.steer || undefined}>
+        {item.steer && <span className="chat-user-steer" title="回合进行中插入的消息">追加指令</span>}
         <ChatImageStrip images={item.images} />
         {item.text}
       </div>

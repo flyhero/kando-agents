@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatTurnActivity } from '@kando/protocol'
+import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatQueued, ChatTurnActivity } from '@kando/protocol'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, ChatDriver, ChatImageFile, ChatOutgoing, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
@@ -183,7 +183,7 @@ export class ChatHost {
   }
 
   private isIdle(live: Live): boolean {
-    return live.attached && live.driver.ready() && live.driver.activity() === 'idle' && this.queuedMessage(live) === null
+    return live.attached && live.driver.ready() && live.driver.activity() === 'idle' && this.queued(live).length === 0
   }
 
   // A running stage's items, or an ended one's rebuilt from its log.
@@ -202,30 +202,43 @@ export class ChatHost {
     return driver.items.list()
   }
 
-  // With queue, a message sent while a turn runs waits for the turn to end.
-  async send(conversationId: string, text: string, images: readonly ChatImage[] = [], queue = false): Promise<void> {
+  // While a turn runs: with steer, the message goes into it (an agent that takes none rejects);
+  // with queue, it waits its turn behind any already waiting. Idle, it starts a turn either way.
+  async send(conversationId: string, text: string, images: readonly ChatImage[] = [], queue = false, steer = false): Promise<void> {
     const live = this.running(conversationId)
-    if (queue && live.driver.activity() !== 'idle') {
+    const busy = live.driver.activity() !== 'idle'
+    if (busy && queue && !steer) {
       this.enqueue(live, text, images)
       return
     }
-    const sent = this.dispatch(live, live.driver.send(text, this.files(images)), randomUUID(), images)
+    const outgoing = busy && steer ? live.driver.steer(text, this.files(images)) : live.driver.send(text, this.files(images))
+    const sent = this.dispatch(live, outgoing, randomUUID(), images)
     this.flush(live)
     await sent
   }
 
-  cancelQueued(conversationId: string): void {
+  // Drops the waiting message with this ref, or all of them.
+  cancelQueued(conversationId: string, ref?: string): void {
     const live = this.running(conversationId)
-    this.record(live, { dir: 'queue', at: this.now(), text: null })
+    this.record(live, { dir: 'queue', at: this.now(), text: null, ...(ref ? { ref } : {}) })
     this.flush(live)
   }
 
-  // Queued again, so a message an interrupted turn held goes out now if the agent is idle.
-  sendQueued(conversationId: string): void {
+  // Lets a message a failed turn held go out when the agent is idle: the one with this ref, or the
+  // first. With now, it leaves the queue and goes at once, into the running turn if there is one.
+  async sendQueued(conversationId: string, ref?: string, now = false): Promise<void> {
     const live = this.running(conversationId)
-    const queued = this.queuedMessage(live)
-    if (queued === null) throw new Rejection('chat-nothing-queued', 'no message is waiting')
-    this.enqueue(live, queued.text, queued.images)
+    const entry = this.queued(live).find((each) => ref === undefined || each.ref === ref)
+    if (!entry) throw new Rejection('chat-nothing-queued', 'no message is waiting')
+    if (now) {
+      if (live.driver.activity() !== 'idle' && !live.driver.canSteer()) throw new Rejection('chat-no-steer', 'the agent takes no message into a running turn')
+      this.record(live, { dir: 'queue', at: this.now(), text: null, ref: entry.ref })
+      await this.send(conversationId, entry.text, entry.images, false, true)
+      return
+    }
+    this.record(live, { dir: 'queue', at: this.now(), text: null, ref: entry.ref, release: true })
+    this.pump(live)
+    this.flush(live)
   }
 
   private enqueue(live: Live, text: string, images: readonly ChatImage[]): void {
@@ -234,9 +247,9 @@ export class ChatHost {
     this.flush(live)
   }
 
-  private queuedMessage(live: Live): { text: string; images: ChatImage[] } | null {
+  private queued(live: Live): ChatQueued[] {
     const state = live.driver.items.list().find((item) => item.kind === 'state')
-    return state?.kind === 'state' && state.queued ? { text: state.queued.text, images: state.queued.images } : null
+    return state?.kind === 'state' ? state.queue : []
   }
 
   private files(images: readonly ChatImage[]): ChatImageFile[] {
@@ -325,8 +338,8 @@ export class ChatHost {
     try {
       void this.dispatch(live, live.driver.send(queued.text, this.files(queued.images)), queued.ref, queued.images).catch(ignore)
     } catch (error) {
-      // An image gone from the store since it was queued: the message is dropped with a word.
-      this.record(live, { dir: 'queue', at: this.now(), text: null })
+      // An image gone from the store since it was queued: that message is dropped with a word.
+      this.record(live, { dir: 'queue', at: this.now(), text: null, ref: queued.ref })
       this.record(live, { dir: 'note', at: this.now(), level: 'error', text: `排队的消息没能发出：${error instanceof Error ? error.message : String(error)}` })
     }
   }

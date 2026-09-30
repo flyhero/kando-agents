@@ -163,15 +163,51 @@ describe('ChatHost', () => {
     await flushMicrotasks()
     expect(stateOf(host)).toMatchObject({ queued: { text: 'second', held: true } })
     expect(userFrames(sessionId)).toHaveLength(1)
-    host.sendQueued(STAGE.conversationId)
+    await host.sendQueued(STAGE.conversationId)
     await flushMicrotasks()
     expect(userFrames(sessionId)).toHaveLength(2)
     finish(sessionId, 'completed')
     await host.send(STAGE.conversationId, 'third', [], true)
     finish(sessionId, 'aborted_streaming')
     host.cancelQueued(STAGE.conversationId)
-    expect(stateOf(host)).toMatchObject({ queued: null })
-    expect(() => host.sendQueued(STAGE.conversationId)).toThrow(expect.objectContaining({ reason: 'chat-nothing-queued' }))
+    expect(stateOf(host)).toMatchObject({ queued: null, queue: [] })
+    await expect(host.sendQueued(STAGE.conversationId)).rejects.toMatchObject({ reason: 'chat-nothing-queued' })
+  })
+
+  it('sends queued messages one turn at a time, in the order they were written', async () => {
+    const { host, sessionId } = await started()
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'first')
+    await host.send(STAGE.conversationId, 'second', [], true)
+    await host.send(STAGE.conversationId, 'third', [], true)
+    expect(stateOf(host)).toMatchObject({ queued: { text: 'second' }, queue: [{ text: 'second', held: false }, { text: 'third', held: false }] })
+    finish(sessionId, 'completed')
+    await flushMicrotasks()
+    // The second went out and started a turn; the third waits for that one.
+    expect(userFrames(sessionId)).toHaveLength(2)
+    expect(stateOf(host)).toMatchObject({ queue: [{ text: 'third' }] })
+    finish(sessionId, 'completed')
+    await flushMicrotasks()
+    expect(userFrames(sessionId)).toHaveLength(3)
+    expect(stateOf(host)).toMatchObject({ queue: [] })
+  })
+
+  it('drops one queued message by its ref and sends another into the running turn at once', async () => {
+    const { host, sessionId } = await started()
+    daemon.reply = () => {}
+    await host.send(STAGE.conversationId, 'first')
+    await host.send(STAGE.conversationId, 'second', [], true)
+    await host.send(STAGE.conversationId, 'third', [], true)
+    const state = stateOf(host)
+    const [second, third] = state?.kind === 'state' ? state.queue : []
+    host.cancelQueued(STAGE.conversationId, second!.ref)
+    expect(stateOf(host)).toMatchObject({ queue: [{ text: 'third' }] })
+    await host.sendQueued(STAGE.conversationId, third!.ref, true)
+    // Into the running turn: a user item marked as steering, the turn still the first's.
+    expect(userFrames(sessionId)).toHaveLength(2)
+    expect(stateOf(host)).toMatchObject({ queue: [], steerable: true })
+    expect(host.items(STAGE).filter((item) => item.kind === 'user')).toMatchObject([{ text: 'first' }, { text: 'third', steer: true }])
+    expect(host.activity(STAGE.conversationId)).toBe('running')
   })
 
   it('keeps a queued message across a restart and sends it when the turn ends', async () => {

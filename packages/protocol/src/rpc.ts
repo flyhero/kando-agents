@@ -136,19 +136,23 @@ export const rpcMethods = {
     result: Conversation
   },
   // Chat mode only: a message for the agent, text and/or images already uploaded (attachments.commit),
-  // in the order they show. With queue, one sent while a turn runs waits for the turn to end
-  // (replacing any that already waited); without it, the agent must be idle.
+  // in the order they show. With queue, one sent while a turn runs waits its turn behind any
+  // already waiting; with steer, it goes into the running turn (state.steerable says whether the
+  // agent takes that); with neither, the agent must be idle.
   'conversations.send': {
     params: ConversationRef.extend({
       text: z.string().trim().max(100000),
       images: z.array(AttachmentId).max(MAX_CHAT_IMAGES).optional(),
-      queue: z.boolean().optional()
+      queue: z.boolean().optional(),
+      steer: z.boolean().optional()
     }).refine((params) => params.text !== '' || (params.images?.length ?? 0) > 0, { message: 'a message needs text or an image' }),
     result: Ok
   },
-  // Drops the waiting message, or sends one an interrupted or failed turn left held.
-  'conversations.cancelQueued': { params: ConversationRef, result: Ok },
-  'conversations.sendQueued': { params: ConversationRef, result: Ok },
+  // Drops a waiting message (the ref from state.queue), or every one without a ref.
+  'conversations.cancelQueued': { params: ConversationRef.extend({ ref: z.string().optional() }), result: Ok },
+  // Releases a message a failed turn held (the first without a ref) to go out when the agent is
+  // idle; with now, takes it out of the queue and sends it at once, into the running turn if need be.
+  'conversations.sendQueued': { params: ConversationRef.extend({ ref: z.string().optional(), now: z.boolean().optional() }), result: Ok },
   // Chat mode only: switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },

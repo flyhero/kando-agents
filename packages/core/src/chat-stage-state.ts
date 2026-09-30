@@ -13,7 +13,9 @@ const INITIAL: StageStateFields = {
   context: null,
   todos: [],
   activity: null,
-  queued: null
+  queued: null,
+  queue: [],
+  steerable: false
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
