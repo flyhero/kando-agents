@@ -4,6 +4,7 @@ import net from 'node:net'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
+import type { CoreEndpoint } from '@kando/protocol'
 import { kandoPaths, readCoreEndpoint } from '@kando/protocol/node'
 
 // Where CLIs land that a Finder-launched app's minimal PATH misses.
@@ -38,20 +39,39 @@ function reachable(port: number): Promise<boolean> {
   })
 }
 
-async function coreRunning(): Promise<boolean> {
+// The core serving this home, if one answers on its port.
+async function runningCore(): Promise<CoreEndpoint | null> {
   const endpoint = await readCoreEndpoint()
-  return endpoint !== null && (await reachable(endpoint.port))
+  return endpoint !== null && (await reachable(endpoint.port)) ? endpoint : null
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Starts daemon and core from the app's bundled copies when none serve this KANDO_HOME yet.
-// Both are detached with their own logs: closing the window or quitting the app never touches
-// them, exactly as when they run from source. A daemon already serving the socket makes the
-// spawned one exit by itself (endpoint-claim), so starting one is safe to over-ask.
+// Asks an older core to leave, and waits for it to: it closes its server and removes its endpoint
+// file on SIGTERM. Sessions live in the daemon, so the agents it served run on; the new core takes
+// them up again.
+async function retireCore(endpoint: CoreEndpoint): Promise<void> {
+  console.log(`[kando] core ${endpoint.version ?? '(unversioned)'} is older than this app (${app.getVersion()}); replacing it`)
+  try {
+    process.kill(endpoint.pid, 'SIGTERM')
+  } catch {
+    return
+  }
+  const until = Date.now() + 10_000
+  while (Date.now() < until && (await reachable(endpoint.port))) await sleep(200)
+}
+
+// Starts daemon and core from the app's bundled copies when none serve this KANDO_HOME yet, or when
+// the core that does is older than the app: an app updated in place would otherwise keep talking
+// to the core it found, and lack whatever the update put in core. Both are detached with their own
+// logs: closing the window or quitting the app never touches them, exactly as when they run from
+// source. A daemon already serving the socket makes the spawned one exit by itself
+// (endpoint-claim), so starting one is safe to over-ask.
 export async function ensureBackend(): Promise<void> {
   if (!app.isPackaged) return
-  if (await coreRunning()) return
+  const running = await runningCore()
+  if (running?.version === app.getVersion()) return
+  if (running) await retireCore(running)
   const paths = kandoPaths()
   const logs = join(paths.home, 'logs')
   mkdirSync(logs, { recursive: true, mode: 0o700 })
@@ -77,7 +97,7 @@ export async function ensureBackend(): Promise<void> {
   // The renderer retries on its own; waiting here only surfaces a start that never lands.
   const until = Date.now() + START_WAIT_MS
   while (Date.now() < until) {
-    if (await coreRunning()) return
+    if (await runningCore()) return
     await sleep(300)
   }
   console.error(`[kando] core did not come up; see ${join(logs, 'core.log')}`)

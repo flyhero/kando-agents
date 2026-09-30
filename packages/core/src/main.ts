@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { PROTOCOL_VERSION } from '@kando/protocol'
+import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
 import { readClaudeUsage } from './claude-usage'
 import { readCodexUsage } from './codex-usage'
@@ -141,7 +142,7 @@ server = await startRpcServer({
     uploads: new AttachmentUploads(attachments)
   }, terminals, worktrees)
 })
-await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION })
+await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
 usage.start()
 sources.start()

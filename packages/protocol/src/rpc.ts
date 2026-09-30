@@ -391,7 +391,10 @@ export const CoreEndpoint = z.object({
   port: z.number().int(),
   token: z.string(),
   pid: z.number().int(),
-  protocolVersion: z.number().int()
+  protocolVersion: z.number().int(),
+  // The core's package version, so an app newer than the core serving its home can replace it.
+  // Older cores leave it out, which reads as outdated.
+  version: z.string().optional()
 })
 export type CoreEndpoint = z.infer<typeof CoreEndpoint>
 
