@@ -4395,6 +4395,38 @@ button.task-tag-updated:hover {
 
 .chat-changes:hover { background: var(--fill-2); }
 
+/* Where the conversation works: quiet like the composer's pickers, ahead of the activity chips. */
+.chat-projects {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 260px;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-projects:hover:not(:disabled),
+.chat-projects:focus-visible,
+.chat-projects[aria-expanded='true'] { background: var(--surface-muted); color: var(--text); }
+.chat-projects:disabled { cursor: default; opacity: 0.6; }
+.chat-projects svg { flex-shrink: 0; width: 14px; height: 14px; }
+.chat-projects > svg:last-child { opacity: 0.7; }
+.chat-projects-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-projects-count { flex-shrink: 0; padding: 0 6px; border-radius: 999px; background: var(--fill-2); font-size: 11px; line-height: 16px; }
+.chat-projects-primary { cursor: default; }
+.chat-projects-primary:hover { background: transparent; }
+.chat-projects-item > svg:first-child { flex-shrink: 0; width: 16px; height: 16px; color: var(--text-muted); }
+/* Parts the projects from the activity chips, and goes when none follow. */
+.chat-dock-sep { flex-shrink: 0; width: 1px; height: 12px; background: var(--border-2); }
+.chat-dock-sep:has(+ .chat-dock-spacer) { display: none; }
+
 /* A request in the composer's place: the same shell as the input, a tab bar across the top when
    several wait, and the card without a frame of its own inside. */
 .chat-intervention {

@@ -129,6 +129,7 @@ const REASON_TEXT: Record<string, string> = {
   'no-chat': '这个任务还没有开始聊天',
   abandoned: '已废弃的任务不能继续',
   'task-conversation': '这条会话属于一个任务，请从任务那里继续',
+  'managed-workspace': '没选项目的会话在 Kando 的临时目录里运行，不能再添加项目',
   'chat-unavailable': '这个 core 不支持聊天界面'
 }
 

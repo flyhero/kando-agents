@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -70,6 +70,23 @@ function settles(promise: Promise<void>, ms: number): Promise<boolean> {
 
 // How the note of a branch switch begins, which Kando puts before the user's next message.
 const SWITCH_NOTE = '（我切换了分支：'
+
+// Each an existing directory, by its real path and as picked; `taken` are real paths already in use.
+async function resolveProjects(projectPaths: readonly string[], taken: readonly string[] = []): Promise<{ projects: string[]; picked: string[] }> {
+  const projects: string[] = []
+  const picked: string[] = []
+  for (const rawPath of projectPaths) {
+    const projectPath = normalizeRepoPath(rawPath)
+    if (!(await stat(projectPath).catch(() => null))?.isDirectory()) {
+      throw new Rejection('invalid-workspace', 'project must be an existing absolute directory')
+    }
+    const resolved = await realpath(projectPath)
+    if (projects.includes(resolved) || taken.includes(resolved)) throw new Rejection('duplicate-project')
+    projects.push(resolved)
+    picked.push(projectPath)
+  }
+  return { projects, picked }
+}
 
 export class ConversationService {
   private readonly launching = new Set<string>()
@@ -201,18 +218,7 @@ export class ConversationService {
       if (model && !picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${model}`)
       if (effort && !picked?.efforts.includes(effort)) throw new Rejection('chat-option-invalid', `the model takes no effort ${effort}`)
     }
-    const projects: string[] = []
-    const picked: string[] = []
-    for (const rawPath of projectPaths) {
-      const projectPath = normalizeRepoPath(rawPath)
-      if (!(await stat(projectPath).catch(() => null))?.isDirectory()) {
-        throw new Rejection('invalid-workspace', 'project must be an existing absolute directory')
-      }
-      const resolved = await realpath(projectPath)
-      if (projects.includes(resolved)) throw new Rejection('duplicate-project')
-      projects.push(resolved)
-      picked.push(projectPath)
-    }
+    const { projects, picked } = await resolveProjects(projectPaths)
     let workspace: string
     const id = randomUUID()
     if (projects.length === 0) {
@@ -234,6 +240,29 @@ export class ConversationService {
     this.projects.remember(picked)
     this.changed(created)
     return this.start(id, agent, '', false, mode)
+  }
+
+  // Everything but the primary changes (checkEditAdditionalProjects). A chat agent is given its
+  // directories at launch, so an idle one restarts and goes on from where it was, as after /add-dir.
+  async setAdditionalProjects(id: string, projectPaths: readonly string[]): Promise<Conversation> {
+    const conversation = this.free(id)
+    const blocker = this.launching.has(id) ? 'conversation-running' : checkEditAdditionalProjects(conversation)
+    if (blocker) throw new Rejection(blocker)
+    const primary = conversation.workspacePath
+    const { projects, picked } = await resolveProjects(projectPaths, [primary])
+    const next = [primary, ...projects]
+    if (next.join('\n') === conversation.projectPaths.join('\n')) return conversation
+    const live = conversation.sessionId !== null
+    if (live && !this.chats.idle(id)) throw new Rejection('chat-busy', 'the agent is still working')
+    if (live) await this.stop(id)
+    this.store.moveWorkspace(id, primary, next)
+    const starts = this.store.projectStarts(id)
+    for (const project of projects) {
+      const head = starts[project] ? null : await folderHead(project)
+      if (head) this.store.setProjectStart(id, project, head)
+    }
+    this.projects.remember(picked)
+    return live ? this.start(id, conversation.agent, '', false, 'chat') : this.changed(this.get(id))
   }
 
   // A task's chat is driven from its task, which checks what the task may do first.

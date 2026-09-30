@@ -6,6 +6,7 @@ import { useChatSurface } from './chat-surface'
 import { ChatComposer } from './ChatComposer'
 import { ChatMessageList, type SentMessage } from './ChatMessageList'
 import { ChatPlanCard } from './ChatPlan'
+import { ChatProjects } from './ChatProjects'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatPaths } from './ChatToolCard'
 import { ChatTodosChip } from './ChatTodos'
@@ -96,6 +97,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
   return (
     <div className="chat-dock">
       <div className="chat-dock-header">
+        <ChatProjects conversation={conversation} />
         {running && state && <ChatTodosChip todos={state.todos} />}
         {inspectable && <ChangesChip conversation={conversation} finishedCalls={finishedCalls} />}
         <span className="chat-dock-spacer" />

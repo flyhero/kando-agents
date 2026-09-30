@@ -654,6 +654,43 @@ describe('ConversationService in chat mode', () => {
     expect(JSON.stringify(daemon.written(service.get(started.id).sessionId!))).not.toContain('请先阅读 Kando 移交文件')
   })
 
+  it('restarts an idle chat agent on its session to give it the additional projects, the primary kept', async () => {
+    const app = mkdtempSync(path.join(root, 'app-'))
+    const web = mkdtempSync(path.join(root, 'web-'))
+    const created = await service.create('claude', [app], 'chat')
+    const first = daemon.spawns.at(-1)!.args
+    await service.send(created.id, 'hello')
+    await settle()
+    const added = await service.setAdditionalProjects(created.id, [web])
+    expect(added.projectPaths).toEqual([realpathSync(app), realpathSync(web)])
+    expect(daemon.spawns).toHaveLength(2)
+    expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(app) })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume', sessionArg(first), '--add-dir', realpathSync(web)]))
+    expect(projects.recent()).toContain(web)
+    // The same list again changes nothing; the primary cannot come in as one of them.
+    await service.setAdditionalProjects(created.id, [web])
+    expect(daemon.spawns).toHaveLength(2)
+    await expect(service.setAdditionalProjects(created.id, [app])).rejects.toMatchObject({ reason: 'duplicate-project' })
+    await service.stop(created.id)
+    const removed = await service.setAdditionalProjects(created.id, [])
+    expect(removed.projectPaths).toEqual([realpathSync(app)])
+    expect(removed.sessionId).toBeNull()
+    expect(daemon.spawns).toHaveLength(2)
+  })
+
+  it('keeps the additional projects of a working agent, a task\'s chat and a projectless conversation', async () => {
+    const web = mkdtempSync(path.join(root, 'web-'))
+    daemon.reply = () => {}
+    const working = await service.create('claude', [root], 'chat')
+    await service.send(working.id, 'still going')
+    await settle()
+    await expect(service.setAdditionalProjects(working.id, [web])).rejects.toMatchObject({ reason: 'chat-busy' })
+    const scratch = await service.create('claude', [], 'chat')
+    await expect(service.setAdditionalProjects(scratch.id, [web])).rejects.toMatchObject({ reason: 'managed-workspace' })
+    const started = await service.startForTask(task, { cwd: web, extraDirs: [], planOnly: false, session: 'new' })
+    await expect(service.setAdditionalProjects(started.id, [root])).rejects.toMatchObject({ reason: 'task-conversation' })
+  })
+
   it('deletes a task\'s chat with its task, logs and all', async () => {
     const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
     await service.deleteForTask(task.id)

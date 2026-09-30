@@ -120,3 +120,17 @@ export function checkSwitchBranch(conversation: Pick<Conversation, 'taskId' | 's
   if (conversation.mode !== 'chat') return 'conversation-running'
   return conversation.chat?.turn === 'idle' ? null : 'chat-busy'
 }
+
+export type AdditionalProjectsBlocker = BranchSwitchBlocker | 'managed-workspace'
+
+// The agent is given its directories at launch, so a change restarts it on the same session: a
+// chat agent once it is idle, a terminal one never behind the user's back. The primary is the cwd
+// the session began in and stays. A conversation begun without projects works in a directory of
+// Kando's own; a task's has its projects set on the task.
+export function checkEditAdditionalProjects(
+  conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'mode' | 'chat' | 'managedWorkspace'>
+): AdditionalProjectsBlocker | null {
+  if (conversation.taskId) return 'task-conversation'
+  if (conversation.managedWorkspace) return 'managed-workspace'
+  return checkSwitchBranch(conversation)
+}

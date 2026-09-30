@@ -65,6 +65,7 @@ export function createRpcHandlers(
     'conversations.create': ({ agent, projectPaths, mode, allowBypass, permissionMode, model, effort }) =>
       conversations.create(agent, projectPaths, mode, allowBypass, { permissionMode, model, effort }),
     'conversations.chatCatalog': ({ agent }) => conversations.chatCatalog(agent),
+    'conversations.setAdditionalProjects': ({ id, projectPaths }) => conversations.setAdditionalProjects(id, projectPaths),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
     'conversations.continue': ({ id, mode, allowBypass }) => conversations.continue(id, mode, allowBypass),
     'conversations.handoff': ({ id, agent, note, stopRunning, mode, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, mode, allowBypass),

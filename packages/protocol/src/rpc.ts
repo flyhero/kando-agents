@@ -34,7 +34,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file'] as const
+// conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -129,6 +130,12 @@ export const rpcMethods = {
   // What the agent offers a new chat: the models its latest chat stage listed, or, when it never
   // ran one, what it lists when asked. null when it cannot be asked.
   'conversations.chatCatalog': { params: z.object({ agent: AgentKind }), result: ChatCatalog.nullable() },
+  // Replaces every project but the primary (see checkEditAdditionalProjects); an idle chat agent
+  // restarts on its session to be given them.
+  'conversations.setAdditionalProjects': {
+    params: ConversationRef.extend({ projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS - 1) }),
+    result: Conversation
+  },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
   'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional(), allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {

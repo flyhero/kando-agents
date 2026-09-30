@@ -19,7 +19,7 @@ export function primaryProjectName(paths: readonly string[]): string {
   return primary ? projectName(primary) : '无项目'
 }
 
-function parentDir(projectPath: string): string | undefined {
+export function parentDir(projectPath: string): string | undefined {
   const parent = projectPath.replace(/[\\/]+[^\\/]+[\\/]*$/, '')
   return parent && parent !== projectPath ? parent : undefined
 }
