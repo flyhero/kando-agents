@@ -4785,18 +4785,32 @@ button.task-tag-updated:hover {
 
 /* The queued messages sit just above the input, where they will go out: a line saying so, then one
    row each, numbered in the order they go. */
+/* The composer's wrapper lends its children to the dock's column, so the queue can sit first,
+   above the dock's own row, rather than between that row and the input. */
+.chat-dock-composer { display: contents; }
 .chat-queue {
+  order: -1;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 4px 4px;
+  padding: 4px;
   border-radius: var(--radius);
   background: var(--fill);
   font-size: 12px;
 }
 .chat-queue[data-held] { background: color-mix(in srgb, var(--warning) 10%, transparent); }
-.chat-queue-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 4px; }
-.chat-queue-label { flex: 1; color: var(--text-muted); }
+.chat-queue-head { display: flex; align-items: center; gap: 8px; min-height: 24px; padding: 0 8px; }
+.chat-queue-label { color: var(--text-muted); }
+/* Several fold to one line: how many, which goes next, a chevron; the whole line opens it. */
+.chat-queue-toggle { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.chat-queue-toggle .chat-queue-label { flex: none; color: var(--text); }
+.chat-queue-next { flex: 1; min-width: 0; overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.chat-queue-next span { color: var(--text); }
+.chat-queue-toggle .chat-tool-chevron { margin-left: auto; opacity: 1; }
+.chat-queue-toggle[aria-expanded='true'] .chat-tool-chevron svg { transform: rotate(180deg); }
+/* One message waiting: the label and the message on one line, no list. */
+.chat-queue-one { flex-direction: row; align-items: baseline; min-height: 28px; padding: 4px 12px; }
+.chat-queue-one .chat-queue-label { flex: none; }
 .chat-queue-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .chat-queued {
   display: flex;

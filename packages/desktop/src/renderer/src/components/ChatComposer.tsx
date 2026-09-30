@@ -5,7 +5,7 @@ import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { EnterIcon, StopIcon } from './icons'
+import { ChevronDownIcon, EnterIcon, StopIcon } from './icons'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -30,7 +30,35 @@ type StateItem = Extract<ChatItem, { kind: 'state' }>
 // failed turn holds them; the first is released from the header, any of them from its row. Each
 // can be edited back into the input, dropped, or, where the agent takes it, put into the running
 // turn at once.
-function QueuedList({ queue, held, steerable, onEdit, onRelease, onNow, onCancel }: {
+function QueuedRow({ entry, index, steerable, onEdit, onRelease, onNow, onCancel }: {
+  entry: ChatQueued
+  index: number
+  steerable: boolean
+  onEdit: (entry: ChatQueued) => void
+  onRelease: (ref: string) => void
+  onNow: (ref: string) => void
+  onCancel: (ref: string) => void
+}) {
+  return (
+    <>
+      {index >= 0 && <span className="chat-queued-index">{index + 1}.</span>}
+      <span className="chat-queued-text" title={entry.text}>{entry.text || '（只有图片）'}</span>
+      {entry.images.length > 0 && <span className="chat-queued-images">{entry.images.length} 张图片</span>}
+      <span className="chat-queued-actions">
+        {entry.held && index > 0 && <button type="button" className="link-button" onClick={() => onRelease(entry.ref)}>发送</button>}
+        {steerable && <button type="button" className="link-button" title="不等回合结束，现在就交给 agent" onClick={() => onNow(entry.ref)}>立刻插入</button>}
+        <button type="button" className="link-button" onClick={() => onEdit(entry)}>编辑</button>
+        <button type="button" className="link-button" onClick={() => onCancel(entry.ref)}>删除</button>
+      </span>
+    </>
+  )
+}
+
+// The messages waiting to go, at the top of the dock. One shows as it is; several fold to a line
+// saying how many and which goes next, opening on a click. A failed turn holds them; the first is
+// released from the header, any other from its row. Each can be edited back into the input,
+// dropped, or, where the agent takes it, put into the running turn at once.
+function QueuedList({ queue, held, steerable, ...actions }: {
   queue: readonly ChatQueued[]
   held: boolean
   steerable: boolean
@@ -39,30 +67,35 @@ function QueuedList({ queue, held, steerable, onEdit, onRelease, onNow, onCancel
   onNow: (ref: string) => void
   onCancel: (ref: string) => void
 }) {
+  const [open, setOpen] = useState(false)
   const [first] = queue
+  if (first && queue.length === 1) {
+    return (
+      <div className="chat-queue chat-queue-one chat-queued" data-held={held || undefined}>
+        <span className="chat-queue-label">{held ? '上一回合没有完成，还没发：' : '回合结束后发送：'}</span>
+        <QueuedRow entry={first} index={-1} steerable={steerable} {...actions} />
+      </div>
+    )
+  }
   return (
     <div className="chat-queue" data-held={held || undefined}>
       <div className="chat-queue-head">
-        <span className="chat-queue-label">
-          {held ? `上一回合没有完成，这 ${queue.length} 条还没发` : queue.length > 1 ? `回合结束后依次发送 ${queue.length} 条` : '回合结束后发送'}
-        </span>
-        {held && first && <button type="button" className="link-button" onClick={() => onRelease(first.ref)}>继续发送第 1 条</button>}
+        <button type="button" className="chat-queue-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span className="chat-queue-label">{held ? `${queue.length} 条没发出` : `${queue.length} 条排队`}</span>
+          {!open && first && <span className="chat-queue-next">下一条：<span>{first.text || '（只有图片）'}</span></span>}
+          <span className="chat-tool-chevron" aria-hidden="true"><ChevronDownIcon /></span>
+        </button>
+        {held && first && <button type="button" className="link-button" onClick={() => actions.onRelease(first.ref)}>继续发送第 1 条</button>}
       </div>
-      <ol className="chat-queue-list">
-        {queue.map((entry, index) => (
-          <li key={entry.ref} className="chat-queued" data-held={entry.held || undefined}>
-            <span className="chat-queued-index">{index + 1}.</span>
-            <span className="chat-queued-text" title={entry.text}>{entry.text || '（只有图片）'}</span>
-            {entry.images.length > 0 && <span className="chat-queued-images">{entry.images.length} 张图片</span>}
-            <span className="chat-queued-actions">
-              {entry.held && index > 0 && <button type="button" className="link-button" onClick={() => onRelease(entry.ref)}>发送</button>}
-              {steerable && <button type="button" className="link-button" title="不等回合结束，现在就交给 agent" onClick={() => onNow(entry.ref)}>立刻插入</button>}
-              <button type="button" className="link-button" onClick={() => onEdit(entry)}>编辑</button>
-              <button type="button" className="link-button" onClick={() => onCancel(entry.ref)}>删除</button>
-            </span>
-          </li>
-        ))}
-      </ol>
+      {open && (
+        <ol className="chat-queue-list">
+          {queue.map((entry, index) => (
+            <li key={entry.ref} className="chat-queued" data-held={entry.held || undefined}>
+              <QueuedRow entry={entry} index={index} steerable={steerable} {...actions} />
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   )
 }
