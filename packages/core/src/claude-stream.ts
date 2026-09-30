@@ -306,6 +306,8 @@ export class ClaudeStream implements ChatDriver {
   private turn: { ref: string; assistant: string | null; resumed?: boolean } | null = null
   private turnsSeen = 0
   private resumes = 0
+  // Output tokens of the running turn's messages so far, for the working line.
+  private turnOutput = 0
   // Subagents the CLI has reported finished, and the last thing each said while it worked (its
   // frames come with parent_tool_use_id), which stands as its report when no hand-back frame does.
   private agentsCompleted = 0
@@ -658,7 +660,8 @@ export class ClaudeStream implements ChatDriver {
     // own: a subagent left working in the background has reported back.
     if (subtype === 'init' && !this.turn && this.turnsSeen > 0) {
       this.turn = { ref: `resume-${++this.resumes}`, assistant: null, resumed: true }
-      this.state.set({ activity: null })
+      this.turnOutput = 0
+      this.state.set({ activity: null, turnUsage: null })
     }
     if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
     if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
@@ -702,6 +705,8 @@ export class ClaudeStream implements ChatDriver {
     if (usage) {
       const used = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0)
       this.state.setContext({ used, window: this.contextWindow ?? this.guessedWindow() })
+      this.turnOutput += usage.output_tokens ?? 0
+      if (this.turn) this.state.set({ turnUsage: { input: used, output: this.turnOutput } })
     }
     for (const block of content) {
       // Each complete frame carries one block, in the order the stream indexed them.
@@ -870,6 +875,7 @@ export class ClaudeStream implements ChatDriver {
       this.messages.push({ role: 'assistant', text: turn.assistant, eventKey: `chat:${turn.ref}:assistant`, complete: true })
     }
     this.turn = null
+    this.state.set({ turnUsage: null })
     // Subagents still out keep the stage busy; the working line says what it waits for.
     const background = state === 'completed' ? this.backgroundAgents() : 0
     if (background > 0) this.state.set({ activity: `等 ${background} 个子 agent 回来` })
@@ -982,6 +988,8 @@ export class ClaudeStream implements ChatDriver {
       this.items.put({ id: `u:${ref}`, kind: 'user', text, images: [...images] }, at)
       this.turn = { ref, assistant: null }
       this.turnsSeen++
+      this.turnOutput = 0
+      this.state.set({ turnUsage: null })
       return
     }
     if (head.data.type === 'control_request') {

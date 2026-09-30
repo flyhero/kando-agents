@@ -157,6 +157,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     todos: z.array(ChatTodo),
     // What the agent says it is doing right now.
     activity: z.string().nullable(),
+    // What the running turn has read and written so far, where the agent reports it as it goes;
+    // null between turns and for an agent that reports only at the end. Older cores leave it out.
+    turnUsage: z.object({ input: z.number(), output: z.number() }).nullable().default(null),
     // The first message waiting for the turn to end, for older clients; queue has them all.
     queued: z.object({ text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) }).nullable(),
     queue: z.array(ChatQueued).default([]),

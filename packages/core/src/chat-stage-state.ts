@@ -13,6 +13,7 @@ const INITIAL: StageStateFields = {
   context: null,
   todos: [],
   activity: null,
+  turnUsage: null,
   queued: null,
   queue: [],
   steerable: false
