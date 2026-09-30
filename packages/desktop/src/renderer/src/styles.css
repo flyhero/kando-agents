@@ -920,11 +920,16 @@ button.task-tag:hover {
 
 .input {
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
 }
+
+.input::placeholder { color: var(--text-3); }
 
 .input:focus {
   outline: 2px solid var(--focus);
@@ -1426,16 +1431,35 @@ button.task-tag:hover {
   overflow-wrap: anywhere;
 }
 
+/* One control height and the default radius; the text is the page's, not the browser's button
+   font. Default: a surface with an edge. Primary: the one accent-filled action in a view. Ghost:
+   text that fills on hover. A key hint inside reads as part of the label. */
 .button {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
   background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
 .button:hover:not(:disabled) {
-  border-color: var(--text-muted);
+  background: var(--fill);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .button:disabled {
@@ -1447,12 +1471,29 @@ button.task-tag:hover {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  border-color: transparent;
 }
 
 .button.ghost {
   border-color: transparent;
   background: transparent;
+  color: var(--text-muted);
+}
+
+.button.ghost:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--text);
+}
+
+.button kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  opacity: 0.6;
 }
 
 /* Sized by what it holds, from a few lines up: the page scrolls, not the editor. The plan and
@@ -2770,11 +2811,13 @@ button.task-tag-updated:hover {
 }
 
 .segmented button {
-  padding: 4px 12px;
+  height: 28px;
+  padding: 0 12px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
+  font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
@@ -4904,7 +4947,6 @@ button.task-tag-updated:hover {
 .chat-approve-reason::placeholder { color: var(--text-muted); }
 .chat-approve-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .chat-approve-hint { margin-right: auto; color: var(--text-3); font-size: 11px; }
-.chat-approve-footer kbd { margin-left: 6px; font-family: var(--mono); font-size: 11px; opacity: 0.7; }
 
 /* Where a task's branch starts, one line per git project on the detail page. */
 .task-start { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0; }
