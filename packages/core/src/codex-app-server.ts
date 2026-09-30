@@ -100,8 +100,12 @@ const TurnParams = z.looseObject({
   sandboxPolicy: SandboxShape.optional().catch(undefined),
   collaborationMode: Collaboration
 })
+// last: the running turn so far; inputTokens counts the cached input too, outputTokens the reasoning.
 const TokenUsage = z.looseObject({
-  tokenUsage: z.looseObject({ last: z.looseObject({ totalTokens: z.number() }), modelContextWindow: z.number().nullish() })
+  tokenUsage: z.looseObject({
+    last: z.looseObject({ totalTokens: z.number(), inputTokens: z.number().optional(), outputTokens: z.number().optional() }),
+    modelContextWindow: z.number().nullish()
+  })
 })
 const PlanUpdated = z.looseObject({ plan: z.array(z.looseObject({ step: z.string(), status: z.string() })).catch([]) })
 const ModelEntry = z.looseObject({
@@ -340,6 +344,8 @@ export class CodexAppServer implements ChatDriver {
   private startError: string | null = null
   private exited = false
   private turn: { ref: string; turnId: string | null; assistant: string | null } | null = null
+  // What the running turn has read and written, as the thread's token updates last said.
+  private turnUsage: { input: number; output: number } | null = null
   private readonly pending = new Map<string, Pending>()
   private readonly unanswered = new Map<string, string | number>()
   private turns = 0
@@ -538,7 +544,7 @@ export class CodexAppServer implements ChatDriver {
       const usage = TokenUsage.safeParse(parsed.data.params)
       if (!usage.success) return null
       const { last, modelContextWindow } = usage.data.tokenUsage
-      return { method, params: { tokenUsage: { last: { totalTokens: last.totalTokens }, modelContextWindow } } }
+      return { method, params: { tokenUsage: { last: { totalTokens: last.totalTokens, inputTokens: last.inputTokens, outputTokens: last.outputTokens }, modelContextWindow } } }
     }
     const kept = ['thread/started', 'turn/started', 'turn/completed', 'turn/plan/updated', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
     return kept.includes(method) ? frame : null
@@ -775,7 +781,14 @@ export class CodexAppServer implements ChatDriver {
       }
       case 'thread/tokenUsage/updated': {
         const usage = TokenUsage.safeParse(params)
-        if (usage.success) this.state.setContext({ used: usage.data.tokenUsage.last.totalTokens, window: usage.data.tokenUsage.modelContextWindow ?? null })
+        if (!usage.success) return
+        const { last, modelContextWindow } = usage.data.tokenUsage
+        this.state.setContext({ used: last.totalTokens, window: modelContextWindow ?? null })
+        // The turn's own count so far: on the working line as it goes, on the turn's line at its end.
+        if (last.inputTokens !== undefined && last.outputTokens !== undefined) {
+          this.turnUsage = { input: last.inputTokens, output: last.outputTokens }
+          if (this.turn) this.state.set({ turnUsage: this.turnUsage })
+        }
         return
       }
       case 'turn/plan/updated': {
@@ -1019,6 +1032,8 @@ export class CodexAppServer implements ChatDriver {
 
   private startTurn(frame: Frame, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
     this.turns++
+    this.turnUsage = null
+    this.state.set({ turnUsage: null })
     const params = TurnParams.safeParse(frame.params)
     if (params.success) this.turnMode(params.data, at)
     const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(frame.params)
@@ -1079,7 +1094,9 @@ export class CodexAppServer implements ChatDriver {
       if (pending.kind !== 'plan') this.resolve(requestId, 'cancelled', null, at)
     }
     const turn = this.turn
-    this.items.put({ id: turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`, kind: 'turn', state, error, durationMs }, at)
+    this.items.put({ id: turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`, kind: 'turn', state, error, durationMs, usage: this.turnUsage }, at)
+    this.turnUsage = null
+    this.state.set({ turnUsage: null })
     if (turn?.assistant) {
       this.messages.push({ role: 'assistant', text: turn.assistant, eventKey: `chat:${turn.ref}:assistant`, complete: true })
     }

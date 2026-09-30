@@ -55,6 +55,16 @@ describe('CodexAppServer', () => {
     expect(driver.activity()).toBe('idle')
   })
 
+  it('keeps each turn its own token count from the thread usage updates', () => {
+    const turns = ofKind(replay(fixture('codex-session.jsonl')).items.list(), 'turn')
+    expect(turns.length).toBeGreaterThan(0)
+    for (const turn of turns) {
+      expect(turn.usage).not.toBeNull()
+      expect(turn.usage!.input).toBeGreaterThan(0)
+      expect(turn.usage!.output).toBeGreaterThan(0)
+    }
+  })
+
   it('records the final answer of each turn, not its commentary', () => {
     const messages = replay(fixture('codex-session.jsonl')).takeMessages()
     expect(messages.filter((message) => message.role === 'assistant').map((message) => message.text))
