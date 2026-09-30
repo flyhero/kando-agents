@@ -1,8 +1,8 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import type { ChatDiff, ChatItem, ChatToolStatus } from '@kando/protocol'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
-import { diffCounts, runHeadline, toolLabel } from '../chat-tools'
+import { diffCounts, elapsedText, runHeadline, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
@@ -32,8 +32,18 @@ function clipped(text: string): string {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n…（还有 ${text.length - OUTPUT_LIMIT} 字）` : text
 }
 
-function ToolStatus({ status }: { status: ChatToolStatus }) {
-  if (status === 'running') return <Spinner label="进行中" />
+// How long a call has run so far, ticking beside its spinner; gone once it finishes.
+function ToolTimer({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 100)
+    return () => clearInterval(timer)
+  }, [])
+  return <span className="chat-tool-time" aria-hidden="true">{elapsedText(Math.max(0, now - since))}</span>
+}
+
+function ToolStatus({ status, since }: { status: ChatToolStatus; since?: number }) {
+  if (status === 'running') return <><Spinner label="进行中" />{since !== undefined && <ToolTimer since={since} />}</>
   const text = STATUS_TEXT[status]
   return text ? <span className="chat-tool-status" data-status={status}>{text}</span> : null
 }
@@ -85,7 +95,7 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
             <div className="chat-diff-path chat-edit-step">
               第 {index + 1} 次
               <DiffCount diffs={tool.diffs} />
-              <ToolStatus status={tool.status} />
+              <ToolStatus status={tool.status} since={tool.at} />
             </div>
             {tool.diffs.map((diff, at) => diff.patch && <DiffLines key={at} patch={diff.patch} />)}
           </div>
@@ -119,7 +129,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
           </>
         )}
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
-        <ToolStatus status={tool.status} />
+        <ToolStatus status={tool.status} since={tool.at} />
       </button>
       {open && tool.input && <pre className="chat-tool-io">{tool.input}</pre>}
       {open && tool.output && <pre className="chat-tool-io">{clipped(tool.output)}</pre>}
@@ -143,7 +153,7 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
         <span className="chat-tool-summary" title={headline.described ? running?.title : undefined}>{headline.text}</span>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {running && !headline.described && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
-        {running ? <ToolStatus status="running" /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
+        {running ? <ToolStatus status="running" since={running.at} /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
       </button>
       {open && (
         <div className="chat-tool-run-lines">
@@ -173,7 +183,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         <span className="chat-tool-title" title={item.title}>{shorten(item.title)}</span>
         <DiffCount diffs={item.diffs} />
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
-        <ToolStatus status={item.status} />
+        <ToolStatus status={item.status} since={item.at} />
       </button>
       {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
       {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}

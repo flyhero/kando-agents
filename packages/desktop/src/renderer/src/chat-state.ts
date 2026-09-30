@@ -198,8 +198,9 @@ export type ChatBlock =
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
-  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; header: boolean }
-  | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean }
+  // steps: the calls the turn made on the way, for the line that stands for them.
+  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; header: boolean; steps: number }
+  | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean; steps: number }
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
@@ -282,11 +283,12 @@ function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[
   const key = `fold:${end.key}`
   const files = turnFiles(folded)
   const reply = turnReply(body, turn)
+  const steps = folded.flatMap(toolsOf).length
   return [
-    { kind: 'fold', key, turn, blocks: folded, header: files.length === 0 },
+    { kind: 'fold', key, turn, blocks: folded, header: files.length === 0, steps },
     ...work.filter((block) => !foldable(block)),
     ...body.slice(answer),
-    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true }] : [])
+    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true, steps }] : [])
   ]
 }
 
@@ -297,7 +299,41 @@ function unfoldedTurn(body: ChatBlock[], end: ChatBlock): ChatBlock[] {
   const turn = itemOf(end)
   if (!turn || turn.kind !== 'turn') return [...body, end]
   const reply = turnReply(body, turn)
-  return [...body, { kind: 'changes', key: `changes:${end.key}`, fold: `fold:${end.key}`, files, turn, reply, collapsible: false }]
+  const steps = body.filter(foldable).flatMap(toolsOf).length
+  return [...body, { kind: 'changes', key: `changes:${end.key}`, fold: `fold:${end.key}`, files, turn, reply, collapsible: false, steps }]
+}
+
+// The disclosure keys of everything in a fold that opens: to open or close the whole turn's work
+// at once. Each matches the key its component reads (ChatToolCard, ChatSubagents, ChatTodos,
+// ConversationChat's Reasoning).
+export function foldRowKeys(blocks: readonly ChatBlock[]): string[] {
+  return blocks.flatMap((block) => {
+    switch (block.kind) {
+      case 'tools': {
+        const [first] = block.tools
+        const run = block.tools.length > 1 && first ? [`run:${itemKey(first)}`] : []
+        return [...run, ...block.tools.map((tool) => `call:${itemKey(tool)}`)]
+      }
+      case 'edits': {
+        const [first] = block.tools
+        return first ? [`edits:${itemKey(first)}`] : []
+      }
+      case 'agents':
+        return block.tools.map((tool) => `agent:${itemKey(tool)}`)
+      case 'fold':
+        return foldRowKeys(block.blocks)
+      case 'changes':
+        return []
+      case 'entry': {
+        const item = itemOf(block)
+        if (!item) return []
+        if (item.kind === 'tool') return [`card:${itemKey(item)}`]
+        if (item.kind === 'todos') return [`todos:${itemKey(item)}`]
+        if (item.kind === 'reasoning') return [`thought:${itemKey(item)}`]
+        return []
+      }
+    }
+  })
 }
 
 export function chatBlocks(entries: readonly TimelineEntry[], { foldTurns = true }: { foldTurns?: boolean } = {}): ChatBlock[] {

@@ -97,6 +97,36 @@ export function diffCounts(diffs: readonly Pick<ChatDiff, 'patch'>[]): { added: 
 }
 
 // How long a turn worked, as a person says it.
+// How long a call has run, at a glance: tenths of a second under a minute, then minutes.
+export function elapsedText(ms: number): string {
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : workedFor(ms)
+}
+
+const HEADLINE_MAX = 100
+const HEADLINE_MIN = 8
+
+// One line out of what the agent is saying as it works: the last whole sentence, or the tail of
+// what it has so far, cut at a word. Markdown marks go; code and headings are not what it is at.
+export function proseHeadline(text: string): string | null {
+  const plain = text
+    .replace(/```[\s\S]*?(```|$)/g, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+.*$/gm, ' ')
+    .replace(/^\s{0,3}([-*+]\s+|\d+[.)]\s+|>\s*)/gm, '')
+    .replace(/[*_~]{1,3}([^*_~]+)[*_~]{1,3}/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain.length < HEADLINE_MIN) return null
+  // A Latin full stop ends a sentence only before a space or the end: `list.ts` is one word.
+  const sentences = plain.match(/.+?(?:[。！？]+|[.!?]+(?=\s|$))/g)
+  const last = sentences?.at(-1)?.trim()
+  if (last && last.length >= HEADLINE_MIN && last.length <= HEADLINE_MAX) return last
+  if (plain.length <= HEADLINE_MAX) return plain
+  const tail = plain.slice(-HEADLINE_MAX)
+  const cut = tail.search(/[\s，、；：]/)
+  return `…${(cut > 0 && cut < HEADLINE_MAX * 0.45 ? tail.slice(cut + 1) : tail).trim()}`
+}
+
 // A token count at a glance: 842, 2.3k, 42k, 1.2M.
 export function formatTokens(count: number): string {
   if (count < 1000) return String(count)

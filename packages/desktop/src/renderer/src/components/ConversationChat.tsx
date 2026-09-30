@@ -1,9 +1,9 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isPlanApproval, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
-import { chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
+import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
-import { workedFor, formatTokens } from '../chat-tools'
+import { formatTokens, proseHeadline, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
 import { AGENT_LABEL, dayAndTime } from '../labels'
@@ -224,8 +224,10 @@ type TurnItem = Extract<ChatItem, { kind: 'turn' }>
 
 // A finished turn's work, behind how long it took; opening it shows the calls, thinking and replies
 // on the way to its answer.
-function foldText(turn: TurnItem): string {
-  const took = (turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : '') + tokensText(turn)
+// The turn's work in one line: how many calls, how long, what it cost. The kinds of call are the
+// expanded list's business; the fold only says the scale.
+function foldText(turn: TurnItem, steps: number): string {
+  const took = (steps > 0 ? ` · ${steps} 步` : '') + (turn.durationMs !== null ? ` · ${workedFor(turn.durationMs)}` : '') + tokensText(turn)
   const error = turn.error ? `：${readableNotice(turn.error)}` : ''
   if (turn.state === 'interrupted') return `已中断${took}${error}`
   if (turn.state === 'failed') return `失败${took}${error}`
@@ -236,8 +238,15 @@ function foldText(turn: TurnItem): string {
 type FoldState = { reveal: (key: string | null, path: string) => void }
 const Folds = createContext<FoldState>({ reveal: () => {} })
 
-function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number>; header: boolean }) {
+function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header, steps }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number>; header: boolean; steps: number }) {
   const [open, setOpen] = useDisclosure(foldKey)
+  // Open, the work is a list of rows, each closed until asked; a second step opens them all.
+  const [allOpen, setAllOpen] = useDisclosure(`all:${foldKey}`)
+  const rows = useMemo(() => foldRowKeys(blocks), [blocks])
+  const openAll = (next: boolean) => {
+    setAllOpen(next)
+    for (const key of rows) setOpened(conversationId, key, next)
+  }
   if (!header && !open) return null
   return (
     <div className="chat-entry">
@@ -245,11 +254,16 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header
         {header && (
           <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
             <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-            {foldText(turn)}
+            {foldText(turn, steps)}
           </button>
         )}
         {open && (
           <div className="chat-fold-body">
+            {rows.length > 1 && (
+              <div className="chat-fold-bar">
+                <button type="button" className="link-button" onClick={() => openAll(!allOpen)}>{allOpen ? '收起每一步' : '展开每一步'}</button>
+              </div>
+            )}
             {blocks.map((block) => <Block key={block.key} conversationId={conversationId} block={block} task={task} replies={replies} />)}
           </div>
         )}
@@ -260,7 +274,7 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header
 
 // The files a finished turn changed, under its answer: three up front, then the rest on demand.
 // Each file opens the turn's work at that file's card; the inspector has them all.
-function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; files: readonly TurnFile[]; turn: TurnItem; reply: { text: string } | null; collapsible: boolean }) {
+function TurnChanges({ fold, files, turn, reply, collapsible, steps }: { fold: string; files: readonly TurnFile[]; turn: TurnItem; reply: { text: string } | null; collapsible: boolean; steps: number }) {
   const [showAll, setShowAll] = useDisclosure(`changes:${fold}`)
   const [workOpen, setWorkOpen] = useDisclosure(fold)
   const folds = useContext(Folds)
@@ -323,10 +337,10 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
         {collapsible ? (
           <button type="button" className="chat-fold-header chat-turn-summary" aria-expanded={workOpen} onClick={() => setWorkOpen(!workOpen)}>
             <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-            {foldText(turn)}
+            {foldText(turn, steps)}
           </button>
         ) : (
-          <span className="chat-turn-summary-static" data-state={turn.state}>{foldText(turn)}</span>
+          <span className="chat-turn-summary-static" data-state={turn.state}>{foldText(turn, steps)}</span>
         )}
       </div>
     </div>
@@ -337,8 +351,8 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
   if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
   if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
   if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
-  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div>
-  if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} header={block.header} />
+  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} steps={block.steps} /></div>
+  if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} header={block.header} steps={block.steps} />
   const { entry } = block
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
@@ -513,7 +527,12 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
   )
   const shorten = useMemo(() => pathShortener(roots), [roots])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
-  const doing = state ? (state.activity ?? currentTodo(state.todos)) : null
+  // What the agent is at: as it reports, else the last thing it said as it works, else its step.
+  const said = useMemo(() => {
+    const last = items.findLast((item) => item.kind === 'assistant' || item.kind === 'user')
+    return last?.kind === 'assistant' && last.streaming ? proseHeadline(last.text) : null
+  }, [items])
+  const doing = state ? (state.activity ?? said ?? currentTodo(state.todos)) : said
   // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
   const modelId = state?.model ?? conversation.chatOptions?.model ?? null
   const agentInfo = useMemo(
