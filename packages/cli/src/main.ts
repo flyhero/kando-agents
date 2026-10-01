@@ -47,7 +47,9 @@ const USAGE = `kando <command>
   source refresh <source>                立即同步收件箱
   source import <source> <key> [--agent a]
                                          把 issue 导入成任务，issue 原文作为快照保存
-  mcp [--task <id>] [--home dir]         agent 用的 MCP 服务（由 Kando 自动启动）：展示 HTML 预览；带 --task 时还有细化用的工具
+  mcp [--task <id>] [--conversation <id>] [--home dir]
+                                         agent 用的 MCP 服务（由 Kando 自动启动）：展示 HTML 预览；
+                                         带 --conversation 时还有浏览器工具，带 --task 时还有细化用的工具
 `
 
 function formatRow(task: Task): string {
@@ -206,6 +208,7 @@ async function main(argv: string[]): Promise<void> {
       note: { type: 'string' },
       chat: { type: 'boolean' },
       home: { type: 'string' },
+      conversation: { type: 'string' },
       agent: { type: 'string' },
       image: { type: 'string', multiple: true },
       help: { type: 'boolean', short: 'h' }
@@ -219,7 +222,7 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === 'mcp') {
     // Speaks MCP on stdout, so nothing else may print there.
-    await serveMcp(values.task, values.home)
+    await serveMcp(values.task, values.home, values.conversation)
     return
   }
 

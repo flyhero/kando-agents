@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { CONTEXT_COMPACTED, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { describeBrowserTool, showBrowserInput } from './browser-tools'
+import { stripImageBytes } from './image-frames'
+import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
@@ -235,6 +238,8 @@ export function describeClaudeTool(name: string, input: Record<string, unknown>)
     case 'ExitPlanMode':
       return '计划'
     default: {
+      const browser = browserToolKind(name)
+      if (browser) return describeBrowserTool(browser, input)
       const first = Object.values(input).find((value) => typeof value === 'string')
       return typeof first === 'string' ? firstLine(first) : ''
     }
@@ -246,6 +251,8 @@ function inputText(name: string, input: Record<string, unknown>): string | null 
   if (name === 'Bash') return str(input.command)
   if (name === 'ExitPlanMode') return str(input.plan)
   if (['Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'WebFetch', 'WebSearch'].includes(name)) return null
+  const browser = browserToolKind(name)
+  if (browser && !showBrowserInput(browser)) return null
   return Object.keys(input).length ? clip(JSON.stringify(input, null, 2), 4000) : null
 }
 
@@ -285,18 +292,26 @@ function resultDiffs(previous: ChatDiff[], raw: unknown): ChatDiff[] {
   return [{ path: first.path, change, patch: clip(patch, MAX_PATCH) }]
 }
 
+// A result's text, and the images it names (see imageMarker). An image block a marker does not
+// name (a Read of a picture) shows as a placeholder, since its bytes are not kept.
+function toolResult(content: unknown): { text: string; images: ChatImage[] } {
+  if (typeof content === 'string') return takeImageMarkers(content)
+  if (!Array.isArray(content)) return { text: '', images: [] }
+  const blocks = content.map((block) => Block.safeParse(block)).flatMap((parsed) => (parsed.success ? [parsed.data] : []))
+  const taken = takeImageMarkers(blocks.map((block) => (block.type === 'image' ? '' : (block.text ?? ''))).filter(Boolean).join('\n'))
+  const pictures = blocks.filter((block) => block.type === 'image').length
+  const unnamed = Math.max(0, pictures - taken.images.length)
+  const text = [taken.text, ...Array.from({ length: unnamed }, () => '[图片]')].filter(Boolean).join('\n')
+  return { text, images: taken.images }
+}
+
 function resultText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((block) => Block.safeParse(block))
-    .map((parsed) => (!parsed.success ? '' : parsed.data.type === 'image' ? '[图片]' : (parsed.data.text ?? '')))
-    .filter(Boolean)
-    .join('\n')
+  return toolResult(content).text
 }
 
 export class ClaudeStream implements ChatDriver {
   readonly items: ChatItems
+  private readonly kando: KandoRequests
   private initSent = false
   private initialized = false
   private initError: string | null = null
@@ -345,6 +360,7 @@ export class ClaudeStream implements ChatDriver {
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
+    this.kando = new KandoRequests(this.items)
     this.state = new StageState(this.items)
     this.sessionId = options.resume
   }
@@ -368,6 +384,10 @@ export class ClaudeStream implements ChatDriver {
         break
       case 'exit':
         this.ended(record.code, record.stderr, record.at)
+        break
+      case 'ask':
+      case 'answer':
+        this.kando.apply(record)
     }
     this.refreshOptions()
     this.state.publish(record.at)
@@ -401,6 +421,7 @@ export class ClaudeStream implements ChatDriver {
   // Between turns, subagents the agent left working in the background keep it busy: the CLI will
   // start a turn of its own when they report.
   activity(): ChatTurnActivity {
+    if (this.kando.pending > 0) return 'awaiting'
     if (!this.turn) return this.backgroundAgents() > 0 ? 'running' : 'idle'
     return this.pending.size > 0 ? 'awaiting' : 'running'
   }
@@ -503,7 +524,7 @@ export class ClaudeStream implements ChatDriver {
       }
       case 'user': {
         const user = UserFrame.safeParse(frame)
-        return user.success && user.data.isReplay ? null : frame
+        return user.success && user.data.isReplay ? null : stripImageBytes(frame)
       }
       case 'assistant': {
         // Signatures are opaque and large; the thinking text, when there is any, is what shows.
@@ -758,7 +779,8 @@ export class ClaudeStream implements ChatDriver {
       input: inputText(name, input),
       status: earlier?.status ?? 'running',
       output: earlier?.output ?? null,
-      diffs: inputDiffs(name, input)
+      diffs: inputDiffs(name, input),
+      ...(earlier?.images?.length ? { images: earlier.images } : {})
     }, at)
   }
 
@@ -789,7 +811,9 @@ export class ClaudeStream implements ChatDriver {
       }
       const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
       const report = subagent?.success && subagent.data.content ? resultText(subagent.data.content) : null
-      const output = report ?? resultText(block.content).replace(HAND_BACK, '').replace(/^ {2}/gm, '')
+      const result = toolResult(block.content)
+      const output = report ?? result.text.replace(HAND_BACK, '').replace(/^ {2}/gm, '')
+      const images = result.images.length ? result.images : 'images' in tool ? tool.images : undefined
       const metrics = subagent?.success && subagent.data.status === 'completed'
         ? { tools: subagent.data.totalToolUseCount ?? 0, tokens: subagent.data.totalTokens ?? 0, durationMs: subagent.data.totalDurationMs ?? 0 }
         : (tool.metrics ?? null)
@@ -803,7 +827,8 @@ export class ClaudeStream implements ChatDriver {
         status,
         output: output ? clip(output) : null,
         diffs: status === 'done' ? resultDiffs(tool.diffs, parsed.data.tool_use_result) : tool.diffs,
-        ...(metrics ? { metrics } : {})
+        ...(metrics ? { metrics } : {}),
+        ...(images?.length ? { images } : {})
       }, at)
     }
   }
@@ -1064,6 +1089,7 @@ export class ClaudeStream implements ChatDriver {
     if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
     this.finishStreaming(at)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
+    this.kando.cancelAll(at)
     this.exited = true
     const tail = stderr.trim().split('\n').slice(-20).join('\n')
     if (!this.initialized) {

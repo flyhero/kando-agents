@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { MAX_SIDE_PANEL_RATIO, MIN_SIDE_PANEL_RATIO, clampSidePanelRatio, sidePanelRatioAtPointer } from './side-panel-size'
 
-// The drag handle between the terminal and a side panel. `ratio` is the panel's share of the
-// width the two split; the arrow keys nudge it as well.
+// The drag handle before a side panel. `ratio` is the panel's share of the width; the arrow keys
+// nudge it as well.
 export function PanelSeparator({ panelName, ratio, onRatioChange, disabled = false }: {
   panelName: string
   ratio: number
@@ -51,7 +51,7 @@ export function PanelSeparator({ panelName, ratio, onRatioChange, disabled = fal
       data-dragging={dragging}
       data-closing={disabled}
       role="separator"
-      aria-label={`调整终端与${panelName}宽度`}
+      aria-label={`调整${panelName}宽度`}
       aria-orientation="vertical"
       aria-valuemin={MIN_SIDE_PANEL_RATIO * 100}
       aria-valuemax={MAX_SIDE_PANEL_RATIO * 100}

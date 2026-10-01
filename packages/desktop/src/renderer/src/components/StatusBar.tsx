@@ -1,8 +1,9 @@
-import { setSettingsOpen, setWorktreesOpen, toggleTerminalPanel, useCore, useWorktreesSupported, type ConnectionState } from '../core-store'
+import { setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useBrowserSupported, useCore, useWorktreesSupported, type ConnectionState } from '../core-store'
+import { ALL_TABS, useBrowserTabs } from '../browser-state'
 import { formatBytes, worktreeRows, worktreeSummary } from '../worktree-groups'
 import { useWorktrees } from '../worktree-store'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { BranchIcon, GearIcon, TerminalIcon } from './icons'
+import { BranchIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
 import { UsageBar } from './UsageBar'
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
@@ -47,6 +48,28 @@ function SettingsButton() {
       onClick={() => setSettingsOpen(!open)}
     >
       <GearIcon />
+    </button>
+  )
+}
+
+// The browser panel, on a core that hosts one; the count is of the tabs known while it is open.
+function BrowserButton() {
+  const supported = useBrowserSupported()
+  const open = useCore((s) => s.browserPanelOpen)
+  const count = useBrowserTabs((s) => s[ALL_TABS]?.tabs.length ?? 0)
+  if (!supported) return null
+  return (
+    <button
+      type="button"
+      className="tool-button statusbar-browser"
+      aria-label="浏览器"
+      aria-pressed={open}
+      data-tooltip={open ? '隐藏浏览器 Ctrl+Shift+`' : '浏览器 Ctrl+Shift+`'}
+      data-tooltip-side="top-end"
+      onClick={toggleBrowserPanel}
+    >
+      <GlobeIcon />
+      {open && count > 0 && <span className="count">{count}</span>}
     </button>
   )
 }
@@ -102,6 +125,7 @@ export function StatusBar() {
       <ConnectionStatus />
       <UsageBar />
       <WorktreeButton />
+      <BrowserButton />
       <TerminalButton />
     </footer>
   )

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { checkChatResume, shortTaskId, type Task } from '@kando/protocol'
 import { usePlans, type PlanItem } from '../chat-state'
-import { loadConversation, perform, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
+import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
 import { BranchStatus } from './BranchStatus'
@@ -31,6 +31,7 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
   return {
     showPlan: showTaskPlan,
     showChanges: showTaskChanges,
+    showBrowser: () => showBrowserPanel(task.conversationId),
     changes: task.repos.some((repo) => repo.worktreePath !== null) ? { kind: 'task', id: task.id } : null,
     changesHint: '任务 worktree 里还没提交的改动；点开检查器看',
     prepareSend: async (stopped) => {

@@ -191,6 +191,32 @@ export function ArrowLeftIcon() {
   )
 }
 
+export function ArrowRightIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M4 10h12M11 5l5 5-5 5" />
+    </svg>
+  )
+}
+
+export function CameraIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M3 7h3l1.5-2h5L14 7h3v9H3z" />
+      <circle cx="10" cy="11.5" r="2.5" />
+    </svg>
+  )
+}
+
+export function GlobeIcon() {
+  return (
+    <svg {...stroked}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M3 10h14M10 3c2.5 2.5 2.5 11.5 0 14M10 3c-2.5 2.5-2.5 11.5 0 14" />
+    </svg>
+  )
+}
+
 // A list of lines, each with a mark in front.
 export function ListIcon() {
   return (

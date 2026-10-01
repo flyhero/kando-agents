@@ -4,7 +4,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 
 任务与会话并行的多 agent 管理工具。任务适合**记下标题 → 完善详情 → 交给 Claude Code / Codex 在独立 worktree 中执行**；会话适合持续聊天及在两个 agent 之间移交。
 
-当前版本 0.1.0（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 0.7.0（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
 未执行 pending ──执行──▶ 执行中 running ──退出──▶ 待验收 review ──接受──▶ 已完成 done
@@ -35,6 +35,12 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 │  daemon  持有所有 agent 进程：PTY（node-pty） │
 │          和聊天界面用的 stdio 管道            │
 │          core / 桌面端重启，agent 不会断     │
+└────────────────┬───────────────────────────┘
+                 │ spawnPipe
+┌────────────────▼───────────────────────────┐
+│  browser-host  Kando 托管的 Chromium        │
+│          （playwright-core），core 经本地    │
+│          WebSocket 驱动；标签页按会话隔离     │
 └────────────────────────────────────────────┘
 ```
 
@@ -45,8 +51,9 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 | `packages/daemon` | 进程宿主，独立进程：终端界面的 agent 和 shell 跑在 PTY 里，聊天界面的 agent 跑在 stdio 管道上；缓存最近输出，供重新连接时回放 |
 | `packages/cli` | 命令行客户端 |
 | `packages/desktop` | Electron 桌面端：看板、详情编辑、内嵌终端、聊天界面 |
+| `packages/browser-host` | 浏览器宿主，daemon 托管的独立进程：用 playwright-core 跑一个 Chromium，给 agent 的浏览器工具和检查器的实时画面提供页面 |
 
-运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`。
+运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`、`browser/`（Chromium 下载、浏览器 profile）。
 
 ## 快速开始
 
@@ -109,7 +116,7 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 - **开始规划**：还有依赖没完成时，agent 只读规划，不建任务分支。它读的是任务分支将来拉出的起点（见「分支起点」）：Kando 把起点提交检出成一个没有分支的只读副本，放在 `~/.kando/worktrees/<任务id>/.planning/<项目名>/`；起点就是项目当前检出的分支时，直接在项目里读。Claude Code 用规划模式并禁止改动这些目录里的文件，Codex 用 plan 模式配 `read-only` 沙箱，权限模式只有「规划」。未完成依赖的详情和计划直接写在第一条消息里。拿出计划后可以继续规划，也可以「保存计划」：计划存到任务上，任务仍是「未执行」，列表里标「计划已保存」。依赖都完成后点「开始执行」，Kando 结束规划用的 agent，在新建的 worktree 里开一个新会话，把保存的计划交给它，让它先对照当时的代码核对一遍。
 - **提交验收**：agent 退出不会让任务进入待验收，因为聊天界面的 agent 空闲 30 分钟就会被结束，下次发消息再接着同一个会话启动。觉得做完了就点「提交验收」（agent 正在处理时不行），检查器会打开到改动。
 - **验收之后**：「接受」和「重做」和终端界面一样。想接着改就直接在聊天里发消息：任务回到「执行中」，worktree 被删掉的会先重建，agent 接着原来的会话继续。
-- **其他**：任务的聊天不出现在「会话」列表和搜索里，从任务打开；删除任务时一并删除它的聊天记录，worktree 保留。已经开始的任务保持原来的界面：在终端里执行或细化过的任务仍用终端，反过来也一样。`kando show` 会显示任务的计划。聊天阶段暂时没有 Kando 的 MCP 工具，所以用不了 `read_task_details`。
+- **其他**：任务的聊天不出现在「会话」列表和搜索里，从任务打开；删除任务时一并删除它的聊天记录，worktree 保留。已经开始的任务保持原来的界面：在终端里执行或细化过的任务仍用终端，反过来也一样。`kando show` 会显示任务的计划。聊天阶段有 Kando 的预览和浏览器工具，但没有细化用的 `read_task_details`。
 
 ### 和 agent 细化任务
 
@@ -157,6 +164,18 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 - **和终端界面的区别**：没有 agent 自己的斜杠命令和快捷键。Claude Code 在 `-p` 模式下不会弹出「是否信任这个目录」的确认，请只在你信任的项目里用聊天界面。Codex 的 app-server 还在实验阶段，版本太旧、没有 app-server 时会明确提示改用终端。
 - **需要新的 daemon**：聊天界面依赖 daemon 的新方法。如果运行中的 daemon 是更早的版本，新建聊天会话会提示重启它（`pnpm dev:daemon`）；重启 daemon 会结束它正在托管的终端。
 - **提交并推送**：会话空闲时，点标题旁的分支，在项目下选择「Commit & Push」，确认提交信息后即可提交这个仓库的全部改动并推送当前分支；没有 upstream 时自动使用 origin。多项目会话分别操作每个仓库。
+
+### 浏览器
+
+聊天界面里的 agent 可以用 Kando 托管的浏览器看页面：`kando mcp` 给每个聊天会话提供一组 `browser_*` 工具——`browser_navigate` 打开页面，`browser_snapshot` 读无障碍树快照（每个可交互元素带 ref），`browser_click` / `browser_type` / `browser_press` / `browser_hover` / `browser_scroll` / `browser_select` 按 ref 操作，`browser_wait` 等待，`browser_screenshot` 截图，`browser_console` 读控制台和失败的请求，`browser_tabs` 管标签页。截图会显示在对话的卡片里。
+
+- **安装**：第一次使用时下载 Chromium（playwright-core 的构建，约 150MB）到 `~/.kando/browser/ms-playwright`，设置 → 智能体 里能看进度，也能手动点「安装」；源码运行可以先 `pnpm browser:install`。
+- **隔离与登录态**：一个 Chromium 进程、一份持久 profile（`~/.kando/browser/profile`，权限 700），所以登录态在所有会话间共享；标签页按会话隔离，agent 只看到自己会话的标签页，删除会话时它的标签页一并关闭。
+- **站点确认**：`localhost`、`127.0.0.1`、`[::1]`、`*.localhost`、`*.test` 直接打开；其他站点在一个会话里第一次访问时，对话里弹出确认卡：允许一次、本会话允许或拒绝。25 秒没有回答时 agent 会收到「等待用户确认」，你回答后它再试一次就能打开。门禁拦的是顶层导航（agent 的打开、你在画面里点的链接、重定向都算），页面自己加载的资源不拦。
+- **浏览器面板**：状态栏右下角的浏览器按钮（或 Ctrl+Shift+`）打开右侧的浏览器面板，和终端面板一样可以拖宽、最大化。它列出所有会话的标签页（标签上带会话名），也能用「＋」开你自己的标签页：这种标签页不属于任何会话，agent 看不到，打开什么站点也不会问你。agent 打开页面时，对话里出现一张页面卡片（标题、地址、「打开」按钮），浏览器在后台跑，点「打开」才展开面板并选中那个标签页；设置里可以改成 agent 第一次用浏览器时自动打开。
+- **实时画面**：面板里是选中标签页的实时画面。可以直接在画面里点击、输入（Esc 回到应用，Shift+Esc 发给页面）、改地址、后退刷新，也能关标签页、截图存成图片。你操作时标签页标为「你在操作」，agent 对它的调用会被拒绝并被告知等待，5 秒没动作或点「交还给 agent」后恢复。
+- **进程**：浏览器宿主 `packages/browser-host` 由 core 通过 daemon 启动，和聊天 agent 一样在 core、桌面端重启后重新接上，标签页和登录态都还在；重启 daemon 会结束它，下次用到时自动再起。没有标签页 10 分钟后它自己退出。
+- **Codex**：Codex 对 MCP 工具不弹自己的确认，所以站点确认是它唯一的闸；Claude Code 对打开页面和点击、输入会弹它自己的确认，只读的快照、截图、滚动、等待、控制台和标签页列表已放行。
 
 ### 多项目与依赖
 

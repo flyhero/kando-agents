@@ -3,6 +3,7 @@ import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatQueued, ChatTurnAc
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, ChatDriver, ChatImageFile, ChatOutgoing, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
+import type { KandoAsk, KandoResolution } from './kando-requests'
 import { ClaudeStream } from './claude-stream'
 import { CodexAppServer } from './codex-app-server'
 import type { SessionHost } from './daemon-client'
@@ -260,6 +261,35 @@ export class ChatHost {
     live.log.append([record])
     live.driver.apply(record)
     live.lastActive = record.at
+  }
+
+  // Kando's own question to the user, put to the running stage as an approval: logged first like
+  // everything else, so a replay shows it, and answered through answer() rather than the agent.
+  ask(conversationId: string, ask: KandoAsk): string {
+    const live = this.running(conversationId)
+    const requestId = `kando:${ask.kind}:${randomUUID()}`
+    this.record(live, { dir: 'ask', at: this.now(), requestId, ask })
+    this.flush(live)
+    return requestId
+  }
+
+  answer(conversationId: string, requestId: string, resolution: KandoResolution, message?: string): void {
+    const live = this.liveOf(conversationId)
+    if (!live) return
+    this.record(live, { dir: 'answer', at: this.now(), requestId, resolution, ...(message ? { message } : {}) })
+    this.flush(live)
+  }
+
+  // Kando's questions a replayed stage left open: nothing waits on them any more.
+  cancelAsks(conversationId: string): void {
+    const live = this.liveOf(conversationId)
+    if (!live) return
+    for (const item of live.driver.items.list()) {
+      if (item.kind === 'approval' && item.resolution === null && item.requestId.startsWith('kando:')) {
+        this.record(live, { dir: 'answer', at: this.now(), requestId: item.requestId, resolution: 'cancelled' })
+      }
+    }
+    this.flush(live)
   }
 
   async respond(conversationId: string, requestId: string, answer: ChatAnswer): Promise<void> {

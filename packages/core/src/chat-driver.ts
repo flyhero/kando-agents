@@ -15,6 +15,9 @@ export type ChatRecord =
   // that one, or with release lets a held one go; text null alone drops them all.
   | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[]; release?: boolean }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
+  // Kando asked the user something mid-chat (the site its browser may open), and what they answered.
+  | { dir: 'ask'; at: number; requestId: string; ask: { kind: 'browser-host'; host: string; url: string } }
+  | { dir: 'answer'; at: number; requestId: string; resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled'; message?: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
 // often the stage is replayed, so each is stored once.

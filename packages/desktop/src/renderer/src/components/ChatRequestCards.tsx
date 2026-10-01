@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { ChatDecision, ChatItem, ChatQuestion } from '@kando/protocol'
+import { isHostApproval, type ChatDecision, type ChatItem, type ChatQuestion } from '@kando/protocol'
 import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
 import { commandKeyword, isCommandTool, toolLabel } from '../chat-tools'
@@ -12,6 +12,11 @@ type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 export type RequestItem = ApprovalItem | QuestionItem
 
 const DECISION_LABEL: Record<ChatDecision, string> = { allow: '允许', allowForSession: '本会话都允许', deny: '拒绝' }
+// A site is allowed for one visit or for the whole conversation; the words say so.
+const HOST_DECISION_LABEL: Record<ChatDecision, string> = { allow: '允许一次', allowForSession: '本会话允许', deny: '拒绝' }
+function decisionLabel(item: ApprovalItem, decision: ChatDecision): string {
+  return (isHostApproval(item) ? HOST_DECISION_LABEL : DECISION_LABEL)[decision]
+}
 const RESOLUTION_TEXT: Record<NonNullable<ApprovalItem['resolution']>, string> = {
   allowed: '已允许',
   allowedForSession: '已允许，本会话不再询问',
@@ -38,8 +43,9 @@ export function ChatRequestLine({ item }: { item: RequestItem }) {
     if (item.resolution !== null) return <ChatQuestionReceipt item={item} />
     return <div className="chat-request-line" data-waiting>agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
   }
-  // A command is named by the program it runs; the card below has it in full.
-  const what = <>{toolLabel(item.tool)} <span className="mono">{isCommandTool(item.tool) ? commandKeyword(item.title) : shorten(item.title)}</span></>
+  // A command is named by the program it runs; the card below has it in full. Kando's own
+  // question about a site names the site.
+  const what = <>{toolLabel(item.tool)} <span className="mono">{isCommandTool(item.tool) ? commandKeyword(item.title) : isHostApproval(item) ? item.title : shorten(item.title)}</span></>
   return item.resolution === null
     ? <div className="chat-request-line" data-waiting>需要你确认：{what} · 在下方回答</div>
     : <div className="chat-request-line">{what} · {RESOLUTION_TEXT[item.resolution]}</div>
@@ -81,10 +87,14 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   const reasonInput = useRef<HTMLInputElement>(null)
   const shorten = useContext(ChatPaths)
   const command = isCommandTool(item.tool)
-  const title = command ? commandKeyword(item.title) : shorten(item.title)
-  // Claude describes a file call by the file's name, which the title already has.
-  const detail = item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
-  const what = <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
+  const host = isHostApproval(item)
+  const title = command ? commandKeyword(item.title) : host ? item.title : shorten(item.title)
+  // Claude describes a file call by the file's name, which the title already has. A site's card
+  // says the site in the headline and the whole address below.
+  const detail = host ? null : item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
+  const what = host
+    ? <>agent 想打开 <span className="mono">{title}</span></>
+    : <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
   const submit = () => void respond(choice, choice === 'deny' && reason.trim() ? { message: reason.trim() } : {})
   const pick = (decision: ChatDecision) => {
     setChoice(decision)
@@ -113,6 +123,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
     <div className="chat-request" data-waiting onKeyDown={onKeyDown}>
       <div className="chat-request-title">需要你确认：{detail ?? what}</div>
       {detail && <p className="chat-request-detail muted">{what}</p>}
+      {host && item.detail && <p className="chat-request-detail mono muted">{item.detail}</p>}
       {command && tool?.input
         ? <CommandBlock command={tool.input} />
         : tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
@@ -140,7 +151,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
                 onChange={(event) => setReason(event.target.value)}
               />
             ) : (
-              <span>{DECISION_LABEL[decision]}</span>
+              <span>{decisionLabel(item, decision)}</span>
             )}
           </div>
         ))}
@@ -148,7 +159,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
       <div className="chat-approve-footer">
         <span className="chat-approve-hint">数字键选择 · Enter 提交</span>
         <button type="button" className="button primary" disabled={busy} onClick={submit}>
-          {DECISION_LABEL[choice]}<kbd>↵</kbd>
+          {decisionLabel(item, choice)}<kbd>↵</kbd>
         </button>
       </div>
     </div>

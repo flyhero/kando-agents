@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_SIDE_PANEL_RATIO,
+  DEFAULT_STACKED_PANEL_RATIO,
   clampSidePanelRatio,
-  sidePanelRatioAtPointer
+  clampStackedPanelRatio,
+  sidePanelRatioAtPointer,
+  stackedPanelRatioAtPointer
 } from './side-panel-size'
 
 describe('side panel sizing', () => {
@@ -23,5 +26,26 @@ describe('side panel sizing', () => {
 
   it('falls back to the default when no shared width is available', () => {
     expect(sidePanelRatioAtPointer(100, 100, 8, 8)).toBe(DEFAULT_SIDE_PANEL_RATIO)
+  })
+})
+
+describe('stacked panel sizing', () => {
+  it('keeps both panels visible', () => {
+    expect(clampStackedPanelRatio(0.1)).toBe(0.2)
+    expect(clampStackedPanelRatio(0.6)).toBe(0.6)
+    expect(clampStackedPanelRatio(0.9)).toBe(0.8)
+  })
+
+  it('measures the upper panel without the horizontal separator', () => {
+    expect(stackedPanelRatioAtPointer(402, 100, 608, 8)).toBeCloseTo(0.4967)
+  })
+
+  it('clamps pointer positions outside the dock', () => {
+    expect(stackedPanelRatioAtPointer(0, 100, 608, 8)).toBe(0.2)
+    expect(stackedPanelRatioAtPointer(1_000, 100, 608, 8)).toBe(0.8)
+  })
+
+  it('falls back to the default when no shared height is available', () => {
+    expect(stackedPanelRatioAtPointer(100, 100, 8, 8)).toBe(DEFAULT_STACKED_PANEL_RATIO)
   })
 })

@@ -13,7 +13,15 @@ const LogLine = z.discriminatedUnion('dir', [
   z.object({ dir: z.literal('note'), at: z.number(), level: Level, text: z.string() }),
   z.object({ dir: z.literal('option'), at: z.number(), option: ChatOption, value: z.string() }),
   z.object({ dir: z.literal('queue'), at: z.number(), text: z.string().nullable(), ref: z.string().optional(), images: Images }),
-  z.object({ dir: z.literal('exit'), at: z.number(), code: z.number().nullable(), stderr: z.string() })
+  z.object({ dir: z.literal('exit'), at: z.number(), code: z.number().nullable(), stderr: z.string() }),
+  z.object({ dir: z.literal('ask'), at: z.number(), requestId: z.string(), ask: z.object({ kind: z.literal('browser-host'), host: z.string(), url: z.string() }) }),
+  z.object({
+    dir: z.literal('answer'),
+    at: z.number(),
+    requestId: z.string(),
+    resolution: z.enum(['allowed', 'allowedForSession', 'denied', 'cancelled']).catch('cancelled'),
+    message: z.string().optional()
+  })
 ])
 
 export type LoggedRecord = ChatRecord & { end?: number }

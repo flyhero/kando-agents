@@ -20,6 +20,8 @@ export type Connection = {
   readonly attached: Set<string>
   // Conversations whose chat items this client wants as they change.
   readonly watching: Set<string>
+  // Conversations whose browser tabs this client follows, and may view and drive.
+  readonly browsing: Set<string>
   notify<N extends RpcNotificationName>(name: N, params: RpcNotificationParams<N>): void
   // For state that belongs to this client alone, like a sign-in waiting on its answers.
   onClose(listener: () => void): () => void
@@ -112,6 +114,7 @@ export function startRpcServer(options: {
     const connection: Connection = {
       attached: new Set(),
       watching: new Set(),
+      browsing: new Set(),
       notify: (name, params) => send(JSON.stringify({ jsonrpc: '2.0', method: name, params })),
       onClose: (listener) => {
         closeListeners.add(listener)

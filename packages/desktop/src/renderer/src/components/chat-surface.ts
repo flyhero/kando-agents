@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react'
 import type { Conversation } from '@kando/protocol'
 import type { PlanItem } from '../chat-state'
-import { showConversationChanges, showConversationPlan } from '../core-store'
+import { showBrowserPanel, showConversationChanges, showConversationPlan } from '../core-store'
 import type { BranchTarget } from './BranchStatus'
 import { continueConversation } from './ConversationActions'
 
@@ -11,6 +11,8 @@ export type ChatSurface = {
   // The side panel on a plan (by item key; null for the newest), or on the changes.
   showPlan(key: string | null): void
   showChanges(): void
+  // The browser panel, on this conversation's tab.
+  showBrowser(): void
   // Whose uncommitted changes the chip counts, and what the chip says of them; null for none.
   changes: BranchTarget | null
   changesHint: string
@@ -38,6 +40,7 @@ export function conversationSurface(conversation: Conversation): ChatSurface {
   return {
     showPlan: showConversationPlan,
     showChanges: showConversationChanges,
+    showBrowser: () => showBrowserPanel(conversation.id),
     changes: conversation.projectPaths.length > 0 ? { kind: 'conversation', id: conversation.id } : null,
     changesHint: '项目里还没提交的改动，也可能有你自己的；点开检查器看',
     prepareSend: async (stopped) => !stopped || Boolean(await continueConversation(conversation.id, 'chat')),

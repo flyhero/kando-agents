@@ -8,6 +8,7 @@ import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
+import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 7
@@ -35,12 +36,16 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects'] as const
+// browser: core hosts a browser for chat agents (the browser.* methods).
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
 // One page of a conversation's chat history; `before` fetches the page older than it, null when none is left.
 const ChatPage = z.object({ items: ChatItemList, before: z.string().nullable() })
+// Browser calls from an agent name the conversation they act for, and a tab of that conversation.
+const BrowserConversationRef = z.object({ conversationId: z.string().uuid() })
+const BrowserTabRef = BrowserConversationRef.extend({ tabId: BrowserTabId })
 
 export const rpcMethods = {
   'system.hello': {
@@ -213,6 +218,53 @@ export const rpcMethods = {
       role: z.enum(['user', 'assistant']), text: z.string().max(200000), eventKey: z.string().min(1).max(300), complete: z.boolean()
     }), result: Ok
   },
+  // The browser core hosts (feature `browser`). The agent's side, from its MCP tools: every call
+  // names the conversation it acts for, and sees only that conversation's tabs. A screenshot is
+  // stored as an attachment; snapshots are AI-mode aria snapshots whose refs the actions take.
+  'browser.tabs': { params: BrowserConversationRef, result: z.array(BrowserTab) },
+  // A new tab for the conversation, at the URL when one is given.
+  'browser.open': { params: BrowserConversationRef.extend({ url: BrowserUrl.optional() }), result: BrowserNavigation },
+  // The first visit to a site outside local development hosts asks the user in the chat; the
+  // outcome says whether the page loaded, the user refused, or they have not answered yet.
+  'browser.navigate': { params: BrowserTabRef.extend({ to: BrowserNavigateTo }), result: BrowserNavigation },
+  'browser.snapshot': { params: BrowserTabRef, result: BrowserSnapshot },
+  'browser.screenshot': { params: BrowserTabRef.extend(BrowserScreenshotOptions.shape), result: BrowserScreenshot },
+  'browser.click': { params: BrowserTabRef.extend(browserActions.click.shape), result: BrowserAction },
+  'browser.type': { params: BrowserTabRef.extend(browserActions.type.shape), result: BrowserAction },
+  'browser.press': { params: BrowserTabRef.extend(browserActions.press.shape), result: BrowserAction },
+  'browser.hover': { params: BrowserTabRef.extend(browserActions.hover.shape), result: BrowserAction },
+  'browser.scroll': { params: BrowserTabRef.extend(browserActions.scroll.shape), result: BrowserAction },
+  'browser.select': { params: BrowserTabRef.extend(browserActions.select.shape), result: BrowserAction },
+  'browser.wait': { params: BrowserTabRef.extend(browserActions.wait.shape), result: BrowserAction },
+  // The page's console, errors and failed requests, since the tab opened or its last navigation.
+  'browser.console': { params: BrowserTabRef.extend({ sinceNavigation: z.boolean().optional() }), result: BrowserConsole },
+  'browser.close': { params: BrowserTabRef, result: Ok },
+  // The user's side, from the app. status answers from the host, starting it when it is not up.
+  'browser.status': { params: z.object({}), result: BrowserStatus },
+  'browser.install': { params: z.object({}), result: BrowserStatus },
+  // The conversation's tabs; this connection then receives browser.tabsChanged for it until it
+  // unwatches, and may view and drive its tabs meanwhile.
+  'browser.watch': { params: BrowserConversationRef, result: z.array(BrowserTab) },
+  'browser.unwatch': { params: BrowserConversationRef, result: Ok },
+  // Every tab there is, the user's own included, for the browser panel; then browser.tabsChanged
+  // for all of them until unwatchAll.
+  'browser.watchAll': { params: z.object({}), result: z.array(BrowserTab) },
+  'browser.unwatchAll': { params: z.object({}), result: Ok },
+  // Streams a tab's frames to this connection as browser.frame (one view per tab per connection;
+  // starting again resizes it); the connection acks each frame it drew, and no more than two go
+  // unacked. stop ends one tab's view, or every one of the connection's.
+  'browser.view.start': { params: z.object({ tabId: BrowserTabId }).extend(BrowserViewOptions.shape), result: z.object({ viewport: z.object({ width: z.number().int(), height: z.number().int() }) }) },
+  'browser.view.stop': { params: z.object({ tabId: BrowserTabId.optional() }), result: Ok },
+  'browser.view.ack': { params: z.object({ tabId: BrowserTabId, seq: z.number().int().nonnegative() }), result: Ok },
+  // Input from the live view. Driving a tab this way, or navigating it below, holds the agent's
+  // calls on it off for a few seconds; handBack ends that at once.
+  'browser.input': { params: z.object({ tabId: BrowserTabId, event: BrowserInputEvent }), result: Ok },
+  'browser.userNavigate': { params: z.object({ tabId: BrowserTabId, to: BrowserNavigateTo }), result: BrowserTab },
+  // For a conversation the connection watches, or, with none, a tab of the user's own.
+  'browser.newTab': { params: z.object({ conversationId: z.string().uuid().optional(), url: BrowserUrl.optional() }), result: BrowserTab },
+  'browser.closeTab': { params: z.object({ tabId: BrowserTabId }), result: Ok },
+  'browser.handBack': { params: z.object({ tabId: BrowserTabId }), result: Ok },
+  'browser.userScreenshot': { params: z.object({ tabId: BrowserTabId }), result: AttachmentInfo },
   // An upload in chunks; core checks and stores the image on commit.
   'attachments.begin': {
     params: z.object({ size: z.number().int().min(1).max(MAX_ATTACHMENT_BYTES) }),
@@ -308,6 +360,11 @@ export const rpcNotifications = {
   'sessions.exit': z.object({ sessionId: z.string(), exitCode: z.number() }),
   'usage.changed': z.object({ usage: AgentUsage }),
   'terminals.changed': z.object({ terminals: z.array(Terminal) }),
+  // The hosted browser: its status to every connection; a conversation's tabs to the connections
+  // watching them (browser.watch); frames to the one connection viewing the tab.
+  'browser.changed': z.object({ status: BrowserStatus }),
+  'browser.tabsChanged': z.object({ conversationId: z.string().nullable(), tabs: z.array(BrowserTab) }),
+  'browser.frame': BrowserFrame,
   // Worktrees were cleaned, or their sizes counted: list them again.
   'worktrees.changed': z.object({}),
   'sources.listChanged': z.object({ sources: z.array(SourceDescriptor) }),

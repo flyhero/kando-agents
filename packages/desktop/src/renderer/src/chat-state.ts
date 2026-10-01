@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { isCompaction } from './chat-notices'
 import { diffCounts, isSubagent } from './chat-tools'
-import { type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage, isPlanApproval, isPreviewTool } from '@kando/protocol'
+import { type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage, browserToolKind, isPlanApproval, isPreviewTool } from '@kando/protocol'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -205,9 +205,11 @@ export type ChatBlock =
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
-// A preview the agent asked for is its own card, never one of a run.
+// A preview the agent asked for is its own card, never one of a run; so is a call that brought
+// back a picture (a browser screenshot), which wants room to be seen, and a page the browser
+// opened, whose card is the way to the browser panel.
 function runTool(entry: TimelineEntry): ToolItem | null {
-  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) && !isPreviewTool(entry.item.name)
+  return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) && !isPreviewTool(entry.item.name) && !entry.item.images?.length && browserToolKind(entry.item.name) !== 'navigate'
     ? entry.item
     : null
 }

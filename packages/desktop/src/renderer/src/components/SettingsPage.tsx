@@ -1,7 +1,8 @@
+import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { PROTOCOL_VERSION, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
-import { perform, setSettingsOpen, useCore } from '../core-store'
+import { perform, setSettingsOpen, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import {
@@ -146,7 +147,58 @@ function UsageSettings() {
   )
 }
 
+// The hosted browser's state in a few words, and what to do about it.
+function browserStatusText(status: BrowserStatus | null): string {
+  if (!status) return '正在询问…'
+  switch (status.state) {
+    case 'not-installed':
+      return '还没安装，第一次使用要下载 Chromium（约 150MB）'
+    case 'installing':
+      return status.percent !== undefined ? `正在下载 ${status.percent}%` : '正在下载…'
+    case 'starting':
+      return '正在启动'
+    case 'ready':
+      return status.running ? '就绪，正在运行' : '就绪'
+    case 'error':
+      return `出错：${status.message ?? '未知错误'}`
+  }
+}
+
+function BrowserRows() {
+  const status = useCore((s) => s.browser)
+  const openOnTab = usePreferences((s) => s.openBrowserOnTab)
+  const [busy, setBusy] = useState(false)
+  const install = async () => {
+    setBusy(true)
+    await perform((rpc) => rpc.call('browser.install', {}))
+    setBusy(false)
+  }
+  const installable = !status || status.state === 'not-installed' || status.state === 'error'
+  return (
+    <>
+      <SettingsRow
+        label="浏览器"
+        description="聊天界面里的 agent 用 Kando 托管的 Chromium 打开页面、截图、点击；本地开发地址直接打开，其他站点第一次访问时在对话里问你。下载到 ~/.kando/browser。"
+        control={() => (
+          <span className="settings-inline">
+            <span className="muted">{browserStatusText(status)}</span>
+            {installable && <button type="button" className="button" disabled={busy || !status} onClick={() => void install()}>{status?.state === 'error' ? '重试' : '安装'}</button>}
+          </span>
+        )}
+      />
+      <SettingsRow
+        label="agent 打开页面时自动显示浏览器"
+        description="agent 第一次在会话里用浏览器时，自动打开右侧的浏览器面板并选中它的标签页。默认关：浏览器在后台跑，对话里的页面卡片上点「打开」才显示。"
+        control={(labelId) => (
+          <Toggle labelId={labelId} checked={openOnTab} onChange={(next) => setPreference('openBrowserOnTab', next)} />
+        )}
+      />
+    </>
+  )
+}
+
 function AgentSettings() {
+  const browser = useBrowserSupported()
   const defaultAgent = usePreferences((s) => s.defaultAgent)
   const openTerminal = usePreferences((s) => s.openTerminalOnRun)
   const agentView = usePreferences((s) => s.agentView)
@@ -199,6 +251,7 @@ function AgentSettings() {
           <Toggle labelId={labelId} checked={openTerminal} onChange={(next) => setPreference('openTerminalOnRun', next)} />
         )}
       />
+      {browser && <BrowserRows />}
     </>
   )
 }
@@ -308,7 +361,7 @@ const SECTIONS: readonly Section[] = [
     group: '任务',
     title: '智能体',
     description: '新建和执行任务、开始会话时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话', '任务', '规划'],
+    keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话', '任务', '规划', '浏览器', '截图', '网页', 'chromium'],
     Icon: SparkIcon,
     Body: AgentSettings
   },

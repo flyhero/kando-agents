@@ -1,5 +1,7 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isBrowserTool, isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
+import { ChatBrowserCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
@@ -188,7 +190,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'reasoning':
       return <Reasoning item={item} />
     case 'tool':
-      return isPreviewTool(item.name) ? <ChatPreviewCard item={item} /> : <ChatToolCard item={item} />
+      return isPreviewTool(item.name) ? <ChatPreviewCard item={item} /> : isBrowserTool(item.name) ? <ChatBrowserCard item={item} /> : <ChatToolCard item={item} />
     case 'approval':
       return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine item={item} />
     case 'question':
@@ -488,6 +490,17 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     shownPlan.current = waitingPlanKey
     showPlan(waitingPlanKey)
   }, [waitingPlanKey, showPlan])
+
+  // The browser's live view opens beside the conversation when the agent first uses it, once per
+  // conversation; a call still running keeps old history from opening it on a revisit.
+  const browserCall = useMemo(() => firstBrowserCall(items), [items])
+  const shownBrowser = useRef<string | null>(null)
+  const showBrowser = shown.showBrowser
+  useEffect(() => {
+    if (!browserCall || shownBrowser.current === conversation.id || !shouldOpenBrowser()) return
+    shownBrowser.current = conversation.id
+    showBrowser()
+  }, [browserCall, conversation.id, showBrowser])
 
   useLayoutEffect(() => {
     const element = list.current

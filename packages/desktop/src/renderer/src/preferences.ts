@@ -23,6 +23,9 @@ const Preferences = z.object({
   // 'recent' reuses whichever agent the newest task picked.
   defaultAgent: z.enum(['recent', 'claude', 'codex', 'none']).catch('recent'),
   openTerminalOnRun: z.boolean().catch(true),
+  // On, the browser panel appears with the agent's first tab; off, the page's card in the chat
+  // offers to open it and the browser works in the background.
+  openBrowserOnTab: z.boolean().catch(false),
   // How a conversation's agent starts unless the user picks otherwise: its own TUI in a terminal,
   // or Kando's chat view of its structured output.
   agentView: z.enum(['tui', 'chat']).catch('chat'),

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel } from './chat-tools'
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
     const names = ['Read', 'Grep', 'Read', 'Bash', 'Glob', 'mcp__kando__read_task_details']
     expect(runSummary(names.map((name) => ({ name })))).toBe('读取 2 个文件，搜索 2 次，运行 1 个命令，mcp__kando__read_task_details 1 次')
+  })
+
+  it('counts the browser tools together, by either agent\'s name for them', () => {
+    expect(runSummary(['mcp__kando__browser_click', 'kando.browser_type', 'Read'].map((name) => ({ name })))).toBe('浏览器操作 2 次，读取 1 个文件')
+    expect(toolLabel('mcp__kando__browser_screenshot')).toBe('截图')
+    expect(toolLabel('browser_host')).toBe('打开网站')
   })
 })
 

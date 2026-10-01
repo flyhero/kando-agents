@@ -28,7 +28,7 @@ const STATUS_TEXT: Partial<Record<ChatToolStatus, string>> = { failed: '失败',
 // A long output is cut here: the call's own card is not where to read a whole log.
 const OUTPUT_LIMIT = 4000
 
-function clipped(text: string): string {
+export function clipped(text: string): string {
   return text.length > OUTPUT_LIMIT ? `${text.slice(0, OUTPUT_LIMIT)}\n…（还有 ${text.length - OUTPUT_LIMIT} 字）` : text
 }
 
@@ -42,7 +42,7 @@ function ToolTimer({ since }: { since: number }) {
   return <span className="chat-tool-time" aria-hidden="true">{elapsedText(Math.max(0, now - since))}</span>
 }
 
-function ToolStatus({ status, since }: { status: ChatToolStatus; since?: number }) {
+export function ToolStatus({ status, since }: { status: ChatToolStatus; since?: number }) {
   if (status === 'running') return <><Spinner label="进行中" />{since !== undefined && <ToolTimer since={since} />}</>
   const text = STATUS_TEXT[status]
   return text ? <span className="chat-tool-status" data-status={status}>{text}</span> : null

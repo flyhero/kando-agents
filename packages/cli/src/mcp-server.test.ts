@@ -46,6 +46,30 @@ describe('kando MCP server', () => {
     expect((alone?.result as { tools: { name: string }[] }).tools.map((tool) => tool.name)).toEqual(['show_preview'])
   })
 
+  it('adds the browser tools for a conversation, checks their arguments, and passes a screenshot through', async () => {
+    const called: Array<[string, unknown]> = []
+    const chat = createMcpHandler({
+      preview: checkPreviewFile,
+      browser: {
+        call: async (kind, args) => {
+          called.push([kind, args])
+          return kind === 'screenshot' ? { text: '截图已保存', image: { data: 'AAAA', mimeType: 'image/jpeg' } } : { text: `did ${kind}` }
+        }
+      }
+    })
+    const listed = (await chat(frame('tools/list')))?.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] }
+    expect(listed.tools.map((tool) => tool.name)).toEqual(['show_preview', 'browser_navigate', 'browser_snapshot', 'browser_screenshot', 'browser_click', 'browser_type', 'browser_press', 'browser_hover', 'browser_scroll', 'browser_select', 'browser_wait', 'browser_tabs', 'browser_console'])
+    expect(listed.tools.find((tool) => tool.name === 'browser_snapshot')?.annotations.readOnlyHint).toBe(true)
+    const bad = await chat(frame('tools/call', { name: 'browser_click', arguments: { ref: 'nope' } }))
+    expect(bad?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('参数不对') }] })
+    expect(called).toEqual([])
+    const shot = await chat(frame('tools/call', { name: 'browser_screenshot', arguments: { fullPage: true } }))
+    expect(shot?.result).toEqual({ content: [{ type: 'image', data: 'AAAA', mimeType: 'image/jpeg' }, { type: 'text', text: '截图已保存' }], isError: false })
+    expect(called).toEqual([['screenshot', { fullPage: true }]])
+    const unknown = await chat(frame('tools/call', { name: 'browser_fly', arguments: {} }))
+    expect(unknown?.error?.code).toBe(-32602)
+  })
+
   it('shows an HTML file that exists and refuses anything else', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'kando-preview-'))
     try {

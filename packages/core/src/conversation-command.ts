@@ -1,8 +1,11 @@
 import type { AgentKind } from '@kando/protocol'
 import { claudeEditDenials, claudeHookArgs, claudeReadRules, codexNotifyArgs, GIT_READ_TOOLS, type AgentCommand, type McpServer } from './agent-command'
-import { SHOW_PREVIEW_TOOL } from '@kando/protocol'
+import { browserToolName, SHOW_PREVIEW_TOOL } from '@kando/protocol'
 import type { ChatPreferences } from './chat-driver'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
+
+// The browser tools that only read: what the page shows, says in its console, or is waited on.
+export const BROWSER_READ_TOOLS: readonly string[] = (['snapshot', 'screenshot', 'scroll', 'wait', 'console', 'tabs'] as const).map(browserToolName)
 
 const HANDOFF_PREFIX = '请先阅读 Kando 移交文件 '
 const HANDOFF_SUFFIX = '，结合当前项目目录现状继续协助用户。'
@@ -50,8 +53,10 @@ export function chatCommand(
       ...claudeReadRules(readable),
       // Planning around what dependencies left on their branches means reading git history.
       ...(planOnly ? GIT_READ_TOOLS : []),
-      // Showing a file the agent wrote asks nothing of the user.
-      ...(mcp ? [`mcp__kando__${SHOW_PREVIEW_TOOL}`] : [])
+      // Showing a file the agent wrote asks nothing of the user, nor does reading the browser's
+      // page; opening and acting on a page go through Claude's own confirmation. (Codex asks
+      // nothing for MCP tools, so for it the site gate in core is the only check.)
+      ...(mcp ? [SHOW_PREVIEW_TOOL, ...BROWSER_READ_TOOLS].map((tool) => `mcp__kando__${tool}`) : [])
     ]
     const denials = planOnly ? claudeEditDenials(planOnly.dirs) : []
     return { command: 'claude', args: [

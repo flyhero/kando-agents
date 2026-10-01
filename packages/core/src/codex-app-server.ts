@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { CONTEXT_COMPACTED, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { describeBrowserTool, showBrowserInput } from './browser-tools'
+import { stripImageBytes } from './image-frames'
+import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatPreferences, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
@@ -328,15 +331,17 @@ function diffOf(change: { path: string; kind: { type: string }; diff: string }):
   return { path: change.path, change: kind, patch: clip(patch, MAX_PATCH) }
 }
 
-function mcpOutput(item: Item): string | null {
-  if (item.error?.message) return item.error.message
-  const content = z.looseObject({ content: z.array(z.looseObject({ text: z.string().optional() })).catch([]) }).safeParse(item.result)
-  const text = content.success ? content.data.content.map((part) => part.text ?? '').filter(Boolean).join('\n') : ''
-  return text || null
+// An MCP result's text and the images it names (see imageMarker); the error's message when it failed.
+function mcpResult(item: Item): { text: string | null; images: ChatImage[] } {
+  if (item.error?.message) return { text: item.error.message, images: [] }
+  const content = z.looseObject({ content: z.array(z.looseObject({ type: z.string().optional(), text: z.string().optional() })).catch([]) }).safeParse(item.result)
+  const taken = takeImageMarkers(content.success ? content.data.content.map((part) => part.text ?? '').filter(Boolean).join('\n') : '')
+  return { text: taken.text || null, images: taken.images }
 }
 
 export class CodexAppServer implements ChatDriver {
   readonly items: ChatItems
+  private readonly kando: KandoRequests
   // Kando's own requests by id, to know what each response answers.
   private readonly requests = new Map<string, string>()
   private initSent = false
@@ -380,6 +385,7 @@ export class CodexAppServer implements ChatDriver {
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
+    this.kando = new KandoRequests(this.items)
     this.state = new StageState(this.items)
     // A stage that only plans runs every turn in plan mode, whatever was remembered.
     this.chosen = { ...options.preferred, ...(options.planOnly ? { permissionMode: PLAN_MODE } : {}) }
@@ -408,6 +414,10 @@ export class CodexAppServer implements ChatDriver {
         break
       case 'exit':
         this.ended(record.stderr, record.at)
+        break
+      case 'ask':
+      case 'answer':
+        this.kando.apply(record)
     }
     this.refreshOptions()
     this.state.publish(record.at)
@@ -442,6 +452,7 @@ export class CodexAppServer implements ChatDriver {
   }
 
   activity(): ChatTurnActivity {
+    if (this.kando.pending > 0) return 'awaiting'
     if (!this.turn) return [...this.pending.values()].some((pending) => pending.kind === 'plan') ? 'awaiting' : 'idle'
     return this.pending.size > 0 ? 'awaiting' : 'running'
   }
@@ -556,7 +567,7 @@ export class CodexAppServer implements ChatDriver {
       return { method, params: { turnId: usage.data.turnId, tokenUsage: { last: counts(last), total: total ? counts(total) : undefined, modelContextWindow } } }
     }
     const kept = ['thread/started', 'turn/started', 'turn/completed', 'turn/plan/updated', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
-    return kept.includes(method) ? frame : null
+    return kept.includes(method) ? stripImageBytes(frame) : null
   }
 
   takeMessages(): StageMessage[] {
@@ -886,16 +897,22 @@ export class CodexAppServer implements ChatDriver {
       }
       case 'mcpToolCall': {
         const args = z.record(z.string(), z.unknown()).catch({}).parse(item.arguments ?? {})
+        const name = `${item.server ?? 'mcp'}.${item.tool ?? 'tool'}`
+        const browser = browserToolKind(name)
         const first = Object.values(args).find((value) => typeof value === 'string')
+        const result = completed ? mcpResult(item) : { text: null, images: [] }
+        const earlier = this.items.get(toolId)
+        const images = result.images.length ? result.images : earlier?.kind === 'tool' ? earlier.images : undefined
         this.items.put({
           id: toolId,
           kind: 'tool',
-          name: `${item.server ?? 'mcp'}.${item.tool ?? 'tool'}`,
-          title: typeof first === 'string' ? first.split('\n')[0]! : '',
-          input: Object.keys(args).length ? clip(JSON.stringify(args, null, 2), 4000) : null,
+          name,
+          title: browser ? describeBrowserTool(browser, args) : typeof first === 'string' ? first.split('\n')[0]! : '',
+          input: Object.keys(args).length && (!browser || showBrowserInput(browser)) ? clip(JSON.stringify(args, null, 2), 4000) : null,
           status: completed ? this.settled(item.error ? 'failed' : toolStatus(item.status, null)) : 'running',
-          output: completed ? mcpOutput(item) : null,
-          diffs: []
+          output: result.text,
+          diffs: [],
+          ...(images?.length ? { images } : {})
         }, at)
         return
       }
@@ -1140,6 +1157,7 @@ export class CodexAppServer implements ChatDriver {
     for (const [requestId, pending] of [...this.pending]) {
       if (pending.kind === 'plan') this.resolve(requestId, 'cancelled', null, at)
     }
+    this.kando.cancelAll(at)
     this.exited = true
     const tail = stderr.trim().split('\n').slice(-20).join('\n')
     if (this.threadId) return

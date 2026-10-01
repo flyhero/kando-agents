@@ -107,7 +107,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     output: z.string().nullable(),
     diffs: z.array(ChatDiff).default([]),
     // What a subagent did, once it reports back: its calls, tokens and time. Older cores leave it out.
-    metrics: z.object({ tools: z.number(), tokens: z.number(), durationMs: z.number() }).nullable().optional()
+    metrics: z.object({ tools: z.number(), tokens: z.number(), durationMs: z.number() }).nullable().optional(),
+    // Images the call returned (a browser screenshot), from core's attachment store. Older cores leave it out.
+    images: z.array(ChatImage).optional()
   }),
   Base.extend({
     kind: z.literal('approval'),
@@ -172,12 +174,53 @@ export const ChatItem = z.discriminatedUnion('kind', [
 ])
 export type ChatItem = z.infer<typeof ChatItem>
 
-// Kando's own tool an agent calls to show the user an HTML or SVG file it wrote, in the
-// conversation: Claude Code names an MCP tool mcp__<server>__<tool>, Codex <server>.<tool>.
+// Kando's own tools, as each agent names an MCP tool: Claude Code mcp__<server>__<tool>, Codex
+// <server>.<tool>. The server is `kando` in both launch configs.
+export function kandoToolName(name: string): string | null {
+  if (name.startsWith('mcp__kando__')) return name.slice('mcp__kando__'.length)
+  if (name.startsWith('kando.')) return name.slice('kando.'.length)
+  return null
+}
+
+// Shows the user an HTML or SVG file the agent wrote, in the conversation.
 export const SHOW_PREVIEW_TOOL = 'show_preview'
 export const PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm', 'svg'])
 export function isPreviewTool(name: string): boolean {
-  return name === `mcp__kando__${SHOW_PREVIEW_TOOL}` || name === `kando.${SHOW_PREVIEW_TOOL}`
+  return kandoToolName(name) === SHOW_PREVIEW_TOOL
+}
+
+// The browser tools, named browser_<kind>.
+export const BROWSER_TOOL_KINDS = ['navigate', 'snapshot', 'screenshot', 'click', 'type', 'press', 'hover', 'scroll', 'select', 'wait', 'tabs', 'console'] as const
+export type BrowserToolKind = (typeof BROWSER_TOOL_KINDS)[number]
+export function browserToolName(kind: BrowserToolKind): string {
+  return `browser_${kind}`
+}
+export function browserToolKind(name: string): BrowserToolKind | null {
+  const own = kandoToolName(name)
+  if (!own?.startsWith('browser_')) return null
+  const kind = own.slice('browser_'.length)
+  const found = BROWSER_TOOL_KINDS.find((candidate) => candidate === kind)
+  return found ?? null
+}
+export function isBrowserTool(name: string): boolean {
+  return browserToolKind(name) !== null
+}
+
+// A Kando tool that returns an image also names its stored copy in a text block, one marker per
+// image on a line of its own, so a driver can show it from the store and the log can leave the
+// bytes out.
+export function imageMarker(image: ChatImage): string {
+  return `[kando-image ${image.id} ${image.width}x${image.height}]`
+}
+const IMAGE_MARKER = /^\[kando-image ([0-9a-f]{64}\.(?:png|jpg|gif|webp)) (\d+)x(\d+)\][ \t]*$/gm
+// The images a tool's text names, and the text without the markers.
+export function takeImageMarkers(text: string): { text: string; images: ChatImage[] } {
+  const images: ChatImage[] = []
+  const rest = text.replace(IMAGE_MARKER, (_line, id: string, width: string, height: string) => {
+    images.push({ id, width: Number(width), height: Number(height) })
+    return ''
+  })
+  return { text: images.length ? rest.replace(/\n{3,}/g, '\n\n').trim() : text, images }
 }
 
 // The notice either agent leaves where its context was compacted, which a client draws as a divider.
@@ -190,6 +233,19 @@ export const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])
 // A plain check rather than a type guard: a plan has the approval type of any other approval.
 export function isPlanApproval(item: ChatItem): boolean {
   return item.kind === 'approval' && PLAN_TOOLS.has(item.tool)
+}
+
+// Kando's own question, as an approval: the site its browser is about to open for the first time
+// in this conversation. Not an agent tool, so the agent's names for tools never clash with it.
+export const BROWSER_HOST_TOOL = 'browser_host'
+export function isHostApproval(item: ChatItem): boolean {
+  return item.kind === 'approval' && item.tool === BROWSER_HOST_TOOL
+}
+// Request ids Kando issues itself; an agent's never start this way, so an answer to one is
+// routed to Kando rather than written to the agent.
+export const KANDO_REQUEST_PREFIX = 'kando:'
+export function isKandoRequest(requestId: string): boolean {
+  return requestId.startsWith(KANDO_REQUEST_PREFIX)
 }
 
 // Parsed one by one, so an item a newer core describes differently drops alone, not the batch.

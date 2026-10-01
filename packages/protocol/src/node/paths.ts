@@ -25,6 +25,12 @@ export type KandoPaths = {
   // Images, by content hash; owner-only.
   attachments: string
   sessions: string
+  // The hosted browser: its Chromium download, its profile (cookies and logins, owner-only), and
+  // the record of the daemon session its host runs in.
+  browser: string
+  browserBinaries: string
+  browserProfile: string
+  browserHostFile: string
 }
 
 export function kandoPaths(home: string = kandoHome()): KandoPaths {
@@ -38,7 +44,11 @@ export function kandoPaths(home: string = kandoHome()): KandoPaths {
     credentials: path.join(home, 'credentials.json'),
     legacyJiraConfig: path.join(home, 'jira.json'),
     attachments: path.join(home, 'attachments'),
-    sessions: path.join(home, 'sessions')
+    sessions: path.join(home, 'sessions'),
+    browser: path.join(home, 'browser'),
+    browserBinaries: path.join(home, 'browser', 'ms-playwright'),
+    browserProfile: path.join(home, 'browser', 'profile'),
+    browserHostFile: path.join(home, 'browser', 'host.json')
   }
 }
 

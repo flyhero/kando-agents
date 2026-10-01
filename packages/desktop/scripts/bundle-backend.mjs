@@ -1,6 +1,7 @@
-// Bundles daemon, core and the CLI into out/backend for a packaged app: one ESM file each,
-// run by Electron's binary as plain Node (ELECTRON_RUN_AS_NODE), so users need no Node install.
-// node-pty stays external — its prebuilt binding is copied beside the bundles.
+// Bundles daemon, core, the CLI and the browser host into out/backend for a packaged app: one ESM
+// file each, run by Electron's binary as plain Node (ELECTRON_RUN_AS_NODE), so users need no Node
+// install. node-pty stays external — its prebuilt binding is copied beside the bundles — and so
+// does playwright-core, which finds its driver and browser list beside its own package.json.
 import { execFileSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -21,7 +22,8 @@ const banner = `import { createRequire as __kandoRequire } from 'node:module';\n
 for (const [name, entry] of [
   ['daemon', 'packages/daemon/src/main.ts'],
   ['core', 'packages/core/src/main.ts'],
-  ['cli', 'packages/cli/src/main.ts']
+  ['cli', 'packages/cli/src/main.ts'],
+  ['browser-host', 'packages/browser-host/src/main.ts']
 ]) {
   await build({
     entryPoints: [path.join(repo, entry)],
@@ -30,7 +32,7 @@ for (const [name, entry] of [
     platform: 'node',
     format: 'esm',
     target: 'node22',
-    external: ['node-pty'],
+    external: ['node-pty', 'playwright-core'],
     banner: { js: banner },
     logLevel: 'warning'
   })
@@ -51,5 +53,15 @@ for (const arch of ['darwin-arm64', 'darwin-x64']) {
   if (existsSync(helper)) chmodSync(helper, 0o755)
 }
 
+// playwright-core as it is on npm, minus its type declarations; Chromium itself is downloaded
+// into ~/.kando on first use, never shipped.
+const requireHost = createRequire(path.join(repo, 'packages/browser-host/package.json'))
+const playwrightRoot = path.dirname(requireHost.resolve('playwright-core/package.json'))
+const playwrightOut = path.join(out, 'node_modules', 'playwright-core')
+for (const piece of ['package.json', 'index.js', 'index.mjs', 'cli.js', 'browsers.json', 'lib', 'bin', 'ThirdPartyNotices.txt', 'LICENSE']) {
+  const from = path.join(playwrightRoot, piece)
+  if (existsSync(from)) cpSync(from, path.join(playwrightOut, piece), { recursive: true })
+}
+
 const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
-console.log(`[bundle-backend] daemon, core and cli bundled at ${commit}`)
+console.log(`[bundle-backend] daemon, core, cli and browser-host bundled at ${commit}`)

@@ -7,6 +7,8 @@ import { readClaudeUsage } from './claude-usage'
 import { readCodexUsage } from './codex-usage'
 import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
+import { browserHostCommand } from './browser-host-command'
+import { BrowserService, WATCH_ALL } from './browser-service'
 import { cliCommand } from './cli-command'
 import { CredentialStore } from './credential-store'
 import { DaemonClient } from './daemon-client'
@@ -32,6 +34,7 @@ await mkdir(paths.home, { recursive: true, mode: 0o700 })
 await mkdir(paths.worktrees, { recursive: true })
 await mkdir(paths.attachments, { recursive: true, mode: 0o700 })
 await mkdir(paths.sessions, { recursive: true, mode: 0o700 })
+await mkdir(paths.browser, { recursive: true, mode: 0o700 })
 
 // TaskStore first: its migrations create every table the other stores read.
 const store = new TaskStore(paths.database)
@@ -51,7 +54,10 @@ const conversations = new ConversationService(
       server?.broadcast('conversations.changed', { conversation: event.conversation })
       // A task's conversation says whether its agent waits on the user.
       service.chatChanged(event.conversation)
-    } else if (event.type === 'deleted') server?.broadcast('conversations.deleted', { id: event.id })
+    } else if (event.type === 'deleted') {
+      server?.broadcast('conversations.deleted', { id: event.id })
+      void browser.closeForConversation(event.id)
+    }
     else if (event.type === 'chatItems') {
       watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
     } else if (event.type === 'planApproved') {
@@ -63,7 +69,24 @@ const conversations = new ConversationService(
   },
   projects,
   attachments,
-  kandoChatMcpServer(paths.home)
+  (id) => kandoChatMcpServer(paths.home, id)
+)
+
+const browser = new BrowserService(
+  daemon,
+  paths,
+  () => browserHostCommand(paths.home),
+  attachments,
+  (id, host, url) => conversations.askHost(id, host, url),
+  (event) => {
+    if (event.type === 'status') server?.broadcast('browser.changed', { status: event.status })
+    else {
+      const { conversationId, tabs } = event
+      ;[...(server?.connections ?? [])]
+        .filter((c) => c.browsing.has(WATCH_ALL) || (conversationId !== null && c.browsing.has(conversationId)))
+        .forEach((c) => c.notify('browser.tabsChanged', { conversationId, tabs }))
+    }
+  }
 )
 
 const service = new TaskService(
@@ -109,12 +132,14 @@ daemon.onEvent((event) => {
   const attached = [...(server?.connections ?? [])].filter((c) => c.attached.has(sessionId))
   if (event.event === 'data') {
     conversations.handleData(event)
+    browser.handleData(event)
     attached.forEach((c) => c.notify('sessions.data', { sessionId, data: event.data, offset: event.offset }))
   } else if (event.event === 'exit') {
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
     service.handleSessionExit(sessionId, event.exitCode)
     conversations.handleExit(sessionId, event.exitCode)
     terminals.handleExit(sessionId)
+    browser.handleExit(sessionId)
     // A finished run is when the numbers most likely moved.
     void usage.refresh()
   } else {
@@ -129,6 +154,7 @@ daemon.onConnect(() => {
       service.reconcile(sessions)
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
+      await browser.reconcile(sessions)
     })
     .catch((error) => console.error('[kando-core] reconcile failed', error))
 })
@@ -140,7 +166,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees)
+  }, terminals, worktrees, browser)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()

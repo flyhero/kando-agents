@@ -16,6 +16,7 @@ import {
   untrustedSource
 } from '@kando/protocol'
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
+import { BROWSER_ARGUMENTS, BROWSER_TOOL_SPECS, browserToolsOverCore, type BrowserTools, type ToolOutcome } from './browser-tools'
 import { STATUS_LABEL } from './status-labels'
 import { snapshotImagePaths, taskImageLines } from './task-images'
 
@@ -93,6 +94,8 @@ export type McpTools = {
   readTask?: (taskId: string) => Promise<string>
   // Checks the file may be shown (it exists, and is HTML or SVG); throws with the reason if not.
   preview: (path: string) => Promise<void>
+  // The browser tools, there when the server was started for a conversation.
+  browser?: BrowserTools
 }
 
 export type McpResponse = {
@@ -102,12 +105,88 @@ export type McpResponse = {
   error?: { code: number; message: string }
 }
 
-function textResult(text: string, isError = false) {
+type McpResult = { content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>; isError: boolean }
+
+function textResult(text: string, isError = false): McpResult {
   return { content: [{ type: 'text', text }], isError }
 }
 
-export function createMcpHandler({ propose, readTask, preview }: McpTools) {
-  const tools = [PREVIEW_TOOL, ...(readTask ? [READ_TOOL] : []), ...(propose ? [PROPOSE_TOOL] : [])]
+function outcomeResult(outcome: ToolOutcome): McpResult {
+  return {
+    content: [...(outcome.image ? [{ type: 'image' as const, data: outcome.image.data, mimeType: outcome.image.mimeType }] : []), { type: 'text', text: outcome.text }],
+    isError: outcome.isError ?? false
+  }
+}
+
+const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+// What the model may call: the tool as listed, and what a call with its arguments does. Bad
+// arguments are the model's to fix, so they come back as a tool error it can read.
+type ToolEntry = { spec: object & { name: string }; run(args: Record<string, unknown>): Promise<McpResult> }
+
+function toolTable({ propose, readTask, preview, browser }: McpTools): ToolEntry[] {
+  const entries: ToolEntry[] = [
+    {
+      spec: PREVIEW_TOOL,
+      run: async (raw) => {
+        const args = PreviewArguments.safeParse(raw)
+        if (!args.success) return textResult('path 需要是文件的绝对路径。', true)
+        try {
+          await preview(args.data.path)
+          return textResult('已在对话里展示给用户，不用再截图。用户会在这一条下面看到页面。')
+        } catch (error) {
+          return textResult(`没能展示：${describe(error)}`, true)
+        }
+      }
+    }
+  ]
+  if (readTask) {
+    entries.push({
+      spec: READ_TOOL,
+      run: async (raw) => {
+        const args = ReadArguments.safeParse(raw)
+        if (!args.success) return textResult('task_id 需要是任务 id（完整 id 或前 8 位）。', true)
+        try {
+          return textResult(await readTask(args.data.task_id))
+        } catch (error) {
+          return textResult(`读取失败：${describe(error)}`, true)
+        }
+      }
+    })
+  }
+  if (propose) {
+    entries.push({
+      spec: PROPOSE_TOOL,
+      run: async (raw) => {
+        const args = ProposeArguments.safeParse(raw)
+        if (!args.success) return textResult(`markdown 不能为空，且不超过 ${MAX_DETAILS_LENGTH} 个字符。`, true)
+        try {
+          await propose(args.data.markdown)
+          return textResult('已提交到 Kando，等待用户确认。用户可能还会提出修改，按要求调整后再次提交即可。')
+        } catch (error) {
+          return textResult(`提交失败：${describe(error)}`, true)
+        }
+      }
+    })
+  }
+  if (browser) {
+    for (const { kind, ...spec } of BROWSER_TOOL_SPECS) {
+      entries.push({
+        spec,
+        run: async (raw) => {
+          const args = BROWSER_ARGUMENTS[kind].safeParse(raw)
+          if (!args.success) return textResult(`参数不对：${args.error.issues.map((issue) => `${issue.path.join('.') || '参数'} ${issue.message}`).join('；')}`, true)
+          return outcomeResult(await browser.call(kind, args.data))
+        }
+      })
+    }
+  }
+  return entries
+}
+
+export function createMcpHandler(tools: McpTools) {
+  const table = toolTable(tools)
+  const specs = table.map((entry) => entry.spec)
   return async (line: string): Promise<McpResponse | null> => {
     let raw: unknown
     try {
@@ -137,44 +216,14 @@ export function createMcpHandler({ propose, readTask, preview }: McpTools) {
       case 'ping':
         return reply({})
       case 'tools/list':
-        return reply({ tools })
+        return reply({ tools: specs })
       case 'tools/call': {
         const call = CallParams.safeParse(params)
-        if (call.success && call.data.name === SHOW_PREVIEW_TOOL) {
-          const args = PreviewArguments.safeParse(call.data.arguments ?? {})
-          if (!args.success) return reply(textResult('path 需要是文件的绝对路径。', true))
-          try {
-            await preview(args.data.path)
-            return reply(textResult('已在对话里展示给用户，不用再截图。用户会在这一条下面看到页面。'))
-          } catch (error) {
-            return reply(textResult(`没能展示：${error instanceof Error ? error.message : String(error)}`, true))
-          }
-        }
-        if (call.success && call.data.name === READ_TASK_TOOL && readTask) {
-          const args = ReadArguments.safeParse(call.data.arguments ?? {})
-          if (!args.success) {
-            return reply(textResult('task_id 需要是任务 id（完整 id 或前 8 位）。', true))
-          }
-          try {
-            return reply(textResult(await readTask(args.data.task_id)))
-          } catch (error) {
-            return reply(textResult(`读取失败：${error instanceof Error ? error.message : String(error)}`, true))
-          }
-        }
-        if (!call.success || call.data.name !== PROPOSE_DETAILS_TOOL || !propose) {
+        const entry = call.success ? table.find((candidate) => candidate.spec.name === call.data.name) : undefined
+        if (!call.success || !entry) {
           return { jsonrpc: '2.0', id, error: { code: -32602, message: `unknown tool` } }
         }
-        // Bad arguments are the model's to fix, so they come back as a tool error it can read.
-        const args = ProposeArguments.safeParse(call.data.arguments ?? {})
-        if (!args.success) {
-          return reply(textResult(`markdown 不能为空，且不超过 ${MAX_DETAILS_LENGTH} 个字符。`, true))
-        }
-        try {
-          await propose(args.data.markdown)
-          return reply(textResult('已提交到 Kando，等待用户确认。用户可能还会提出修改，按要求调整后再次提交即可。'))
-        } catch (error) {
-          return reply(textResult(`提交失败：${error instanceof Error ? error.message : String(error)}`, true))
-        }
+        return reply(await entry.run(call.data.arguments ?? {}))
       }
       default:
         return { jsonrpc: '2.0', id, error: { code: -32601, message: `method not found: ${method}` } }
@@ -223,9 +272,10 @@ export async function checkPreviewFile(path: string): Promise<void> {
 }
 
 // The task is fixed by whoever started the server: the agent proposes only for it and reads only
-// along its dependency chain; a server started for a chat with no task has the preview tool alone.
-// Each call connects anew, so a core restart between calls is harmless.
-export async function serveMcp(taskId: string | undefined, home: string | undefined): Promise<void> {
+// along its dependency chain. A server started for a conversation has the browser tools, acting
+// for that conversation alone; one with neither has the preview tool alone. Each call connects
+// anew, so a core restart between calls is harmless.
+export async function serveMcp(taskId: string | undefined, home: string | undefined, conversationId?: string): Promise<void> {
   const withCore = async <T>(work: (rpc: RpcConnection) => Promise<T>): Promise<T> => {
     const endpoint = await readCoreEndpoint(home)
     if (!endpoint) {
@@ -240,6 +290,7 @@ export async function serveMcp(taskId: string | undefined, home: string | undefi
   }
   const handle = createMcpHandler({
     preview: checkPreviewFile,
+    ...(conversationId ? { browser: browserToolsOverCore(withCore, conversationId, kandoPaths(home).attachments) } : {}),
     ...(taskId ? {
       propose: (markdown: string) => withCore(async (rpc) => void (await rpc.call('tasks.propose', { id: taskId, markdown }))),
       readTask: (ref: string) =>

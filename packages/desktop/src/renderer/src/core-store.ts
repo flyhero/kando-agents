@@ -17,6 +17,8 @@ import {
   type Conversation
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
+import type { BrowserStatus } from '@kando/protocol'
+import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from './browser-state'
 import type { InspectorTab } from './components/Inspector'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
@@ -66,6 +68,8 @@ type CoreState = {
   conversationInspectorTab: InspectorTab
   // The plan its plan tab shows, by item key; null for the newest.
   conversationPlan: string | null
+  // The hosted browser as core last reported it; null until core says, or on a core without one.
+  browser: BrowserStatus | null
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -84,6 +88,9 @@ type CoreState = {
   terminals: Terminal[]
   terminalPanelOpen: boolean
   terminalMaximized: boolean
+  // The browser panel beside the terminal's: every tab there is, the user's own included.
+  browserPanelOpen: boolean
+  browserMaximized: boolean
   activeTerminalId: string | null
   login: LoginState | null
 }
@@ -106,6 +113,7 @@ export const useCore = create<CoreState>()(() => ({
   conversationInspectorOpen: false,
   conversationInspectorTab: 'changes',
   conversationPlan: null,
+  browser: null,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -118,6 +126,8 @@ export const useCore = create<CoreState>()(() => ({
   terminals: [],
   terminalPanelOpen: false,
   terminalMaximized: false,
+  browserPanelOpen: false,
+  browserMaximized: false,
   activeTerminalId: null,
   login: null
 }))
@@ -181,6 +191,18 @@ export function showConversationPlan(key: string | null): void {
   useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'plan', conversationPlan: key })
 }
 
+// Opens the browser panel on a conversation's tab: the one it has, or the one about to appear.
+export function showBrowserPanel(conversationId: string | null): void {
+  useCore.setState({ browserPanelOpen: true })
+  if (conversationId) focusBrowserConversation(conversationId)
+}
+
+// Opens the browser panel on one tab, from the page's card in the chat.
+export function showBrowserTab(tabId: string): void {
+  useCore.setState({ browserPanelOpen: true })
+  focusBrowserTab(tabId)
+}
+
 // A new terminal starts in the folder of whatever the user is looking at: a task's worktree, a
 // conversation's project. Core falls back to home.
 function contextFolder(s: CoreState): string | undefined {
@@ -225,7 +247,15 @@ export async function toggleTerminalPanel(): Promise<void> {
 }
 
 export function setTerminalMaximized(maximized: boolean): void {
-  useCore.setState({ terminalMaximized: maximized })
+  useCore.setState({ terminalMaximized: maximized, ...(maximized ? { browserMaximized: false } : {}) })
+}
+
+export function toggleBrowserPanel(): void {
+  useCore.setState((s) => ({ browserPanelOpen: !s.browserPanelOpen }))
+}
+
+export function setBrowserMaximized(maximized: boolean): void {
+  useCore.setState({ browserMaximized: maximized, ...(maximized ? { terminalMaximized: false } : {}) })
 }
 
 export function selectConversation(id: string | null): void {
@@ -350,6 +380,11 @@ export function useWorktreesSupported(): boolean {
 }
 
 // An older core keeps no starts, and would drop a picked one without a word.
+// Whether core hosts a browser for chat agents.
+export function useBrowserSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('browser') ?? false)
+}
+
 export function useTaskStartSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-start') ?? false)
 }
@@ -426,6 +461,8 @@ export function startCoreConnection(): void {
         )
         rpc.on('conversations.chatItems', ({ conversationId, items }) => receiveChatItems(conversationId, items))
         rpc.on('conversations.chatDelta', ({ conversationId, stageId, itemId, append }) => receiveChatDelta(conversationId, stageId, itemId, append))
+        rpc.on('browser.changed', ({ status }) => useCore.setState({ browser: status }))
+        rpc.on('browser.tabsChanged', ({ conversationId, tabs }) => receiveBrowserTabs(conversationId, tabs))
         rpc.on('usage.changed', ({ usage }) =>
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))
         )
@@ -453,6 +490,8 @@ export function startCoreConnection(): void {
         const sources = await rpc.call('sources.list', {})
         const inboxes = await rpc.call('sources.inbox', {})
         const terminals = await rpc.call('terminals.list', {}).catch(() => [])
+        // Asked only of a core that has one, and never waited for: it starts the host when it is down.
+        if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',

@@ -3,6 +3,9 @@ import type { FlowOwner } from './source-login-flow'
 
 // A client connection for tests: records what core sends it, and can be closed.
 export type FakeConnection = FlowOwner & {
+  attached: Set<string>
+  watching: Set<string>
+  browsing: Set<string>
   notes: { name: RpcNotificationName; params: unknown }[]
   close(): void
   // The latest notification of one kind, read back through its schema.
@@ -13,6 +16,9 @@ export function fakeConnection(): FakeConnection {
   const notes: { name: RpcNotificationName; params: unknown }[] = []
   const listeners = new Set<() => void>()
   return {
+    attached: new Set(),
+    watching: new Set(),
+    browsing: new Set(),
     notes,
     notify: (name, params) => {
       notes.push({ name, params })

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -96,6 +96,8 @@ export class ConversationService {
   // Sessions being stopped on purpose: their exit reads as a stop, not a crash.
   private readonly stopping = new Set<string>()
   private readonly exitWaiters = new Map<string, () => void>()
+  // Kando's own questions waiting on the user, by request id.
+  private readonly asks = new Map<string, { resolve: (decision: ChatDecision) => void; reject: (error: Error) => void }>()
 
   constructor(
     private readonly store: ConversationStore,
@@ -105,14 +107,16 @@ export class ConversationService {
     private readonly emit: (event: ConversationEvent) => void,
     private readonly projects: ProjectRegistry,
     private readonly attachments: AttachmentStore,
-    // Kando's MCP server for a chat's agent; null leaves the agent without Kando's tools.
-    private readonly mcp: McpServer | null = null
+    // Kando's MCP server for a chat's agent, acting for that conversation; null leaves the agent
+    // without Kando's tools.
+    private readonly mcp: ((conversationId: string) => McpServer) | null = null
   ) {
     this.transcript = new TerminalTranscript(sessionsRoot)
     this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
       items: (conversationId, items) => {
         this.rememberMode(conversationId, items)
         this.rememberCatalog(conversationId, items)
+        this.settleAsks(items)
         this.emit({ type: 'chatItems', conversationId, items })
       },
       delta: (conversationId, stageId, itemId, append) => this.emit({ type: 'chatDelta', conversationId, stageId, itemId, append }),
@@ -418,7 +422,7 @@ export class ConversationService {
       allowBypass: options.allowBypass,
       planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined,
       readable,
-      ...(this.mcp ? { mcp: this.mcp } : {})
+      ...(this.mcp ? { mcp: this.mcp(id) } : {})
     })
     let sessionId: string
     try {
@@ -597,8 +601,32 @@ export class ConversationService {
     await this.chats.sendQueued(id, ref, now)
   }
 
+  // Asks the user, in the running chat, whether the browser may open a site; the card stays
+  // until they answer, the agent leaves, or the turn is interrupted.
+  askHost(id: string, host: string, url: string): Promise<ChatDecision> {
+    const requestId = this.chats.ask(id, { kind: 'browser-host', host, url })
+    return new Promise((resolve, reject) => this.asks.set(requestId, { resolve, reject }))
+  }
+
+  // A question of Kando's answered as cancelled (the agent went, the stage was replayed) has
+  // nobody left to tell; its waiter learns so here.
+  private settleAsks(items: readonly ChatItem[]): void {
+    for (const item of items) {
+      if (item.kind !== 'approval' || item.resolution !== 'cancelled' || !isKandoRequest(item.requestId)) continue
+      this.asks.get(item.requestId)?.reject(new Rejection('chat-request-gone', 'the question was withdrawn'))
+      this.asks.delete(item.requestId)
+    }
+  }
+
   async respond(id: string, requestId: string, answer: ChatAnswer): Promise<void> {
     const conversation = this.get(id)
+    if (isKandoRequest(requestId)) {
+      const resolution = answer.decision === 'allow' ? 'allowed' : answer.decision === 'allowForSession' ? 'allowedForSession' : 'denied'
+      this.chats.answer(id, requestId, resolution, answer.message)
+      this.asks.get(requestId)?.resolve(answer.decision)
+      this.asks.delete(requestId)
+      return
+    }
     const stage = this.store.activeStage(id)
     const item = conversation.taskId && stage
       ? this.chats.items(this.chatStage(conversation, stage)).find((each) => each.kind === 'approval' && each.requestId === requestId)
@@ -611,6 +639,7 @@ export class ConversationService {
 
   async interrupt(id: string): Promise<void> {
     this.get(id)
+    this.chats.cancelAsks(id)
     await this.chats.interrupt(id)
   }
 
@@ -790,6 +819,8 @@ export class ConversationService {
           this.changed(this.store.update(conversation.id, { sessionId: null }))
         } else if (stage?.mode === 'chat') {
           await this.chats.open(this.chatStage(conversation, stage), info.sessionId, this.store.chatOffset(stage.id), false)
+          // A question left open across a restart has no browser navigation waiting on it now.
+          if (!info.exited) this.chats.cancelAsks(conversation.id)
           if (info.exited) this.handleExit(info.sessionId, info.exitCode ?? -1)
         } else {
           await this.recover(conversation)

@@ -1,4 +1,4 @@
-import { isPreviewTool, type ChatDiff, type ChatItem } from '@kando/protocol'
+import { BROWSER_HOST_TOOL, browserToolKind, isBrowserTool, isPreviewTool, type BrowserToolKind, type ChatDiff, type ChatItem } from '@kando/protocol'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -21,11 +21,31 @@ const TOOL_LABEL: Record<string, string> = {
   Agent: '子 agent',
   spawnAgent: '子 agent',
   TodoWrite: '待办',
-  ExitPlanMode: '计划'
+  ExitPlanMode: '计划',
+  // Kando's own question about a site its browser is to open, shown among the approvals.
+  [BROWSER_HOST_TOOL]: '打开网站'
+}
+
+// Kando's browser tools, in words.
+const BROWSER_LABEL: Record<BrowserToolKind, string> = {
+  navigate: '打开页面',
+  snapshot: '页面快照',
+  screenshot: '截图',
+  click: '点击',
+  type: '输入',
+  press: '按键',
+  hover: '悬停',
+  scroll: '滚动',
+  select: '选择',
+  wait: '等待',
+  tabs: '标签页',
+  console: '控制台'
 }
 
 export function toolLabel(name: string): string {
   if (isPreviewTool(name)) return '预览'
+  const browser = browserToolKind(name)
+  if (browser) return BROWSER_LABEL[browser]
   return TOOL_LABEL[name] ?? name
 }
 
@@ -42,10 +62,13 @@ const TOOL_KIND: Record<string, { kind: string; say: (count: number) => string }
   WebFetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` }
 }
 
+// A burst of clicks, typing and waiting reads as one thing done in the browser.
+const BROWSER_RUN = { kind: 'browser', say: (count: number) => `浏览器操作 ${count} 次` }
+
 export function runSummary(tools: readonly Pick<ToolItem, 'name'>[]): string {
   const counts = new Map<string, { count: number; say: (count: number) => string }>()
   for (const tool of tools) {
-    const known = TOOL_KIND[tool.name]
+    const known = TOOL_KIND[tool.name] ?? (isBrowserTool(tool.name) ? BROWSER_RUN : undefined)
     const kind = known?.kind ?? `tool:${tool.name}`
     const say = known?.say ?? ((count: number) => `${toolLabel(tool.name)} ${count} 次`)
     const current = counts.get(kind)

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { dismissError, setNewTaskOpen, setSettingsOpen, toggleTerminalPanel, useCore } from './core-store'
+import { dismissError, setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
 import { NewTaskDialog } from './components/NewTaskDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { SourceInboxView } from './components/SourceInboxView'
@@ -14,7 +14,7 @@ import { ConversationDraft } from './components/ConversationDraft'
 import { NewConversationDialog } from './components/NewConversationDialog'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
-import { TerminalPanel } from './components/TerminalPanel'
+import { UtilityPanelDock } from './components/UtilityPanelDock'
 import { WorktreeManager } from './components/WorktreeManager'
 
 export function App() {
@@ -32,6 +32,13 @@ export function App() {
   const loginOpen = useCore((s) => s.login !== null)
   const terminalPanelOpen = useCore((s) => s.terminalPanelOpen)
   const terminalMaximized = useCore((s) => s.terminalMaximized)
+  const browserPanelOpen = useCore((s) => s.browserPanelOpen)
+  const browserMaximized = useCore((s) => s.browserMaximized)
+  const maximizedUtility = browserPanelOpen && browserMaximized
+    ? 'browser'
+    : terminalPanelOpen && terminalMaximized
+      ? 'terminal'
+      : undefined
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -58,6 +65,11 @@ export function App() {
         event.preventDefault()
         event.stopPropagation()
         void toggleTerminalPanel()
+      } else if (event.ctrlKey && !event.metaKey && !event.altKey && event.shiftKey && event.key === '~') {
+        // Ctrl+Shift+` beside it, for the browser panel.
+        event.preventDefault()
+        event.stopPropagation()
+        toggleBrowserPanel()
       }
     }
     window.addEventListener('keydown', onKeyDown, true)
@@ -81,7 +93,7 @@ export function App() {
 
   return (
     <div className="app">
-      <main className="workspace" data-terminal-maximized={(terminalPanelOpen && terminalMaximized) || undefined}>
+      <main className="workspace" data-utility-maximized={maximizedUtility}>
         {settingsOpen ? (
           <SettingsPage />
         ) : (
@@ -109,7 +121,13 @@ export function App() {
             )}
           </>
         )}
-        {terminalPanelOpen && <TerminalPanel />}
+        {(browserPanelOpen || terminalPanelOpen) && (
+          <UtilityPanelDock
+            browserOpen={browserPanelOpen}
+            terminalOpen={terminalPanelOpen}
+            maximized={maximizedUtility}
+          />
+        )}
       </main>
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}
