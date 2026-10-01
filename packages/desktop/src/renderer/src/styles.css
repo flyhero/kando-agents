@@ -4215,7 +4215,6 @@ button.task-tag-updated:hover {
 .chat-changes-more svg { width: 14px; height: 14px; transition: transform 0.12s; }
 .chat-changes-more[aria-expanded='true'] svg { transform: rotate(180deg); }
 .chat-turn-actions { align-items: center; opacity: 1; }
-.chat-turn-summary { margin-left: 2px; }
 .chat-turn-summary-static {
   margin-left: 4px;
   color: var(--text-muted);

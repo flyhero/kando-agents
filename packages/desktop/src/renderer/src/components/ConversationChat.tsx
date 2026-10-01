@@ -250,7 +250,7 @@ function foldText(turn: TurnItem, steps: number): string {
 type FoldState = { reveal: (key: string | null, path: string) => void }
 const Folds = createContext<FoldState>({ reveal: () => {} })
 
-function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header, steps }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number>; header: boolean; steps: number }) {
+function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, steps }: { foldKey: string; conversationId: string; turn: TurnItem; blocks: readonly ChatBlock[]; task: boolean; replies: ReadonlyMap<string, number>; steps: number }) {
   const [open, setOpen] = useDisclosure(foldKey)
   // Open, the work is a list of rows, each closed until asked; a second step opens them all.
   const [allOpen, setAllOpen] = useDisclosure(`all:${foldKey}`)
@@ -259,16 +259,14 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header
     setAllOpen(next)
     for (const key of rows) setOpened(conversationId, key, next)
   }
-  if (!header && !open) return null
+  // The header stays where the work is, so the fold opens under the line that opened it.
   return (
     <div className="chat-entry">
       <div className="chat-fold" data-fold={foldKey} data-open={open || undefined} data-state={turn.state}>
-        {header && (
-          <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
-            <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-            {foldText(turn, steps)}
-          </button>
-        )}
+        <button type="button" className="chat-fold-header" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+          {foldText(turn, steps)}
+        </button>
         {open && (
           <div className="chat-fold-body">
             {rows.length > 1 && (
@@ -288,7 +286,6 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, header
 // Each file opens the turn's work at that file's card; the inspector has them all.
 function TurnChanges({ fold, files, turn, reply, collapsible, steps }: { fold: string; files: readonly TurnFile[]; turn: TurnItem; reply: { text: string } | null; collapsible: boolean; steps: number }) {
   const [showAll, setShowAll] = useDisclosure(`changes:${fold}`)
-  const [workOpen, setWorkOpen] = useDisclosure(fold)
   const folds = useContext(Folds)
   const surface = useChatSurface()
   const shorten = useContext(ChatPaths)
@@ -346,14 +343,7 @@ function TurnChanges({ fold, files, turn, reply, collapsible, steps }: { fold: s
       <div className="chat-message-actions chat-turn-actions">
         {reply && <CopyButton text={reply.text} label="复制回复" />}
         {reply && <time className="chat-message-time" dateTime={new Date(turn.at).toISOString()} title={dayAndTime(turn.at)}>{timeOfDay(turn.at)}</time>}
-        {collapsible ? (
-          <button type="button" className="chat-fold-header chat-turn-summary" aria-expanded={workOpen} onClick={() => setWorkOpen(!workOpen)}>
-            <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
-            {foldText(turn, steps)}
-          </button>
-        ) : (
-          <span className="chat-turn-summary-static" data-state={turn.state}>{foldText(turn, steps)}</span>
-        )}
+        <span className="chat-turn-summary-static" data-state={turn.state}>{collapsible ? turnText(turn) : foldText(turn, steps)}</span>
       </div>
     </div>
   )
@@ -364,7 +354,7 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
   if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
   if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
   if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} steps={block.steps} /></div>
-  if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} header={block.header} steps={block.steps} />
+  if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} steps={block.steps} />
   const { entry } = block
   const merged = useContext(MergedTurns)
   if (entry.kind === 'item' && entry.item.kind === 'turn' && merged.has(block.key)) return null

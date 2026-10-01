@@ -157,7 +157,6 @@ describe('chatBlocks', () => {
       { changes: [{ path: 'a.ts', added: 2, removed: 1, change: 'update' }, { path: 'b.ts', added: 1, removed: 0, change: 'update' }] }
     ])
     const blocks = blocksOf(items)
-    expect(blocks.find((block) => block.kind === 'fold')).toMatchObject({ header: false })
     expect(blocks.find((block) => block.kind === 'changes')).toMatchObject({
       collapsible: true,
       turn: { id: 'end' },

@@ -199,7 +199,7 @@ export type ChatBlock =
   | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
   // steps: the calls the turn made on the way, for the line that stands for them.
-  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; header: boolean; steps: number }
+  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; steps: number }
   | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean; steps: number }
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
@@ -288,7 +288,7 @@ function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[
   const reply = turnReply(body, turn)
   const steps = folded.flatMap(toolsOf).length
   return [
-    { kind: 'fold', key, turn, blocks: folded, header: files.length === 0, steps },
+    { kind: 'fold', key, turn, blocks: folded, steps },
     ...work.filter((block) => !foldable(block)),
     ...body.slice(answer),
     ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true, steps }] : [])
