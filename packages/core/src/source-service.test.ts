@@ -85,6 +85,7 @@ describe('SourceService', () => {
   let tasks: TaskService
   let attachments: AttachmentStore
   let demo: Demo
+  let config: SourceConfigStore
   let credentials: CredentialStore
   let inboxes: SourceInbox[]
   let lists: SourceDescriptor[][]
@@ -102,7 +103,7 @@ describe('SourceService', () => {
     projects = new ProjectRegistry(path.join(dir, 'kando.db'))
     tasks = new TaskService(store, projects, noDaemon, dir, () => {}, () => ({ command: 'x', args: [] }), attachments)
     demo = demoProvider()
-    const config = new SourceConfigStore(path.join(dir, 'sources.json'))
+    config = new SourceConfigStore(path.join(dir, 'sources.json'))
     credentials = new CredentialStore(path.join(dir, 'credentials.json'))
     await config.load()
     await credentials.load()
@@ -170,6 +171,56 @@ describe('SourceService', () => {
     expect(service.list()[0]?.instances[0]?.credential).toEqual({ configured: true, source: 'store', account: 'Ann (good)' })
     expect(JSON.stringify([service.list(), lists])).not.toContain('"good"')
     expect(keys(service.inbox('demo', 'default'))).toEqual(['D-1', 'D-2', 'D-3'])
+  })
+
+  it('lets a provider with no settings sign in and become active without an empty config record', async () => {
+    let listed = 0
+    const fixed: SourceProvider = {
+      id: 'fixed',
+      name: 'Fixed',
+      settings: [],
+      normalizeSettings: () => ({}),
+      envCredential: (sourceEnv) =>
+        sourceEnv.FIXED_TOKEN ? { kind: 'token', payload: { token: sourceEnv.FIXED_TOKEN } } : null,
+      login: async (session) => {
+        const token = await session.prompt({ kind: 'secret', label: 'Token' })
+        return { credential: { kind: 'token', payload: { token } }, account: 'Ann' }
+      },
+      list: async () => {
+        listed += 1
+        return []
+      },
+      fetch: async () => {
+        throw new Error('not used')
+      }
+    }
+    const fixedService = new SourceService(
+      [fixed],
+      config,
+      credentials,
+      new LoginFlows(),
+      tasks,
+      store,
+      attachments,
+      { inboxChanged: () => {}, listChanged: () => {} },
+      env,
+      () => clock
+    )
+    const flowId = fixedService.login(client, 'fixed', 'default', randomUUID())
+    const prompt = await until(() => client.last('sources.loginPrompt'))
+    fixedService.answer(client, flowId, prompt.promptId, 'good')
+    await until(() => client.last('sources.loginFinished'))
+    expect(config.get('fixed', 'default')).toBeNull()
+    expect(fixedService.inbox('fixed', 'default').active).toBe(true)
+
+    await fixedService.disconnect('fixed', 'default')
+    env.FIXED_TOKEN = 'from-env'
+    expect(fixedService.inbox('fixed', 'default').active).toBe(true)
+    expect(fixedService.list()[0]?.instances[0]?.credential.source).toBe('env')
+    listed = 0
+    fixedService.start()
+    await until(() => (listed > 0 ? true : undefined))
+    fixedService.stop()
   })
 
   it('keeps a working credential when a new sign-in fails', async () => {

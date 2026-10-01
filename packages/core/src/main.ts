@@ -12,6 +12,7 @@ import { BrowserService, WATCH_ALL } from './browser-service'
 import { cliCommand } from './cli-command'
 import { CredentialStore } from './credential-store'
 import { DaemonClient } from './daemon-client'
+import { githubProvider } from './github-provider'
 import { jiraProvider } from './jira-provider'
 import { createRpcHandlers } from './rpc-handlers'
 import { startRpcServer, type RpcServer } from './rpc-server'
@@ -115,7 +116,7 @@ await credentials.load()
 await migrateLegacyJira(paths.legacyJiraConfig, sourceConfig, credentials).catch((error: unknown) =>
   console.error('[kando-core] migrating jira.json failed; it stays in place:', error)
 )
-const sources = new SourceService([jiraProvider()], sourceConfig, credentials, new LoginFlows(), service, store, attachments, {
+const sources = new SourceService([jiraProvider(), githubProvider()], sourceConfig, credentials, new LoginFlows(), service, store, attachments, {
   inboxChanged: (inbox) => server?.broadcast('sources.inboxChanged', { inbox }),
   listChanged: (list) => server?.broadcast('sources.listChanged', { sources: list })
 })

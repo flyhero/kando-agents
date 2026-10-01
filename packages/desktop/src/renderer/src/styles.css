@@ -3213,7 +3213,7 @@ button.task-tag-updated:hover {
   color: inherit;
 }
 
-/* Jira: the sidebar entry, the inbox pane, the link on imported tasks. */
+/* Task sources: the sidebar entry, the inbox pane, the link on imported tasks. */
 /* Same inset, padding and icon gap as .task-row so the two line up. */
 .inbox-entry {
   width: calc(100% - 16px);
@@ -3571,8 +3571,12 @@ button.task-tag-updated:hover {
   font-size: 13px;
 }
 
+.login-dialog {
+  width: min(500px, calc(100vw - 32px));
+}
+
 .login-dialog .modal-body {
-  width: min(440px, calc(100vw - 32px));
+  width: 100%;
 }
 
 .login-form {

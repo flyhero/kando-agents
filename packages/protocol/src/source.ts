@@ -10,7 +10,7 @@ export const SourceId = z.string().regex(SOURCE_ID_PATTERN)
 export const DEFAULT_INSTANCE = 'default'
 
 // Issue keys come from the tracker; core re-checks every one before it reaches a URL or branch name.
-export const SOURCE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+export const SOURCE_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/#-]{0,159}$/
 export const SourceKey = z.string().regex(SOURCE_KEY_PATTERN)
 
 export const MAX_ISSUE_TITLE_LENGTH = 200

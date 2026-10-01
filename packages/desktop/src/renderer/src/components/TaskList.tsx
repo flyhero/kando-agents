@@ -244,7 +244,7 @@ export function TaskList() {
         </button>
       </header>
       {query !== null && !collapsed && (
-        <SidebarSearchField label="搜索任务" placeholder="标题、Jira 编号或任务 id" query={query} onChange={setQuery} />
+        <SidebarSearchField label="搜索任务" placeholder="标题、来源编号或任务 id" query={query} onChange={setQuery} />
       )}
       <div id="sidebar-tasks" className="sidebar-section-content" hidden={collapsed}>
       {!searching && activeInboxes.length > 0 && (

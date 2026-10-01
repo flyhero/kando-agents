@@ -2,6 +2,16 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。1.0 之前，破坏性改动升第二位，修复升第三位。桌面端、core 和 CLI 之间的通信协议另有版本号 `PROTOCOL_VERSION`，单独计数。
 
+## 0.8.0 — 2026-10-01
+
+### 新功能
+
+- 集成新增 GitHub 收件箱：使用 Personal access token 登录后，同步分配给当前账号且仍开放的 Issues 和 Pull Requests，可导入为任务、忽略或恢复。GitHub 来源编号采用 `owner/repository#number`，`PROTOCOL_VERSION` 升到 8，桌面端、CLI 和 core 需要一起更新。
+
+### 修复
+
+- GitHub 登录弹窗的外框与内容宽度保持一致，左右留白、关闭按钮、输入框和底部操作重新对齐。
+
 ## 0.7.1 — 2026-10-01
 
 ### 新功能

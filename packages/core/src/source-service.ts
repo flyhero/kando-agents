@@ -162,12 +162,12 @@ export class SourceService {
   // The flow commits a credential only once the provider has verified it.
   login(owner: FlowOwner, id: string, instance: string, flowId: string): string {
     const provider = this.provider(id)
-    const saved = this.config.get(id, instance)
-    if (!saved) {
+    const configured = this.configured(provider, instance)
+    if (!configured) {
       throw new Rejection('source-not-configured', 'save the settings before signing in')
     }
     return this.flows.start(owner, { provider: id, instance }, flowId, async (session, signal) => {
-      const { credential, account } = await provider.login(session, saved.settings, signal)
+      const { credential, account } = await provider.login(session, configured.settings, signal)
       signal.throwIfAborted()
       await this.credentials.set(id, instance, { ...credential, payload: { ...credential.payload }, account, updatedAt: this.now() })
       this.reset(id, instance)
@@ -301,11 +301,9 @@ export class SourceService {
   }
 
   private refreshAll(): void {
-    this.config.list().forEach((entry) => {
-      if (this.providers.some((provider) => provider.id === entry.provider)) {
-        void this.refresh(entry.provider, entry.instance)
-      }
-    })
+    this.list().forEach((source) =>
+      source.instances.forEach((instance) => void this.refresh(source.provider, instance.instance))
+    )
   }
 
   private async fetch(ready: Ready, key: string): Promise<{ issue: SourceIssue; snapshot: SourceSnapshot }> {
@@ -407,9 +405,17 @@ export class SourceService {
 
   private ready(id: string, instance: string): Ready | null {
     const provider = this.providers.find((candidate) => candidate.id === id)
-    const saved = this.config.get(id, instance)
-    const found = provider && saved?.enabled ? this.credential(provider, instance) : null
-    return provider && saved && found ? { provider, settings: saved.settings, credential: found.credential } : null
+    const configured = provider ? this.configured(provider, instance) : null
+    const found = provider && configured?.enabled ? this.credential(provider, instance) : null
+    return provider && configured && found ? { provider, settings: configured.settings, credential: found.credential } : null
+  }
+
+  // A provider with no settings has a usable default instance without first writing an empty
+  // record. Saving the enabled toggle still creates an ordinary persisted configuration.
+  private configured(provider: SourceProvider, instance: string): { enabled: boolean; settings: SourceSettings } | null {
+    const saved = this.config.get(provider.id, instance)
+    if (saved) return saved
+    return instance === DEFAULT_INSTANCE && provider.settings.length === 0 ? { enabled: true, settings: {} } : null
   }
 
   private requireReady(id: string, instance: string): Ready {

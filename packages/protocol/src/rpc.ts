@@ -11,7 +11,7 @@ import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 
 // Bump only for breaking changes; additive optional fields keep the version.
-export const PROTOCOL_VERSION = 7
+export const PROTOCOL_VERSION = 8
 
 const TaskRef = z.object({ id: z.string().min(1) })
 const TaskTitle = z.string().trim().min(1).max(200)
@@ -27,7 +27,7 @@ const TaskFields = z.object({
 const SessionRef = z.object({ sessionId: z.string().min(1) })
 const InstanceRef = z.object({ provider: SourceId, instance: SourceId })
 // Trimmed only: a provider may normalize its own keys (Jira upper-cases them) before core checks them.
-const IssueRef = InstanceRef.extend({ key: z.string().trim().min(1).max(64) })
+const IssueRef = InstanceRef.extend({ key: z.string().trim().min(1).max(160) })
 const FlowRef = z.object({ flowId: z.string().min(1).max(64) })
 const Ok = z.object({ ok: z.literal(true) })
 const ConversationRef = z.object({ id: z.string().uuid() })
