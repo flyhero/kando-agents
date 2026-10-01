@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react'
 import { IMAGE_MIME_TYPES, MAX_CHAT_IMAGES, type ChatImage } from '@kando/protocol'
-import { imageFilesOf, uploadImageFiles, useImageUrl } from '../attachment-images'
+import { copyImageToClipboard, imageFilesOf, uploadImageFiles, useImageUrl } from '../attachment-images'
 import { useCore } from '../core-store'
 import { fitChatImage } from '../image-fit'
-import { CloseIcon, ImageIcon, PlusIcon, SearchIcon } from './icons'
+import { CheckIcon, CloseIcon, CopyIcon, ImageIcon, PlusIcon, SearchIcon } from './icons'
 import { ImageViewer } from './ImageViewer'
 import { Popover } from './Popover'
 
@@ -108,24 +108,47 @@ export function ChatAddMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (f
   )
 }
 
-// In the composer the thumbnail shows its actions on hover; in a message, a click opens it.
+// Every thumbnail can be opened or copied; one in the composer can also be removed.
 function Thumb({ image, onOpen, onRemove }: { image: ChatImage; onOpen: () => void; onRemove?: () => void }) {
   const url = useImageUrl(image.id)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
   return (
     <span className="chat-image">
       <button type="button" className="chat-image-button" aria-label="查看图片" style={{ aspectRatio: `${image.width} / ${image.height}` }} onClick={onOpen}>
         {url && <img src={url} alt="" draggable={false} />}
       </button>
-      {onRemove && (
-        <span className="chat-image-actions">
-          <button type="button" className="chat-image-action" aria-label="放大" data-tooltip="放大" onClick={onOpen}>
-            <SearchIcon />
-          </button>
+      <span className="chat-image-actions">
+        <button type="button" className="chat-image-action" aria-label="放大" data-tooltip="放大" onClick={onOpen}>
+          <SearchIcon />
+        </button>
+        <button
+          type="button"
+          className="chat-image-action"
+          data-copied={copied || undefined}
+          aria-label={copied ? '已复制' : '复制图片'}
+          data-tooltip={copied ? '已复制' : '复制图片'}
+          disabled={!url}
+          onClick={() => {
+            if (!url) return
+            void copyImageToClipboard(url).then(
+              () => setCopied(true),
+              () => useCore.setState({ error: '图片复制失败' })
+            )
+          }}
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+        {onRemove && (
           <button type="button" className="chat-image-action" aria-label="删除" data-tooltip="删除" onClick={onRemove}>
             <CloseIcon />
           </button>
-        </span>
-      )}
+        )}
+      </span>
     </span>
   )
 }

@@ -39,6 +39,27 @@ export function useImageUrl(id: string): string | null {
   return url
 }
 
+async function clipboardPng(url: string): Promise<Blob> {
+  const source = await (await fetch(url)).blob()
+  if (source.type === 'image/png') return source
+  const bitmap = await createImageBitmap(source)
+  try {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('cannot create an image canvas')
+    context.drawImage(bitmap, 0, 0)
+    return await canvas.convertToBlob({ type: 'image/png' })
+  } finally {
+    bitmap.close()
+  }
+}
+
+// System clipboards reliably accept PNG. Start the write during the click's user activation and
+// let ClipboardItem wait for loading and conversion of JPEG, GIF or WebP images.
+export function copyImageToClipboard(url: string): Promise<void> {
+  return navigator.clipboard.write([new ClipboardItem({ 'image/png': clipboardPng(url) })])
+}
+
 // Only image files count; text or HTML on the clipboard alongside them is left alone.
 export function imageFilesOf(data: DataTransfer | null): File[] {
   return [...(data?.files ?? [])].filter((file) => IMAGE_MIME_TYPES.some((type) => type === file.type))

@@ -52,7 +52,8 @@ function SettingsButton() {
   )
 }
 
-// The browser panel, on a core that hosts one; the count is of the tabs known while it is open.
+// The browser panel, on a core that hosts one; keep the latest known tab count visible while the
+// panel is closed, as terminals do.
 function BrowserButton() {
   const supported = useBrowserSupported()
   const open = useCore((s) => s.browserPanelOpen)
@@ -69,7 +70,7 @@ function BrowserButton() {
       onClick={toggleBrowserPanel}
     >
       <GlobeIcon />
-      {open && count > 0 && <span className="count">{count}</span>}
+      {count > 0 && <span className="count">{count}</span>}
     </button>
   )
 }
