@@ -81,7 +81,10 @@ export const BROWSER_TOOL_SPECS: ReadonlyArray<ToolSpec & { kind: BrowserToolKin
       },
       additionalProperties: false
     },
-    annotations: { ...acts, openWorldHint: true }
+    // Not marked open-world although it is: Codex asks before every such call through a request
+    // Kando's chat does not answer, so the page would never open. The site gate in core is the
+    // check that matters, the same for both agents.
+    annotations: acts
   },
   {
     kind: 'snapshot',
