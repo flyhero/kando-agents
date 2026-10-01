@@ -29,7 +29,7 @@ export function ChatWorking({ phase, tokens, background, since }: {
   const waiting = phase === 'waiting' && background > 0
   const parts = [
     workedFor(Math.max(0, now - (since ?? started))),
-    ...(tokens !== null && tokens > 0 ? [`${formatTokens(tokens)} tokens`] : []),
+    ...(tokens !== null && tokens > 0 ? [`↓ ${formatTokens(tokens)}`] : []),
     ...(background > 0 && !waiting ? [`${background} 个子 agent 后台运行`] : [])
   ]
   const step = waiting ? `${background} 个子 agent 后台运行中…` : `${PHASE[phase]}${phase === 'asking' ? '' : '中…'}`
