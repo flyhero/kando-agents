@@ -4,7 +4,7 @@ import { perform, useCore } from '../core-store'
 import { reasonText } from '../labels'
 import { shortRef } from '../task-starts'
 import { BranchStatusDetails } from './BranchStatus'
-import { CheckIcon } from './icons'
+import { ArrowUpIcon, BranchIcon, CheckIcon, PlusIcon } from './icons'
 
 // A conversation works in the user's own checkout: switching changes it for everything in the folder.
 function useBranchOptions(id: string, version: number): readonly ProjectBranches[] {
@@ -165,10 +165,26 @@ function ProjectActions({ conversation, head, option, onChanged }: {
   return (
     <>
       <div className="branch-actions">
-        <button type="button" className="link-button" aria-expanded={open === 'switch'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('switch')}>切换分支</button>
-        <button type="button" className="link-button" aria-expanded={open === 'create'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('create')}>新建分支</button>
-        {commitPush && <button type="button" className="link-button" aria-expanded={open === 'commit'} disabled={busy || blocker !== null || !head.branch || head.changes === 0} title={commitHint} onClick={() => toggle('commit')}>Commit &amp; Push</button>}
-        {blocker && <span className="muted">{hint}</span>}
+        <button type="button" className="branch-action-button" aria-expanded={open === 'switch'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('switch')}>
+          <BranchIcon />切换
+        </button>
+        <button type="button" className="branch-action-button" aria-expanded={open === 'create'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('create')}>
+          <PlusIcon />新建
+        </button>
+        {commitPush && (
+          <button
+            type="button"
+            className="branch-action-button"
+            data-primary={!blocker && head.branch && (head.changes ?? 0) > 0 ? true : undefined}
+            aria-expanded={open === 'commit'}
+            disabled={busy || blocker !== null || !head.branch || head.changes === 0}
+            title={commitHint}
+            onClick={() => toggle('commit')}
+          >
+            <ArrowUpIcon />Commit &amp; Push
+          </button>
+        )}
+        {blocker && <span className="branch-actions-blocked">{hint}</span>}
       </div>
       {open === 'switch' && (
         <SwitchList option={option} onPick={(ref) => void run((rpc) => rpc.call('conversations.switchBranch', { id: conversation.id, project: head.path, ref }), localName(ref))} />

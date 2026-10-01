@@ -1138,33 +1138,172 @@ button.task-tag:hover {
   vertical-align: 1px;
 }
 
+/* The git status panel: the primary project under its heading, the additional ones under theirs;
+   each is a name row with the branch as a chip, a status line and its actions. */
 .branch-status {
   display: grid;
-  gap: 10px;
-  padding: 6px 8px;
+  width: 320px;
+  max-width: 100%;
+  padding: 4px;
   font-size: 12px;
+}
+
+.branch-status-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.branch-status-heading-count {
+  padding: 0 6px;
+  line-height: 16px;
+  border-radius: 999px;
+  background: var(--fill-2);
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .branch-status-project {
   display: grid;
-  gap: 2px;
+  gap: 4px;
+  padding: 4px 8px 8px;
 }
 
-.branch-status-name {
-  font-weight: 600;
+.branch-status-project + .branch-status-project {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
-.branch-status-head {
+.branch-status-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  min-height: 24px;
+}
+
+.branch-status-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.branch-status-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-status-name svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+/* The primary is the conversation's anchor: the one place the folder takes the accent. */
+.branch-status-project[data-primary] .branch-status-name svg {
+  color: var(--accent);
+  fill: var(--accent-bg);
+}
+
+.branch-status-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--fill);
+}
+
+.branch-status-branch svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+}
+
+.branch-status-branch .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-status-detached,
+.branch-status-nogit {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.branch-status-copy {
+  width: 20px;
+  height: 20px;
+  margin-left: -4px;
+  color: var(--text-3);
+}
+
+.branch-status-copy svg {
+  width: 13px;
+  height: 13px;
+}
+
+.branch-status-copy[data-copied] {
+  color: var(--status-done);
+}
+
+.branch-status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.branch-status-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.branch-status-stat svg {
+  width: 11px;
+  height: 11px;
+}
+
+.branch-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-done);
+}
+
+.branch-status-stat[data-dirty] .branch-status-dot {
+  background: var(--warning);
+}
+
+.branch-status-upstream {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
 }
 
 .branch-status-note {
   margin: 0;
+  padding: 6px 8px 4px;
+  border-top: 1px solid var(--border);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-3);
 }
 
 .chip-static {
@@ -5187,7 +5326,30 @@ button.task-tag-updated:hover {
 .worktree-actions .worktree-open { padding: 2px 8px; font-size: 12px; }
 
 /* Switching a conversation's branch, or starting one, inside its branch popover. */
-.branch-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 12px; }
+.branch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.branch-actions-blocked { color: var(--text-3); font-size: 11px; }
+
+/* Small filled buttons; only the Commit & Push that can run right now takes the accent. */
+.branch-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.branch-action-button svg { width: 12px; height: 12px; }
+.branch-action-button:hover:not(:disabled),
+.branch-action-button[aria-expanded='true'] { background: var(--fill-2); }
+.branch-action-button:disabled { opacity: 0.4; cursor: default; }
+.branch-action-button[data-primary] { background: var(--accent); color: var(--accent-text); }
+.branch-action-button[data-primary]:hover:not(:disabled),
+.branch-action-button[data-primary][aria-expanded='true'] { background: color-mix(in srgb, var(--accent) 88%, black); }
 .branch-action { display: grid; gap: 4px; margin-top: 4px; }
 .branch-action-create { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .branch-action-create .branch-action-note { grid-column: 1 / -1; }

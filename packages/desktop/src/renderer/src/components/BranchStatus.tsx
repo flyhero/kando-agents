@@ -3,6 +3,7 @@ import type { ProjectHead } from '@kando/protocol'
 import { useCore } from '../core-store'
 import { ConversationBranches } from './ConversationBranches'
 import { Popover } from './Popover'
+import { ArrowDownIcon, ArrowUpIcon, BranchIcon, CheckIcon, CopyIcon, FolderIcon } from './icons'
 import { projectName } from './ProjectPicker'
 
 export type BranchTarget = { kind: 'task' | 'conversation'; id: string }
@@ -41,20 +42,6 @@ function headLabel(head: ProjectHead): string {
   return head.detached ? `${head.branch}（分离 HEAD）` : head.branch
 }
 
-// Each line is left out when an older core did not send its field.
-function statusLines(head: ProjectHead): string[] {
-  const lines: string[] = []
-  if (head.changes !== undefined) lines.push(head.changes === 0 ? '没有未提交的改动' : `${head.changes} 个未提交的改动`)
-  if (head.upstream === null && !head.detached) lines.push('没有跟踪远程分支')
-  if (head.upstream) {
-    const ahead = head.ahead ?? 0
-    const behind = head.behind ?? 0
-    const counts = [ahead > 0 && `领先 ${ahead} 个提交`, behind > 0 && `落后 ${behind} 个提交`].filter(Boolean)
-    lines.push(`${head.upstream}：${counts.length > 0 ? counts.join('，') : '没有差异'}`)
-  }
-  return lines
-}
-
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -65,31 +52,87 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="link-button"
+      className="icon-button branch-status-copy"
+      aria-label={copied ? '已复制' : '复制分支名'}
+      title={copied ? '已复制' : '复制分支名'}
+      data-copied={copied || undefined}
       onClick={() => void navigator.clipboard.writeText(text).then(() => setCopied(true), () => {})}
     >
-      {copied ? '已复制' : '复制'}
+      {copied ? <CheckIcon /> : <CopyIcon />}
     </button>
   )
 }
 
-// Every project's branch, uncommitted changes and distance from its upstream; `actions` adds what
-// can be done in each.
+// The checked-out branch as a chip like the header's; a folder outside git gets plain words.
+function BranchChip({ head }: { head: ProjectHead }) {
+  if (!head.branch) return <span className="branch-status-nogit">无 Git</span>
+  return (
+    <span className="branch-status-branch" title={headLabel(head)}>
+      <BranchIcon />
+      <span className="mono">{head.branch}</span>
+      {head.detached && <span className="branch-status-detached">分离</span>}
+    </span>
+  )
+}
+
+// One line: the working tree (dot + count), the distance from the upstream, and its name. Each
+// part is left out when an older core did not send its field.
+function StatusLine({ head }: { head: ProjectHead }) {
+  const parts: ReactNode[] = []
+  if (head.changes !== undefined) {
+    parts.push(
+      <span key="changes" className="branch-status-stat" data-dirty={head.changes > 0 || undefined}>
+        <i className="branch-status-dot" aria-hidden="true" />
+        {head.changes === 0 ? '干净' : `${head.changes} 个改动`}
+      </span>
+    )
+  }
+  if (head.upstream === null && !head.detached) parts.push(<span key="track" className="branch-status-stat">没有跟踪远程分支</span>)
+  if (head.upstream) {
+    const ahead = head.ahead ?? 0
+    const behind = head.behind ?? 0
+    if (ahead > 0) parts.push(<span key="ahead" className="branch-status-stat" aria-label={`领先 ${ahead} 个提交`}><ArrowUpIcon />{ahead}</span>)
+    if (behind > 0) parts.push(<span key="behind" className="branch-status-stat" aria-label={`落后 ${behind} 个提交`}><ArrowDownIcon />{behind}</span>)
+    if (ahead === 0 && behind === 0) parts.push(<span key="synced" className="branch-status-stat">已同步</span>)
+    parts.push(<span key="upstream" className="branch-status-upstream mono">{head.upstream}</span>)
+  }
+  if (parts.length === 0) return null
+  return <div className="branch-status-line">{parts}</div>
+}
+
+function Project({ head, primary, actions }: { head: ProjectHead; primary: boolean; actions?: (head: ProjectHead) => ReactNode }) {
+  return (
+    <section className="branch-status-project" data-primary={primary || undefined} aria-label={projectName(head.path)}>
+      <div className="branch-status-row">
+        <span className="branch-status-name" title={head.path}>
+          <FolderIcon />
+          <span>{projectName(head.path)}</span>
+        </span>
+        <BranchChip head={head} />
+        {head.branch && <CopyButton text={head.branch} />}
+      </div>
+      {head.branch && <StatusLine head={head} />}
+      {head.branch && actions?.(head)}
+    </section>
+  )
+}
+
+// Every project's branch, uncommitted changes and distance from its upstream, the primary first
+// under its own heading; `actions` adds what can be done in each.
 export function BranchStatusDetails({ heads, actions }: { heads: readonly ProjectHead[]; actions?: (head: ProjectHead) => ReactNode }) {
+  const [primary, ...extras] = heads
+  if (!primary) return null
   return (
     <div className="branch-status">
-      {heads.map((each, index) => (
-        <section key={each.path} className="branch-status-project" aria-label={projectName(each.path)}>
-          <div className="branch-status-name">{projectName(each.path)} · {index === 0 ? '主项目' : '附加项目'}</div>
-          <div className="branch-status-head">
-            <span className="mono">{headLabel(each)}</span>
-            {each.branch && <CopyButton text={each.branch} />}
-          </div>
-          {each.branch && statusLines(each).map((line) => <div key={line} className="muted">{line}</div>)}
-          {actions?.(each)}
-        </section>
-      ))}
-      {heads.some((each) => each.upstream) && <p className="branch-status-note">领先和落后按上次 fetch 到的远程计算。</p>}
+      <div className="branch-status-heading">主项目</div>
+      <Project head={primary} primary actions={actions} />
+      {extras.length > 0 && (
+        <div className="branch-status-heading">
+          附加项目<span className="branch-status-heading-count">{extras.length}</span>
+        </div>
+      )}
+      {extras.map((each) => <Project key={each.path} head={each} primary={false} actions={actions} />)}
+      {heads.some((each) => each.upstream) && <p className="branch-status-note">领先 / 落后按上次 fetch 到的远程计算</p>}
     </div>
   )
 }
