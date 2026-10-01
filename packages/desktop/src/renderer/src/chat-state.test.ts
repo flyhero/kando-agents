@@ -129,9 +129,16 @@ describe('chatBlocks', () => {
       .toEqual(['u', 'tools:a+b', 'e', 'tools:c', 'r'])
   })
 
-  it('folds a finished turn\'s work behind one line and leaves its answer in view', () => {
+  // The turn's own line follows the answer: how it ended reads there, the fold only how it worked.
+  it('folds a finished turn\'s work behind one line and leaves its answer and ending in view', () => {
     expect(shape(blocksOf([user('u'), reply('looking'), thought('t', 'hm'), tool('a'), tool('b'), reply('answer'), turn('end')])))
-      .toEqual(['u', { fold: ['looking', 't', 'tools:a+b'] }, 'answer'])
+      .toEqual(['u', { fold: ['looking', 't', 'tools:a+b'] }, 'answer', 'end'])
+  })
+
+  it('measures the fold\'s work from its first call to the answer', () => {
+    const at = (item: ChatItem, ms: number): ChatItem => ({ ...item, at: ms })
+    const blocks = blocksOf([at(user('u'), 0), at(tool('a'), 1_000), at(tool('b'), 5_000), at(reply('answer'), 99_000), at(turn('end'), 100_000)])
+    expect(blocks.find((block) => block.kind === 'fold')).toMatchObject({ steps: 2, workMs: 98_000 })
   })
 
   it('leaves a finished turn open when folding is off, still listing the files it changed', () => {
@@ -173,13 +180,13 @@ describe('chatBlocks', () => {
   it('leaves where the context was compacted in view, and folds other info', () => {
     const notice = (id: string, text: string): ChatItem => ({ ...base, id, kind: 'notice', level: 'info', text })
     expect(shape(blocksOf([user('u'), notice('c', '对话上下文已压缩'), tool('a'), notice('i', '切换了模型'), reply('answer'), turn('end')])))
-      .toEqual(['u', { fold: ['tools:a', 'i'] }, 'c', 'answer'])
+      .toEqual(['u', { fold: ['tools:a', 'i'] }, 'c', 'answer', 'end'])
   })
 
   it('leaves what the user was asked, and empty thinking, out of the fold', () => {
     const question: ChatItem = { ...base, id: 'q', kind: 'question', requestId: 'r', questions: [], answers: {}, resolution: 'answered' }
     expect(shape(blocksOf([user('u'), thought('empty', ' '), tool('a'), question, tool('b'), reply('answer'), turn('end')])))
-      .toEqual(['u', { fold: ['tools:a', 'tools:b'] }, 'q', 'answer'])
+      .toEqual(['u', { fold: ['tools:a', 'tools:b'] }, 'q', 'answer', 'end'])
   })
 })
 

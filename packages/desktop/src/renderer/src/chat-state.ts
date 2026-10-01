@@ -198,9 +198,10 @@ export type ChatBlock =
   | { kind: 'tools'; key: string; tools: ToolItem[] }
   | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
-  // steps: the calls the turn made on the way, for the line that stands for them.
-  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; steps: number }
-  | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean; steps: number }
+  // steps: the calls the turn made on the way, and workMs how long the work ran before the answer
+  // began, for the line that stands for them. The turn's own outcome reads under the answer.
+  | { kind: 'fold'; key: string; turn: TurnItem; blocks: ChatBlock[]; steps: number; workMs: number | null }
+  | { kind: 'changes'; key: string; fold: string; files: TurnFile[]; turn: TurnItem; reply: TurnReply | null; collapsible: boolean }
 
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
@@ -226,6 +227,15 @@ function toolsOf(block: ChatBlock): ToolItem[] {
   if (block.kind === 'fold') return block.blocks.flatMap(toolsOf)
   const item = itemOf(block)
   return item?.kind === 'tool' ? [item] : []
+}
+
+// When a block began: its item, or the first of its calls.
+function startOf(block: ChatBlock): number | null {
+  const tools = toolsOf(block)
+  if (tools.length > 0) return Math.min(...tools.map((tool) => tool.at))
+  if (block.kind !== 'entry') return null
+  if (block.entry.kind === 'item') return block.entry.item.at
+  return block.entry.kind === 'message' ? block.entry.message.createdAt : null
 }
 
 function turnFiles(blocks: readonly ChatBlock[]): TurnFile[] {
@@ -287,11 +297,16 @@ function foldTurn(body: ChatBlock[], turn: TurnItem, end: ChatBlock): ChatBlock[
   const files = turnFiles(folded)
   const reply = turnReply(body, turn)
   const steps = folded.flatMap(toolsOf).length
+  // The work ran from its first call to the answer, or to the end of a turn without one.
+  const began = Math.min(...folded.map(startOf).filter((at): at is number => at !== null))
+  const until = body.slice(answer).map(startOf).find((at): at is number => at !== null) ?? turn.at
+  const workMs = Number.isFinite(began) && until > began ? until - began : null
+  // With files, the summary of them carries the outcome; otherwise the turn's own line does.
   return [
-    { kind: 'fold', key, turn, blocks: folded, steps },
+    { kind: 'fold', key, turn, blocks: folded, steps, workMs },
     ...work.filter((block) => !foldable(block)),
     ...body.slice(answer),
-    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true, steps }] : [])
+    ...(files.length > 0 ? [{ kind: 'changes' as const, key: `changes:${end.key}`, fold: key, files, turn, reply, collapsible: true }] : [end])
   ]
 }
 
@@ -302,8 +317,7 @@ function unfoldedTurn(body: ChatBlock[], end: ChatBlock): ChatBlock[] {
   const turn = itemOf(end)
   if (!turn || turn.kind !== 'turn') return [...body, end]
   const reply = turnReply(body, turn)
-  const steps = body.filter(foldable).flatMap(toolsOf).length
-  return [...body, { kind: 'changes', key: `changes:${end.key}`, fold: `fold:${end.key}`, files, turn, reply, collapsible: false, steps }]
+  return [...body, { kind: 'changes', key: `changes:${end.key}`, fold: `fold:${end.key}`, files, turn, reply, collapsible: false }]
 }
 
 // The disclosure keys of everything in a fold that opens: to open or close the whole turn's work
