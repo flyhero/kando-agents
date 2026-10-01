@@ -2064,49 +2064,105 @@ body.side-panel-resizing * {
   margin: 12px 2px;
 }
 
-.inspector-repo + .inspector-repo {
-  margin-top: 16px;
+/* The changes tab lists the projects as the git status panel does, each with rows that count
+   its commits and changed files. */
+.inspector-repos {
+  width: auto;
+  padding: 0;
 }
 
-.inspector-repo-name {
+.inspector-repos .branch-status-heading:first-child {
+  padding-top: 0;
+}
+
+.inspector-repos .branch-status-project {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
+.inspector-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.inspector-row-label {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.inspector-pill {
+  padding: 0 6px;
+  line-height: 16px;
+  border-radius: 999px;
+  background: var(--fill-2);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-row-counts,
+.inspector-row-since {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.inspector-row-since {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.inspector-row-empty {
   margin: 0 0 4px;
-  font-size: 13px;
-}
-
-.inspector-section-title {
-  margin: 10px 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.inspector-section-title:first-of-type {
-  margin-top: 0;
-}
-
-.inspector-summary {
-  margin: 0 0 8px;
-  font-size: 12px;
+  padding-left: 2px;
+  color: var(--text-3);
+  font-size: 11px;
 }
 
 .inspector-commits {
-  margin-bottom: 8px;
   font-size: 12px;
 }
 
 .inspector-commits summary {
-  color: var(--text-muted);
+  list-style: none;
   cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+
+.inspector-commits summary::-webkit-details-marker {
+  display: none;
+}
+
+.inspector-commits summary:hover {
+  background: var(--fill);
+}
+
+.inspector-commits summary .chat-tool-chevron {
+  transition: transform 0.15s;
+}
+
+.inspector-commits[open] summary .chat-tool-chevron {
+  transform: rotate(90deg);
 }
 
 .inspector-commits ul {
-  margin: 6px 0 0;
-  padding-left: 4px;
+  margin: 2px 0 6px;
+  padding-left: 22px;
   list-style: none;
+  color: var(--text-muted);
 }
 
 .inspector-commits li {
   padding: 2px 0;
   overflow-wrap: anywhere;
+}
+
+.inspector-commits li .mono {
+  color: var(--text-3);
 }
 
 .changed-files {

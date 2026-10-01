@@ -64,14 +64,46 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // The checked-out branch as a chip like the header's; a folder outside git gets plain words.
-function BranchChip({ head }: { head: ProjectHead }) {
-  if (!head.branch) return <span className="branch-status-nogit">无 Git</span>
+export function BranchChip({ branch, detached = false }: { branch: string | null; detached?: boolean }) {
+  if (!branch) return <span className="branch-status-nogit">无 Git</span>
   return (
-    <span className="branch-status-branch" title={headLabel(head)}>
+    <span className="branch-status-branch" title={detached ? `${branch}（分离 HEAD）` : branch}>
       <BranchIcon />
-      <span className="mono">{head.branch}</span>
-      {head.detached && <span className="branch-status-detached">分离</span>}
+      <span className="mono">{branch}</span>
+      {detached && <span className="branch-status-detached">分离</span>}
     </span>
+  )
+}
+
+// A project's name row: its folder, the accent's when it is the primary, and its branch.
+export function ProjectRow({ path, branch, detached, children }: { path: string; branch: string | null; detached?: boolean; children?: ReactNode }) {
+  return (
+    <div className="branch-status-row">
+      <span className="branch-status-name" title={path}>
+        <FolderIcon />
+        <span>{projectName(path)}</span>
+      </span>
+      <BranchChip branch={branch} detached={detached} />
+      {children}
+    </div>
+  )
+}
+
+// The headings the projects list under, in the status panel and the inspectors alike.
+export function ProjectGroups<T extends { path: string }>({ items, children }: { items: readonly T[]; children: (item: T, primary: boolean) => ReactNode }) {
+  const [primary, ...extras] = items
+  if (!primary) return null
+  return (
+    <>
+      <div className="branch-status-heading">主项目</div>
+      {children(primary, true)}
+      {extras.length > 0 && (
+        <div className="branch-status-heading">
+          附加项目<span className="branch-status-heading-count">{extras.length}</span>
+        </div>
+      )}
+      {extras.map((each) => children(each, false))}
+    </>
   )
 }
 
@@ -103,14 +135,9 @@ function StatusLine({ head }: { head: ProjectHead }) {
 function Project({ head, primary, actions }: { head: ProjectHead; primary: boolean; actions?: (head: ProjectHead) => ReactNode }) {
   return (
     <section className="branch-status-project" data-primary={primary || undefined} aria-label={projectName(head.path)}>
-      <div className="branch-status-row">
-        <span className="branch-status-name" title={head.path}>
-          <FolderIcon />
-          <span>{projectName(head.path)}</span>
-        </span>
-        <BranchChip head={head} />
+      <ProjectRow path={head.path} branch={head.branch} detached={head.detached}>
         {head.branch && <CopyButton text={head.branch} />}
-      </div>
+      </ProjectRow>
       {head.branch && <StatusLine head={head} />}
       {head.branch && actions?.(head)}
     </section>
@@ -120,18 +147,12 @@ function Project({ head, primary, actions }: { head: ProjectHead; primary: boole
 // Every project's branch, uncommitted changes and distance from its upstream, the primary first
 // under its own heading; `actions` adds what can be done in each.
 export function BranchStatusDetails({ heads, actions }: { heads: readonly ProjectHead[]; actions?: (head: ProjectHead) => ReactNode }) {
-  const [primary, ...extras] = heads
-  if (!primary) return null
+  if (heads.length === 0) return null
   return (
     <div className="branch-status">
-      <div className="branch-status-heading">主项目</div>
-      <Project head={primary} primary actions={actions} />
-      {extras.length > 0 && (
-        <div className="branch-status-heading">
-          附加项目<span className="branch-status-heading-count">{extras.length}</span>
-        </div>
-      )}
-      {extras.map((each) => <Project key={each.path} head={each} primary={false} actions={actions} />)}
+      <ProjectGroups items={heads}>
+        {(head, primary) => <Project key={head.path} head={head} primary={primary} actions={actions} />}
+      </ProjectGroups>
       {heads.some((each) => each.upstream) && <p className="branch-status-note">领先 / 落后按上次 fetch 到的远程计算</p>}
     </div>
   )

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import type { Conversation, FolderChanges } from '@kando/protocol'
 import { usePlans } from '../chat-state'
 import { setConversationInspectorOpen, setConversationInspectorTab, showConversationPlan, useCore } from '../core-store'
-import { BranchStatusDetails, useProjectHeads } from './BranchStatus'
+import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
-import { CommitList, FileDiffView, FileList, GIT_TABS, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
+import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
 
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
@@ -33,29 +33,20 @@ function ChangeList({ changes, onOpen }: { changes: FolderChanges[] | null; onOp
   const repos = changes.filter((folder) => folder.head !== null || folder.files.length > 0)
   if (repos.length === 0) return <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有可以对比的改动。</p>
   return (
-    <>
-      {repos.map((folder) => (
-        <section key={folder.path} className="inspector-repo" aria-label={projectName(folder.path)}>
-          <h3 className="inspector-repo-name">{projectName(folder.path)} · {folder.path === changes[0]?.path ? '主项目' : '附加项目'}</h3>
-          <h4 className="inspector-section-title">本次会话以来的提交</h4>
-          {folder.commits === null ? (
-            <p className="inspector-summary muted">这个会话开始时 Kando 还没有记录起点，只能看到还没提交的改动。</p>
-          ) : folder.commits.length === 0 ? (
-            <p className="inspector-summary muted">还没有新的提交。</p>
-          ) : (
-            <CommitList commits={folder.commits} title={folder.commits.length >= 50 ? '至少 50 个提交' : `${folder.commits.length} 个提交`} />
-          )}
-          <h4 className="inspector-section-title">
-            还没提交的改动
-            {folder.files.length > 0 && <span className="muted"> · {folder.files.length} 个文件 · {lineTotals(folder.files)}</span>}
-          </h4>
-          <p className="inspector-summary muted">项目目录是和你共用的，这里也可能包含你自己的改动。</p>
-          {folder.files.length === 0
-            ? <p className="muted">没有还没提交的改动。</p>
-            : <FileList files={folder.files} onOpen={(file) => onOpen(folder.path, file)} />}
-        </section>
-      ))}
-    </>
+    <div className="branch-status inspector-repos">
+      <ProjectGroups items={repos}>
+        {(folder, primary) => (
+          <section key={folder.path} className="branch-status-project inspector-repo" data-primary={primary || undefined} aria-label={projectName(folder.path)}>
+            <ProjectRow path={folder.path} branch={folder.branch} />
+            {folder.commits === null
+              ? <p className="inspector-row-empty">会话开始时还没有记录起点，看不到这之后的提交</p>
+              : <CommitList commits={folder.commits} label="本次会话的提交" />}
+            <ChangedFiles label="未提交的改动" files={folder.files} empty="没有未提交的改动" onOpen={(file) => onOpen(folder.path, file)} />
+          </section>
+        )}
+      </ProjectGroups>
+      <p className="branch-status-note">项目目录和你共用，未提交的改动里也可能有你自己的。</p>
+    </div>
   )
 }
 

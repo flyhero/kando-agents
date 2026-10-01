@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import type { RepoChanges, Task } from '@kando/protocol'
 import type { PlanItem } from '../chat-state'
 import { setInspectorOpen, setTaskInspectorTab, showTaskPlan, useCore } from '../core-store'
-import { BranchStatusDetails, useProjectHeads } from './BranchStatus'
+import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
-import { CommitList, FileDiffView, FileList, GIT_TABS, InspectorPanel, lineTotals, useFocusCount, type InspectorTab } from './Inspector'
+import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
 
 // Read again whenever the task changes (every agent turn and exit), the window regains focus,
@@ -28,28 +28,24 @@ function useTaskChanges(taskId: string, updatedAt: number, refreshCount: number)
   return changes?.taskId === taskId ? changes.changes : null
 }
 
-function summary(repo: RepoChanges): string {
-  const commits = repo.commits.length >= 50 ? '至少 50 个提交' : `${repo.commits.length} 个提交`
-  return `从 ${repo.base} 起 · ${commits} · ${repo.files.length} 个文件 · ${lineTotals(repo.files)}`
-}
-
 function ChangeList({ changes, onOpen }: { changes: RepoChanges[] | null; onOpen: (repo: string, file: string) => void }) {
   if (changes === null) return <p className="inspector-empty muted">正在读取改动…</p>
   const compared = changes.filter((repo) => repo.base)
   if (compared.length === 0) return <p className="inspector-empty muted">任务还没有 worktree，执行过之后这里会列出 agent 的改动。</p>
   return (
-    <>
-      {compared.map((repo) => (
-        <section key={repo.path} className="inspector-repo" aria-label={projectName(repo.path)}>
-          <h3 className="inspector-repo-name">{projectName(repo.path)} · {repo.path === changes[0]?.path ? '主项目' : '附加项目'}</h3>
-          <p className="inspector-summary muted">{summary(repo)}</p>
-          {repo.commits.length > 0 && <CommitList commits={repo.commits} title="提交记录" />}
-          {repo.files.length === 0
-            ? <p className="muted">和起点相比没有改动。</p>
-            : <FileList files={repo.files} onOpen={(file) => onOpen(repo.path, file)} />}
-        </section>
-      ))}
-    </>
+    <div className="branch-status inspector-repos">
+      <ProjectGroups items={compared}>
+        {(repo, primary) => (
+          <section key={repo.path} className="branch-status-project inspector-repo" data-primary={primary || undefined} aria-label={projectName(repo.path)}>
+            <ProjectRow path={repo.path} branch={repo.branch}>
+              <span className="inspector-row-since">从 <span className="mono">{repo.base}</span> 起</span>
+            </ProjectRow>
+            <CommitList commits={repo.commits} label="提交" />
+            <ChangedFiles label="改动" files={repo.files} empty="和起点相比没有改动" onOpen={(file) => onOpen(repo.path, file)} />
+          </section>
+        )}
+      </ProjectGroups>
+    </div>
   )
 }
 

@@ -3,7 +3,7 @@ import { RpcError, type ChangedFile, type Commit, type FileDiff } from '@kando/p
 import { useCore } from '../core-store'
 import type { BranchTarget } from './BranchStatus'
 import { DiffLines } from './DiffLines'
-import { ArrowLeftIcon, CloseIcon, RefreshIcon } from './icons'
+import { ArrowLeftIcon, ChevronRightIcon, CloseIcon, RefreshIcon } from './icons'
 import { PanelSeparator } from './PanelSeparator'
 
 // The pieces both inspectors are built from: a task's, beside its terminal, and a conversation's.
@@ -100,10 +100,28 @@ export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, t
   )
 }
 
-export function CommitList({ commits, title }: { commits: readonly Commit[]; title: string }) {
+// A row of the inspector: what it counts, the count as a pill, and anything else to say.
+export function InspectorRow({ label, count, children }: { label: string; count?: string | number; children?: ReactNode }) {
+  return (
+    <div className="inspector-row">
+      <span className="inspector-row-label">{label}</span>
+      {count !== undefined && <span className="inspector-pill">{count}</span>}
+      {children}
+    </div>
+  )
+}
+
+// The commits, folded behind a row with their count; at most 50 are read.
+export function CommitList({ commits, label }: { commits: readonly Commit[]; label: string }) {
+  const count = commits.length >= 50 ? '50+' : commits.length
+  if (commits.length === 0) return <InspectorRow label={label} count={0} />
   return (
     <details className="inspector-commits">
-      <summary>{title}</summary>
+      <summary className="inspector-row">
+        <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
+        <span className="inspector-row-label">{label}</span>
+        <span className="inspector-pill">{count}</span>
+      </summary>
       <ul>
         {commits.map((commit) => (
           <li key={commit.sha}>
@@ -112,6 +130,18 @@ export function CommitList({ commits, title }: { commits: readonly Commit[]; tit
         ))}
       </ul>
     </details>
+  )
+}
+
+// The files changed, under a row with how many and how much; `empty` reads when there are none.
+export function ChangedFiles({ label, files, empty, onOpen }: { label: string; files: readonly ChangedFile[]; empty: string; onOpen: (file: string) => void }) {
+  return (
+    <>
+      <InspectorRow label={label} count={files.length > 0 ? `${files.length} 个文件` : 0}>
+        {files.length > 0 && <span className="inspector-row-counts mono">{lineTotals(files)}</span>}
+      </InspectorRow>
+      {files.length === 0 ? <p className="inspector-row-empty">{empty}</p> : <FileList files={files} onOpen={onOpen} />}
+    </>
   )
 }
 
