@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { visibleUtilityPanelOrder, type UtilityPanelKind } from '../utility-panel-order'
 import { BrowserSidePanel } from './BrowserSidePanel'
 import { PanelSeparator } from './PanelSeparator'
 import {
@@ -11,10 +12,9 @@ import {
 } from './side-panel-size'
 import { TerminalPanel } from './TerminalPanel'
 
-type UtilityKind = 'browser' | 'terminal'
-
-function StackedPanelSeparator({ ratio, onRatioChange }: {
+function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
   ratio: number
+  upperPanel: UtilityPanelKind
   onRatioChange: (ratio: number) => void
 }) {
   const separator = useRef<HTMLDivElement>(null)
@@ -57,7 +57,7 @@ function StackedPanelSeparator({ ratio, onRatioChange }: {
       aria-valuemin={MIN_STACKED_PANEL_RATIO * 100}
       aria-valuemax={MAX_STACKED_PANEL_RATIO * 100}
       aria-valuenow={Math.round(ratio * 100)}
-      aria-valuetext={`浏览器占 ${Math.round(ratio * 100)}%`}
+      aria-valuetext={`${upperPanel === 'browser' ? '浏览器' : '终端'}占 ${Math.round(ratio * 100)}%`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerDown={(event) => {
@@ -75,20 +75,22 @@ function StackedPanelSeparator({ ratio, onRatioChange }: {
   )
 }
 
-// Browser and terminal share one right-hand dock. When both are open they stack vertically, so
-// opening a second tool never creates a third workspace column.
-export function UtilityPanelDock({ browserOpen, terminalOpen, maximized }: {
+// Browser and terminal share one right-hand dock. The first one opened stays above the next one.
+export function UtilityPanelDock({ browserOpen, terminalOpen, maximized, order }: {
   browserOpen: boolean
   terminalOpen: boolean
-  maximized?: UtilityKind
+  maximized?: UtilityPanelKind
+  order: readonly UtilityPanelKind[]
 }) {
   const [widthRatio, setWidthRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
-  const [browserRatio, setBrowserRatio] = useState(DEFAULT_STACKED_PANEL_RATIO)
+  const [upperRatio, setUpperRatio] = useState(DEFAULT_STACKED_PANEL_RATIO)
   const showBrowser = browserOpen && (!maximized || maximized === 'browser')
   const showTerminal = terminalOpen && (!maximized || maximized === 'terminal')
   const stacked = showBrowser && showTerminal
+  const visibleOrder = visibleUtilityPanelOrder(order, showBrowser, showTerminal)
+  const upperPanel = visibleOrder[0] ?? 'browser'
   const rows = stacked
-    ? `${browserRatio}fr var(--stacked-panel-separator-size) ${1 - browserRatio}fr`
+    ? `${upperRatio}fr var(--stacked-panel-separator-size) ${1 - upperRatio}fr`
     : 'minmax(0, 1fr)'
 
   return (
@@ -110,9 +112,18 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, maximized }: {
           gridTemplateRows: rows
         }}
       >
-        {showBrowser && <BrowserSidePanel />}
-        {stacked && <StackedPanelSeparator ratio={browserRatio} onRatioChange={setBrowserRatio} />}
-        {showTerminal && <TerminalPanel />}
+        {visibleOrder.map((panel, index) => (
+          <Fragment key={panel}>
+            {index > 0 && (
+              <StackedPanelSeparator
+                ratio={upperRatio}
+                upperPanel={upperPanel}
+                onRatioChange={setUpperRatio}
+              />
+            )}
+            {panel === 'browser' ? <BrowserSidePanel /> : <TerminalPanel />}
+          </Fragment>
+        ))}
       </section>
     </>
   )

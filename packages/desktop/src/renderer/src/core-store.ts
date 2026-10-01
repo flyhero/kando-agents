@@ -22,6 +22,7 @@ import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from '.
 import type { InspectorTab } from './components/Inspector'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
+import { updateUtilityPanelOrder, type UtilityPanelKind } from './utility-panel-order'
 
 export type ConnectionState = 'waiting-for-core' | 'connecting' | 'connected'
 
@@ -88,9 +89,11 @@ type CoreState = {
   terminals: Terminal[]
   terminalPanelOpen: boolean
   terminalMaximized: boolean
-  // The browser panel beside the terminal's: every tab there is, the user's own included.
+  // The browser panel in the shared utility dock: every tab there is, the user's own included.
   browserPanelOpen: boolean
   browserMaximized: boolean
+  // Top to bottom among the utility panels that are open; reopening one moves it to the end.
+  utilityPanelOrder: UtilityPanelKind[]
   activeTerminalId: string | null
   login: LoginState | null
 }
@@ -128,6 +131,7 @@ export const useCore = create<CoreState>()(() => ({
   terminalMaximized: false,
   browserPanelOpen: false,
   browserMaximized: false,
+  utilityPanelOrder: [],
   activeTerminalId: null,
   login: null
 }))
@@ -193,13 +197,19 @@ export function showConversationPlan(key: string | null): void {
 
 // Opens the browser panel on a conversation's tab: the one it has, or the one about to appear.
 export function showBrowserPanel(conversationId: string | null): void {
-  useCore.setState({ browserPanelOpen: true })
+  useCore.setState((s) => ({
+    browserPanelOpen: true,
+    utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
+  }))
   if (conversationId) focusBrowserConversation(conversationId)
 }
 
 // Opens the browser panel on one tab, from the page's card in the chat.
 export function showBrowserTab(tabId: string): void {
-  useCore.setState({ browserPanelOpen: true })
+  useCore.setState((s) => ({
+    browserPanelOpen: true,
+    utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
+  }))
   focusBrowserTab(tabId)
 }
 
@@ -225,7 +235,8 @@ export async function openTerminal(cwd = contextFolder(useCore.getState())): Pro
     useCore.setState((s) => ({
       terminals: s.terminals.some((each) => each.id === terminal.id) ? s.terminals : [...s.terminals, terminal],
       activeTerminalId: terminal.id,
-      terminalPanelOpen: true
+      terminalPanelOpen: true,
+      utilityPanelOrder: s.terminalPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', true)
     }))
   }
 }
@@ -242,7 +253,11 @@ export function selectTerminal(id: string): void {
 // Opening the panel with nothing in it starts a shell right away.
 export async function toggleTerminalPanel(): Promise<void> {
   const { terminalPanelOpen, terminals } = useCore.getState()
-  useCore.setState({ terminalPanelOpen: !terminalPanelOpen })
+  const open = !terminalPanelOpen
+  useCore.setState((s) => ({
+    terminalPanelOpen: open,
+    utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', open)
+  }))
   if (!terminalPanelOpen && terminals.length === 0) await openTerminal()
 }
 
@@ -251,7 +266,13 @@ export function setTerminalMaximized(maximized: boolean): void {
 }
 
 export function toggleBrowserPanel(): void {
-  useCore.setState((s) => ({ browserPanelOpen: !s.browserPanelOpen }))
+  useCore.setState((s) => {
+    const open = !s.browserPanelOpen
+    return {
+      browserPanelOpen: open,
+      utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', open)
+    }
+  })
 }
 
 export function setBrowserMaximized(maximized: boolean): void {
@@ -469,12 +490,18 @@ export function startCoreConnection(): void {
         rpc.on('sources.listChanged', ({ sources }) => useCore.setState({ sources }))
         // The last shell exiting puts the panel away, as closing the last tab would.
         rpc.on('terminals.changed', ({ terminals }) =>
-          useCore.setState((s) => ({
-            terminals,
-            activeTerminalId: activeAmong(s.activeTerminalId, terminals),
-            terminalPanelOpen: s.terminalPanelOpen && terminals.length > 0,
-            terminalMaximized: s.terminalMaximized && terminals.length > 0
-          }))
+          useCore.setState((s) => {
+            const terminalPanelOpen = s.terminalPanelOpen && terminals.length > 0
+            return {
+              terminals,
+              activeTerminalId: activeAmong(s.activeTerminalId, terminals),
+              terminalPanelOpen,
+              terminalMaximized: s.terminalMaximized && terminals.length > 0,
+              utilityPanelOrder: terminalPanelOpen
+                ? s.utilityPanelOrder
+                : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', false)
+            }
+          })
         )
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))

@@ -34,6 +34,7 @@ export function App() {
   const terminalMaximized = useCore((s) => s.terminalMaximized)
   const browserPanelOpen = useCore((s) => s.browserPanelOpen)
   const browserMaximized = useCore((s) => s.browserMaximized)
+  const utilityPanelOrder = useCore((s) => s.utilityPanelOrder)
   const maximizedUtility = browserPanelOpen && browserMaximized
     ? 'browser'
     : terminalPanelOpen && terminalMaximized
@@ -126,6 +127,7 @@ export function App() {
             browserOpen={browserPanelOpen}
             terminalOpen={terminalPanelOpen}
             maximized={maximizedUtility}
+            order={utilityPanelOrder}
           />
         )}
       </main>
