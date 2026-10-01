@@ -5147,20 +5147,21 @@ button.task-tag-updated:hover {
 .chat-view .chat-draft-title { font-size: var(--chat-font-heading); }
 
 /* Where the agent's turn begins: who answers, on which model, and when the message came in. */
-.chat-turn-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; }
+/* Sized in the small chat font, the icon in em, so the whole line follows the font-size setting. */
+.chat-turn-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 4px; font-size: var(--chat-font-small); }
 .chat-turn-head-icon {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 2em;
+  height: 2em;
   border-radius: var(--radius-sm);
   background: var(--accent-bg);
   color: var(--accent);
 }
-.chat-turn-head-icon svg { width: 14px; height: 14px; }
-.chat-turn-head-name { color: var(--text-muted); font-size: 12px; }
-.chat-turn-head-model { min-width: 0; overflow: hidden; color: var(--text-3); font-family: var(--mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-turn-head-icon svg { width: 1.17em; height: 1.17em; }
+.chat-turn-head-name { color: var(--text-muted); }
+.chat-turn-head-model { min-width: 0; overflow: hidden; color: var(--text-3); font-family: var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .chat-turn-head-model::before { content: '·'; margin-right: 8px; }
 .chat-turn-head .chat-message-time { margin-left: 0; }
 .chat-turn-tokens { font-family: var(--mono); }
