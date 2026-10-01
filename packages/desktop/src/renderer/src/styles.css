@@ -218,12 +218,25 @@ body.stacked-panel-resizing * {
   border-bottom: 1px solid var(--border);
 }
 
-.terminal-tabs {
+.terminal-tab-strip {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.terminal-tabs {
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   gap: 2px;
   overflow-x: auto;
+}
+
+.terminal-tab-add {
+  flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .terminal-tab {
