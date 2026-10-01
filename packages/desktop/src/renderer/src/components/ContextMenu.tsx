@@ -39,18 +39,26 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, label
   const [place, setPlace] = useState(at)
   const [opener] = useState(() => document.activeElement)
 
-  // Flips up or left like a native menu when it would run off the window.
+  // Flips up or left like a native menu when it would run off the window. Placed again whenever
+  // the panel changes size: a menu that fills in after it opens (the project picker fetches its
+  // recent list) would otherwise keep the top it got while short and grow down past the window.
   useLayoutEffect(() => {
     const element = panel.current
     if (!element) return
-    const { width, height } = element.getBoundingClientRect()
-    const { clientWidth, clientHeight } = document.documentElement
-    const x = align === 'end'
-      ? Math.min(Math.max(EDGE, at.x - width), clientWidth - width - EDGE)
-      : at.x + width > clientWidth - EDGE ? Math.max(EDGE, at.x - width) : at.x
-    const y = above || at.y + height > clientHeight - EDGE ? Math.max(EDGE, at.y - height - (above ? 4 : 0)) : at.y
-    setPlace({ x, y })
+    const place = () => {
+      const { width, height } = element.getBoundingClientRect()
+      const { clientWidth, clientHeight } = document.documentElement
+      const x = align === 'end'
+        ? Math.min(Math.max(EDGE, at.x - width), clientWidth - width - EDGE)
+        : at.x + width > clientWidth - EDGE ? Math.max(EDGE, at.x - width) : at.x
+      const y = above || at.y + height > clientHeight - EDGE ? Math.max(EDGE, at.y - height - (above ? 4 : 0)) : at.y
+      setPlace({ x, y })
+    }
+    place()
     element.querySelector<HTMLElement>(ITEMS)?.focus()
+    const observer = new ResizeObserver(place)
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [at, align, above])
 
   useEffect(() => {
