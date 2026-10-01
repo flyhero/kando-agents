@@ -11,7 +11,7 @@ import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequ
 import { ChatPaths } from './ChatToolCard'
 import { ChatTodosChip } from './ChatTodos'
 import { ArrowUpIcon } from './icons'
-import { lineTotals, useChangedFiles } from './Inspector'
+import { changeLineTotals, useChangedFiles } from './Inspector'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 type StateItem = Extract<ChatItem, { kind: 'state' }>
@@ -24,6 +24,7 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
   if (files.length === 0) return null
   // New and binary files have no line counts; a row of only those would read +0 −0.
   const counted = files.filter((file) => file.additions !== null && file.deletions !== null)
+  const totals = changeLineTotals(counted)
   return (
     <button
       type="button"
@@ -31,7 +32,13 @@ function ChangesChip({ conversation, finishedCalls }: { conversation: Conversati
       data-tooltip={surface.changesHint}
       onClick={surface.showChanges}
     >
-      {files.length} 个文件改动{counted.length > 0 && <span className="mono"> {lineTotals(counted)}</span>}
+      <span>{files.length} 个文件改动</span>
+      {counted.length > 0 && (
+        <span className="chat-diff-count mono">
+          <span className="chat-diff-added">+{totals.added}</span>
+          <span className="chat-diff-removed">−{totals.removed}</span>
+        </span>
+      )}
     </button>
   )
 }

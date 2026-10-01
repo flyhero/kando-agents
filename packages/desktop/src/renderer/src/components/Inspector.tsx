@@ -151,9 +151,14 @@ function counts(file: ChangedFile): string {
 }
 
 export function lineTotals(files: readonly ChangedFile[]): string {
+  const { added, removed } = changeLineTotals(files)
+  return `+${added} −${removed}`
+}
+
+export function changeLineTotals(files: readonly ChangedFile[]): { added: number; removed: number } {
   const added = files.reduce((sum, file) => sum + (file.additions ?? 0), 0)
   const removed = files.reduce((sum, file) => sum + (file.deletions ?? 0), 0)
-  return `+${added} −${removed}`
+  return { added, removed }
 }
 
 export function FileList({ files, onOpen }: { files: readonly ChangedFile[]; onOpen: (file: string) => void }) {
