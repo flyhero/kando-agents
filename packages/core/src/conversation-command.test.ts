@@ -28,6 +28,15 @@ describe('conversationCommand', () => {
 })
 
 describe('chatCommand', () => {
+  it('gives Codex Kando\'s tools and hides the ChatGPT app\'s browser beside them', () => {
+    const mcp = { command: 'node', args: ['cli.mjs', 'mcp'] }
+    const args = chatCommand('codex', null, false, null, [], { mcp }).args
+    expect(args.slice(0, 5)).toEqual(['app-server', '-c', 'mcp_servers.kando.command="node"', '-c', 'mcp_servers.kando.args=["cli.mjs","mcp"]'])
+    expect(args).toEqual(expect.arrayContaining(['-c', 'mcp_servers.cua_repl={command="/usr/bin/true",enabled=false}']))
+    // Without Kando's tools there is nothing to choose between, and nothing is hidden.
+    expect(chatCommand('codex', null, false, null, []).args).toEqual(['app-server'])
+  })
+
   it('starts Claude with what the conversation chose, and bypass only when allowed now', () => {
     const args = chatCommand('claude', 'session-1', true, null, [], { preferred: { permissionMode: 'plan', model: 'sonnet', effort: 'high' } }).args
     expect(args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--model', 'sonnet', '--effort', 'high', '--resume', 'session-1']))

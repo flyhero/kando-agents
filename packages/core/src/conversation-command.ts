@@ -7,6 +7,13 @@ import { CLAUDE_MODE_NAMES } from './claude-stream'
 // The browser tools that only read: what the page shows, says in its console, or is waited on.
 export const BROWSER_READ_TOOLS: readonly string[] = (['snapshot', 'screenshot', 'scroll', 'wait', 'console', 'tabs'] as const).map(browserToolName)
 
+// The ChatGPT app's own browser, which its unified-computer-use plugin gives every Codex as the
+// cua_repl MCP server: beside Kando's browser tools Codex reached for it first, and its policy,
+// kept in that app, refuses a Codex that Kando runs. A whole entry, disabled, overrides the
+// plugin's; enabled=false alone is an incomplete server that Codex refuses to start with, and a
+// whole one is harmless where the plugin is not installed.
+const HIDDEN_CODEX_BROWSERS: readonly string[] = ['-c', 'mcp_servers.cua_repl={command="/usr/bin/true",enabled=false}']
+
 const HANDOFF_PREFIX = '请先阅读 Kando 移交文件 '
 const HANDOFF_SUFFIX = '，结合当前项目目录现状继续协助用户。'
 
@@ -79,7 +86,7 @@ export function chatCommand(
   const { mcp } = launch
   return { command: 'codex', args: [
     'app-server',
-    ...(mcp ? ['-c', `mcp_servers.kando.command=${JSON.stringify(mcp.command)}`, '-c', `mcp_servers.kando.args=${JSON.stringify(mcp.args)}`] : [])
+    ...(mcp ? ['-c', `mcp_servers.kando.command=${JSON.stringify(mcp.command)}`, '-c', `mcp_servers.kando.args=${JSON.stringify(mcp.args)}`, ...HIDDEN_CODEX_BROWSERS] : [])
   ] }
 }
 
