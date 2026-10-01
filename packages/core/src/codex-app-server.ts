@@ -164,9 +164,13 @@ type Pending = {
 type Sandbox = 'workspace-write' | 'read-only' | 'danger-full-access'
 
 // Kando's permission modes as Codex's approval policy and sandbox. acceptEdits is what the Codex
-// TUI starts with: the sandbox lets it write the workspace, and it asks when it wants out.
-const DEFAULT_MODE: { approvalPolicy: string; sandbox: Sandbox } = { approvalPolicy: 'on-request', sandbox: 'workspace-write' }
-export const CODEX_MODES: Record<string, { approvalPolicy: string; sandbox: Sandbox }> = {
+// TUI starts with: the sandbox lets it write the workspace, and it asks when it wants out. It may
+// also reach the network, as Claude Code in the same mode does: closed, every install or fetch
+// failed first and then asked to leave the sandbox anyway, and config.toml, where the TUI turns it
+// on, is not read here.
+type CodexMode = { approvalPolicy: string; sandbox: Sandbox; network?: boolean }
+const DEFAULT_MODE: CodexMode = { approvalPolicy: 'on-request', sandbox: 'workspace-write', network: true }
+export const CODEX_MODES: Record<string, CodexMode> = {
   ask: { approvalPolicy: 'untrusted', sandbox: 'workspace-write' },
   acceptEdits: DEFAULT_MODE,
   readOnly: { approvalPolicy: 'on-request', sandbox: 'read-only' },
@@ -202,10 +206,10 @@ export function codexMode(approvalPolicy: unknown, sandbox: Sandbox | null): str
   return found ? found[0] : `${approvalPolicy} · ${sandbox}`
 }
 
-function sandboxPolicy(sandbox: Sandbox, writableRoots: readonly string[]): unknown {
+function sandboxPolicy(sandbox: Sandbox, writableRoots: readonly string[], network: boolean): unknown {
   switch (sandbox) {
     case 'workspace-write':
-      return { type: 'workspaceWrite', writableRoots: [...writableRoots], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+      return { type: 'workspaceWrite', writableRoots: [...writableRoots], networkAccess: network, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
     case 'read-only':
       return { type: 'readOnly', networkAccess: false }
     case 'danger-full-access':
@@ -629,13 +633,13 @@ export class CodexAppServer implements ChatDriver {
 
   // The mode a turn runs in: what the user chose, if this stage may run it, else the TUI's default.
   // It is always stated outright: left out, a thread takes whatever config.toml says.
-  private mode(chosen = this.chosen.permissionMode): { approvalPolicy: string; sandbox: Sandbox } {
+  private mode(chosen = this.chosen.permissionMode): CodexMode {
     const allowed = chosen !== 'bypass' || this.options.allowBypass
     return (chosen && allowed ? CODEX_MODES[chosen] : undefined) ?? DEFAULT_MODE
   }
 
   private turnOptions(permissionMode = this.chosen.permissionMode): Record<string, unknown> {
-    const { approvalPolicy, sandbox } = this.mode(permissionMode)
+    const { approvalPolicy, sandbox, network = false } = this.mode(permissionMode)
     const plan = permissionMode === PLAN_MODE
     // Plan mode is set on each turn in it, and left once on the next turn out of it. Its settings
     // name the model outright, which the mode then takes over the turn's own.
@@ -646,7 +650,7 @@ export class CodexAppServer implements ChatDriver {
     return {
       approvalPolicy,
       // The conversation's other projects are writable too, as --add-dir makes them in the TUI.
-      sandboxPolicy: sandboxPolicy(sandbox, this.options.extraDirs),
+      sandboxPolicy: sandboxPolicy(sandbox, this.options.extraDirs, network),
       ...(this.chosen.model ? { model: this.chosen.model } : {}),
       ...(this.chosen.effort ? { effort: this.chosen.effort } : {}),
       ...collaboration

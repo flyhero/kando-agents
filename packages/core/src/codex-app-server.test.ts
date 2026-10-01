@@ -183,6 +183,16 @@ describe('CodexAppServer options', () => {
     expect(allowed.send('go').wire).toMatchObject({ params: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } } })
   })
 
+  it('lets the auto mode reach the network, as Claude Code does, and keeps asking and read-only modes off it', () => {
+    const driver = live(OPTIONS)
+    expect(driver.send('go').wire).toMatchObject({ params: { approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', networkAccess: true } } })
+    for (const [mode, sandboxPolicy] of [['ask', { type: 'workspaceWrite', networkAccess: false }], ['readOnly', { type: 'readOnly', networkAccess: false }]] as const) {
+      const other = live(OPTIONS)
+      other.apply({ dir: 'option', at, option: 'permissionMode', value: mode })
+      expect(other.send('go').wire).toMatchObject({ params: { sandboxPolicy } })
+    }
+  })
+
   it('opens a thread with what the conversation chose last time', () => {
     const driver = new CodexAppServer('stage-1', { ...OPTIONS, preferred: { permissionMode: 'ask', model: 'gpt-6-luna' } })
     driver.apply({ dir: 'out', at, frame: driver.due()[0] })
