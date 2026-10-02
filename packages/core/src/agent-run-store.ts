@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
-import { AgentKind, isFinished, type Task } from '@kando/protocol'
+import { AGENT_KINDS, AgentKind, isFinished, type AgentStats, type Task } from '@kando/protocol'
 
 // run: the first time an agent worked on the task · continue: picked up again in the same worktree
 export const RunKind = z.enum(['run', 'continue'])
@@ -66,6 +66,10 @@ export class AgentRunStore {
     return this.db.prepare(`${SELECT} ORDER BY started_at, rowid`).all().map((row) => AgentRun.parse(row))
   }
 
+  stats(): AgentStats[] {
+    return summarizeRuns(this.list())
+  }
+
   forTask(taskId: string): AgentRun[] {
     return this.db.prepare(`${SELECT} WHERE task_id = ? ORDER BY started_at, rowid`).all(taskId).map((row) => AgentRun.parse(row))
   }
@@ -126,6 +130,49 @@ export class AgentRunStore {
     const keys = Object.keys(values)
     this.db.prepare(`UPDATE agent_runs SET ${keys.map((key) => `${key} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((key) => values[key] ?? null), id)
   }
+}
+
+// One row per agent and model, from the runs that have ended; agents in their usual order, a
+// known model before the unknown one, busier models first.
+export function summarizeRuns(runs: readonly AgentRun[]): AgentStats[] {
+  const groups = new Map<string, { agent: AgentKind; model: string | null; runs: AgentRun[] }>()
+  for (const run of runs) {
+    if (run.endedAt === null) continue
+    const key = JSON.stringify([run.agent, run.model])
+    const group = groups.get(key) ?? { agent: run.agent, model: run.model, runs: [] }
+    group.runs.push(run)
+    groups.set(key, group)
+  }
+  const stats = [...groups.values()].map(({ agent, model, runs: group }): AgentStats => {
+    const count = (outcome: RunOutcome) => group.filter((run) => run.outcome === outcome).length
+    const terminal = group.filter((run) => run.view === 'terminal')
+    return {
+      agent,
+      model,
+      runs: group.length,
+      decided: count('accepted') + count('continued') + count('redone'),
+      accepted: count('accepted'),
+      continued: count('continued'),
+      redone: count('redone'),
+      endedTerminal: terminal.length,
+      abnormalExits: terminal.filter((run) => run.exitCode !== null && run.exitCode !== 0).length,
+      medianDurationMs: median(group.flatMap((run) => (run.endedAt === null ? [] : [run.endedAt - run.startedAt]))),
+      medianTokens: median(group.flatMap((run) => (run.totalTokens === null ? [] : [run.totalTokens])))
+    }
+  })
+  return stats.sort(
+    (a, b) =>
+      AGENT_KINDS.indexOf(a.agent) - AGENT_KINDS.indexOf(b.agent) ||
+      Number(a.model === null) - Number(b.model === null) ||
+      b.runs - a.runs
+  )
+}
+
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? (sorted[middle] ?? null) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
 }
 
 function columns(measure: RunMeasure): Record<string, SQLInputValue> {

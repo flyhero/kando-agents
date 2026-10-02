@@ -3,6 +3,7 @@ import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, RepoStartOptions, Task, 
 import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_CHAT_IMAGES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
+import { AgentStats } from './agent-stats'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
@@ -39,7 +40,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
 // browser: core hosts a browser for chat agents (the browser.* methods).
 // usage-limit: core continues a chat whose turn hit a usage limit once it lifts (usageLimit items).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit'] as const
+// agent-stats: core keeps each task run and reports how each agent's went (agents.stats).
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -338,6 +340,7 @@ export const rpcMethods = {
   'usage.list': { params: z.object({}), result: z.array(AgentUsage) },
   // Refetches now instead of waiting for the next poll; core rate-limits repeats.
   'usage.refresh': { params: z.object({}), result: z.array(AgentUsage) },
+  'agents.stats': { params: z.object({}), result: z.array(AgentStats) },
   'sources.list': { params: z.object({}), result: z.array(SourceDescriptor) },
   // Non-secret settings only; changing one marked bindsCredential signs the instance out.
   'sources.saveSettings': {
