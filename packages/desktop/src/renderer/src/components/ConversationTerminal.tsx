@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { usePlans } from '../chat-state'
 import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
@@ -10,49 +10,10 @@ import { ConversationInspector } from './ConversationInspector'
 import { ConversationStatus } from './ConversationStatus'
 import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
-import { continueConversation, deleteConversation, renameConversation, stopConversation } from './ConversationActions'
-import { CloseIcon, HandoffIcon, InspectorIcon, MoreIcon, PencilIcon, PlayIcon, StopIcon } from './icons'
-import { Popover } from './Popover'
+import { continueConversation, renameConversation, stopConversation } from './ConversationActions'
+import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon, PlayIcon, StopIcon } from './icons'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
-
-// Deleting sits a click away from the everyday buttons, as a task's does. A conversation goes on
-// in the interface settings choose (the ▷ button), or in its chat (the next message): there is no
-// switching it here.
-function MoreMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
-  const [open, setOpen] = useState(false)
-  const close = useCallback(() => setOpen(false), [])
-  return (
-    <span className="menu-anchor">
-      <button
-        type="button"
-        className="tool-button"
-        aria-label="更多操作"
-        data-tooltip="更多操作"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <MoreIcon />
-      </button>
-      {open && (
-        <Popover label="更多操作" onClose={close}>
-          <button
-            type="button"
-            className="menu-item menu-item-danger"
-            onClick={() => {
-              close()
-              onDelete()
-            }}
-          >
-            删除会话
-          </button>
-        </Popover>
-      )}
-    </span>
-  )
-}
 
 export function ConversationTerminal({ id }: { id: string }) {
   const conversation = useCore((state) => state.conversations[id])
@@ -77,9 +38,6 @@ export function ConversationTerminal({ id }: { id: string }) {
     setBusy(false)
   }
   const rename = (title: string) => void action(() => renameConversation(id, title))
-  const remove = () => void action(async () => {
-    if (await deleteConversation(conversation)) selectConversation(null)
-  })
   return <section className="detail terminal-view conversation-view" aria-label={`${conversation.title} 的会话`}>
     <header className="detail-header conversation-header">
       <ConversationStatus conversation={conversation} />
@@ -109,7 +67,6 @@ export function ConversationTerminal({ id }: { id: string }) {
             <InspectorIcon />
           </button>
         )}
-        <MoreMenu disabled={busy} onDelete={remove} />
         <span className="toolbar-separator" aria-hidden="true" />
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectConversation(null)}><CloseIcon /></button>
       </div>
