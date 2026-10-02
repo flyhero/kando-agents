@@ -158,7 +158,7 @@ const RateLimitEvent = z.looseObject({
 // Claude Code sends one when its limits change. Its utilization is a fraction (0.13 where /usage
 // says 13%). A refusal is taken at its word before /usage catches up; one without numbers, or any
 // warning, is a reason to read /usage again for the windows the event leaves out.
-export function rateLimitReport(frame: unknown): UsageReport | null {
+export function rateLimitReport(frame: unknown, at: number): UsageReport | null {
   const parsed = RateLimitEvent.safeParse(frame)
   if (!parsed.success) {
     return null
@@ -173,6 +173,7 @@ export function rateLimitReport(frame: unknown): UsageReport | null {
   const refused = status === 'rejected' && rateLimitType ? EVENT_WINDOWS[rateLimitType] : undefined
   const capped = refused ? toWindow(refused.kind, refused.model, 100, resetsAt) : null
   return {
+    at,
     windows: capped ? [...windows.filter((window) => window.kind !== capped.kind || window.model !== capped.model), capped] : windows,
     refresh: windows.length === 0 || (Boolean(status) && status !== 'allowed')
   }

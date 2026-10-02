@@ -6,14 +6,16 @@ export type UsageReading =
 
 export type UsageSource = () => Promise<UsageReading>
 
-// What a running agent said about its limits: the windows it named (the rest unchanged), and
-// whether the full reading is worth fetching again now.
-export type UsageReport = { windows: UsageWindow[]; plan?: string | null; refresh?: boolean }
+// What a running agent said about its limits, and when: the frame's time as it came in, which a
+// stage replayed from its log keeps. The windows it named (the rest unchanged), and whether the full
+// reading is worth fetching again now.
+export type UsageReport = { at: number; windows: UsageWindow[]; plan?: string | null; refresh?: boolean }
 
 // Two reports a driver saw before the host took them, the later winning window by window.
 export function mergeUsageReports(earlier: UsageReport | null, later: UsageReport): UsageReport {
   const kept = (earlier?.windows ?? []).filter((old) => !later.windows.some((window) => window.kind === old.kind && window.model === old.model))
   return {
+    at: Math.max(earlier?.at ?? later.at, later.at),
     windows: [...kept, ...later.windows],
     plan: later.plan ?? earlier?.plan,
     refresh: Boolean(earlier?.refresh || later.refresh)

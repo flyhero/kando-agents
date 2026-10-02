@@ -173,7 +173,8 @@ describe('rateLimitReport', () => {
   }
 
   it('reads the windows it carries as percentages', () => {
-    expect(rateLimitReport(event)).toEqual({
+    expect(rateLimitReport(event, 7)).toEqual({
+      at: 7,
       windows: [
         { kind: 'session', model: null, usedPercent: 13, windowMinutes: 300, resetsAt: 1_790_947_200_000 },
         { kind: 'weekly', model: null, usedPercent: 2, windowMinutes: 10_080, resetsAt: 1_791_511_200_000 }
@@ -184,13 +185,13 @@ describe('rateLimitReport', () => {
 
   it('takes a refusal as the named window at its cap, and asks for the rest', () => {
     const refused = { ...event, rate_limit_info: { ...event.rate_limit_info, status: 'rejected', rateLimitType: 'seven_day_opus' } }
-    const report = rateLimitReport(refused)
+    const report = rateLimitReport(refused, 7)
     expect(report?.windows.at(-1)).toEqual({ kind: 'weekly', model: 'Opus', usedPercent: 100, windowMinutes: 10_080, resetsAt: 1_790_947_200_000 })
     expect(report?.refresh).toBe(true)
   })
 
   it('asks for a fresh reading when the event carries no numbers', () => {
-    expect(rateLimitReport({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } })).toEqual({ windows: [], refresh: true })
-    expect(rateLimitReport({ type: 'rate_limit_event' })).toBeNull()
+    expect(rateLimitReport({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } }, 7)).toEqual({ at: 7, windows: [], refresh: true })
+    expect(rateLimitReport({ type: 'rate_limit_event' }, 7)).toBeNull()
   })
 })

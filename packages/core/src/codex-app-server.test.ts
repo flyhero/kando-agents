@@ -586,6 +586,7 @@ describe('CodexAppServer rate limits', () => {
   it('reports the plan limit once, as usage windows', () => {
     const driver = replay([update(limits)])
     expect(driver.takeUsage()).toEqual({
+      at: 1,
       windows: [
         { kind: 'session', model: null, usedPercent: 42, windowMinutes: 300, resetsAt: 1_790_000_000_000 },
         { kind: 'weekly', model: null, usedPercent: 7, windowMinutes: 10_080, resetsAt: null }

@@ -680,7 +680,7 @@ export class ClaudeStream implements ChatDriver {
         return
       }
       case 'rate_limit_event': {
-        const report = rateLimitReport(frame)
+        const report = rateLimitReport(frame, at)
         if (report) this.usage = mergeUsageReports(this.usage, report)
       }
     }

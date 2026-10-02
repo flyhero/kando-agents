@@ -72,6 +72,22 @@ describe('UsageService', () => {
 })
 
 describe('UsageService.report', () => {
+  it('ignores a report older than the reading it holds, refresh and all', async () => {
+    let reads = 0
+    const { service, events, advance } = setup(async () => {
+      reads++
+      return { signedIn: true, windows: [window], plan: 'max' }
+    })
+    await service.refresh()
+    events.length = 0
+    advance(60_000)
+    // As a stage replayed from its log would report the limit it hit an hour ago.
+    service.report('claude', { at: 1_000_000 - 3_600_000, windows: [{ ...window, usedPercent: 100 }], refresh: true })
+    expect(events).toEqual([])
+    expect(service.list().find((u) => u.agent === 'claude')?.windows).toEqual([window])
+    expect(reads).toBe(1)
+  })
+
   const weekly: UsageWindow = { kind: 'weekly', model: null, usedPercent: 10, windowMinutes: 10_080, resetsAt: null }
   const opus: UsageWindow = { kind: 'weekly', model: 'Opus', usedPercent: 20, windowMinutes: 10_080, resetsAt: null }
 
@@ -81,14 +97,15 @@ describe('UsageService.report', () => {
     events.length = 0
     advance(5_000)
     const session = { ...window, usedPercent: 55 }
-    service.report('claude', { windows: [session] })
-    expect(events).toEqual([expect.objectContaining({ agent: 'claude', status: 'ok', plan: 'max', updatedAt: 1_005_000 })])
+    service.report('claude', { at: 1_004_000, windows: [session] })
+    // Stamped with when the agent said so, not when core passed it on.
+    expect(events).toEqual([expect.objectContaining({ agent: 'claude', status: 'ok', plan: 'max', updatedAt: 1_004_000 })])
     expect(service.list().find((u) => u.agent === 'claude')?.windows).toEqual([weekly, opus, session])
   })
 
   it('shows a report from an agent no poll has read yet', () => {
     const { service, events } = setup(async () => ({ signedIn: false }))
-    service.report('codex', { windows: [weekly], plan: 'plus' })
+    service.report('codex', { at: 1_000_000, windows: [weekly], plan: 'plus' })
     expect(events).toEqual([expect.objectContaining({ agent: 'codex', status: 'ok', windows: [weekly], plan: 'plus', resetCredits: null })])
   })
 
@@ -98,7 +115,7 @@ describe('UsageService.report', () => {
       reads++
       return { signedIn: true, windows: [window], plan: null }
     })
-    service.report('claude', { windows: [], refresh: true })
+    service.report('claude', { at: 1_000_000, windows: [], refresh: true })
     // Joins the refresh the report started rather than reading again.
     await service.refresh()
     expect(reads).toBe(1)

@@ -834,7 +834,7 @@ export class CodexAppServer implements ChatDriver {
           primary ? windowOf(primary.usedPercent, primary.windowDurationMins ?? null, primary.resetsAt, 'session') : null,
           secondary ? windowOf(secondary.usedPercent, secondary.windowDurationMins ?? null, secondary.resetsAt, 'weekly') : null
         ].filter((window) => window !== null)
-        this.usage = mergeUsageReports(this.usage, { windows, plan: planType })
+        this.usage = mergeUsageReports(this.usage, { at, windows, plan: planType })
         return
       }
       case 'thread/tokenUsage/updated': {

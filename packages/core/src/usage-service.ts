@@ -46,11 +46,15 @@ export class UsageService {
     return this.inFlight
   }
 
-  // A running agent's own word on its limits, fresher than the last poll. Only the windows it names
-  // change; until a poll has signed the agent in, the report is all there is to show.
+  // A running agent's own word on its limits. Only the windows it names change; until a poll has
+  // signed the agent in, the report is all there is to show. One older than the reading held, as a
+  // stage replayed from its log reports what was true then, changes nothing and asks for nothing.
   report(agent: AgentKind, report: UsageReport): void {
+    const previous = this.usage.get(agent)
+    if (previous && report.at < previous.updatedAt) {
+      return
+    }
     if (report.windows.length > 0) {
-      const previous = this.usage.get(agent)
       const named = (window: UsageWindow) => report.windows.some((each) => each.kind === window.kind && each.model === window.model)
       const next: AgentUsage = {
         agent,
@@ -58,7 +62,7 @@ export class UsageService {
         windows: [...(previous?.windows ?? []).filter((window) => !named(window)), ...report.windows],
         plan: report.plan ?? previous?.plan ?? null,
         error: null,
-        updatedAt: this.now(),
+        updatedAt: report.at,
         resetCredits: previous?.resetCredits ?? null
       }
       this.usage.set(agent, next)

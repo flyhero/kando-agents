@@ -144,7 +144,7 @@ describe('ChatHost', () => {
     const recorded = recordingSink()
     const { sessionId } = await started(recorded.sink)
     daemon.emit(sessionId, { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.5, resetsAt: null } } } })
-    expect(recorded.usage).toEqual([{ windows: [expect.objectContaining({ kind: 'session', usedPercent: 50 })], refresh: false }])
+    expect(recorded.usage).toEqual([{ at: expect.any(Number), windows: [expect.objectContaining({ kind: 'session', usedPercent: 50 })], refresh: false }])
   })
 
   it('sends a message queued during a turn once the turn completes', async () => {
