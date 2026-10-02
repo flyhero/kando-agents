@@ -2005,6 +2005,11 @@ button.task-tag:hover {
   padding-bottom: 12px;
 }
 
+/* A chat has no frame to keep off the header, and its list starts with padding of its own. */
+.terminal-view:has(> .terminal-body > .chat-view) {
+  gap: 0;
+}
+
 .terminal-view-title {
   min-width: 0;
   overflow: hidden;
