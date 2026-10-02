@@ -579,11 +579,28 @@ export class ConversationService {
     }
   }
 
-  async send(id: string, text: string, imageIds: readonly string[] = [], queue = false, steer = false): Promise<void> {
+  // `ref` names the message, for a sender that must not send it twice (see ChatHost.send).
+  async send(id: string, text: string, imageIds: readonly string[] = [], queue = false, steer = false, ref?: string): Promise<void> {
     this.get(id)
     const note = this.switchNote(id)
-    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer)
+    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer, ref)
     if (note) this.store.setSwitchedBranches(id, {})
+  }
+
+  // Whether a message with this ref went to the agent in a chat stage still open at `since` or later.
+  sentRef(id: string, ref: string, since: number): boolean {
+    const conversation = this.get(id)
+    return this.store.stages(id)
+      .filter((stage) => stage.mode === 'chat' && (stage.endedAt === null || stage.endedAt >= since))
+      .some((stage) => this.chats.items(this.chatStage(conversation, stage)).some((item) => item.id === `u:${ref}`))
+  }
+
+  // One item as the stage holds it now, for whoever has news about it; null once it is gone.
+  chatItem(id: string, stageId: string, itemId: string): ChatItem | null {
+    const conversation = this.store.get(id)
+    const stage = conversation ? this.store.stages(id).find((each) => each.id === stageId) : undefined
+    if (!conversation || !stage || stage.mode !== 'chat') return null
+    return this.chats.items(this.chatStage(conversation, stage)).find((item) => item.id === itemId) ?? null
   }
 
   // Each image once, checked to be in the store before the agent is asked to look at it.

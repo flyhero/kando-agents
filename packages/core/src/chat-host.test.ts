@@ -140,6 +140,15 @@ describe('ChatHost', () => {
   const finish = (sessionId: string, terminal: 'completed' | 'aborted_streaming') =>
     daemon.emit(sessionId, { type: 'result', subtype: terminal === 'completed' ? 'success' : 'error_during_execution', is_error: terminal !== 'completed', terminal_reason: terminal })
 
+  it('sends a message whose sender names its ref at most once', async () => {
+    const { host, sessionId } = await started()
+    await host.send(STAGE.conversationId, 'go on', [], false, false, 'usage-limit:1')
+    await flushMicrotasks()
+    await host.send(STAGE.conversationId, 'go on', [], false, false, 'usage-limit:1')
+    expect(userFrames(sessionId)).toHaveLength(1)
+    expect(host.items(STAGE).filter((item) => item.kind === 'user').map((item) => item.id)).toEqual(['u:usage-limit:1'])
+  })
+
   it('passes on the limits the agent reports while it runs', async () => {
     const recorded = recordingSink()
     const { sessionId } = await started(recorded.sink)

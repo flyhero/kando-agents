@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { usePlans } from '../chat-state'
 import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
@@ -18,6 +18,8 @@ import { TitleEditor } from './TitleEditor'
 export function ConversationTerminal({ id }: { id: string }) {
   const conversation = useCore((state) => state.conversations[id])
   const [handoffOpen, setHandoffOpen] = useState(false)
+  // Stable, so the chat's surface is not rebuilt on every render.
+  const openHandoff = useCallback(() => setHandoffOpen(true), [])
   const [renaming, setRenaming] = useState(false)
   const [busy, setBusy] = useState(false)
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
@@ -73,7 +75,7 @@ export function ConversationTerminal({ id }: { id: string }) {
     </header>
     <div className="terminal-body">
       {chat
-        ? <ConversationChat conversation={conversation} />
+        ? <ConversationChat conversation={conversation} onHandoff={openHandoff} />
         : <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />}
       {hasPanel && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
     </div>

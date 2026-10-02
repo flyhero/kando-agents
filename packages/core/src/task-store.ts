@@ -137,7 +137,18 @@ export const MIGRATIONS = [
   `CREATE TABLE terminal_commands (
      id TEXT PRIMARY KEY, label TEXT NOT NULL, command TEXT NOT NULL, run INTEGER NOT NULL,
      project_path TEXT, created_at INTEGER NOT NULL
-   );`
+   );`,
+  // A chat turn the usage limit stopped, and core's plan to go on once it lifts (UsageLimitService).
+  `CREATE TABLE conversation_usage_limits (
+     id TEXT PRIMARY KEY,
+     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+     stage_id TEXT NOT NULL, item_id TEXT NOT NULL, agent TEXT NOT NULL,
+     resets_at INTEGER, continue_at INTEGER, auto_continue INTEGER NOT NULL,
+     status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT, continued_at INTEGER,
+     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+     UNIQUE (stage_id, item_id)
+   );
+   CREATE INDEX conversation_usage_limits_due ON conversation_usage_limits(status, continue_at);`
 ]
 
 

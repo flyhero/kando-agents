@@ -1,4 +1,4 @@
-import { BROWSER_VIEWPORT, CORE_FEATURES, PROTOCOL_VERSION } from '@kando/protocol'
+import { BROWSER_VIEWPORT, CORE_FEATURES, PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import type { AttachmentStore } from './attachment-store'
 import type { AttachmentUploads } from './attachment-uploads'
@@ -10,6 +10,7 @@ import { Rejection } from './rejection'
 import type { SourceService } from './source-service'
 import type { RpcHandlers } from './rpc-server'
 import type { TaskService } from './task-service'
+import type { UsageLimitService } from './usage-limit-service'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalCommandStore } from './terminal-commands'
@@ -31,8 +32,18 @@ export function createRpcHandlers(
   worktrees: WorktreeService,
   browser: BrowserService,
   awake: ComputerAwakeService,
-  terminalCommands: TerminalCommandStore
+  terminalCommands: TerminalCommandStore,
+  limits: UsageLimitService
 ): RpcHandlers {
+  // A page of chat items as clients see them: a usage limit with what core means to do about it.
+  const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
+  // The user going on with a conversation themselves: core no longer continues it after a limit.
+  const userActed = async <T>(id: string, act: () => Promise<T>): Promise<T> => {
+    const since = limits.mark()
+    const result = await act()
+    limits.cancelFor(id, since)
+    return result
+  }
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
     'system.awakeStatus': () => awake.status(),
@@ -75,22 +86,27 @@ export function createRpcHandlers(
     'conversations.chatCatalog': ({ agent }) => conversations.chatCatalog(agent),
     'conversations.setAdditionalProjects': ({ id, projectPaths }) => conversations.setAdditionalProjects(id, projectPaths),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
-    'conversations.continue': ({ id, mode, allowBypass }) => conversations.continue(id, mode, allowBypass),
+    'conversations.continue': ({ id, mode, allowBypass }) => userActed(id, () => conversations.continue(id, mode, allowBypass)),
     'conversations.handoff': ({ id, agent, note, stopRunning, mode, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, mode, allowBypass),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
-    'conversations.send': async ({ id, text, images, queue, steer }) => { await conversations.send(id, text, images, queue, steer); return OK },
+    'conversations.send': ({ id, text, images, queue, steer }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer); return OK }),
     'conversations.cancelQueued': ({ id, ref }) => { conversations.cancelQueued(id, ref); return OK },
-    'conversations.sendQueued': async ({ id, ref, now }) => { await conversations.sendQueued(id, ref, now); return OK },
+    'conversations.sendQueued': ({ id, ref, now }) => userActed(id, async () => { await conversations.sendQueued(id, ref, now); return OK }),
+    'conversations.setUsageLimitAutoContinue': ({ id, stageId, itemId, autoContinue }) => {
+      limits.setAutoContinue(id, stageId, itemId, autoContinue)
+      return OK
+    },
+    'conversations.retryUsageLimit': async ({ id, stageId, itemId }) => { await limits.retry(id, stageId, itemId); return OK },
     'conversations.interrupt': async ({ id }) => { await conversations.interrupt(id); return OK },
     'conversations.respond': async ({ id, requestId, ...answer }) => { await conversations.respond(id, requestId, answer); return OK },
     // Read after subscribing, so an item that changes in between reaches the client either way.
     'conversations.watchChat': ({ id }, connection) => {
       connection.watching.add(id)
-      return conversations.chatPage(id)
+      return page(conversations.chatPage(id))
     },
     'conversations.unwatchChat': ({ id }, connection) => { connection.watching.delete(id); return OK },
-    'conversations.chatItems': ({ id, before }) => conversations.chatPage(id, before),
-    'conversations.stop': ({ id }) => conversations.stop(id),
+    'conversations.chatItems': ({ id, before }) => page(conversations.chatPage(id, before)),
+    'conversations.stop': ({ id }) => userActed(id, () => conversations.stop(id)),
     'conversations.delete': async ({ id }) => { await conversations.delete(id); return OK },
     'conversations.history': ({ id, offset, length }) => conversations.history(id, offset, length),
     'conversations.messages': ({ id }) => conversations.messages(id),

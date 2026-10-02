@@ -25,6 +25,8 @@ export type ChatSurface = {
   savePlan: ((item: PlanItem) => Promise<void>) | null
   // A word on a plan the chat's owner kept, or null.
   planNote(item: PlanItem): string | null
+  // Opens the handoff to the other agent; null where the chat cannot be handed off (a task's).
+  handoff: (() => void) | null
 }
 
 export const ChatSurfaceContext = createContext<ChatSurface | null>(null)
@@ -36,7 +38,7 @@ export function useChatSurface(): ChatSurface {
 }
 
 // A free conversation: its own inspector, its projects' changes, and chat mode to continue in.
-export function conversationSurface(conversation: Conversation): ChatSurface {
+export function conversationSurface(conversation: Conversation, handoff: (() => void) | null = null): ChatSurface {
   return {
     showPlan: showConversationPlan,
     showChanges: showConversationChanges,
@@ -46,6 +48,7 @@ export function conversationSurface(conversation: Conversation): ChatSurface {
     prepareSend: async (stopped) => !stopped || Boolean(await continueConversation(conversation.id, 'chat')),
     sendBlocker: null,
     savePlan: null,
-    planNote: () => null
+    planNote: () => null,
+    handoff
   }
 }

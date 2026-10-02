@@ -4578,6 +4578,9 @@ button.task-tag-updated:hover {
 }
 
 .chat-request-line[data-waiting] { color: var(--text); }
+/* A usage limit the chat waits on, in the flow after the turn it stopped; its error small, in the error colour. */
+.chat-usage-limit { background: var(--surface); }
+.chat-usage-limit-error { font-size: 12px; color: var(--danger); overflow-wrap: anywhere; }
 .chat-request-line[data-waiting]::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
 
 /* A question the agent asks, in the dock: a tab per question, and its options as numbered rows
@@ -5443,6 +5446,8 @@ button.task-tag-updated:hover {
   .chat-draft-hint,
   .chat-draft-projects,
   .chat-options-note,
+  .chat-usage-limit .conversation-confirm,
+  .chat-usage-limit-error,
   .muted
 ) { font-size: var(--chat-font-small); }
 

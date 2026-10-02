@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { PROTOCOL_VERSION } from '@kando/protocol'
+import { PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
 import { readClaudeUsage } from './claude-usage'
@@ -19,6 +19,7 @@ import { startRpcServer, type RpcServer } from './rpc-server'
 import { TaskService } from './task-service'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
+import { UsageLimitService } from './usage-limit-service'
 import { UsageService } from './usage-service'
 import { kandoChatMcpServer, kandoMcpServer } from './kando-mcp-server'
 import { SourceConfigStore } from './source-config'
@@ -50,6 +51,9 @@ let server: RpcServer | null = null
 let awake: ComputerAwakeService | null = null
 const refreshAwake = () => awake?.refresh(service.workingCount() + conversations.workingCount())
 
+const notifyChatItems = (conversationId: string, items: ChatItem[]) =>
+  [...(server?.connections ?? [])].filter((c) => c.watching.has(conversationId)).forEach((c) => c.notify('conversations.chatItems', { conversationId, items }))
+
 // Built before the task service, which runs its chat tasks in it; each hands the other its events.
 const conversations = new ConversationService(
   conversationsStore, daemon, paths.sessions,
@@ -60,13 +64,15 @@ const conversations = new ConversationService(
       server?.broadcast('conversations.changed', { conversation: event.conversation })
       // A task's conversation says whether its agent waits on the user.
       service.chatChanged(event.conversation)
+      limits.conversationChanged(event.conversation)
       refreshAwake()
     } else if (event.type === 'deleted') {
       server?.broadcast('conversations.deleted', { id: event.id })
       void browser.closeForConversation(event.id)
     }
     else if (event.type === 'chatItems') {
-      watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
+      limits.observe(event.conversationId, event.items)
+      notifyChatItems(event.conversationId, limits.decorate(event.items))
     } else if (event.type === 'planApproved') {
       service.recordPlan(event.taskId, event.plan)
     } else if (event.type === 'usage') {
@@ -106,6 +112,7 @@ const service = new TaskService(
   (event) => {
     if (event.type === 'changed') {
       server?.broadcast('tasks.changed', { task: event.task })
+      limits.taskChanged(event.task)
       refreshAwake()
     } else {
       server?.broadcast('tasks.deleted', { id: event.id })
@@ -133,6 +140,14 @@ const sources = new SourceService([jiraProvider(), githubProvider()], sourceConf
 const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage }, (entry) =>
   server?.broadcast('usage.changed', { usage: entry })
 )
+
+const limits = new UsageLimitService(paths.database, {
+  conversations,
+  resumeTask: (id) => service.resumeChat(id),
+  taskStatus: (id) => store.get(id)?.status ?? null,
+  usage,
+  emit: notifyChatItems
+})
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
 const terminalCommands = new TerminalCommandStore(paths.database, (commands) => server?.broadcast('terminalCommands.changed', { commands }))
@@ -171,6 +186,8 @@ daemon.onConnect(() => {
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
       await browser.reconcile(sessions)
+      // What came due while core or the daemon was away goes now, not at the next tick.
+      await limits.tick()
     })
     .catch((error) => console.error('[kando-core] reconcile failed', error))
 })
@@ -182,13 +199,14 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
 await awake.start()
 refreshAwake()
 usage.start()
+limits.start()
 sources.start()
 // Idle chat agents are checked for once a minute, so one goes within a minute of its limit.
 setInterval(() => void conversations.releaseIdle(), 60_000).unref()
@@ -201,6 +219,7 @@ async function shutdown(): Promise<void> {
   }
   shuttingDown = true
   usage.stop()
+  limits.stop()
   sources.stop()
   awake?.stop()
   daemon.stop()

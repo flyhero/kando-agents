@@ -436,6 +436,10 @@ export function useBrowserSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('browser') ?? false)
 }
 
+export function useUsageLimitSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('usage-limit') ?? false)
+}
+
 export function useAwakeSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('keep-awake') ?? false)
 }

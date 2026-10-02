@@ -208,15 +208,17 @@ export class ChatHost {
 
   // While a turn runs: with steer, the message goes into it (an agent that takes none rejects);
   // with queue, it waits its turn behind any already waiting. Idle, it starts a turn either way.
-  async send(conversationId: string, text: string, images: readonly ChatImage[] = [], queue = false, steer = false): Promise<void> {
+  // A caller that names the message's ref sends it at most once per stage: again, it is a no-op.
+  async send(conversationId: string, text: string, images: readonly ChatImage[] = [], queue = false, steer = false, ref: string = randomUUID()): Promise<void> {
     const live = this.running(conversationId)
+    if (live.driver.items.get(`u:${ref}`)) return
     const busy = live.driver.activity() !== 'idle'
     if (busy && queue && !steer) {
-      this.enqueue(live, text, images)
+      this.enqueue(live, text, images, ref)
       return
     }
     const outgoing = busy && steer ? live.driver.steer(text, this.files(images)) : live.driver.send(text, this.files(images))
-    const sent = this.dispatch(live, outgoing, randomUUID(), images)
+    const sent = this.dispatch(live, outgoing, ref, images)
     this.flush(live)
     await sent
   }
@@ -245,8 +247,8 @@ export class ChatHost {
     this.flush(live)
   }
 
-  private enqueue(live: Live, text: string, images: readonly ChatImage[]): void {
-    this.record(live, { dir: 'queue', at: this.now(), text, ref: randomUUID(), ...(images.length ? { images: [...images] } : {}) })
+  private enqueue(live: Live, text: string, images: readonly ChatImage[], ref: string): void {
+    this.record(live, { dir: 'queue', at: this.now(), text, ref, ...(images.length ? { images: [...images] } : {}) })
     this.pump(live)
     this.flush(live)
   }

@@ -47,7 +47,8 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
           await perform((rpc) => rpc.call('tasks.savePlan', { id: task.id, stageId: item.stageId, requestId: item.requestId }))
         }
       : null,
-    planNote: (item) => planNote(task, item)
+    planNote: (item) => planNote(task, item),
+    handoff: null
   }
 }
 

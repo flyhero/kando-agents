@@ -38,7 +38,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
 // browser: core hosts a browser for chat agents (the browser.* methods).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands'] as const
+// usage-limit: core continues a chat whose turn hit a usage limit once it lifts (usageLimit items).
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -168,6 +169,16 @@ export const rpcMethods = {
   // Releases a message a failed turn held (the first without a ref) to go out when the agent is
   // idle; with now, takes it out of the queue and sends it at once, into the running turn if need be.
   'conversations.sendQueued': { params: ConversationRef.extend({ ref: z.string().optional(), now: z.boolean().optional() }), result: Ok },
+  // Whether core continues the chat on its own once the usage limit a usageLimit item reports lifts.
+  'conversations.setUsageLimitAutoContinue': {
+    params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1).max(300), autoContinue: z.boolean() }),
+    result: Ok
+  },
+  // Continues now, the way core would once the limit lifts. Refused while another try is under way.
+  'conversations.retryUsageLimit': {
+    params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1).max(300) }),
+    result: Ok
+  },
   // Chat mode only: switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },

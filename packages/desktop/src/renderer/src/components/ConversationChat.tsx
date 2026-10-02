@@ -17,7 +17,7 @@ import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatSubagents } from './ChatSubagents'
 import { ChatTodosLine, TodoHistory } from './ChatTodos'
-import { ChatUsageLimitLine } from './ChatUsageLimit'
+import { ChatUsageLimitEntry } from './ChatUsageLimit'
 import { ChatWorking, type WorkingPhase } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
@@ -203,7 +203,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'todos':
       return <ChatTodosLine item={item} />
     case 'usageLimit':
-      return <ChatUsageLimitLine item={item} />
+      return <ChatUsageLimitEntry conversationId={conversationId} item={item} />
     case 'state':
       return null
   }
@@ -373,12 +373,12 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
 // A conversation whose latest stage runs in chat mode: every stage in order, then the composer.
 // What it does beyond itself comes from the surface it is shown on: a free conversation's own
 // unless another is given, as a task's chat does.
-export function ConversationChat({ conversation, surface }: { conversation: Conversation; surface?: ChatSurface }) {
+export function ConversationChat({ conversation, surface, onHandoff }: { conversation: Conversation; surface?: ChatSurface; onHandoff?: () => void }) {
   const { id } = conversation
   const width = usePreferences((s) => s.chatWidth)
   const fontSize = usePreferences((s) => s.chatFontSize)
   const font = usePreferences((s) => s.chatFont)
-  const own = useMemo(() => conversationSurface(conversation), [conversation])
+  const own = useMemo(() => conversationSurface(conversation, onHandoff ?? null), [conversation, onHandoff])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
   const page = useChat((s) => s[id])
