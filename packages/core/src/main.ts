@@ -27,6 +27,7 @@ import { migrateLegacyJira } from './source-migration'
 import { SourceService } from './source-service'
 import { ConversationStore } from './conversation-store'
 import { ConversationService } from './conversation-service'
+import { TerminalCommandStore } from './terminal-commands'
 import { TerminalService } from './terminal-service'
 import { WorktreeService } from './worktree-service'
 import { AwakeConfigStore } from './awake-config'
@@ -132,6 +133,7 @@ const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage 
 )
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
+const terminalCommands = new TerminalCommandStore(paths.database, (commands) => server?.broadcast('terminalCommands.changed', { commands }))
 const worktrees = new WorktreeService(paths.worktrees, service, () => server?.broadcast('worktrees.changed', {}))
 awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig), (status) =>
   server?.broadcast('system.awakeChanged', { status })
@@ -178,7 +180,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake)
+  }, terminals, worktrees, browser, awake, terminalCommands)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()

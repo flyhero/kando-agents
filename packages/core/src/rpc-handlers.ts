@@ -12,6 +12,7 @@ import type { RpcHandlers } from './rpc-server'
 import type { TaskService } from './task-service'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
+import type { TerminalCommandStore } from './terminal-commands'
 import type { TerminalService } from './terminal-service'
 import type { WorktreeService } from './worktree-service'
 import type { ComputerAwakeService } from './computer-awake-service'
@@ -29,7 +30,8 @@ export function createRpcHandlers(
   terminals: TerminalService,
   worktrees: WorktreeService,
   browser: BrowserService,
-  awake: ComputerAwakeService
+  awake: ComputerAwakeService,
+  terminalCommands: TerminalCommandStore
 ): RpcHandlers {
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
@@ -181,6 +183,12 @@ export function createRpcHandlers(
     'terminals.open': ({ cwd }) => terminals.open(cwd),
     'terminals.close': async ({ id }) => {
       await terminals.kill(id)
+      return OK
+    },
+    'terminalCommands.list': () => terminalCommands.list(),
+    'terminalCommands.save': (params) => terminalCommands.save(params),
+    'terminalCommands.delete': ({ id }) => {
+      terminalCommands.delete(id)
       return OK
     },
     'sessions.attach': async ({ sessionId, fromOffset }, connection) => {

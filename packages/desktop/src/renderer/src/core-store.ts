@@ -14,6 +14,7 @@ import {
   type SourceProblem,
   type Task,
   type Terminal,
+  type TerminalCommand,
   type Conversation,
   type ComputerAwakeStatus
 } from '@kando/protocol'
@@ -98,6 +99,8 @@ type CoreState = {
   // Top to bottom among the utility panels that are open; reopening one moves it to the end.
   utilityPanelOrder: UtilityPanelKind[]
   activeTerminalId: string | null
+  // Commands kept for the terminal panel, oldest first; empty from a core that keeps none.
+  terminalCommands: TerminalCommand[]
   login: LoginState | null
 }
 
@@ -138,6 +141,7 @@ export const useCore = create<CoreState>()(() => ({
   browserMaximized: false,
   utilityPanelOrder: [],
   activeTerminalId: null,
+  terminalCommands: [],
   login: null
 }))
 
@@ -264,6 +268,15 @@ export async function toggleTerminalPanel(): Promise<void> {
     utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', open)
   }))
   if (!terminalPanelOpen && terminals.length === 0) await openTerminal()
+}
+
+// The list updates when core says so, through terminalCommands.changed.
+export function saveTerminalCommand(params: RpcParams<'terminalCommands.save'>): Promise<TerminalCommand | null> {
+  return perform((rpc) => rpc.call('terminalCommands.save', params))
+}
+
+export function deleteTerminalCommand(id: string): void {
+  void perform((rpc) => rpc.call('terminalCommands.delete', { id }))
 }
 
 export function setTerminalMaximized(maximized: boolean): void {
@@ -432,6 +445,10 @@ export async function setAwakeMode(mode: ComputerAwakeStatus['mode']): Promise<v
   if (status) useCore.setState({ awake: status })
 }
 
+export function useTerminalCommandsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('terminal-commands') ?? false)
+}
+
 export function useTaskStartSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-start') ?? false)
 }
@@ -530,6 +547,7 @@ export function startCoreConnection(): void {
             }
           })
         )
+        rpc.on('terminalCommands.changed', ({ commands }) => useCore.setState({ terminalCommands: commands }))
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
         )
@@ -544,6 +562,7 @@ export function startCoreConnection(): void {
         const sources = await rpc.call('sources.list', {})
         const inboxes = await rpc.call('sources.inbox', {})
         const terminals = await rpc.call('terminals.list', {}).catch(() => [])
+        const terminalCommands = rpc.features.includes('terminal-commands') ? await rpc.call('terminalCommands.list', {}).catch(() => []) : []
         // Asked only of a core that has one, and never waited for: it starts the host when it is down.
         if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
@@ -557,6 +576,7 @@ export function startCoreConnection(): void {
           inboxes: Object.fromEntries(inboxes.map((inbox) => [inboxKey(inbox), inbox])),
           terminals,
           activeTerminalId: activeAmong(s.activeTerminalId, terminals),
+          terminalCommands,
           inboxOpen: s.inboxOpen && inboxes.some((inbox) => inbox.active)
         }))
         await rpc.closed

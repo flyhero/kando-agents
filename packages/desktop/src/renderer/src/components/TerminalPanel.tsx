@@ -1,6 +1,7 @@
-import { closeTerminal, openTerminal, selectTerminal, setTerminalMaximized, toggleTerminalPanel, useCore } from '../core-store'
+import { closeTerminal, openTerminal, selectTerminal, setTerminalMaximized, toggleTerminalPanel, useCore, useTerminalCommandsSupported } from '../core-store'
 import { CloseIcon, MaximizeIcon, PlusIcon, RestoreIcon } from './icons'
 import { SessionTerminal } from './SessionTerminal'
+import { TerminalCommandsButton } from './TerminalCommandsMenu'
 
 // The app's own terminals. The dock puts them below the browser when both are open. Hiding the
 // panel leaves the shells running in the daemon; closing a tab ends its shell.
@@ -8,6 +9,7 @@ export function TerminalPanel() {
   const terminals = useCore((s) => s.terminals)
   const activeId = useCore((s) => s.activeTerminalId)
   const maximized = useCore((s) => s.terminalMaximized)
+  const commandsSupported = useTerminalCommandsSupported()
   const active = terminals.find((terminal) => terminal.id === activeId) ?? terminals.at(-1)
   return (
     <aside className="side-panel terminal-panel" aria-label="终端" data-maximized={maximized || undefined}>
@@ -29,6 +31,7 @@ export function TerminalPanel() {
             <PlusIcon />
           </button>
         </div>
+        {commandsSupported && <TerminalCommandsButton terminal={active} />}
         <button
           type="button"
           className="tool-button"

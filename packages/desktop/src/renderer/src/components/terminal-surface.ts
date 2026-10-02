@@ -3,7 +3,26 @@ import { Terminal } from '@xterm/xterm'
 import type { RpcConnection } from '@kando/protocol'
 import { onThemeChange } from '../appearance'
 import { usePreferences } from '../preferences'
+import { pastedCommand } from '../terminal-commands'
 import { terminalTheme } from './terminal-theme'
+
+// Each session's terminal on screen, so a control outside it can type into it or read what is selected.
+const shown = new Map<string, Terminal>()
+
+// Typed as a paste would be, so a shell with bracketed paste takes every line at its prompt
+// before Enter runs them.
+export function typeIntoTerminal(sessionId: string, command: string, run: boolean): boolean {
+  const term = shown.get(sessionId)
+  if (!term) return false
+  term.paste(pastedCommand(command, term.modes.bracketedPasteMode))
+  if (run) term.input('\r')
+  term.focus()
+  return true
+}
+
+export function terminalSelection(sessionId: string): string {
+  return shown.get(sessionId)?.getSelection() ?? ''
+}
 
 export function createTerminalSurface(element: HTMLElement, rpc: RpcConnection, sessionId: string | null) {
   const term = new Terminal({
@@ -15,6 +34,7 @@ export function createTerminalSurface(element: HTMLElement, rpc: RpcConnection, 
   term.loadAddon(fit)
   term.open(element)
   fit.fit()
+  if (sessionId) shown.set(sessionId, term)
   const sendSize = () => {
     if (sessionId) void rpc.call('sessions.resize', { sessionId, cols: term.cols, rows: term.rows }).catch(() => {})
   }
@@ -34,6 +54,7 @@ export function createTerminalSurface(element: HTMLElement, rpc: RpcConnection, 
       stopTheming()
       stopFontSizing()
       observer.disconnect()
+      if (sessionId && shown.get(sessionId) === term) shown.delete(sessionId)
       term.dispose()
     }
   }

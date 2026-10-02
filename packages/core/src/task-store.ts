@@ -132,7 +132,12 @@ export const MIGRATIONS = [
   `ALTER TABLE task_repos ADD COLUMN start_ref TEXT;
    ALTER TABLE task_repos ADD COLUMN start TEXT;`,
   // Branches the user switched a conversation's projects to since its agent last heard (JSON).
-  `ALTER TABLE conversations ADD COLUMN switched_branches TEXT NOT NULL DEFAULT '{}';`
+  `ALTER TABLE conversations ADD COLUMN switched_branches TEXT NOT NULL DEFAULT '{}';`,
+  // Commands the user keeps for the terminal panel.
+  `CREATE TABLE terminal_commands (
+     id TEXT PRIMARY KEY, label TEXT NOT NULL, command TEXT NOT NULL, run INTEGER NOT NULL,
+     project_path TEXT, created_at INTEGER NOT NULL
+   );`
 ]
 
 

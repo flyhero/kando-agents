@@ -6,7 +6,7 @@ import { AgentUsage } from './usage'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
-import { Terminal } from './terminal'
+import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
@@ -38,7 +38,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
 // browser: core hosts a browser for chat agents (the browser.* methods).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -291,6 +291,10 @@ export const rpcMethods = {
   'terminals.list': { params: z.object({}), result: z.array(Terminal) },
   'terminals.open': { params: z.object({ cwd: z.string().optional() }), result: Terminal },
   'terminals.close': { params: z.object({ id: z.string().uuid() }), result: Ok },
+  // Commands kept for the terminal panel, oldest first. Saving without an id adds one.
+  'terminalCommands.list': { params: z.object({}), result: z.array(TerminalCommand) },
+  'terminalCommands.save': { params: TerminalCommandFields.extend({ id: z.string().uuid().optional() }), result: TerminalCommand },
+  'terminalCommands.delete': { params: z.object({ id: z.string().uuid() }), result: Ok },
   'sessions.attach': {
     params: SessionRef.extend({ fromOffset: z.number().int().nonnegative().optional() }),
     result: z.object({ buffer: z.string(), bufferStart: z.number().int(), endOffset: z.number().int(), exited: z.boolean() })
@@ -364,6 +368,7 @@ export const rpcNotifications = {
   'sessions.exit': z.object({ sessionId: z.string(), exitCode: z.number() }),
   'usage.changed': z.object({ usage: AgentUsage }),
   'terminals.changed': z.object({ terminals: z.array(Terminal) }),
+  'terminalCommands.changed': z.object({ commands: z.array(TerminalCommand) }),
   // The hosted browser: its status to every connection; a conversation's tabs to the connections
   // watching them (browser.watch); frames to the one connection viewing the tab.
   'browser.changed': z.object({ status: BrowserStatus }),

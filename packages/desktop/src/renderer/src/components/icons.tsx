@@ -434,3 +434,11 @@ export function BranchIcon() {
     </svg>
   )
 }
+
+export function BookmarkIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M6 3.5h8a1 1 0 0 1 1 1v12l-5-3.2-5 3.2v-12a1 1 0 0 1 1-1z" />
+    </svg>
+  )
+}
