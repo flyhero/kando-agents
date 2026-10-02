@@ -39,7 +39,7 @@ export async function deleteConversation(conversation: Conversation): Promise<bo
   return (await perform((rpc) => rpc.call('conversations.delete', { id: conversation.id }))) !== null
 }
 
-// The row's right-click menu: the same actions as the conversation's header.
+// The row's right-click menu: the header's actions, and the one place a conversation is deleted.
 export function ConversationContextMenu({ conversation, at, onClose, onRename, onHandoff }: {
   conversation: Conversation
   at: MenuPoint
