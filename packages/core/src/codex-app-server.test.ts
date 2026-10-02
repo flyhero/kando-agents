@@ -609,3 +609,31 @@ describe('CodexAppServer rate limits', () => {
     expect(driver.logged({ method: 'account/rateLimits/updated', params: { rateLimits: limits } })).toBeNull()
   })
 })
+
+describe('CodexAppServer usage limits', () => {
+  const at = 1_790_000_000_000
+  const frame = (value: Record<string, unknown>): ChatRecord => ({ dir: 'in', at, frame: value })
+  const records = (error: Record<string, unknown>, willRetry: boolean): ChatRecord[] => [
+    { dir: 'out', at, frame: { method: 'turn/start', id: 'kando-turn-1', params: {} }, ref: 'ref-1' },
+    frame({ method: 'turn/started', params: { turn: { id: 'turn-a' } } }),
+    frame({ method: 'error', params: { error, willRetry, threadId: 'thread-1', turnId: 'turn-a' } }),
+    // A retried request goes on; one Codex gave up on ends the turn with the same error.
+    frame({ method: 'turn/completed', params: { turn: willRetry ? { id: 'turn-a', status: 'completed' } : { id: 'turn-a', status: 'failed', error: { message: error.message, codexErrorInfo: error.codexErrorInfo } } } })
+  ]
+
+  it('shows the plan limit once, as a limit item after the turn instead of an error notice', () => {
+    const driver = replay(records({ message: "You've hit your usage limit.", codexErrorInfo: 'usageLimitExceeded' }, false))
+    const items = driver.items.list()
+    expect(ofKind(items, 'notice')).toEqual([])
+    const turn = ofKind(items, 'turn').at(-1)
+    expect(ofKind(items, 'usageLimit')).toEqual([expect.objectContaining({ id: turn?.id.replace('turn:', 'limit:'), message: "You've hit your usage limit.", resetsAt: null })])
+  })
+
+  it('keeps a throttled request or one Codex retries as it was', () => {
+    for (const [error, willRetry] of [[{ message: 'slow down', codexErrorInfo: 'rateLimitExceeded' }, false], [{ message: 'retrying', codexErrorInfo: 'usageLimitExceeded' }, true]] as const) {
+      const items = replay(records(error, willRetry)).items.list()
+      expect(ofKind(items, 'notice').map((notice) => notice.text)).toEqual([error.message])
+      expect(ofKind(items, 'usageLimit')).toEqual([])
+    }
+  })
+})

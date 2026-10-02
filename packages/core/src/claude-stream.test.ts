@@ -458,3 +458,51 @@ describe('ClaudeStream commands', () => {
     expect(driver.takeMessages()).toEqual([{ role: 'user', text: 'what is this\n\n（附了 1 张图片）', eventKey: 'chat:ref-1:user', complete: false }])
   })
 })
+
+describe('ClaudeStream usage limits', () => {
+  const at = 1_790_000_000_000
+  const turn = (frames: unknown[]): ChatRecord[] => [
+    { dir: 'out', at, frame: { type: 'user', message: { role: 'user', content: 'go on' } }, ref: 'ref-1' },
+    { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1' } },
+    ...frames.map((frame): ChatRecord => ({ dir: 'in', at, frame }))
+  ]
+  const refused = {
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: 1_790_003_600, overageStatus: 'rejected', isUsingOverage: false, unifiedWindows: { five_hour: { utilization: 1, resetsAt: 1_790_003_600 } } },
+    uuid: 'u-1',
+    session_id: 's-1'
+  }
+  const failed = (result: string) => ({ type: 'result', subtype: 'success', is_error: true, result, duration_ms: 40 })
+  const limits = (driver: ClaudeStream) => ofKind(driver.items.list(), 'usageLimit')
+
+  it('follows a turn the limit refused with a limit item, and keeps the refusal so a replay agrees', () => {
+    const records = turn([refused, failed("You've hit your session limit · resets 8pm")])
+    const live = replay(records)
+    expect(limits(live)).toEqual([expect.objectContaining({ id: 'limit:ref-1', message: "You've hit your session limit · resets 8pm", resetsAt: 1_790_003_600_000, status: 'waiting' })])
+
+    const logger = new ClaudeStream('stage-1', OPTIONS)
+    const kept = records.flatMap((record): ChatRecord[] => {
+      if (record.dir !== 'in') return [record]
+      const frame = logger.logged(record.frame)
+      return frame === null ? [] : [{ ...record, frame }]
+    })
+    // The refusal is kept, but not the numbers that go out live only.
+    expect(JSON.stringify(kept)).not.toContain('unifiedWindows')
+    expect(shown(replay(kept).items.list())).toEqual(shown(live.items.list()))
+  })
+
+  it('knows the limit from the words alone, with the reset the old wording gave', () => {
+    expect(limits(replay(turn([failed('Claude AI usage limit reached|1790003600')]))).map((item) => item.resetsAt)).toEqual([1_790_003_600_000])
+    expect(limits(replay(turn([failed("You've reached your weekly limit")]))).map((item) => item.resetsAt)).toEqual([null])
+  })
+
+  it('leaves other failures alone, and a refusal the turn got past', () => {
+    expect(limits(replay(turn([failed('API Error: 429 rate_limit_error')])))).toEqual([])
+    expect(limits(replay(turn([failed("You're out of usage credits")])))).toEqual([])
+    const allowed = { type: 'result', subtype: 'success', is_error: false, result: 'done', duration_ms: 40 }
+    expect(limits(replay(turn([refused, allowed])))).toEqual([])
+    // The refusal does not linger into the next turn.
+    const next = replay([...turn([refused, allowed]), ...turn([failed('API Error: 500')]).slice(0, 1).map((record) => ({ ...record, ref: 'ref-2' })), { dir: 'in', at, frame: failed('API Error: 500') }])
+    expect(limits(next)).toEqual([])
+  })
+})

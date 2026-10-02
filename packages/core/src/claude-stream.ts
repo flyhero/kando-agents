@@ -4,12 +4,12 @@ import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
-import { ChatItems, clip } from './chat-items'
+import { ChatItems, clip, type UsageLimitHit } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { CLAUDE_TASK_TOOLS, ClaudeTasks } from './claude-tasks'
 import { Rejection } from './rejection'
-import { rateLimitReport } from './claude-usage'
+import { loggedRefusal, rateLimitReport, refusalResetsAt, usageLimitText } from './claude-usage'
 import { mergeUsageReports, type UsageReport } from './usage-source'
 
 // Claude Code's stream-json protocol (`claude -p --input-format stream-json --output-format
@@ -346,6 +346,8 @@ export class ClaudeStream implements ChatDriver {
   private interrupts = 0
   private results = 0
   private messages: StageMessage[] = []
+  // The usage limit Claude Code last refused a request on, until a turn ends.
+  private refused: { resetsAt: number | null } | null = null
   // Rate limits reported since the host last took them.
   private usage: UsageReport | null = null
   private readonly state: StageState
@@ -514,9 +516,10 @@ export class ClaudeStream implements ChatDriver {
     if (!head.success) return null
     switch (head.data.type) {
       case 'stream_event':
-      case 'rate_limit_event':
       case 'keep_alive':
         return null
+      case 'rate_limit_event':
+        return loggedRefusal(frame)
       case 'system': {
         const system = SystemFrame.safeParse(frame)
         if (!system.success) return null
@@ -682,6 +685,8 @@ export class ClaudeStream implements ChatDriver {
       case 'rate_limit_event': {
         const report = rateLimitReport(frame, at)
         if (report) this.usage = mergeUsageReports(this.usage, report)
+        const refusal = refusalResetsAt(frame)
+        if (refusal) this.refused = refusal
       }
     }
   }
@@ -864,13 +869,16 @@ export class ClaudeStream implements ChatDriver {
         ? 'failed'
         : 'completed'
     const error = state === 'failed' ? (str(result.result) ?? result.errors?.join('\n') ?? result.subtype ?? null) : null
+    // A refusal alone is not enough: with extra usage on, the turn goes on past the limit.
+    const said = state === 'failed' && error ? usageLimitText(error) : null
+    const limit = state === 'failed' && (said || this.refused) ? { message: error, resetsAt: this.refused?.resetsAt ?? said?.resetsAt ?? null } : null
     this.settleAgents(result.subagent_stats?.completed ?? this.agentsCompleted, at)
     // Input counts what the model read, cached or not; the dock's context ring uses the same sum.
     const used = result.usage
     const usage = used
       ? { input: (used.input_tokens ?? 0) + (used.cache_creation_input_tokens ?? 0) + (used.cache_read_input_tokens ?? 0), output: used.output_tokens ?? 0 }
       : null
-    this.endTurn(state, error, result.duration_ms ?? null, at, usage)
+    this.endTurn(state, error, result.duration_ms ?? null, at, usage, limit)
   }
 
   // The window of the model the stage runs; a turn's usage also lists models the CLI ran for itself.
@@ -901,7 +909,14 @@ export class ClaudeStream implements ChatDriver {
     }
   }
 
-  private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number, usage: { input: number; output: number } | null = null): void {
+  private endTurn(
+    state: ChatTurnState,
+    error: string | null,
+    durationMs: number | null,
+    at: number,
+    usage: { input: number; output: number } | null = null,
+    limit: UsageLimitHit | null = null
+  ): void {
     this.finishStreaming(at)
     if (state !== 'completed') this.items.settleTools(state, at)
     this.stopping = false
@@ -911,6 +926,8 @@ export class ClaudeStream implements ChatDriver {
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
     this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true } : {}) }, at)
+    if (limit) this.items.usageLimit(id, limit, at)
+    this.refused = null
     if (turn?.assistant) {
       this.messages.push({ role: 'assistant', text: turn.assistant, eventKey: `chat:${turn.ref}:assistant`, complete: true })
     }

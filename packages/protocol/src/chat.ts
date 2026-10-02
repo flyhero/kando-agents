@@ -85,6 +85,11 @@ export type ChatImage = z.infer<typeof ChatImage>
 export const ChatQueued = z.object({ ref: z.string(), text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) })
 export type ChatQueued = z.infer<typeof ChatQueued>
 
+// waiting: for the limit to lift, or for the user · retrying: the continue message is going out
+// continued: it went out · cancelled: the user went on another way, or the chat cannot go on
+export const USAGE_LIMIT_STATUSES = ['waiting', 'retrying', 'continued', 'cancelled'] as const
+export type UsageLimitStatus = (typeof USAGE_LIMIT_STATUSES)[number]
+
 // Every item has a stable id; a newer revision of it replaces the one the client holds.
 const Base = z.object({ id: z.string(), stageId: z.string(), revision: z.number().int(), at: z.number() })
 
@@ -146,6 +151,22 @@ export const ChatItem = z.discriminatedUnion('kind', [
     resumed: z.boolean().optional()
   }),
   Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
+  // The turn before it (turn:<ref> for limit:<ref>) failed because the account's usage limit was
+  // reached. The agent's words come from the stage; what is done about it is core's, kept apart.
+  Base.extend({
+    kind: z.literal('usageLimit'),
+    message: z.string().nullable(),
+    // When the limit lifts, as the agent said or core's usage reading tells; null when neither can.
+    resetsAt: z.number().nullable(),
+    // Whether core sends the continue message itself once the limit lifts.
+    autoContinue: z.boolean().default(false),
+    status: z.enum(USAGE_LIMIT_STATUSES).catch('cancelled').default('cancelled'),
+    // When core will try next, while it means to; when the continue message went out.
+    continueAt: z.number().nullable().default(null),
+    continuedAt: z.number().nullable().default(null),
+    // Why the last try did not go through.
+    error: z.string().nullable().default(null)
+  }),
   // A turn's checklist as it last stood, where the turn first touched it.
   Base.extend({ kind: z.literal('todos'), todos: z.array(ChatTodo) }),
   // The stage as it stands now, one per stage and not part of the conversation's flow: the

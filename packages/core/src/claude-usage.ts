@@ -179,6 +179,42 @@ export function rateLimitReport(frame: unknown, at: number): UsageReport | null 
   }
 }
 
+// What of a rate_limit_event the stage log keeps: only a refusal, so a replayed stage knows its turn
+// was refused. Its numbers go out live only.
+export function loggedRefusal(frame: unknown): unknown | null {
+  const parsed = RateLimitEvent.safeParse(frame)
+  if (!parsed.success || parsed.data.rate_limit_info.status !== 'rejected') {
+    return null
+  }
+  const { status, rateLimitType, resetsAt } = parsed.data.rate_limit_info
+  return { type: 'rate_limit_event', rate_limit_info: { status, rateLimitType, resetsAt } }
+}
+
+// When a refused rate_limit_event says the limit lifts; null for any other frame.
+export function refusalResetsAt(frame: unknown): { resetsAt: number | null } | null {
+  const parsed = RateLimitEvent.safeParse(frame)
+  if (!parsed.success || parsed.data.rate_limit_info.status !== 'rejected') {
+    return null
+  }
+  return { resetsAt: parseReset(parsed.data.rate_limit_info.resetsAt) }
+}
+
+// The words Claude Code ends a turn with when a usage limit stops it, as the Agent SDK lists them
+// (USAGE_LIMIT_ERROR_PREFIXES): only the limits that lift on their own. Running out of credits or
+// a seat without usage does not, and stays an ordinary failure.
+const LIMIT_PREFIXES = ["You've hit your", "You've reached your"]
+// How older versions said it: the reset as epoch seconds after a bar.
+const LEGACY_LIMIT = /Claude AI usage limit reached\|(\d{10})/
+
+export function usageLimitText(text: string): { resetsAt: number | null } | null {
+  const legacy = LEGACY_LIMIT.exec(text)
+  if (legacy?.[1]) {
+    return { resetsAt: Number(legacy[1]) * 1000 }
+  }
+  const trimmed = text.trim()
+  return LIMIT_PREFIXES.some((prefix) => trimmed.startsWith(prefix)) ? { resetsAt: null } : null
+}
+
 // Each grant carries some resets; one credit per reset left, soonest to expire first.
 export function parseClaudeResets(body: unknown): ResetCredits | null {
   const program = z.object({ cedar_ember: ResetProgram.nullish().catch(null) }).safeParse(body)

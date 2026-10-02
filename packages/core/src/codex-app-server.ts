@@ -4,7 +4,7 @@ import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatPreferences, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
-import { ChatItems, clip } from './chat-items'
+import { ChatItems, clip, type UsageLimitHit } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
@@ -65,7 +65,7 @@ const TurnEvent = z.looseObject({
   turn: z.looseObject({
     id: z.string(),
     status: z.string().optional(),
-    error: z.looseObject({ message: z.string().optional() }).nullish(),
+    error: z.looseObject({ message: z.string().optional(), codexErrorInfo: z.unknown().optional() }).nullish(),
     durationMs: z.number().nullish()
   })
 })
@@ -145,7 +145,12 @@ type ModelEntry = z.infer<typeof ModelEntry>
 const ModelList = z.looseObject({ data: z.array(z.unknown()).catch([]) })
 // Of the effective config, only the model: the rest may hold secrets and stays out of the log.
 const ConfigRead = z.looseObject({ config: z.looseObject({ model: z.string().nullish() }) })
-const ErrorEvent = z.looseObject({ error: z.looseObject({ message: z.string().optional() }).catch({}), willRetry: z.boolean().optional() })
+const ErrorEvent = z.looseObject({
+  error: z.looseObject({ message: z.string().optional(), codexErrorInfo: z.unknown().optional() }).catch({}),
+  willRetry: z.boolean().optional()
+})
+// The plan's usage limit, as against rateLimitExceeded, a short burst the server throttles.
+const isUsageLimit = (info: unknown) => info === 'usageLimitExceeded'
 const Resolved = z.looseObject({ requestId: Id })
 const CommandApproval = z.looseObject({
   itemId: z.string().optional(),
@@ -400,6 +405,8 @@ export class CodexAppServer implements ChatDriver {
   private planning = false
   // Rate limits reported since the host last took them.
   private usage: UsageReport | null = null
+  // What Codex said when the running turn hit the plan's usage limit, until the turn ends.
+  private limited: string | null = null
   // What the user chose, sent with every turn: Codex takes options per turn, not in between.
   private readonly chosen: ChatPreferences
 
@@ -796,7 +803,10 @@ export class CodexAppServer implements ChatDriver {
         if (!turn.success) return
         const { status, error, durationMs } = turn.data.turn
         const state: ChatTurnState = status === 'interrupted' ? 'interrupted' : status === 'failed' ? 'failed' : 'completed'
-        return this.endTurn(state, state === 'failed' ? (error?.message ?? null) : null, durationMs ?? null, at)
+        const message = state === 'failed' ? (error?.message ?? null) : null
+        // Codex says nothing of when the limit lifts; core's usage reading does.
+        const limited = state === 'failed' && (this.limited !== null || isUsageLimit(error?.codexErrorInfo))
+        return this.endTurn(state, message, durationMs ?? null, at, limited ? { message: message ?? this.limited, resetsAt: null } : null)
       }
       case 'item/started':
       case 'item/completed': {
@@ -882,9 +892,14 @@ export class CodexAppServer implements ChatDriver {
       }
       case 'error': {
         const event = ErrorEvent.safeParse(params)
-        if (event.success) {
-          this.items.notice(event.data.willRetry ? 'warning' : 'error', event.data.error.message ?? 'Codex reported an error', at)
+        if (!event.success) return
+        const message = event.data.error.message ?? 'Codex reported an error'
+        // The turn's own end shows a usage limit, once, with what is done about it.
+        if (isUsageLimit(event.data.error.codexErrorInfo) && !event.data.willRetry) {
+          this.limited = message
+          return
         }
+        this.items.notice(event.data.willRetry ? 'warning' : 'error', message, at)
       }
     }
   }
@@ -1165,7 +1180,7 @@ export class CodexAppServer implements ChatDriver {
     return status === 'failed' && this.stopping ? 'interrupted' : status
   }
 
-  private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number): void {
+  private endTurn(state: ChatTurnState, error: string | null, durationMs: number | null, at: number, limit: UsageLimitHit | null = null): void {
     if (state !== 'completed') this.items.settleTools(state, at)
     this.stopping = false
     this.state.endTurn()
@@ -1177,7 +1192,10 @@ export class CodexAppServer implements ChatDriver {
       if (pending.kind !== 'plan') this.resolve(requestId, 'cancelled', null, at)
     }
     const turn = this.turn
-    this.items.put({ id: turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`, kind: 'turn', state, error, durationMs, usage: this.turnUsage }, at)
+    const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage: this.turnUsage }, at)
+    if (limit) this.items.usageLimit(id, limit, at)
+    this.limited = null
     this.turnUsage = null
     this.state.set({ turnUsage: null })
     if (turn?.assistant) {

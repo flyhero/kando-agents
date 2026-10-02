@@ -9,6 +9,10 @@ export type ChatItemBody = ChatItem extends infer Item
 
 export type ChatChanges = { items: ChatItem[]; deltas: Array<{ itemId: string; append: string }> }
 
+// A turn that failed because the account's usage limit was reached, as either agent says so:
+// its words, and when the limit lifts if it said.
+export type UsageLimitHit = { message: string | null; resetsAt: number | null }
+
 const MAX_TEXT = 20_000
 
 // Keeps a tool's output or input readable in the list without holding a whole log in memory.
@@ -60,6 +64,13 @@ export class ChatItems {
 
   notice(level: 'info' | 'warning' | 'error', text: string, at: number): void {
     this.put({ id: `n:${++this.notices}`, kind: 'notice', level, text }, at)
+  }
+
+  // Follows a turn that failed on the account's usage limit: limit:<ref> after turn:<ref>. What is
+  // done about it is core's to say; until it does, the limit only waits.
+  usageLimit(turnId: string, hit: UsageLimitHit, at: number): void {
+    const id = `limit:${turnId.replace(/^turn:/, '')}`
+    this.put({ id, kind: 'usageLimit', message: hit.message, resetsAt: hit.resetsAt, autoContinue: false, status: 'waiting', continueAt: null, continuedAt: null, error: null }, at)
   }
 
   list(): ChatItem[] {

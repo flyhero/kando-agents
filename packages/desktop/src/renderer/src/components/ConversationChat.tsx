@@ -17,6 +17,7 @@ import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatSubagents } from './ChatSubagents'
 import { ChatTodosLine, TodoHistory } from './ChatTodos'
+import { ChatUsageLimitLine } from './ChatUsageLimit'
 import { ChatWorking, type WorkingPhase } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
@@ -201,6 +202,8 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
       return <ChatNotice item={item} />
     case 'todos':
       return <ChatTodosLine item={item} />
+    case 'usageLimit':
+      return <ChatUsageLimitLine item={item} />
     case 'state':
       return null
   }
@@ -422,7 +425,18 @@ export function ConversationChat({ conversation, surface }: { conversation: Conv
     // A plan shows with its approval; the call's own card would only repeat it.
     const plans = new Set(items.flatMap((item) =>
       item.kind === 'approval' && isPlanApproval(item) && item.toolItemId ? [itemKey({ stageId: item.stageId, id: item.toolItemId })] : []))
-    return timeline(stages, messages, items).filter((entry) => entry.kind !== 'item' || !plans.has(itemKey(entry.item)))
+    // A turn the usage limit stopped says so on a line of its own, after it: the turn's error and
+    // the words the CLI ended it with would only repeat that.
+    const limited = new Set(items.flatMap((item) =>
+      item.kind === 'usageLimit' ? [itemKey({ stageId: item.stageId, id: item.id.replace(/^limit:/, 'turn:') })] : []))
+    const limitWords = new Set(items.flatMap((item) => (item.kind === 'usageLimit' && item.message ? [`${item.stageId}\n${item.message.trim()}`] : [])))
+    return timeline(stages, messages, items).flatMap((entry): TimelineEntry[] => {
+      if (entry.kind !== 'item') return [entry]
+      const { item } = entry
+      if (plans.has(itemKey(item))) return []
+      if (item.kind === 'assistant' && limitWords.has(`${item.stageId}\n${item.text.trim()}`)) return []
+      return item.kind === 'turn' && limited.has(itemKey(item)) ? [{ kind: 'item', item: { ...item, error: null } }] : [entry]
+    })
   }, [stages, messages, items])
   const foldTurns = usePreferences((s) => s.foldTurns)
   const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
