@@ -11,6 +11,7 @@ import {
 } from '@kando/protocol/node'
 import { claimEndpoint } from './endpoint-claim'
 import { createSessionHost } from './session-host'
+import { AwakeService } from './awake-service'
 
 // Packaged, the Electron binary runs the daemon as plain Node. Sessions inherit this process's
 // environment, and the flag must not leak into them: it would turn any Electron app a shell or
@@ -22,10 +23,11 @@ await mkdir(paths.home, { recursive: true, mode: 0o700 })
 await claimEndpoint(paths.daemonSocket)
 
 const clients = new Set<net.Socket>()
+const awake = new AwakeService()
 const host = createSessionHost((event) => {
   const line = `${JSON.stringify(event)}\n`
   clients.forEach((client) => client.write(line))
-})
+}, awake)
 
 function dispatch<M extends DaemonMethod>(method: M, raw: unknown): DaemonResult<M> {
   return host.handlers[method](daemonSchemas[method].params.parse(raw))
@@ -66,6 +68,7 @@ server.listen(paths.daemonSocket, async () => {
 })
 
 function shutdown(): void {
+  awake.dispose()
   host.killAll()
   server.close(() => process.exit(0))
 }

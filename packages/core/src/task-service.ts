@@ -71,6 +71,15 @@ export class TaskService {
     return this.store.list(status)
   }
 
+  workingCount(): number {
+    return this.store.list().reduce((count, task) => {
+      if (task.conversationId) return count
+      const running = task.status === 'running' && task.sessionId !== null
+      const refining = task.refineSessionId !== null
+      return count + (!task.awaitingInput && running ? 1 : 0) + (!task.awaitingInput && refining ? 1 : 0)
+    }, 0)
+  }
+
   // Accepts a full id or the short prefix the CLI prints.
   get(idOrPrefix: string): Task {
     const exact = this.store.get(idOrPrefix)

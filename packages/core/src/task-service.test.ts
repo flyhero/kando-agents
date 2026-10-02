@@ -31,7 +31,9 @@ function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[]; live: 
     attach: ({ sessionId }) => ({ sessionId, exited: false, exitCode: null, buffer: '', bufferStart: 0, endOffset: 0 }),
     list: () => ({ sessions: [...live].map((sessionId) => ({ sessionId, exited: false, exitCode: null })) }),
     spawnPipe: () => { throw new Error('unused') },
-    release: () => ({ ok: true })
+    release: () => ({ ok: true }),
+    awakeSet: () => ({ active: false, supported: true, problem: null }),
+    awakeStatus: () => ({ active: false, supported: true, problem: null })
   }
   return {
     spawns,

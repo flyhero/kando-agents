@@ -14,6 +14,7 @@ import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalService } from './terminal-service'
 import type { WorktreeService } from './worktree-service'
+import type { ComputerAwakeService } from './computer-awake-service'
 
 const OK = { ok: true } as const
 
@@ -27,10 +28,13 @@ export function createRpcHandlers(
   attachments: { store: AttachmentStore; uploads: AttachmentUploads },
   terminals: TerminalService,
   worktrees: WorktreeService,
-  browser: BrowserService
+  browser: BrowserService,
+  awake: ComputerAwakeService
 ): RpcHandlers {
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
+    'system.awakeStatus': () => awake.status(),
+    'system.setAwakeMode': ({ mode }) => awake.setMode(mode),
     'tasks.list': ({ status }) => service.list(status),
     'tasks.get': ({ id }) => service.get(id),
     'tasks.create': (params) => service.createTask(params),
@@ -200,6 +204,7 @@ export function createRpcHandlers(
       if (conversations.isChatSession(sessionId)) throw new Rejection('chat-session', 'this session runs in chat mode')
       await sessions.request('write', { sessionId, data })
       service.noteInput(sessionId)
+      conversations.noteInput(sessionId)
       return OK
     },
     'sessions.resize': async ({ sessionId, cols, rows }) => {

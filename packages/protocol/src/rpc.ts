@@ -9,6 +9,7 @@ import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
+import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 8
@@ -37,7 +38,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // task-chat: a task can start in the chat view (tasks.start and the methods beside it).
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
 // browser: core hosts a browser for chat agents (the browser.* methods).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser'] as const
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -56,6 +57,8 @@ export const rpcMethods = {
       features: z.array(z.string()).optional()
     })
   },
+  'system.awakeStatus': { params: z.object({}), result: ComputerAwakeStatus },
+  'system.setAwakeMode': { params: z.object({ mode: ComputerAwakeMode }), result: ComputerAwakeStatus },
   'tasks.list': {
     params: z.object({ status: TaskStatus.optional() }),
     result: z.array(Task)
@@ -347,6 +350,7 @@ export const rpcMethods = {
 } as const
 
 export const rpcNotifications = {
+  'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.

@@ -217,6 +217,15 @@ export function GlobeIcon() {
   )
 }
 
+export function CoffeeIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M4 7h10v4.5a5 5 0 0 1-5 5 5 5 0 0 1-5-5z" />
+      <path d="M14 8.5h1a2.5 2.5 0 0 1 0 5h-1.5M6.5 3.5c-1 1 .8 1.7 0 2.5M10 3.5c-1 1 .8 1.7 0 2.5" />
+    </svg>
+  )
+}
+
 // A list of lines, each with a mark in front.
 export function ListIcon() {
   return (

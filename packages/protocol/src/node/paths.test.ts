@@ -5,7 +5,7 @@ import { kandoHome, kandoPaths } from './paths'
 
 describe.skipIf(process.platform === 'win32')('daemon socket path', () => {
   it('lives in KANDO_HOME when short enough', () => {
-    expect(kandoPaths('/home/me/.kando').daemonSocket).toBe('/home/me/.kando/daemon-v2.sock')
+    expect(kandoPaths('/home/me/.kando').daemonSocket).toBe('/home/me/.kando/daemon-v3.sock')
   })
 
   it('falls back to a hashed temp path when KANDO_HOME is too deep for sun_path', () => {

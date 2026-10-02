@@ -55,6 +55,8 @@ export function fakeChatDaemon() {
   }
 
   const handlers: { [M in DaemonMethod]: (params: DaemonParams<M>) => DaemonResult<M> } = {
+    awakeSet: () => ({ active: false, supported: true, problem: null }),
+    awakeStatus: () => ({ active: false, supported: true, problem: null }),
     spawn: (params) => {
       ptySpawns.push(params)
       const sessionId = `pty-${ptySpawns.length}`

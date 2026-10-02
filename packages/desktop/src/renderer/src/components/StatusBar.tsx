@@ -1,10 +1,12 @@
-import { setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useBrowserSupported, useCore, useWorktreesSupported, type ConnectionState } from '../core-store'
+import { useState } from 'react'
+import { setAwakeMode, setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useAwakeSupported, useBrowserSupported, useCore, useWorktreesSupported, type ConnectionState } from '../core-store'
 import { ALL_TABS, useBrowserTabs } from '../browser-state'
 import { formatBytes, worktreeRows, worktreeSummary } from '../worktree-groups'
 import { useWorktrees } from '../worktree-store'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { BranchIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
+import { BranchIcon, CheckIcon, CoffeeIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
 import { UsageBar } from './UsageBar'
+import { Popover } from './Popover'
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
   connected: '已连接',
@@ -94,6 +96,46 @@ function TerminalButton() {
   )
 }
 
+const AWAKE_LABEL = { on: '始终', auto: 'Agent 工作时', off: '关闭' } as const
+
+function AwakeButton() {
+  const supported = useAwakeSupported()
+  const status = useCore((s) => s.awake)
+  const [open, setOpen] = useState(false)
+  if (!supported || !status) return null
+  const detail = status.problem ?? (status.active ? `正在保持唤醒 · ${status.workingAgents} 个 agent 工作中` : `保持唤醒：${AWAKE_LABEL[status.mode]}`)
+  return (
+    <span className="menu-anchor statusbar-awake-anchor">
+      <button
+        type="button"
+        className="tool-button statusbar-awake"
+        aria-label={detail}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-active={status.active}
+        data-tooltip={detail}
+        data-tooltip-side="top-end"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <CoffeeIcon />
+        {status.active && <span className="awake-dot" aria-hidden="true" />}
+      </button>
+      {open && (
+        <Popover label="保持电脑唤醒" onClose={() => setOpen(false)}>
+          <div className="menu-label">保持电脑唤醒</div>
+          {(['on', 'auto', 'off'] as const).map((mode) => (
+            <button key={mode} type="button" className="menu-item" onClick={() => { void setAwakeMode(mode); setOpen(false) }}>
+              <span>{AWAKE_LABEL[mode]}</span>
+              <span className="menu-check">{status.mode === mode && <CheckIcon />}</span>
+            </button>
+          ))}
+          {status.problem && <div className="menu-note">{status.problem}</div>}
+        </Popover>
+      )}
+    </span>
+  )
+}
+
 // How many worktrees Kando has laid out and what they take, and how many could go: they are never
 // removed of Kando's own accord, so this is where the user sees them pile up.
 function WorktreeButton() {
@@ -128,6 +170,7 @@ export function StatusBar() {
       <WorktreeButton />
       <BrowserButton />
       <TerminalButton />
+      <AwakeButton />
     </footer>
   )
 }

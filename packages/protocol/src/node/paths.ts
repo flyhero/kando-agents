@@ -20,6 +20,8 @@ export type KandoPaths = {
   sourcesConfig: string
   // Credential records for task sources; owner-only.
   credentials: string
+  // Machine-level behavior owned by core, not by a particular desktop window.
+  awakeConfig: string
   // Where the first Jira integration kept its settings and token; migrated on start.
   legacyJiraConfig: string
   // Images, by content hash; owner-only.
@@ -42,6 +44,7 @@ export function kandoPaths(home: string = kandoHome()): KandoPaths {
     daemonSocket: daemonSocketPath(home),
     sourcesConfig: path.join(home, 'sources.json'),
     credentials: path.join(home, 'credentials.json'),
+    awakeConfig: path.join(home, 'awake.json'),
     legacyJiraConfig: path.join(home, 'jira.json'),
     attachments: path.join(home, 'attachments'),
     sessions: path.join(home, 'sessions'),

@@ -36,7 +36,9 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
     },
     list: () => ({ sessions: [] }),
     spawnPipe: () => { throw new Error('unused') },
-    release: () => ({ ok: true })
+    release: () => ({ ok: true }),
+    awakeSet: () => ({ active: false, supported: true, problem: null }),
+    awakeStatus: () => ({ active: false, supported: true, problem: null })
   }
   const daemon: SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: string[]; output: Map<string, string>; failNextSpawn: boolean } = {
     spawns, killed, output, failNextSpawn: false,

@@ -2,10 +2,15 @@ import { StringDecoder } from 'node:string_decoder'
 import { z } from 'zod'
 
 // Newline-delimited JSON over a Unix socket / named pipe between core and the PTY daemon.
-export const DAEMON_PROTOCOL_VERSION = 2
+export const DAEMON_PROTOCOL_VERSION = 3
 
 const SessionRef = z.object({ sessionId: z.string() })
 const Ok = z.object({ ok: z.literal(true) })
+const AwakeBackendStatus = z.object({
+  active: z.boolean(),
+  supported: z.boolean(),
+  problem: z.string().nullable()
+})
 // pty: a terminal, for TUIs and shells · pipe: plain stdio, for agents that speak JSON lines
 export const SessionIo = z.enum(['pty', 'pipe'])
 export type SessionIo = z.infer<typeof SessionIo>
@@ -51,7 +56,13 @@ export const daemonMethods = {
   },
   list: { params: z.object({}), result: z.object({ sessions: z.array(SessionInfo) }) },
   // Forgets an exited session and its buffered output, once core has kept what it needs.
-  release: { params: SessionRef, result: Ok }
+  release: { params: SessionRef, result: Ok },
+  // A lease makes a lost core release the assertion without relying on cleanup running.
+  awakeSet: {
+    params: z.object({ active: z.boolean(), leaseMs: z.number().int().min(10_000).max(300_000) }),
+    result: AwakeBackendStatus
+  },
+  awakeStatus: { params: z.object({}), result: AwakeBackendStatus }
 } as const
 
 export type DaemonMethod = keyof typeof daemonMethods

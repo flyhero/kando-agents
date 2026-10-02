@@ -10,6 +10,7 @@ import type {
 import { OutputBuffer } from './output-buffer'
 import { startPipe } from './pipe-session'
 import { startPty } from './pty-session'
+import type { AwakeBackendStatus } from './awake-service'
 
 // Enough for a reattaching UI to repaint recent output; not a full history.
 const PTY_SCROLLBACK_CHARS = 512 * 1024
@@ -45,7 +46,17 @@ export type DaemonHandlers = {
 
 const NOT_STARTED: HostedProcess = { write() {}, resize() {}, kill() {} }
 
-export function createSessionHost(emit: (event: DaemonEvent) => void): {
+type AwakeController = {
+  set(active: boolean, leaseMs: number): AwakeBackendStatus
+  status(): AwakeBackendStatus
+}
+
+const NO_AWAKE: AwakeController = {
+  set: () => ({ active: false, supported: false, problem: 'awake service unavailable' }),
+  status: () => ({ active: false, supported: false, problem: 'awake service unavailable' })
+}
+
+export function createSessionHost(emit: (event: DaemonEvent) => void, awake: AwakeController = NO_AWAKE): {
   handlers: DaemonHandlers
   killAll(): void
 } {
@@ -139,6 +150,12 @@ export function createSessionHost(emit: (event: DaemonEvent) => void): {
       }
       sessions.delete(sessionId)
       return { ok: true }
+    },
+    awakeSet({ active, leaseMs }) {
+      return awake.set(active, leaseMs)
+    },
+    awakeStatus() {
+      return awake.status()
     }
   }
 

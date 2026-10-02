@@ -2,7 +2,7 @@ import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { PROTOCOL_VERSION, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
-import { perform, setSettingsOpen, useCore, useBrowserSupported } from '../core-store'
+import { perform, setAwakeMode, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import {
@@ -199,12 +199,32 @@ function BrowserRows() {
 
 function AgentSettings() {
   const browser = useBrowserSupported()
+  const awakeSupported = useAwakeSupported()
+  const awake = useCore((s) => s.awake)
   const defaultAgent = usePreferences((s) => s.defaultAgent)
   const openTerminal = usePreferences((s) => s.openTerminalOnRun)
   const agentView = usePreferences((s) => s.agentView)
   const allowBypass = usePreferences((s) => s.allowBypass)
   return (
     <>
+      {awakeSupported && awake && (
+        <SettingsRow
+          label="保持电脑唤醒"
+          description="「Agent 工作时」只在至少一个 agent 正在执行时阻止系统睡眠；agent 等待输入时允许睡眠。关闭 Kando 窗口不影响正在运行的 agent。"
+          control={(labelId) => (
+            <Segmented
+              labelId={labelId}
+              value={awake.mode}
+              onChange={(mode) => void setAwakeMode(mode)}
+              options={[
+                { value: 'on', label: '始终' },
+                { value: 'auto', label: 'Agent 工作时' },
+                { value: 'off', label: '关闭' }
+              ]}
+            />
+          )}
+        />
+      )}
       <SettingsRow
         label="会话和任务的界面"
         description="新建、继续和移交会话，以及开始任务时用哪一种。聊天界面把 agent 的消息、工具调用和确认请求画成卡片，任务在聊天里先规划，确认计划后再动手。运行中的会话不会切换，下次继续时生效；已经开始的任务保持原来的界面。Codex 的聊天界面依赖它还在实验阶段的 app-server。"

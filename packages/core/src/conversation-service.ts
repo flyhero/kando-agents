@@ -89,6 +89,7 @@ async function resolveProjects(projectPaths: readonly string[], taken: readonly 
 }
 
 export class ConversationService {
+  private readonly tuiWorking = new Map<string, boolean>()
   private readonly launching = new Set<string>()
   private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
   private readonly transcript: TerminalTranscript
@@ -395,6 +396,7 @@ export class ConversationService {
         throw error
       }
       this.store.attachStage(stage.id, sessionId)
+      this.tuiWorking.set(id, true)
       const updated = this.changed(this.store.update(id, { agent, sessionId, outputOffset: 0 }))
       // PTY may have written before spawn's reply reached core. A failed attach does not undo a running PTY.
       await this.recover(updated).catch((error: unknown) => console.error('[kando-core] conversation replay failed', error))
@@ -760,6 +762,7 @@ export class ConversationService {
       text, eventKey: message.eventKey, complete: message.complete
     })
     if (!saved) return
+    if (stage.mode === 'tui') this.tuiWorking.set(conversation.id, message.role === 'user' || !message.complete)
     if (message.role === 'assistant' && message.complete) this.store.completePendingUsers(stage.id)
     if (message.role === 'user' && !conversation.titleLocked && conversation.title === '新会话') {
       // The user's own words name it, not Kando's note of a branch switch before them.
@@ -797,12 +800,29 @@ export class ConversationService {
     const stopped = this.stopping.has(sessionId)
     const current = this.store.bySession(sessionId)
     if (current) {
+      this.tuiWorking.delete(current.id)
       const stage = this.store.activeStage(current.id)
       if (stage?.sessionId === sessionId) this.store.endStage(stage.id, stopped ? null : exitCode)
       this.transcript.marker(current.id, stopped ? '会话已停止' : `agent 已退出，code ${exitCode}`)
       this.changed(this.store.update(current.id, { sessionId: null }))
     }
     this.exitWaiters.get(sessionId)?.()
+  }
+
+  noteInput(sessionId: string): void {
+    const conversation = this.store.bySession(sessionId)
+    if (conversation && conversation.mode === 'tui' && this.tuiWorking.get(conversation.id) !== true) {
+      this.tuiWorking.set(conversation.id, true)
+      this.changed(conversation)
+    }
+  }
+
+  workingCount(): number {
+    return this.store.list().reduce((count, conversation) => {
+      if (!conversation.sessionId) return count
+      if (conversation.mode === 'chat') return count + (this.chats.activity(conversation.id) === 'running' ? 1 : 0)
+      return count + (this.tuiWorking.get(conversation.id) ?? true ? 1 : 0)
+    }, 0)
   }
 
   // Every session the daemon still knows is drained before it counts as ended, so output from

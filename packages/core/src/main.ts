@@ -29,6 +29,8 @@ import { ConversationStore } from './conversation-store'
 import { ConversationService } from './conversation-service'
 import { TerminalService } from './terminal-service'
 import { WorktreeService } from './worktree-service'
+import { AwakeConfigStore } from './awake-config'
+import { ComputerAwakeService } from './computer-awake-service'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
@@ -44,6 +46,8 @@ const daemon = new DaemonClient(paths.daemonSocket)
 const conversationsStore = new ConversationStore(paths.database)
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
+let awake: ComputerAwakeService | null = null
+const refreshAwake = () => awake?.refresh(service.workingCount() + conversations.workingCount())
 
 // Built before the task service, which runs its chat tasks in it; each hands the other its events.
 const conversations = new ConversationService(
@@ -55,6 +59,7 @@ const conversations = new ConversationService(
       server?.broadcast('conversations.changed', { conversation: event.conversation })
       // A task's conversation says whether its agent waits on the user.
       service.chatChanged(event.conversation)
+      refreshAwake()
     } else if (event.type === 'deleted') {
       server?.broadcast('conversations.deleted', { id: event.id })
       void browser.closeForConversation(event.id)
@@ -98,6 +103,7 @@ const service = new TaskService(
   (event) => {
     if (event.type === 'changed') {
       server?.broadcast('tasks.changed', { task: event.task })
+      refreshAwake()
     } else {
       server?.broadcast('tasks.deleted', { id: event.id })
       sources.tasksChanged()
@@ -127,6 +133,9 @@ const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage 
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
 const worktrees = new WorktreeService(paths.worktrees, service, () => server?.broadcast('worktrees.changed', {}))
+awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig), (status) =>
+  server?.broadcast('system.awakeChanged', { status })
+)
 
 daemon.onEvent((event) => {
   const { sessionId } = event
@@ -143,12 +152,14 @@ daemon.onEvent((event) => {
     browser.handleExit(sessionId)
     // A finished run is when the numbers most likely moved.
     void usage.refresh()
+    refreshAwake()
   } else {
     conversations.handleStderr(sessionId, event.data)
   }
 })
 
 daemon.onConnect(() => {
+  awake?.reconnect()
   daemon
     .request('list', {})
     .then(async ({ sessions }) => {
@@ -167,10 +178,12 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser)
+  }, terminals, worktrees, browser, awake)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
+await awake.start()
+refreshAwake()
 usage.start()
 sources.start()
 // Idle chat agents are checked for once a minute, so one goes within a minute of its limit.
@@ -185,6 +198,7 @@ async function shutdown(): Promise<void> {
   shuttingDown = true
   usage.stop()
   sources.stop()
+  awake?.stop()
   daemon.stop()
   await server?.close()
   await removeCoreEndpoint(process.pid)
