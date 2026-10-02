@@ -15,6 +15,7 @@ import {
   SearchIcon,
   SparkIcon
 } from './icons'
+import { AgentStatsSettings } from './AgentStatsSettings'
 import { settingsSectionOf } from './SourceInboxView'
 import { SourceSettingsSection } from './SourceSettingsSection'
 import { projectName } from './ProjectPicker'
@@ -384,6 +385,15 @@ const SECTIONS: readonly Section[] = [
     keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话', '任务', '规划', '浏览器', '截图', '网页', 'chromium'],
     Icon: SparkIcon,
     Body: AgentSettings
+  },
+  {
+    id: 'agent-stats',
+    group: '任务',
+    title: '智能体表现',
+    description: '每个 agent 和模型执行任务的结果：你接受、继续修改、重做各占多少，用了多久。从这一版开始记录，之前的任务不计入。',
+    keywords: ['表现', '统计', '通过率', '接受', '继续修改', '重做', '异常退出', '耗时', 'token', '模型', 'claude', 'codex'],
+    Icon: GaugeIcon,
+    Body: AgentStatsSettings
   },
   {
     id: 'projects',

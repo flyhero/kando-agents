@@ -440,6 +440,10 @@ export function useUsageLimitSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('usage-limit') ?? false)
 }
 
+export function useAgentStatsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('agent-stats') ?? false)
+}
+
 export function useAwakeSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('keep-awake') ?? false)
 }

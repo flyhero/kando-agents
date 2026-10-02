@@ -3299,6 +3299,61 @@ button.task-tag-updated:hover {
   color: var(--text-muted);
 }
 
+.settings-stats {
+  width: 100%;
+  margin: 12px 0 4px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-stats :is(th, td) {
+  padding: 8px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.settings-stats :is(th, td):first-child {
+  text-align: left;
+}
+
+.settings-stats thead th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.settings-stats tbody tr {
+  border-top: 1px solid var(--border);
+}
+
+.settings-stats-agent th {
+  padding-top: 14px;
+  font-weight: 600;
+}
+
+.settings-stats-agent svg {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.settings-stats-model {
+  padding-left: 26px;
+  font-weight: 400;
+}
+
+.settings-stats td.settings-stats-few {
+  text-align: center;
+}
+
+.settings-stats-note {
+  margin: 8px 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .settings-none {
   padding: 48px 0;
   text-align: center;
