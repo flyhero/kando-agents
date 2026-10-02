@@ -5133,7 +5133,6 @@ button.task-tag-updated:hover {
 .chat-todos-change { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* In the dock's popover the list stands alone, without the panel's frame. */
 .chat-todos-anchor .chat-todos li { padding: 6px 4px; }
-}
 
 /* The queued messages sit just above the input, where they will go out: a line saying so, then one
    row each, numbered in the order they go. */
