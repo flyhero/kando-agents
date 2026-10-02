@@ -4162,6 +4162,7 @@ button.task-tag-updated:hover {
 .chat-view[data-width='full'] { --chat-width: 100%; }
 
 .chat-list {
+  --chat-fade: 24px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -4170,7 +4171,18 @@ button.task-tag-updated:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* What runs past the top or the bottom fades out there, and only while there is more that way:
+     each edge's fade grows over the first 24px scrolled from it. */
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--chat-fade-top), #000 calc(100% - var(--chat-fade-bottom)), transparent);
+  animation: chat-fade-top linear both, chat-fade-bottom linear both;
+  animation-timeline: scroll(self), scroll(self);
+  animation-range: 0 var(--chat-fade), calc(100% - var(--chat-fade)) 100%;
 }
+
+@property --chat-fade-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --chat-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes chat-fade-top { from { --chat-fade-top: 0px; } to { --chat-fade-top: var(--chat-fade); } }
+@keyframes chat-fade-bottom { from { --chat-fade-bottom: var(--chat-fade); } to { --chat-fade-bottom: 0px; } }
 
 /* A scrollbar that takes room would shift the centred messages off the composer: reserve its room
    on both sides, once there is room to spare. Full width has nothing to centre. */
@@ -4840,7 +4852,8 @@ button.task-tag-updated:hover {
 /* Scrolled back, a way down to the latest: held at the bottom of the list's view. */
 .chat-latest {
   position: sticky;
-  bottom: 4px;
+  /* Above the bottom edge's fade, which is out whenever this is. */
+  bottom: calc(var(--chat-fade) + 4px);
   align-self: center;
   display: inline-flex;
   align-items: center;
