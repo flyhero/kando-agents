@@ -3,6 +3,8 @@ import { githubIssueSnapshot } from './github-snapshot'
 import { SourceError } from './source-error'
 import type { SourceCredential, SourceProvider } from './source-provider'
 
+export const DEFAULT_GITHUB_QUERY = 'assignee:@me is:open'
+
 const TOKEN_PAGE = 'https://github.com/settings/personal-access-tokens'
 const LOGIN_ATTEMPTS = 3
 
@@ -28,8 +30,18 @@ export function githubProvider(connect: (credentials: GitHubCredentials) => GitH
   return {
     id: 'github',
     name: 'GitHub',
-    settings: [],
-    normalizeSettings: () => ({}),
+    settings: [
+      {
+        key: 'query',
+        type: 'text',
+        label: '筛选条件',
+        required: true,
+        default: DEFAULT_GITHUB_QUERY,
+        mono: true,
+        hint: '收件箱每 15 分钟按它同步一次，写法和 GitHub 网页上的搜索一样。默认是分给你、还开着的 issue 和 PR；没写 is:issue 或 is:pr 时两种都同步。只看某个组织可以加 org:组织名，只看 bug 可以加 label:bug，同步等你 review 的 PR 可以写 review-requested:@me is:pr is:open。结果固定按更新时间排序，不用写 sort:。'
+      }
+    ],
+    normalizeSettings: (values) => ({ query: values.query?.trim().split(/\s+/).join(' ') || DEFAULT_GITHUB_QUERY }),
     normalizeKey: (key) => key.trim(),
     envCredential: (env) => (env.KANDO_GITHUB_TOKEN ? { kind: 'token', payload: { token: env.KANDO_GITHUB_TOKEN } } : null),
 
@@ -55,7 +67,7 @@ export function githubProvider(connect: (credentials: GitHubCredentials) => GitH
       }
     },
 
-    list: (_settings, credential, signal) => client(githubCredentials(credential)).search(signal),
+    list: (settings, credential, signal) => client(githubCredentials(credential)).search(settings.query ?? DEFAULT_GITHUB_QUERY, signal),
 
     async fetch(_settings, credential, key, signal) {
       if (!GITHUB_KEY_PATTERN.test(key)) throw new SourceError('not-found', `not a GitHub issue key: ${key}`)

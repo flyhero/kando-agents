@@ -2,7 +2,6 @@ import { z } from 'zod'
 import type { SourceIssue } from '@kando/protocol'
 import { SourceError } from './source-error'
 
-export const GITHUB_ASSIGNED_QUERY = 'assignee:@me is:open sort:updated-desc'
 export const GITHUB_KEY_PATTERN = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$/
 
 export type GitHubCredentials = { token: string }
@@ -18,7 +17,7 @@ export type GitHubIssue = SourceIssue & {
 
 export type GitHubApi = {
   myself(signal: AbortSignal): Promise<{ login: string }>
-  search(signal: AbortSignal): Promise<SourceIssue[]>
+  search(query: string, signal: AbortSignal): Promise<SourceIssue[]>
   issue(key: string, signal: AbortSignal): Promise<GitHubIssue>
 }
 
@@ -30,6 +29,10 @@ const SEARCH_LIMIT = 200
 const PAGE_SIZE = 100
 const COMMENT_LIMIT = 20
 const COMMENT_PAGE_SIZE = 100
+// GitHub's issue search refuses a query that does not pick issues or pull requests; one that
+// picks neither is searched once for each.
+const KIND_QUALIFIER = /(?:^|\s)(?:is|type):(?:issue|pr|pull-request)(?=\s|$)/i
+const KINDS = ['is:issue', 'is:pull-request'] as const
 
 const User = z.object({ login: z.string() })
 const Label = z.union([z.string(), z.object({ name: z.string().nullish() })])
@@ -171,10 +174,23 @@ export class GitHubClient implements GitHubApi {
     return parse(User, await this.get('/user', signal))
   }
 
-  async search(signal: AbortSignal): Promise<SourceIssue[]> {
+  async search(query: string, signal: AbortSignal): Promise<SourceIssue[]> {
+    const queries = KIND_QUALIFIER.test(query) ? [query] : KINDS.map((kind) => `${query} ${kind}`)
+    const issues: SourceIssue[] = []
+    for (const q of queries) issues.push(...(await this.searchPages(q, signal)))
+    return issues.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, SEARCH_LIMIT)
+  }
+
+  private async searchPages(q: string, signal: AbortSignal): Promise<SourceIssue[]> {
     const issues: SourceIssue[] = []
     for (let page = 1; issues.length < SEARCH_LIMIT; page += 1) {
-      const query = new URLSearchParams({ q: GITHUB_ASSIGNED_QUERY, per_page: String(PAGE_SIZE), page: String(page) })
+      const query = new URLSearchParams({
+        q,
+        sort: 'updated',
+        order: 'desc',
+        per_page: String(PAGE_SIZE),
+        page: String(page)
+      })
       const found = parse(SearchPage, await this.get(`/search/issues?${query}`, signal))
       issues.push(
         ...found.items.flatMap((row) => {

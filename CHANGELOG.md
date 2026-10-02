@@ -6,10 +6,12 @@
 
 ### 改进
 
+- GitHub 收件箱的筛选条件可以在 设置 → 集成 → GitHub 里改，写法和 GitHub 网页上的搜索一样，例如加上 `org:组织名` 只看工作组织，或者写 `review-requested:@me is:pr is:open` 同步等你 review 的 PR。默认仍是分给你、还开着的 Issues 和 Pull Requests，升级后不用重新设置。
 - 聊天界面里 Codex 的「自动」模式允许联网，和 Claude Code 一致。之前沙箱写死不联网，`pnpm install`、打包这类要下载的命令每次都先失败几轮，再申请跳出沙箱；Kando 又不读 `config.toml`，在 Codex 配置里打开网络也没用。「逐项确认」「规划」「只读」仍然不联网。
 
 ### 修复
 
+- GitHub 收件箱同步失败、提示「筛选条件写得不对」。GitHub 现在要求搜索条件写明查 issue 还是 PR，Kando 原来的条件两样都没写；现在没写类型时分别查 issue 和 PR，再按更新时间合并。
 - Codex 在聊天里能用 Kando 的浏览器打开页面了。`browser_navigate` 之前标着「访问外部世界」，Codex 每次调用前都要发一个 MCP 审批请求，Kando 不处理这种请求，页面就一直打不开，后面的快照、点击、截图也跟着用不了。站点本来由 Kando 的确认卡把关，现在去掉这个标记，两种 agent 走同一道闸。
 - 聊天里的 Codex 不再先去用 ChatGPT 桌面版的浏览器插件（`cua_repl`）。它和 Kando 的浏览器工具同时出现时，Codex 往往先选那个，被桌面版的安全策略拒绝几次才换过来。Kando 启动 Codex 时把它禁用了，只影响 Kando 里的 Codex，桌面版照常能用。
 

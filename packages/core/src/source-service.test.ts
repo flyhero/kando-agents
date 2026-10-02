@@ -11,7 +11,7 @@ import { pngBytes } from './image-fixtures'
 import { SourceConfigStore } from './source-config'
 import { SourceError } from './source-error'
 import { LoginFlows } from './source-login-flow'
-import type { SourceProvider } from './source-provider'
+import type { SourceProvider, SourceSettings } from './source-provider'
 import { SourceService } from './source-service'
 import { ProjectRegistry } from './project-registry'
 import { TaskService } from './task-service'
@@ -221,6 +221,45 @@ describe('SourceService', () => {
     fixedService.start()
     await until(() => (listed > 0 ? true : undefined))
     fixedService.stop()
+  })
+
+  it('fills settings from their defaults for an unsaved instance and a record saved before a field existed', async () => {
+    const seen: SourceSettings[] = []
+    const defaulted: SourceProvider = {
+      id: 'defaulted',
+      name: 'Defaulted',
+      settings: [{ key: 'query', type: 'text', label: 'Query', required: true, default: 'mine' }],
+      normalizeSettings: (values) => ({ query: values.query || 'mine' }),
+      envCredential: (sourceEnv) => (sourceEnv.DEFAULTED_TOKEN ? { kind: 'token', payload: { token: sourceEnv.DEFAULTED_TOKEN } } : null),
+      login: async () => ({ credential: { kind: 'token', payload: {} }, account: 'Ann' }),
+      list: async (settings) => {
+        seen.push(settings)
+        return []
+      },
+      fetch: async () => {
+        throw new Error('not used')
+      }
+    }
+    env.DEFAULTED_TOKEN = 'token'
+    const defaultedService = new SourceService(
+      [defaulted],
+      config,
+      credentials,
+      new LoginFlows(),
+      tasks,
+      store,
+      attachments,
+      { inboxChanged: () => {}, listChanged: () => {} },
+      env,
+      () => clock
+    )
+    expect(defaultedService.inbox('defaulted', 'default').active).toBe(true)
+    await defaultedService.refresh('defaulted', 'default')
+    await config.save({ provider: 'defaulted', instance: 'default', enabled: true, settings: {} })
+    expect(defaultedService.list()[0]?.instances[0]?.settings).toEqual({ query: 'mine' })
+    clock += 60_000
+    await defaultedService.refresh('defaulted', 'default')
+    expect(seen).toEqual([{ query: 'mine' }, { query: 'mine' }])
   })
 
   it('keeps a working credential when a new sign-in fails', async () => {

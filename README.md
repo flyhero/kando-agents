@@ -203,7 +203,7 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 2. **登录**：点「登录」，按提示输入邮箱和 [API token](https://id.atlassian.com/manage-profile/security/api-tokens)（只需要读权限）。登录流程由来源驱动，界面和命令行都按同一套提示渲染：`pnpm kando source login jira` 也能在终端里登录。
 3. **收件箱**：core 每 15 分钟同步一次，结果出现在左侧的收件箱里。每个 issue 可以**导入**成一个「未执行」任务，或者**忽略**（之后在「已忽略」里可以恢复）。
 
-GitHub 在 设置 → 集成 → GitHub 中登录，不需要额外的站点或查询设置。登录时输入 Personal access token；收件箱固定同步 token 可访问范围内、分配给当前账号且仍开放的 Issues 和 Pull Requests。导入项使用 `owner/repository#number` 作为来源编号，并保存正文、标签和最近 20 条评论的快照。
+GitHub 在 设置 → 集成 → GitHub 中登录，登录时输入 Personal access token。筛选条件的写法和 GitHub 网页上的搜索一样，默认是 `assignee:@me is:open`，即 token 可访问范围内、分配给当前账号且仍开放的 Issues 和 Pull Requests；条件里没写 `is:issue` 或 `is:pr` 时两种都同步，结果按更新时间排序。导入项使用 `owner/repository#number` 作为来源编号，并保存正文、标签和最近 20 条评论的快照。
 
 导入的任务详情是空的，留给你（或细化的 agent）写方案；issue 的描述、最近 20 条评论，以及来源支持时的附件清单作为**原文快照**单独保存，在任务详情里只读显示，可以「重新拉取」。交给 agent 时，原文快照被标记为**不可信的参考资料**包在 `<untrusted-source>` 里，其中的指令不会被当作你的要求。执行时分支名带上 issue key（`kando/PROJ-123-…`），Jira 靠这个把分支关联到 issue。删除导入的任务后 issue 会回到收件箱；重做出的新任务继承原任务的来源和快照。
 

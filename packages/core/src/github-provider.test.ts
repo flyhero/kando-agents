@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LoginPrompt, SourceIssue } from '@kando/protocol'
 import type { GitHubApi, GitHubCredentials, GitHubIssue } from './github-client'
-import { githubProvider } from './github-provider'
+import { DEFAULT_GITHUB_QUERY, githubProvider } from './github-provider'
 import { SourceError } from './source-error'
 
 const signal = new AbortController().signal
@@ -25,14 +25,14 @@ const issue: GitHubIssue = {
   commentTotal: 3
 }
 
-function fakeApi(validToken: string, seen: GitHubCredentials[]): (credentials: GitHubCredentials) => GitHubApi {
+function fakeApi(validToken: string, seen: GitHubCredentials[], queries: string[] = []): (credentials: GitHubCredentials) => GitHubApi {
   return (credentials) => ({
     myself: async () => {
       seen.push(credentials)
       if (credentials.token !== validToken) throw new SourceError('auth-failed', 'GitHub answered 401')
       return { login: 'qingfei' }
     },
-    search: async () => [summary],
+    search: async (query) => (queries.push(query), [summary]),
     issue: async () => issue
   })
 }
@@ -54,18 +54,23 @@ describe('githubProvider', () => {
     expect(seen).toEqual([{ token: 'bad' }, { token: 'good' }])
   })
 
-  it('has no settings and reads its environment credential', () => {
+  it('takes a search query that defaults to open work assigned to the user, and reads its environment credential', () => {
     const provider = githubProvider(fakeApi('good', []))
-    expect(provider.settings).toEqual([])
-    expect(provider.normalizeSettings({ ignored: 'value' })).toEqual({})
+    expect(provider.settings).toMatchObject([{ key: 'query', required: true, default: DEFAULT_GITHUB_QUERY }])
+    expect(provider.normalizeSettings({ query: '  org:acme\n  label:bug  ', ignored: 'value' })).toEqual({ query: 'org:acme label:bug' })
+    expect(provider.normalizeSettings({ query: ' \n ' })).toEqual({ query: DEFAULT_GITHUB_QUERY })
+    expect(provider.normalizeSettings({})).toEqual({ query: DEFAULT_GITHUB_QUERY })
     expect(provider.envCredential?.({ KANDO_GITHUB_TOKEN: 'token' })).toEqual({ kind: 'token', payload: { token: 'token' } })
     expect(provider.envCredential?.({})).toBeNull()
   })
 
   it('lists work and builds an untrusted markdown snapshot on fetch', async () => {
-    const provider = githubProvider(fakeApi('good', []))
+    const queries: string[] = []
+    const provider = githubProvider(fakeApi('good', [], queries))
     const credential = { kind: 'token', payload: { token: 'good' } }
+    expect(await provider.list({ query: 'org:acme is:issue' }, credential, signal)).toEqual([summary])
     expect(await provider.list({}, credential, signal)).toEqual([summary])
+    expect(queries).toEqual(['org:acme is:issue', DEFAULT_GITHUB_QUERY])
     const detail = await provider.fetch({}, credential, 'acme/widgets#7', signal)
     expect(detail).toMatchObject(summary)
     expect(detail.markdown).toContain('仓库：acme/widgets')

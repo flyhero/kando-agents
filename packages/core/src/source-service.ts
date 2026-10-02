@@ -130,7 +130,8 @@ export class SourceService {
         instances: instances.map((entry) => ({
           instance: entry.instance,
           enabled: entry.enabled,
-          settings: entry.settings,
+          // A record saved before a field existed shows that field's default.
+          settings: { ...this.defaults(provider), ...entry.settings },
           credential: this.credentialStatus(provider, entry.instance)
         }))
       }
@@ -410,12 +411,14 @@ export class SourceService {
     return provider && configured && found ? { provider, settings: configured.settings, credential: found.credential } : null
   }
 
-  // A provider with no settings has a usable default instance without first writing an empty
-  // record. Saving the enabled toggle still creates an ordinary persisted configuration.
+  // A provider whose required settings all have defaults has a usable default instance without
+  // first writing a record. Saving the enabled toggle still creates an ordinary persisted configuration.
   private configured(provider: SourceProvider, instance: string): { enabled: boolean; settings: SourceSettings } | null {
+    const defaults = this.defaults(provider)
     const saved = this.config.get(provider.id, instance)
-    if (saved) return saved
-    return instance === DEFAULT_INSTANCE && provider.settings.length === 0 ? { enabled: true, settings: {} } : null
+    if (saved) return { enabled: saved.enabled, settings: { ...defaults, ...saved.settings } }
+    const complete = provider.settings.every((field) => !field.required || defaults[field.key])
+    return instance === DEFAULT_INSTANCE && complete ? { enabled: true, settings: defaults } : null
   }
 
   private requireReady(id: string, instance: string): Ready {

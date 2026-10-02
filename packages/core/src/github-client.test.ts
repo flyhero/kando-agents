@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GitHubClient, GITHUB_ASSIGNED_QUERY } from './github-client'
+import { GitHubClient } from './github-client'
 
 type Route = (url: URL) => Response | undefined
 
@@ -33,6 +33,20 @@ const row = (number: number, overrides: Record<string, unknown> = {}) => ({
 const signal = new AbortController().signal
 const credentials = { token: 'secret' }
 const base = 'https://api.github.test'
+const assigned = 'assignee:@me is:open'
+
+// Like GitHub, refuses a search that picks neither issues nor pull requests.
+function search(route: (q: string, page: string | null) => Response): Route {
+  return (url) => {
+    if (url.pathname !== '/search/issues') return undefined
+    const q = url.searchParams.get('q') ?? ''
+    if (!/(?:^|\s)is:(?:issue|pr|pull-request)(?=\s|$)/.test(q)) {
+      return json({ message: "Query must include 'is:issue' or 'is:pull-request'" }, 422)
+    }
+    return route(q, url.searchParams.get('page'))
+  }
+}
+const searched = (calls: { url: URL }[]) => calls.map((call) => [call.url.searchParams.get('q'), call.url.searchParams.get('page')])
 
 describe('GitHubClient', () => {
   it('authenticates with a bearer token and returns the current login', async () => {
@@ -42,17 +56,22 @@ describe('GitHubClient', () => {
     expect(calls[0]?.headers.get('x-github-api-version')).toBe('2022-11-28')
   })
 
-  it('pages through assigned open issues and pull requests', async () => {
+  it('searches issues and pull requests apart when the query picks neither', async () => {
     const first = Array.from({ length: 100 }, (_, index) => row(index + 1))
-    const { fetch, calls } = fakeFetch((url) => {
-      if (url.pathname !== '/search/issues') return undefined
-      return url.searchParams.get('page') === '2'
-        ? json({ items: [row(101, { pull_request: { url: 'api' }, labels: [{ name: 'frontend' }] })] })
-        : json({ items: first })
-    })
-    const found = await new GitHubClient(credentials, fetch, base).search(signal)
-    expect(found).toHaveLength(101)
-    expect(found[0]).toEqual({
+    const { fetch, calls } = fakeFetch(
+      search((q, page) => {
+        if (q.endsWith('is:pull-request')) {
+          return json({ items: [row(102, { pull_request: { url: 'api' }, labels: [], updated_at: '2026-09-22T08:10:00Z' })] })
+        }
+        return page === '2'
+          ? json({ items: [row(101, { labels: [{ name: 'frontend' }], updated_at: '2026-09-20T08:10:00Z' })] })
+          : json({ items: first })
+      })
+    )
+    const found = await new GitHubClient(credentials, fetch, base).search(assigned, signal)
+    expect(found).toHaveLength(102)
+    expect(found[0]).toMatchObject({ key: 'acme/widgets#102', type: 'Pull Request', priority: null })
+    expect(found[1]).toEqual({
       key: 'acme/widgets#1',
       title: 'Work 1',
       url: 'https://github.com/acme/widgets/issues/1',
@@ -62,9 +81,37 @@ describe('GitHubClient', () => {
       priority: 'P1',
       updatedAt: Date.parse('2026-09-21T08:10:00Z')
     })
-    expect(found[100]).toMatchObject({ key: 'acme/widgets#101', type: 'Pull Request', priority: null })
-    expect(calls[0]?.url.searchParams.get('q')).toBe(GITHUB_ASSIGNED_QUERY)
-    expect(calls.map((call) => call.url.searchParams.get('page'))).toEqual(['1', '2'])
+    expect(found[101]).toMatchObject({ key: 'acme/widgets#101', type: 'Issue', priority: null })
+    expect(searched(calls)).toEqual([
+      [`${assigned} is:issue`, '1'],
+      [`${assigned} is:issue`, '2'],
+      [`${assigned} is:pull-request`, '1']
+    ])
+    expect(calls[0]?.url.searchParams.get('sort')).toBe('updated')
+    expect(calls[0]?.url.searchParams.get('order')).toBe('desc')
+  })
+
+  it('searches a query that already picks a kind once, as written', async () => {
+    const reviews = fakeFetch(search(() => json({ items: [row(3, { pull_request: { url: 'api' } })] })))
+    const found = await new GitHubClient(credentials, reviews.fetch, base).search('review-requested:@me is:pr is:open', signal)
+    expect(found.map((issue) => issue.type)).toEqual(['Pull Request'])
+    expect(searched(reviews.calls)).toEqual([['review-requested:@me is:pr is:open', '1']])
+
+    // An excluded kind or a label that merely contains one picks nothing.
+    const bugs = fakeFetch(search(() => json({ items: [] })))
+    await new GitHubClient(credentials, bugs.fetch, base).search('-is:pr label:is:issue', signal)
+    expect(searched(bugs.calls)).toEqual([
+      ['-is:pr label:is:issue is:issue', '1'],
+      ['-is:pr label:is:issue is:pull-request', '1']
+    ])
+  })
+
+  it('reports a query GitHub refuses as a bad query', async () => {
+    const { fetch } = fakeFetch(() => json({ message: 'Validation Failed' }, 422))
+    await expect(new GitHubClient(credentials, fetch, base).search('is:issue in:nowhere', signal)).rejects.toMatchObject({
+      code: 'bad-query',
+      message: 'Validation Failed'
+    })
   })
 
   it('fetches detail and the latest comments in chronological order', async () => {
@@ -109,6 +156,6 @@ describe('GitHubClient', () => {
       }
     })
     const { fetch } = fakeFetch(() => new Response(huge, { status: 200 }))
-    await expect(new GitHubClient(credentials, fetch, base).search(signal)).rejects.toMatchObject({ code: 'response-too-large' })
+    await expect(new GitHubClient(credentials, fetch, base).search(assigned, signal)).rejects.toMatchObject({ code: 'response-too-large' })
   })
 })
