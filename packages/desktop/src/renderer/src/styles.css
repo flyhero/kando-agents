@@ -2213,31 +2213,31 @@ body.side-panel-resizing * {
   margin: 12px 2px;
 }
 
-/* The changes tab lists the projects as the git status panel does, each with rows that count
-   its commits and changed files. */
-.inspector-repos {
+/* Both git tabs share a project hierarchy; the status popover keeps its compact layout. */
+.inspector-body > .branch-status {
   width: auto;
   padding: 0;
 }
 
-.inspector-repos .branch-status-heading:first-child {
+.inspector-body > .branch-status .branch-status-heading:first-child {
   padding-top: 0;
 }
 
-.inspector-repos .branch-status-project {
+.inspector-body > .branch-status .branch-status-project {
   padding-left: 2px;
   padding-right: 2px;
 }
 
 /* A project anchors the group; its sections and files are subordinate small text. */
-.inspector-repos .branch-status-heading,
-.inspector-repos .branch-status-branch,
-.inspector-repos .inspector-row,
-.inspector-repos .changed-file {
+.inspector-body > .branch-status .branch-status-heading,
+.inspector-body > .branch-status .branch-status-branch,
+.inspector-body > .branch-status .branch-status-line,
+.inspector-body > .branch-status .inspector-row,
+.inspector-body > .branch-status .changed-file {
   font-size: 12px;
 }
 
-.inspector-repos .branch-status-name {
+.inspector-body > .branch-status .branch-status-name {
   font-size: 14px;
 }
 
