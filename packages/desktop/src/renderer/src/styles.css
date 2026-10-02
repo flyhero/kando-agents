@@ -4357,10 +4357,10 @@ button.task-tag-updated:hover {
 .chat-assistant:hover > .chat-message-actions,
 .chat-entry:hover > .chat-message-actions,
 .chat-message-actions:focus-within { opacity: 1; }
-.chat-user-footer { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 22px; margin-top: 4px; }
-.chat-user-footer .copy-button { opacity: 0; transition: opacity 0.12s; }
-.chat-entry:hover > .chat-user-footer .copy-button,
-.chat-user-footer:focus-within .copy-button { opacity: 1; }
+/* The time and the copy button show together, on hover, as a reply's actions do. */
+.chat-user-footer { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 22px; margin-top: 4px; opacity: 0; transition: opacity 0.12s; }
+.chat-entry:hover > .chat-user-footer,
+.chat-user-footer:focus-within { opacity: 1; }
 .chat-message-time { align-self: center; margin-left: 2px; color: var(--text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
 .chat-markdown table { border-collapse: collapse; }
 .chat-markdown th,
