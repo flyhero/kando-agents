@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { AGENT_KINDS, type AgentKind } from '@kando/protocol'
 import { AGENT_LABEL } from '../labels'
+import { AgentQuotaHint } from './AgentQuota'
 import { AgentIcon, CheckIcon, ChevronDownIcon } from './icons'
 import { Popover } from './Popover'
 
@@ -53,6 +54,7 @@ export function AgentPicker({
             >
               <AgentIcon agent={kind} />
               <span className="menu-item-title">{AGENT_LABEL[kind]}</span>
+              <AgentQuotaHint agent={kind} className="menu-item-path" />
               {kind === agent && (
                 <span className="menu-check">
                   <CheckIcon />

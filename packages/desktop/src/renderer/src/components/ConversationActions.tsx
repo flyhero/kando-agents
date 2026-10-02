@@ -1,6 +1,7 @@
 import type { Conversation, ConversationMode } from '@kando/protocol'
 import { openConversationDraft, perform, setNewConversationOpen, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
+import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 
 // The interface every start takes: the setting, where core can run it.
@@ -23,6 +24,8 @@ export function startOptions(mode: ConversationMode): { mode: ConversationMode; 
 }
 
 export function continueConversation(id: string, mode: ConversationMode = defaultMode()) {
+  const agent = useCore.getState().conversations[id]?.agent
+  if (agent && !confirmQuota(agent)) return Promise.resolve(null)
   return perform((rpc) => rpc.call('conversations.continue', { id, ...startOptions(mode) }))
 }
 

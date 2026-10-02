@@ -3,6 +3,7 @@ import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog } fro
 import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
+import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
 import { usePreferences } from '../preferences'
 import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
@@ -54,13 +55,19 @@ export function ConversationDraft() {
   const modelId = pick.model ?? catalog?.models.find((each) => each.isDefault)?.id ?? null
   const efforts = catalog?.models.find((each) => each.id === modelId)?.efforts ?? []
   const effort = pick.effort && efforts.includes(pick.effort) ? pick.effort : null
+  // The model a start would run, as quota windows name models; unknown until its catalog is in.
+  const modelFor = (kind: AgentKind) => {
+    const models = catalogs[kind]?.models ?? []
+    const id = picks[kind].model ?? models.find((each) => each.isDefault)?.id
+    return modelText(models.find((each) => each.id === id))
+  }
   const choose = (next: { model?: string; effort?: string }) => {
     if (agent) setPicks({ ...picks, [agent]: next })
   }
 
   // The page is how a chat start begins, as settings choose; a terminal start has its dialog.
   const create = () => {
-    if (!agent) return Promise.resolve(null)
+    if (!agent || !confirmQuota(agent, modelFor(agent))) return Promise.resolve(null)
     const chosen = optionsSupported
       ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
@@ -106,6 +113,7 @@ export function ConversationDraft() {
                   >
                     <AgentIcon agent={kind} />
                     <span>{AGENT_LABEL[kind]}</span>
+                    <AgentQuotaHint agent={kind} model={modelFor(kind)} />
                   </button>
                 ))}
               </div>

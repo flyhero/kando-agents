@@ -17,6 +17,7 @@ import { perform, selectTask, setInspectorOpen, showTaskChanges, showView, updat
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
+import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon, TerminalIcon } from './icons'
 import { Popover } from './Popover'
@@ -117,8 +118,15 @@ export function useTaskMode(task: Task): 'chat' | 'tui' {
   return supported && preferred === 'chat' ? 'chat' : 'tui'
 }
 
+// A task's agent with its quota used up would stall at once; the user decides.
+function quotaAllows(taskId: string): boolean {
+  const agent = useCore.getState().tasks[taskId]?.agent
+  return !agent || confirmQuota(agent)
+}
+
 // Starting in the chat view needs the user at the chat: the agent's plan comes back there.
 async function startTask(taskId: string, bypassable: boolean): Promise<void> {
+  if (!quotaAllows(taskId)) return
   const allowBypass = bypassable ? { allowBypass: usePreferences.getState().allowBypass } : {}
   if (await perform((rpc) => rpc.call('tasks.start', { id: taskId, ...allowBypass }))) {
     showTerminalFor(taskId, 'chat')
@@ -140,6 +148,7 @@ function useChatTurn(task: Task) {
 }
 
 async function runTask(taskId: string): Promise<void> {
+  if (!quotaAllows(taskId)) return
   const started = await perform((rpc) => rpc.call('tasks.run', { id: taskId }))
   if (started && usePreferences.getState().openTerminalOnRun) {
     showTerminalFor(taskId)
@@ -147,6 +156,7 @@ async function runTask(taskId: string): Promise<void> {
 }
 
 async function continueTask(taskId: string, note?: string): Promise<boolean> {
+  if (!quotaAllows(taskId)) return false
   const started = await perform((rpc) => rpc.call('tasks.continue', { id: taskId, note }))
   if (started && usePreferences.getState().openTerminalOnRun) {
     showTerminalFor(taskId)

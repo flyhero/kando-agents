@@ -4,6 +4,7 @@ import { dismissError, perform, selectTask, setNewTaskOpen, useCore } from '../c
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
 import { PRIMARY_KEY_LABEL, hasPrimaryModifier } from '../shortcut-keys'
+import { AgentQuotaHint } from './AgentQuota'
 import { DependencyPicker } from './DependencyPicker'
 import { ProjectPicker } from './ProjectPicker'
 import { ImageStrip } from './ImageStrip'
@@ -194,6 +195,7 @@ export function NewTaskDialog() {
               </option>
             ))}
           </select>
+          {agent && <AgentQuotaHint agent={agent} />}
         </label>
 
         <button

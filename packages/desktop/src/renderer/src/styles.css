@@ -2663,6 +2663,16 @@ button.task-tag-updated:hover {
   font-weight: 600;
 }
 
+/* Next to an agent being picked: the window that would stop it first. */
+.agent-quota {
+  font-size: 12px;
+  color: var(--level-color);
+}
+
+.agent-quota:is([data-level='warning'], [data-level='critical']) {
+  font-weight: 600;
+}
+
 .usage-separator {
   margin-right: 6px;
   color: var(--text-muted);

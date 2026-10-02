@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AgentKind, Conversation } from '@kando/protocol'
 import { dismissError, perform, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
+import { AgentQuotaHint, confirmQuota } from './AgentQuota'
 import { defaultMode, startOptions } from './ConversationActions'
 
 export function ConversationHandoffDialog({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
@@ -15,7 +16,7 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   const target: AgentKind = conversation.agent === 'claude' ? 'codex' : 'claude'
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
-    if (busy || (mustConfirm && !confirmed)) return
+    if (busy || (mustConfirm && !confirmed) || !confirmQuota(target)) return
     setBusy(true)
     // The new agent starts in the interface settings choose, as a new conversation does.
     const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(defaultMode()) }))
@@ -26,6 +27,7 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
     <div className="modal-body">
       <header className="modal-header"><h2>移交给 {AGENT_LABEL[target]}</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={onClose}>×</button></header>
       <p className="muted">会传递可见消息、补充说明和所选项目目录（无项目时为 Kando 托管目录）。隐藏推理和 provider 私有上下文无法移交；新 agent 应检查文件、Git 状态和测试结果。</p>
+      <AgentQuotaHint agent={target} />
       <label className="modal-field"><span className="modal-label">补充说明 <span className="modal-optional">[可选]</span></span>
         <textarea className="input modal-textarea" rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
       </label>

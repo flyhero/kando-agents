@@ -3,6 +3,7 @@ import { AGENT_KINDS, type AgentKind } from '@kando/protocol'
 import { dismissError, perform, selectConversation, setNewConversationOpen, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { AGENT_LABEL } from '../labels'
+import { AgentQuotaHint, confirmQuota } from './AgentQuota'
 import { defaultMode, startOptions } from './ConversationActions'
 import { ProjectPicker } from './ProjectPicker'
 
@@ -20,7 +21,7 @@ export function NewConversationDialog() {
   }, [])
   const close = () => setNewConversationOpen(false)
   const create = async () => {
-    if (busy) return
+    if (busy || !confirmQuota(agent)) return
     setBusy(true)
     // It starts in the interface settings choose; this dialog is how a terminal start begins.
     const created = await perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(defaultMode()) }))
@@ -34,6 +35,7 @@ export function NewConversationDialog() {
         <select className="input modal-input" value={agent} onChange={(event) => setAgent(event.target.value === 'claude' ? 'claude' : 'codex')}>
           {AGENT_KINDS.map((kind) => <option key={kind} value={kind}>{AGENT_LABEL[kind]}</option>)}
         </select>
+        <AgentQuotaHint agent={agent} />
       </label>
       <div className="modal-field"><span className="modal-label">项目 <span className="modal-optional">[可选]</span></span>
         <ProjectPicker

@@ -4,6 +4,7 @@ import { usePlans, type PlanItem } from '../chat-state'
 import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
+import { confirmQuota } from './AgentQuota'
 import { BranchStatus } from './BranchStatus'
 import type { ChatSurface } from './chat-surface'
 import { ConversationChat } from './ConversationChat'
@@ -36,6 +37,7 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
     changesHint: '任务 worktree 里还没提交的改动；点开检查器看',
     prepareSend: async (stopped) => {
       if (!stopped && task.status === 'running') return true
+      if (stopped && task.agent && !confirmQuota(task.agent)) return false
       const allowBypass = bypassable ? { allowBypass: usePreferences.getState().allowBypass } : {}
       return Boolean(await perform((rpc) => rpc.call('tasks.resumeChat', { id: task.id, ...allowBypass })))
     },
