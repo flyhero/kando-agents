@@ -2706,7 +2706,6 @@ button.task-tag-updated:hover {
   white-space: normal;
   text-align: left;
   cursor: default;
-  pointer-events: none;
 }
 
 .usage-card-title {
@@ -2794,10 +2793,17 @@ button.task-tag-updated:hover {
 }
 
 .usage-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding-top: 6px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
 }
+
+.usage-card-refresh { margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+.usage-card-refresh:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
+.usage-card-refresh:disabled { opacity: 0.5; cursor: default; }
 
 .modal {
   width: min(560px, calc(100vw - 32px));

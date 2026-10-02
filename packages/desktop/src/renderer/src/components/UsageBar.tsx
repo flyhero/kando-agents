@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AGENT_KINDS,
@@ -87,18 +87,40 @@ function ResetCreditList({ agent, credits, now }: { agent: AgentKind; credits: R
 const CARD_WIDTH = 340
 // Hovering past on the way somewhere else should not flash a card.
 const CARD_DELAY_MS = 300
+const CARD_HIDE_DELAY_MS = 200
 
 // Every window in full, above the segment. Rendered into <body> at a fixed position: inside the
 // status bar it would be clipped, and a button may not contain it.
-function UsageCard({ usage, now, anchor, id }: { usage: AgentUsage; now: number; anchor: DOMRect; id: string }) {
+function UsageCard({ usage, now, anchor, id, cardRef, onEnter, onLeave, onRefresh, refreshing }: {
+  usage: AgentUsage
+  now: number
+  anchor: DOMRect
+  id: string
+  cardRef: RefObject<HTMLDivElement | null>
+  onEnter: () => void
+  onLeave: () => void
+  onRefresh: () => void
+  refreshing: boolean
+}) {
   const left = Math.max(8, Math.min(anchor.left, window.innerWidth - CARD_WIDTH - 8))
   const bottom = window.innerHeight - anchor.top + 6
   const footer =
     usage.status === 'error'
       ? `${errorText(usage)}${usage.windows.length > 0 ? `（数据停留在 ${formatClock(usage.updatedAt, now)}）` : ''}`
-      : `${formatDuration(now - usage.updatedAt)}前更新 · 点击刷新`
+      : `${formatDuration(now - usage.updatedAt)}前更新`
   return (
-    <div id={id} role="tooltip" className="usage-card" style={{ left, bottom, width: CARD_WIDTH }}>
+    <div
+      id={id}
+      ref={cardRef}
+      role="dialog"
+      aria-label={`${AGENT_LABEL[usage.agent]} 用量额度`}
+      className="usage-card"
+      style={{ left, bottom, width: CARD_WIDTH }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onFocusCapture={onEnter}
+      onBlurCapture={onLeave}
+    >
       <div className="usage-card-title">
         {AGENT_LABEL[usage.agent]}
         {usage.plan && <span className="muted"> · {usage.plan}</span>}
@@ -121,7 +143,12 @@ function UsageCard({ usage, now, anchor, id }: { usage: AgentUsage; now: number;
       {usage.resetCredits && (usage.resetCredits.available > 0 || usage.resetCredits.blockedBy) && (
         <ResetCreditList agent={usage.agent} credits={usage.resetCredits} now={now} />
       )}
-      <div className="usage-card-footer">{footer}</div>
+      <div className="usage-card-footer">
+        <span>{footer}</span>
+        <button type="button" className="link-button usage-card-refresh" disabled={refreshing} onClick={onRefresh}>
+          {refreshing ? '刷新中…' : '立即刷新'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -137,55 +164,119 @@ function UsageSegment({ usage, now }: { usage: AgentUsage; now: number }) {
   const windows = inlineWindows(usage.windows)
   const cardId = useId()
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const [pinned, setPinned] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const card = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const close = useCallback(() => {
+    clearTimeout(timer.current)
+    setPinned(false)
+    setAnchor(null)
+  }, [])
   const show = (element: HTMLElement, delay: number) => {
+    if (pinned) return
     clearTimeout(timer.current)
     timer.current = setTimeout(() => setAnchor(element.getBoundingClientRect()), delay)
   }
   const hide = () => {
     clearTimeout(timer.current)
-    setAnchor(null)
+    if (!pinned) timer.current = setTimeout(() => setAnchor(null), CARD_HIDE_DELAY_MS)
+  }
+  const keepOpen = () => clearTimeout(timer.current)
+  const refresh = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await refreshUsage()
+    } finally {
+      setRefreshing(false)
+    }
   }
   useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => {
+    if (!anchor) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !trigger.current?.contains(event.target) && !card.current?.contains(event.target)) close()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      close()
+      trigger.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [anchor, close])
+  useEffect(() => {
+    if (pinned) card.current?.querySelector('button')?.focus()
+  }, [pinned])
   return (
-    <button
-      type="button"
-      className="usage-segment"
-      data-stale={usage.status === 'error' || undefined}
-      aria-describedby={anchor ? cardId : undefined}
-      onMouseEnter={(event) => show(event.currentTarget, CARD_DELAY_MS)}
-      onMouseLeave={hide}
-      onFocus={(event) => show(event.currentTarget, 0)}
-      onBlur={hide}
-      onClick={() => void refreshUsage()}
-    >
-      {/* Just the mark: the card that opens on hover leads with the full name. */}
-      <span className="usage-agent" role="img" aria-label={AGENT_LABEL[usage.agent]}>
-        <AgentIcon agent={usage.agent} />
-      </span>
-      {tightest && (
-        <span className="usage-meter" data-level={usageLevel(tightest.usedPercent)} aria-hidden="true">
-          <span style={{ width: `${shownPercent(tightest, display)}%` }} />
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        className="usage-segment"
+        data-stale={usage.status === 'error' || undefined}
+        aria-haspopup="dialog"
+        aria-expanded={anchor !== null}
+        aria-controls={anchor ? cardId : undefined}
+        onMouseEnter={(event) => show(event.currentTarget, CARD_DELAY_MS)}
+        onMouseLeave={hide}
+        onClick={(event) => {
+          if (pinned) close()
+          else {
+            clearTimeout(timer.current)
+            setAnchor(event.currentTarget.getBoundingClientRect())
+            setPinned(true)
+          }
+        }}
+      >
+        {/* Just the mark: the card that opens on hover leads with the full name. */}
+        <span className="usage-agent" role="img" aria-label={AGENT_LABEL[usage.agent]}>
+          <AgentIcon agent={usage.agent} />
         </span>
+        {tightest && (
+          <span className="usage-meter" data-level={usageLevel(tightest.usedPercent)} aria-hidden="true">
+            <span style={{ width: `${shownPercent(tightest, display)}%` }} />
+          </span>
+        )}
+        {windows.map((window, index) => (
+          <span key={`${window.kind}-${window.model}`} className="usage-window" data-level={usageLevel(window.usedPercent)}>
+            {index > 0 && <span className="usage-separator">·</span>}
+            {windowLabel(window)} {percentText(window, display)}
+          </span>
+        ))}
+        {usage.resetCredits && usage.resetCredits.available > 0 && (
+          <span className="usage-credits" data-soon={expiresSoon(usage.resetCredits.credits[0]?.expiresAt ?? null, now) || undefined}>
+            重置卡 {usage.resetCredits.available}
+          </span>
+        )}
+        {usage.status === 'error' && (
+          <span className="usage-stale" role="img" aria-label={errorText(usage)}>
+            ⚠
+          </span>
+        )}
+      </button>
+      {anchor && createPortal(
+        <UsageCard
+          usage={usage}
+          now={now}
+          anchor={anchor}
+          id={cardId}
+          cardRef={card}
+          onEnter={keepOpen}
+          onLeave={hide}
+          onRefresh={() => void refresh()}
+          refreshing={refreshing}
+        />,
+        document.body
       )}
-      {windows.map((window, index) => (
-        <span key={`${window.kind}-${window.model}`} className="usage-window" data-level={usageLevel(window.usedPercent)}>
-          {index > 0 && <span className="usage-separator">·</span>}
-          {windowLabel(window)} {percentText(window, display)}
-        </span>
-      ))}
-      {usage.resetCredits && usage.resetCredits.available > 0 && (
-        <span className="usage-credits" data-soon={expiresSoon(usage.resetCredits.credits[0]?.expiresAt ?? null, now) || undefined}>
-          重置卡 {usage.resetCredits.available}
-        </span>
-      )}
-      {usage.status === 'error' && (
-        <span className="usage-stale" role="img" aria-label={errorText(usage)}>
-          ⚠
-        </span>
-      )}
-      {anchor && createPortal(<UsageCard usage={usage} now={now} anchor={anchor} id={cardId} />, document.body)}
-    </button>
+    </>
   )
 }
 
