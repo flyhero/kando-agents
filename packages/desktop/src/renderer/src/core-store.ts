@@ -17,6 +17,7 @@ import {
   type Conversation
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
+import { activeInboxes, inboxKey } from './source-inboxes'
 import type { BrowserStatus } from '@kando/protocol'
 import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from './browser-state'
 import type { InspectorTab } from './components/Inspector'
@@ -42,8 +43,6 @@ export type LoginState = {
   // Set once core reports the flow finished.
   result: { account: string | null; problem: SourceProblem | null } | null
 }
-
-export const inboxKey = (inbox: Pick<SourceInbox, 'provider' | 'instance'>) => `${inbox.provider}/${inbox.instance}`
 
 type CoreState = {
   connection: ConnectionState
@@ -77,6 +76,8 @@ type CoreState = {
   settingsSection: string | null
   // The source inbox takes the right-hand pane instead of a task.
   inboxOpen: boolean
+  // The inbox tab last shown, as an inboxKey; the tabs appear once two sources are signed in.
+  inboxTab: string | null
   // So does the page of worktrees, over whatever else was shown there.
   worktreesOpen: boolean
   error: string | null
@@ -121,6 +122,7 @@ export const useCore = create<CoreState>()(() => ({
   settingsOpen: false,
   settingsSection: null,
   inboxOpen: false,
+  inboxTab: null,
   worktreesOpen: false,
   error: null,
   usage: null,
@@ -305,8 +307,20 @@ export function setNewConversationOpen(open: boolean): void {
   useCore.setState({ newConversationOpen: open })
 }
 
+// The sidebar entry shows a failure in place of the count, so opening it then shows that failure.
 export function openInbox(): void {
-  useCore.setState({ section: 'tasks', inboxOpen: true, selectedId: null, settingsOpen: false, worktreesOpen: false })
+  useCore.setState((s) => ({
+    section: 'tasks',
+    inboxOpen: true,
+    inboxTab: activeInboxes(s.sources, s.inboxes).find((entry) => entry.inbox.problem)?.key ?? s.inboxTab,
+    selectedId: null,
+    settingsOpen: false,
+    worktreesOpen: false
+  }))
+}
+
+export function setInboxTab(key: string): void {
+  useCore.setState({ inboxTab: key })
 }
 
 export function showView(view: TaskView): void {

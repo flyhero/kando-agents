@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { SourceInbox, SourceIssue, Task } from '@kando/protocol'
-import { inboxKey, perform, selectTask, setSettingsOpen, useCore } from '../core-store'
+import { perform, selectTask, setInboxTab, setSettingsOpen, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { sourceProblemText } from '../labels'
+import { activeInboxes, inboxTab, type ActiveInbox } from '../source-inboxes'
 import { GearIcon, InboxIcon, RefreshIcon } from './icons'
 
 const clock = (ms: number) =>
@@ -38,8 +39,35 @@ function IssueRow({ issue, name, busy, children }: { issue: SourceIssue; name: s
   )
 }
 
+// One tab per inbox. What waits behind the others is out of sight, so each tab carries its count
+// and whether its last sync failed.
+function InboxTabs({ active, selected }: { active: readonly ActiveInbox[]; selected: string }) {
+  return (
+    <div className="inbox-tabs" role="tablist" aria-label="任务来源">
+      {active.map(({ key, inbox, name }) => (
+        <button key={key} type="button" role="tab" aria-selected={key === selected} onClick={() => setInboxTab(key)}>
+          {name}
+          {inbox.problem && <span className="inbox-tab-alert" role="img" aria-label="同步失败" />}
+          {inbox.items.length > 0 && <span className="count">{inbox.items.length}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // One source instance's share of the inbox; each issue either becomes a task or is set aside.
-function InboxSection({ inbox, name, onImported }: { inbox: SourceInbox; name: string; onImported: (task: Task) => void }) {
+// Under tabs, the tabs take the place of its name.
+function InboxSection({
+  inbox,
+  name,
+  tabs,
+  onImported
+}: {
+  inbox: SourceInbox
+  name: string
+  tabs?: ReactNode
+  onImported: (task: Task) => void
+}) {
   const tasks = useCore((s) => s.tasks)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [showDismissed, setShowDismissed] = useState(false)
@@ -65,8 +93,12 @@ function InboxSection({ inbox, name, onImported }: { inbox: SourceInbox; name: s
   return (
     <section className="inbox-section" aria-label={`${name} 收件箱`}>
       <header className="inbox-section-header">
-        <h3>{name}</h3>
-        <span className="muted">{inbox.items.length} 个待处理</span>
+        {tabs ?? (
+          <>
+            <h3>{name}</h3>
+            <span className="muted">{inbox.items.length} 个待处理</span>
+          </>
+        )}
         <div className="toolbar">
           <span className="muted inbox-synced">
             {inbox.refreshing ? '同步中…' : inbox.refreshedAt !== null ? `${clock(inbox.refreshedAt)} 同步` : ''}
@@ -80,71 +112,78 @@ function InboxSection({ inbox, name, onImported }: { inbox: SourceInbox; name: s
         </div>
       </header>
 
-      {inbox.problem && (
-        <p className="inbox-error" role="alert">
-          同步失败：{sourceProblemText(inbox.problem)}
-          <button type="button" className="link-button" onClick={openSettings}>
-            检查设置
-          </button>
-        </p>
-      )}
+      <div className="inbox-section-body" role={tabs ? 'tabpanel' : undefined}>
+        {inbox.problem && (
+          <p className="inbox-error" role="alert">
+            同步失败：{sourceProblemText(inbox.problem)}
+            <button type="button" className="link-button" onClick={openSettings}>
+              检查设置
+            </button>
+          </p>
+        )}
 
-      {inbox.items.length > 0 ? (
-        <ul className="inbox-list">
-          {inbox.items.map((issue) => (
-            <IssueRow key={issue.key} issue={issue} name={name} busy={busyKey === issue.key}>
-              <button type="button" className="button primary" disabled={busyKey !== null} onClick={() => void importIssue(issue.key)}>
-                导入
-              </button>
-              <button type="button" className="button ghost" disabled={busyKey !== null} onClick={() => void dismiss(issue.key)}>
-                忽略
-              </button>
-            </IssueRow>
-          ))}
-        </ul>
-      ) : (
-        <p className="inbox-empty">
-          {inbox.refreshedAt !== null
-            ? '没有新的 issue：符合条件的都已经导入或忽略了。'
-            : inbox.problem
-              ? '同步成功后，issue 会出现在这里。'
-              : '正在第一次同步…'}
-        </p>
-      )}
+        {inbox.items.length > 0 ? (
+          <ul className="inbox-list">
+            {inbox.items.map((issue) => (
+              <IssueRow key={issue.key} issue={issue} name={name} busy={busyKey === issue.key}>
+                <button type="button" className="button primary" disabled={busyKey !== null} onClick={() => void importIssue(issue.key)}>
+                  导入
+                </button>
+                <button type="button" className="button ghost" disabled={busyKey !== null} onClick={() => void dismiss(issue.key)}>
+                  忽略
+                </button>
+              </IssueRow>
+            ))}
+          </ul>
+        ) : (
+          <p className="inbox-empty">
+            {inbox.refreshedAt !== null
+              ? '没有新的 issue：符合条件的都已经导入或忽略了。'
+              : inbox.problem
+                ? '同步成功后，issue 会出现在这里。'
+                : '正在第一次同步…'}
+          </p>
+        )}
 
-      {inbox.dismissed.length > 0 && (
-        <div className="inbox-dismissed">
-          <button type="button" className="link-button" aria-expanded={showDismissed} onClick={() => setShowDismissed(!showDismissed)}>
-            {showDismissed ? '收起' : '查看'}已忽略的 {inbox.dismissed.length} 个
-          </button>
-          {showDismissed && (
-            <ul className="inbox-list">
-              {inbox.dismissed.map((issue) => (
-                <IssueRow key={issue.key} issue={issue} name={name} busy={busyKey === issue.key}>
-                  <button type="button" className="button" disabled={busyKey !== null} onClick={() => void restore(issue.key)}>
-                    恢复
-                  </button>
-                </IssueRow>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+        {inbox.dismissed.length > 0 && (
+          <div className="inbox-dismissed">
+            <button type="button" className="link-button" aria-expanded={showDismissed} onClick={() => setShowDismissed(!showDismissed)}>
+              {showDismissed ? '收起' : '查看'}已忽略的 {inbox.dismissed.length} 个
+            </button>
+            {showDismissed && (
+              <ul className="inbox-list">
+                {inbox.dismissed.map((issue) => (
+                  <IssueRow key={issue.key} issue={issue} name={name} busy={busyKey === issue.key}>
+                    <button type="button" className="button" disabled={busyKey !== null} onClick={() => void restore(issue.key)}>
+                      恢复
+                    </button>
+                  </IssueRow>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   )
 }
 
-// Every task source that is set up and signed in, one section each.
+// Every task source that is set up and signed in: one section, or a tab each once there are two.
 export function SourceInboxView() {
   const sources = useCore((s) => s.sources)
   const inboxes = useCore((s) => s.inboxes)
+  const wanted = useCore((s) => s.inboxTab)
   const [imported, setImported] = useState<Task | null>(null)
-  const active = (sources ?? []).flatMap((source) =>
-    source.instances.flatMap((entry) => {
-      const inbox = inboxes[inboxKey({ provider: source.provider, instance: entry.instance })]
-      return inbox?.active ? [{ inbox, name: source.name }] : []
-    })
-  )
+  const active = activeInboxes(sources, inboxes)
+  const tabbed = active.length > 1
+  const selected = tabbed ? inboxTab(active, wanted) : null
+
+  // Pin the tab once it is shown, so importing its last issue does not switch to another source.
+  useEffect(() => {
+    if (selected !== null && selected !== wanted) {
+      setInboxTab(selected)
+    }
+  }, [selected, wanted])
 
   if (active.length === 0) {
     const first = sources?.[0]
@@ -177,9 +216,17 @@ export function SourceInboxView() {
           </button>
         </p>
       )}
-      {active.map(({ inbox, name }) => (
-        <InboxSection key={inboxKey(inbox)} inbox={inbox} name={name} onImported={setImported} />
-      ))}
+      {active
+        .filter((entry) => !tabbed || entry.key === selected)
+        .map(({ key, inbox, name }) => (
+          <InboxSection
+            key={key}
+            inbox={inbox}
+            name={name}
+            tabs={selected !== null ? <InboxTabs active={active} selected={selected} /> : undefined}
+            onImported={setImported}
+          />
+        ))}
     </section>
   )
 }

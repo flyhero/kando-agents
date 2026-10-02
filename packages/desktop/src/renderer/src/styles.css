@@ -2095,7 +2095,8 @@ body.side-panel-resizing * {
   margin-right: auto;
 }
 
-.inspector-tabs [role='tab'] {
+.inspector-tabs [role='tab'],
+.inbox-tabs [role='tab'] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3529,6 +3530,45 @@ button.task-tag-updated:hover {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
+}
+
+.inbox-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Shaped like the inspector's tabs (shared rule above); the active one in terracotta. */
+.inbox-tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.inbox-tabs [role='tab'] {
+  flex-shrink: 0;
+}
+
+.inbox-tabs [role='tab']:hover {
+  background: var(--fill);
+}
+
+.inbox-tabs [role='tab'][aria-selected='true'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.inbox-tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.inbox-tab-alert {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
 }
 
 .source-account {
