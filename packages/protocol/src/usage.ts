@@ -68,3 +68,38 @@ export function tightestWindow(windows: readonly UsageWindow[]): UsageWindow | n
     null
   )
 }
+
+// ok: room to run · tight: close to a cap · exhausted: a cap is reached, the agent would stall
+// unknown: nothing to judge by (signed out, no reading yet)
+export type QuotaState = 'ok' | 'tight' | 'exhausted' | 'unknown'
+
+// `window` is the one the state comes from; `stale` means the numbers may have moved since.
+export type QuotaVerdict = { state: QuotaState; window: UsageWindow | null; stale: boolean }
+
+// Two missed polls: numbers older than this are shown with a caveat.
+export const QUOTA_STALE_MS = 30 * 60_000
+
+// `model` is any text naming the model to run (its id, label, description): a model-specific
+// window counts when that text names it, as 'Opus' names "Opus 5.5". Without one, only the
+// windows every model shares count.
+export function quotaVerdict(usage: AgentUsage | null | undefined, now: number, model?: string | null): QuotaVerdict {
+  if (!usage || usage.status === 'signed-out') {
+    return { state: 'unknown', window: null, stale: false }
+  }
+  const named = model?.toLowerCase() ?? null
+  const windows = usage.windows.filter(
+    (window) =>
+      (window.model === null || (named !== null && named.includes(window.model.toLowerCase()))) &&
+      // A window past its reset has started over; its percentage is from before.
+      (window.resetsAt === null || window.resetsAt > now)
+  )
+  const stale = usage.status === 'error' || now - usage.updatedAt > QUOTA_STALE_MS
+  const window = tightestWindow(windows)
+  if (!window) {
+    return { state: usage.windows.length > 0 ? 'ok' : 'unknown', window: null, stale }
+  }
+  if (window.usedPercent >= 100) {
+    return { state: 'exhausted', window, stale }
+  }
+  return { state: usageLevel(window.usedPercent) === 'critical' ? 'tight' : 'ok', window, stale }
+}
