@@ -22,6 +22,8 @@ export type KandoPaths = {
   credentials: string
   // Machine-level behavior owned by core, not by a particular desktop window.
   awakeConfig: string
+  // How chats run: whether agents suggest the user's next message.
+  chatSettings: string
   // Where the first Jira integration kept its settings and token; migrated on start.
   legacyJiraConfig: string
   // Images, by content hash; owner-only.
@@ -45,6 +47,7 @@ export function kandoPaths(home: string = kandoHome()): KandoPaths {
     sourcesConfig: path.join(home, 'sources.json'),
     credentials: path.join(home, 'credentials.json'),
     awakeConfig: path.join(home, 'awake.json'),
+    chatSettings: path.join(home, 'chat-settings.json'),
     legacyJiraConfig: path.join(home, 'jira.json'),
     attachments: path.join(home, 'attachments'),
     sessions: path.join(home, 'sessions'),

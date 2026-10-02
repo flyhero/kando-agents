@@ -11,6 +11,11 @@ export type ConversationMode = z.infer<typeof ConversationMode>
 export const ChatTurnActivity = z.enum(['idle', 'running', 'awaiting'])
 export type ChatTurnActivity = z.infer<typeof ChatTurnActivity>
 
+// How chats run on this machine, whichever window asks; core keeps them.
+// promptSuggestions: after each turn the agent predicts the user's next message (Claude Code only).
+export const ChatSettings = z.object({ promptSuggestions: z.boolean() })
+export type ChatSettings = z.infer<typeof ChatSettings>
+
 // interrupted: the user stopped the turn while the call ran.
 export const ChatToolStatus = z.enum(['running', 'done', 'failed', 'denied', 'interrupted'])
 export type ChatToolStatus = z.infer<typeof ChatToolStatus>

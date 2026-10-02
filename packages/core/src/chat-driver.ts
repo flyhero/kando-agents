@@ -56,6 +56,8 @@ export type ChatStageOptions = {
   // The stage may only plan: read-only in its folders, and its plan kept rather than carried out,
   // whatever the agent or a client asks.
   planOnly?: boolean
+  // Whether the agent, one that can, suggests the user's next message after each turn.
+  promptSuggestions?: boolean
 }
 
 export type ChatPreferences = { permissionMode?: string; model?: string; effort?: string }
@@ -92,4 +94,8 @@ export interface ChatDriver {
   // What the agent reported about its limits since the last call. Only live frames carry it:
   // logged() keeps none, so a replayed stage never reports old numbers.
   takeUsage?(): UsageReport | null
+  // What the agent predicts the user will type next, from the turn's end until the next message.
+  suggestion?(): string | null
+  // Frames that stop (or restart) the suggestions without restarting the agent.
+  pauseSuggestions?(paused: boolean): unknown[]
 }

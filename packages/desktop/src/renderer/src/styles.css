@@ -5096,6 +5096,10 @@ button.task-tag-updated:hover {
    the context ring and the steer button, which sit last before it, keep their distance. */
 .chat-options > .chat-context,
 .chat-options > .chat-steer-button { margin-right: 8px; }
+/* Beside the send button, which then keeps to it rather than to the far edge. */
+.chat-suggestion-hint { margin-left: auto; color: var(--text-3); font-size: 12px; white-space: nowrap; }
+.chat-suggestion-hint kbd { padding: 0 4px; border: 1px solid var(--border-2); border-radius: var(--radius-xs); font-family: var(--mono); font-size: 11px; }
+.chat-suggestion-hint ~ .chat-input-button { margin-left: 8px; }
 .chat-input-button svg { width: 16px; height: 16px; }
 .chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
 .chat-input-button[data-stop] { background: var(--text); color: var(--surface); }

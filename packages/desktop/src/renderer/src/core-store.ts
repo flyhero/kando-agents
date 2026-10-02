@@ -16,7 +16,8 @@ import {
   type Terminal,
   type TerminalCommand,
   type Conversation,
-  type ComputerAwakeStatus
+  type ComputerAwakeStatus,
+  type ChatSettings
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
 import { activeInboxes, inboxKey } from './source-inboxes'
@@ -73,6 +74,8 @@ type CoreState = {
   // The hosted browser as core last reported it; null until core says, or on a core without one.
   browser: BrowserStatus | null
   awake: ComputerAwakeStatus | null
+  // How chats run, as core keeps them; null until core says, or on a core without them.
+  chatSettings: ChatSettings | null
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -124,6 +127,7 @@ export const useCore = create<CoreState>()(() => ({
   conversationPlan: null,
   browser: null,
   awake: null,
+  chatSettings: null,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -448,6 +452,11 @@ export function useConversationStatsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-stats') ?? false)
 }
 
+export async function setChatSettings(patch: Partial<ChatSettings>): Promise<void> {
+  const settings = await perform((rpc) => rpc.call('system.setChatSettings', patch))
+  if (settings) useCore.setState({ chatSettings: settings })
+}
+
 export function useAwakeSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('keep-awake') ?? false)
 }
@@ -539,6 +548,7 @@ export function startCoreConnection(): void {
         rpc.on('conversations.chatDelta', ({ conversationId, stageId, itemId, append }) => receiveChatDelta(conversationId, stageId, itemId, append))
         rpc.on('browser.changed', ({ status }) => useCore.setState({ browser: status }))
         rpc.on('system.awakeChanged', ({ status }) => useCore.setState({ awake: status }))
+        rpc.on('system.chatSettingsChanged', ({ settings }) => useCore.setState({ chatSettings: settings }))
         rpc.on('browser.tabsChanged', ({ conversationId, tabs }) => receiveBrowserTabs(conversationId, tabs))
         rpc.on('usage.changed', ({ usage }) =>
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))
@@ -578,6 +588,7 @@ export function startCoreConnection(): void {
         // Asked only of a core that has one, and never waited for: it starts the host when it is down.
         if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
+        if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',

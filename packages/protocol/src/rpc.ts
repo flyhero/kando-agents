@@ -5,7 +5,7 @@ import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, Sour
 import { AgentUsage } from './usage'
 import { AgentStats, ConversationStats } from './agent-stats'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
-import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ConversationMode } from './chat'
+import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings, ConversationMode } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
@@ -42,7 +42,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // usage-limit: core continues a chat whose turn hit a usage limit once it lifts (usageLimit items).
 // agent-stats: core keeps each task run and reports how each agent's went (agents.stats).
 // conversation-stats: core keeps each chat turn and reports what each agent's cost (agents.conversationStats).
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats'] as const
+// prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
+export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions'] as const
 // Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
 // conversation keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -63,6 +64,8 @@ export const rpcMethods = {
   },
   'system.awakeStatus': { params: z.object({}), result: ComputerAwakeStatus },
   'system.setAwakeMode': { params: z.object({ mode: ComputerAwakeMode }), result: ComputerAwakeStatus },
+  'system.chatSettings': { params: z.object({}), result: ChatSettings },
+  'system.setChatSettings': { params: ChatSettings.partial(), result: ChatSettings },
   'tasks.list': {
     params: z.object({ status: TaskStatus.optional() }),
     result: z.array(Task)
@@ -371,6 +374,7 @@ export const rpcMethods = {
 
 export const rpcNotifications = {
   'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
+  'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.

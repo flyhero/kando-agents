@@ -18,6 +18,12 @@ export function steersMessage(event: KeyboardEvent<HTMLTextAreaElement>): boolea
   return event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing
 }
 
+// Tab or →, alone, takes the suggestion the empty input shows.
+function takesSuggestion(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+  const alone = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && !event.nativeEvent.isComposing
+  return alone && (event.key === 'Tab' || event.key === 'ArrowRight')
+}
+
 // Images from two sources in order, each once.
 export function mergeImages(first: readonly ChatImage[], second: readonly ChatImage[]): ChatImage[] {
   const known = new Set(first.map((image) => image.id))
@@ -131,6 +137,11 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const stopped = !running
   const starting = stopped && busy
   const canSend = (idle || queueable || stopped) && !busy && !surface.sendBlocker && attached.uploading === 0 && (text.trim() !== '' || attached.images.length > 0)
+  // What the agent guesses comes next, as Claude Code shows it: grey in the empty input, Tab or →
+  // takes it, typing anything else puts it away for good.
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const offered = idle ? conversation.chat?.suggestion ?? null : null
+  const suggestion = offered && offered !== dismissed && text === '' && attached.images.length === 0 && !surface.sendBlocker ? offered : null
   const canSteer = queueable && steerable && canSend
   // steer: into the running turn now; otherwise a message while the agent works waits its turn.
   const send = async (steer = false) => {
@@ -189,14 +200,20 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         aria-label="给 agent 的消息"
         readOnly={starting}
         placeholder={
-          surface.sendBlocker ?? (idle || stopped ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
+          surface.sendBlocker ?? suggestion ?? (idle || stopped ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
             : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断')
         }
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          if (suggestion && event.target.value) setDismissed(suggestion)
+          setText(event.target.value)
+        }}
         onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
         onKeyDown={(event) => {
-          if (steersMessage(event)) {
+          if (suggestion && takesSuggestion(event)) {
+            event.preventDefault()
+            setText(suggestion)
+          } else if (steersMessage(event)) {
             event.preventDefault()
             void send(true)
           } else if (sendsMessage(event)) {
@@ -212,6 +229,11 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
       <div className="chat-options">
         {imagesSupported && <ChatAddMenu disabled={starting} onAdd={attached.add} />}
         {optionsSupported && state && <ChatOptionsBar conversation={conversation} state={state} />}
+        {suggestion && (
+          <span className="chat-suggestion-hint" aria-hidden="true">
+            <kbd>Tab</kbd> 填入建议
+          </span>
+        )}
         {canSteer && (
           <button type="button" className="button ghost chat-steer-button" data-tooltip-side="top-end" data-tooltip="不等回合结束，现在就交给 agent（⌘Enter）" onClick={() => void send(true)}>
             立刻插入

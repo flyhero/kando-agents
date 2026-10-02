@@ -43,6 +43,7 @@ type Live = ChatStage & {
   exitedEarly: { code: number } | null
   stderr: string
   activity: ChatTurnActivity
+  suggestion: string | null
   provider: string | null
   started: { resolve(): void; reject(error: Error): void } | null
   // When anything last went either way, or the user last changed something.
@@ -100,6 +101,7 @@ export class ChatHost {
       exitedEarly: null,
       stderr: '',
       activity: driver.activity(),
+      suggestion: driver.suggestion?.() ?? null,
       provider: null,
       started: null,
       lastActive: records.at(-1)?.at ?? this.now()
@@ -172,6 +174,20 @@ export class ChatHost {
 
   activity(conversationId: string): ChatTurnActivity | null {
     return this.liveOf(conversationId)?.driver.activity() ?? null
+  }
+
+  suggestion(conversationId: string): string | null {
+    return this.liveOf(conversationId)?.driver.suggestion?.() ?? null
+  }
+
+  // For every running stage at once: the setting is the machine's, not one conversation's.
+  pauseSuggestions(paused: boolean): void {
+    for (const live of this.lives.values()) {
+      if (!live.attached) continue
+      const frames = live.driver.pauseSuggestions?.(paused) ?? []
+      frames.forEach((frame) => void this.write(live, frame).catch(ignore))
+      this.flush(live)
+    }
   }
 
   // Whether the running stage holds nothing the user would lose if its agent went: no turn, no
@@ -403,8 +419,10 @@ export class ChatHost {
     const usage = live.driver.takeUsage?.()
     if (usage) this.sink.usage(live, usage)
     const activity = live.driver.activity()
-    if (activity !== live.activity) {
+    const suggestion = live.driver.suggestion?.() ?? null
+    if (activity !== live.activity || suggestion !== live.suggestion) {
       live.activity = activity
+      live.suggestion = suggestion
       this.sink.activity(live.conversationId)
     }
     if (live.driver.ready()) {

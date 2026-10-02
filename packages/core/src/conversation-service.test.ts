@@ -385,6 +385,25 @@ describe('ConversationService in chat mode', () => {
     expect(terminal).not.toContain('echo:')
   })
 
+  it('shows a Claude chat\'s suggested next message while it is idle, as long as the settings want one', async () => {
+    service.setPromptSuggestions(true)
+    const echo = daemon.reply
+    daemon.reply = (sessionId, text) => {
+      echo(sessionId, text)
+      daemon.emit(sessionId, { type: 'prompt_suggestion', suggestion: 'run the tests', uuid: 'u-1', session_id: 's-1' })
+    }
+    const created = await service.create('claude', [], 'chat')
+    expect(daemon.writes.map((write) => write.frame)).toContainEqual(expect.objectContaining({ request: { subtype: 'initialize', promptSuggestions: true } }))
+
+    await service.send(created.id, 'Fix the parser')
+    await settle()
+    expect(service.get(created.id).chat).toEqual({ turn: 'idle', suggestion: 'run the tests' })
+
+    service.setPromptSuggestions(false)
+    expect(service.get(created.id).chat).toEqual({ turn: 'idle' })
+    expect(daemon.writes.map((write) => write.frame)).toContainEqual(expect.objectContaining({ request: { subtype: 'set_prompt_suggestions_paused', paused: true } }))
+  })
+
   it('continues a terminal stage in chat mode on the same Claude session, and back again', async () => {
     const created = await service.create('claude', [])
     const [tui] = service.stages(created.id)

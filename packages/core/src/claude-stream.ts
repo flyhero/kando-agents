@@ -19,6 +19,7 @@ import { mergeUsageReports, type UsageReport } from './usage-source'
 const INIT_ID = 'kando-init'
 const SETTINGS_ID = 'kando-settings'
 const INTERRUPT_PREFIX = 'kando-interrupt-'
+const SUGGESTIONS_PREFIX = 'kando-suggestions-'
 const OPTION_PREFIX = 'kando-option-'
 const MAX_PATCH = 50_000
 // The API's limit for one image; the store takes twice that.
@@ -50,6 +51,7 @@ export const CLAUDE_MODE_NAMES: Record<string, string> = {
 const ONE_MILLION = 1_000_000
 
 const Head = z.looseObject({ type: z.string() })
+const SuggestionFrame = z.looseObject({ suggestion: z.string() })
 const Block = z.looseObject({
   type: z.string(),
   text: z.string().optional(),
@@ -363,6 +365,8 @@ export class ClaudeStream implements ChatDriver {
   // Option switches sent and not yet answered, by request id.
   private readonly optionRequests = new Map<string, { subtype: string; value: string }>()
   private optionsSent = 0
+  private suggestionPauses = 0
+  private suggested: string | null = null
 
   constructor(stageId: string, private readonly options: ChatStageOptions) {
     this.items = new ChatItems(stageId)
@@ -403,7 +407,10 @@ export class ClaudeStream implements ChatDriver {
     if (this.exited) return []
     const frames: unknown[] = []
     if (!this.initSent) {
-      frames.push({ type: 'control_request', request_id: INIT_ID, request: { subtype: 'initialize' } })
+      // Asked for here rather than with --prompt-suggestions: a CLI that predates it ignores the
+      // field, where it would refuse the flag and the stage would not start.
+      const suggestions = this.options.promptSuggestions ? { promptSuggestions: true } : {}
+      frames.push({ type: 'control_request', request_id: INIT_ID, request: { subtype: 'initialize', ...suggestions } })
     }
     for (const requestId of this.unanswered) {
       frames.push({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'Kando does not handle this request' } })
@@ -567,7 +574,18 @@ export class ClaudeStream implements ChatDriver {
   }
 
   private ownRequest(requestId: string): boolean {
-    return requestId === INIT_ID || requestId === SETTINGS_ID || requestId.startsWith(INTERRUPT_PREFIX) || requestId.startsWith(OPTION_PREFIX)
+    return requestId === INIT_ID || requestId === SETTINGS_ID || [INTERRUPT_PREFIX, OPTION_PREFIX, SUGGESTIONS_PREFIX].some((prefix) => requestId.startsWith(prefix))
+  }
+
+  suggestion(): string | null {
+    return this.suggested
+  }
+
+  // Claude Code's switch for a client whose composer is out of sight; it answers success or, a CLI
+  // without it, an error, and either way there is nothing more to do.
+  pauseSuggestions(paused: boolean): unknown[] {
+    if (!this.ready() || !this.options.promptSuggestions) return []
+    return [{ type: 'control_request', request_id: `${SUGGESTIONS_PREFIX}${this.suggestionPauses + 1}`, request: { subtype: 'set_prompt_suggestions_paused', paused } }]
   }
 
   // What of an answer to Kando's request to keep: the models and mode initialize reports (it also
@@ -677,6 +695,12 @@ export class ClaudeStream implements ChatDriver {
         return this.controlRequest(frame, at)
       case 'control_response':
         return this.controlResponse(frame, at)
+      case 'prompt_suggestion': {
+        // Sent after the turn's result; a turn already under way has made it stale.
+        const parsed = SuggestionFrame.safeParse(frame)
+        if (parsed.success && !this.turn) this.suggested = parsed.data.suggestion.trim() || null
+        return
+      }
       case 'control_cancel_request': {
         const cancel = ControlCancel.safeParse(frame)
         if (cancel.success) this.resolve(cancel.data.request_id, 'cancelled', null, at)
@@ -700,6 +724,7 @@ export class ClaudeStream implements ChatDriver {
     // After the first turn, an init with no message before it is the CLI starting a turn of its
     // own: a subagent left working in the background has reported back.
     if (subtype === 'init' && !this.turn && this.turnsSeen > 0) {
+      this.suggested = null
       this.turn = { ref: `resume-${++this.resumes}`, assistant: null, resumed: true }
       this.turnOutput = 0
       this.state.set({ activity: null, turnUsage: null })
@@ -1036,6 +1061,7 @@ export class ClaudeStream implements ChatDriver {
       if (!user.success || !ref) return
       const text = user.data.message.content
       this.queue.sent(ref)
+      this.suggested = null
       this.messages.push({ role: 'user', text: messageText(text, images), eventKey: `chat:${ref}:user`, complete: false })
       // Into a running turn, the message is the user steering it, and the turn stays the same one.
       if (this.turn) {
@@ -1060,6 +1086,10 @@ export class ClaudeStream implements ChatDriver {
           const value = body.data.mode ?? body.data.model ?? body.data.settings?.effortLevel ?? ''
           this.optionRequests.set(request.data.request_id, { subtype: body.data.subtype, value })
         }
+      }
+      if (request.data?.request_id.startsWith(SUGGESTIONS_PREFIX)) {
+        this.suggestionPauses++
+        if (z.looseObject({ paused: z.literal(true) }).safeParse(request.data.request).success) this.suggested = null
       }
       if (request.data?.request_id.startsWith(INTERRUPT_PREFIX)) {
         this.interrupts++
@@ -1118,6 +1148,7 @@ export class ClaudeStream implements ChatDriver {
 
   private ended(code: number | null, stderr: string, at: number): void {
     if (this.exited) return
+    this.suggested = null
     if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
     this.finishStreaming(at)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)

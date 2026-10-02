@@ -21,7 +21,9 @@ export const Conversation = z.object({
   // How the latest stage runs its agent. Older cores leave it out: every stage was a TUI.
   mode: ConversationMode.catch('tui').optional(),
   // Set while a chat-mode agent is running, to tell whether it works or waits on the user.
-  chat: z.object({ turn: ChatTurnActivity.catch('idle') }).nullable().optional(),
+  // suggestion: what the agent predicts the user will type next, once a turn has ended, until the
+  // next message; only when the user has them on. Older cores leave it out.
+  chat: z.object({ turn: ChatTurnActivity.catch('idle'), suggestion: z.string().nullable().optional() }).nullable().optional(),
   // What the next chat stage starts with, as chosen or as the last stage left it: the permission
   // mode, and the model and effort of the conversation's agent. Older cores leave it out.
   chatOptions: z.object({

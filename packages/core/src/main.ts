@@ -35,6 +35,7 @@ import { TerminalService } from './terminal-service'
 import { WorktreeService } from './worktree-service'
 import { AwakeConfigStore } from './awake-config'
 import { ComputerAwakeService } from './computer-awake-service'
+import { ChatSettingsStore } from './chat-settings'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
@@ -166,6 +167,12 @@ const worktrees = new WorktreeService(paths.worktrees, service, () => server?.br
 awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig), (status) =>
   server?.broadcast('system.awakeChanged', { status })
 )
+const chatSettings = new ChatSettingsStore(paths.chatSettings, (settings) => {
+  conversations.setPromptSuggestions(settings.promptSuggestions)
+  server?.broadcast('system.chatSettingsChanged', { settings })
+})
+// Before the daemon connects: a chat stage it still runs is taken back with these settings.
+conversations.setPromptSuggestions((await chatSettings.load()).promptSuggestions)
 
 daemon.onEvent((event) => {
   const { sessionId } = event
@@ -210,7 +217,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()

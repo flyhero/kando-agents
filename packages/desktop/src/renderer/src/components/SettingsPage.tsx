@@ -2,7 +2,7 @@ import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { PROTOCOL_VERSION, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
-import { perform, setAwakeMode, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
+import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import {
@@ -206,6 +206,7 @@ function AgentSettings() {
   const openTerminal = usePreferences((s) => s.openTerminalOnRun)
   const agentView = usePreferences((s) => s.agentView)
   const allowBypass = usePreferences((s) => s.allowBypass)
+  const chatSettings = useCore((s) => s.chatSettings)
   return (
     <>
       {awakeSupported && awake && (
@@ -241,6 +242,15 @@ function AgentSettings() {
           />
         )}
       />
+      {chatSettings && (
+        <SettingsRow
+          label="回合结束后建议下一步"
+          description="Claude Code 在聊天界面里每轮回复完，预测你接下来可能要说的话，灰字显示在输入框里，按 Tab 或 → 填入，直接打字就忽略。生成建议要再发一次简短请求，复用对话缓存，花费很少，但会计入用量。关掉立即生效；打开后，已经在跑的 Claude 会话要等下次启动才有建议。Codex 没有这个功能。"
+          control={(labelId) => (
+            <Toggle labelId={labelId} checked={chatSettings.promptSuggestions} onChange={(next) => void setChatSettings({ promptSuggestions: next })} />
+          )}
+        />
+      )}
       <SettingsRow
         label="允许「全部放行」"
         description="打开后，聊天界面的权限模式里多出「全部放行」：agent 不再请求确认，Codex 也不再受沙箱限制。Claude Code 自己建议只在没有网络的沙箱里这样用。只影响之后启动的聊天会话。"

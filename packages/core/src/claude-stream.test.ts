@@ -417,6 +417,42 @@ describe('ClaudeStream commands', () => {
     ])
   })
 
+  it('asks for suggestions at initialize when the user has them on', () => {
+    const driver = new ClaudeStream('stage-1', { ...OPTIONS, promptSuggestions: true })
+    expect(driver.due()).toEqual([{ type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize', promptSuggestions: true } }])
+  })
+
+  it('offers the suggested next message from the end of a turn until the next message', () => {
+    const driver = started({ ...OPTIONS, promptSuggestions: true })
+    const suggest = (suggestion: string) => driver.apply({ dir: 'in', at, frame: { type: 'prompt_suggestion', suggestion, uuid: 'u-1', session_id: 's-1' } })
+    const first = driver.send('fix the bug').wire
+    driver.apply({ dir: 'out', at, frame: first, ref: 'ref-1' })
+    suggest('too early')
+    expect(driver.suggestion()).toBeNull()
+
+    driver.apply({ dir: 'in', at, frame: { type: 'result', subtype: 'success', is_error: false, duration_ms: 1000 } })
+    suggest('  run the tests ')
+    expect(driver.suggestion()).toBe('run the tests')
+
+    driver.apply({ dir: 'out', at, frame: driver.send('run the tests').wire, ref: 'ref-2' })
+    expect(driver.suggestion()).toBeNull()
+  })
+
+  it('pauses suggestions only in a stage that asked for them, and drops the one showing', () => {
+    expect(started().pauseSuggestions(true)).toEqual([])
+    const driver = started({ ...OPTIONS, promptSuggestions: true })
+    driver.apply({ dir: 'in', at, frame: { type: 'prompt_suggestion', suggestion: 'commit this', uuid: 'u-1', session_id: 's-1' } })
+    const [pause] = driver.pauseSuggestions(true)
+    expect(pause).toEqual({ type: 'control_request', request_id: 'kando-suggestions-1', request: { subtype: 'set_prompt_suggestions_paused', paused: true } })
+    driver.apply({ dir: 'out', at, frame: pause })
+    expect(driver.suggestion()).toBeNull()
+    expect(driver.pauseSuggestions(false)).toEqual([expect.objectContaining({ request_id: 'kando-suggestions-2' })])
+    // The CLI's answer is Kando's own, so it is kept rather than treated as a stranger's.
+    expect(driver.logged({ type: 'control_response', response: { subtype: 'success', request_id: 'kando-suggestions-1' } })).toEqual({
+      type: 'control_response', response: { subtype: 'success', request_id: 'kando-suggestions-1' }
+    })
+  })
+
   it('answers a control request it does not handle with an error, once', () => {
     const driver = started()
     driver.apply({ dir: 'in', at, frame: { type: 'control_request', request_id: 'hook-1', request: { subtype: 'hook_callback' } } })

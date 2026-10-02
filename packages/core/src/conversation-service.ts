@@ -96,6 +96,8 @@ async function resolveProjects(projectPaths: readonly string[], taken: readonly 
 
 export class ConversationService {
   private readonly tuiWorking = new Map<string, boolean>()
+  // Core's chat settings say; main hands them over before any stage starts.
+  private promptSuggestions = false
   private readonly launching = new Set<string>()
   private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
   private readonly transcript: TerminalTranscript
@@ -136,6 +138,16 @@ export class ConversationService {
       offset: (stageId, end) => this.store.setChatOffset(stageId, end),
       usage: (stage, report) => this.emit({ type: 'usage', agent: stage.agent, report })
     })
+  }
+
+  // Takes effect in running chats at once: off pauses their suggestions and takes away the one
+  // showing; on resumes them in an agent started with them, and the rest have them from their next start.
+  setPromptSuggestions(enabled: boolean): void {
+    if (enabled === this.promptSuggestions) return
+    this.promptSuggestions = enabled
+    const showing = this.store.list().filter((conversation) => this.chats.suggestion(conversation.id) !== null)
+    this.chats.pauseSuggestions(!enabled)
+    showing.forEach((conversation) => this.changed(conversation))
   }
 
   // The free conversations; a task's own is reached through its task.
@@ -515,6 +527,7 @@ export class ConversationService {
         // Read off the stage, so a stage taken back after a restart still only plans.
         planOnly: stage.planOnly ?? false,
         allowBypass: !stage.planOnly && (chosen.allowBypass ?? false),
+        promptSuggestions: this.promptSuggestions,
         preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] }
       }
     }
@@ -957,7 +970,9 @@ export class ConversationService {
       model: chosen[conversation.agent]?.model ?? null,
       effort: chosen[conversation.agent]?.effort ?? null
     }
-    return { ...conversation, chat: turn ? { turn } : null, chatOptions }
+    // A suggestion is for the idle composer; one the settings turned off since is not shown.
+    const suggestion = turn === 'idle' && this.promptSuggestions ? this.chats.suggestion(conversation.id) : null
+    return { ...conversation, chat: turn ? { turn, ...(suggestion ? { suggestion } : {}) } : null, chatOptions }
   }
 
   private changed(value: Conversation): Conversation {
