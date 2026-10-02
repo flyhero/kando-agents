@@ -4187,6 +4187,24 @@ button.task-tag-updated:hover {
 .chat-file-link code { text-decoration: underline dotted color-mix(in srgb, var(--text-muted) 70%, transparent); text-underline-offset: 2px; }
 .chat-file-link:hover code { color: var(--accent); text-decoration-color: currentColor; }
 
+/* A reply's link to a file or a local image: a button, since Kando shows it rather than following it. */
+.chat-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* Images a reply names: bigger than a message's attachments, as they are what the reply is showing. */
+.chat-reply-images { margin: 8px 0; }
+.chat-reply-images .chat-image-button { height: 160px; max-width: 320px; }
+.chat-image-missing { font-size: 12px; }
+
 /* A fenced block of code: its language and a copy button above it, coloured by highlight.js's
    classes against the theme's own tokens. */
 .chat-markdown .chat-code {

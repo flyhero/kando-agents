@@ -79,8 +79,10 @@ function createWindow(): void {
       event.preventDefault()
     }
   })
+  // A link in a reply: a web page goes to the browser (a dev server's http:// too); nothing else
+  // may open a window, or start an app through its scheme.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://')) {
+    if (/^https?:\/\//i.test(url)) {
       void shell.openExternal(url)
     }
     return { action: 'deny' }

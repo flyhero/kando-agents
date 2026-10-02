@@ -37,3 +37,43 @@ export function fileCandidates(path: string, roots: readonly string[]): string[]
   if (path.startsWith('/') || path === '~' || path.startsWith('~/')) return [path]
   return [...new Set(roots.map((root) => joined(root, path)))]
 }
+
+// What a link in a reply leads to: a page for the browser, or a file on this machine. Anything
+// else (mailto:, an anchor, an app's own scheme) is neither.
+export type LinkTarget = { kind: 'web'; href: string } | ({ kind: 'file' } & FileReference)
+
+export function linkTarget(href: string): LinkTarget | null {
+  if (/^https?:\/\//i.test(href)) return { kind: 'web', href }
+  let path = href
+  if (/^file:\/\//i.test(href)) {
+    try {
+      path = new URL(href).pathname
+    } catch {
+      return null
+    }
+  } else if (href.startsWith('#') || (/^[a-z][a-z\d+.-]*:(?!\d+(?::\d+)?$)/i.test(href) && !/^[a-z]:[\\/]/i.test(href))) {
+    // A scheme, unless it is a drive letter or the colon only starts a line number (a.ts:12).
+    return null
+  }
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // A stray % is part of the name.
+  }
+  // Agents point at a line as file.ts:12 or as GitHub does, file.ts#L12.
+  const line = /(?::(\d+)(?::\d+)?|#L(\d+)(?:-L?\d+)?)$/.exec(path)
+  if (line) path = path.slice(0, line.index)
+  return path ? { kind: 'file', path, line: line ? Number(line[1] ?? line[2]) : null } : null
+}
+
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
+
+export function isImagePath(path: string): boolean {
+  return IMAGE_EXTENSIONS.has(path.split('.').at(-1)?.toLowerCase() ?? '')
+}
+
+// main's kando-preview protocol reads the file at the URL's path; each part is escaped so a # or
+// a space stays part of the name.
+export function previewUrl(path: string): string {
+  return `kando-preview://file${path.split('/').map(encodeURIComponent).join('/')}`
+}

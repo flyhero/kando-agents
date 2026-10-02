@@ -24,6 +24,11 @@ const cache = new ImageCache(loadImage, (url) => URL.revokeObjectURL(url))
 export function useImageUrl(id: string): string | null {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
+    // No id: the image comes from elsewhere (a file a reply names), not from core.
+    if (!id) {
+      setUrl(null)
+      return
+    }
     const handle = cache.acquire(id)
     let live = true
     void handle.url.then((loaded) => {

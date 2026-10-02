@@ -2,6 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { imageLabel, MAX_IMAGE_NAME_LENGTH, type TaskImage } from '@kando/protocol'
 import { useImageUrl } from '../attachment-images'
 
+// An image kept in core, or with `src`, one read from elsewhere (a file a reply names), whose size
+// is learned as it loads.
+export type ViewerImage = TaskImage & { src?: string }
+
 // One image at full size, with the neighbours a keypress away. `onRename` makes the name
 // editable; without it (an issue's images) the viewer is read-only.
 export function ImageViewer({
@@ -12,7 +16,7 @@ export function ImageViewer({
   onClose,
   onRename
 }: {
-  images: readonly TaskImage[]
+  images: readonly ViewerImage[]
   index: number
   note?: string
   onIndex: (index: number) => void
@@ -22,8 +26,11 @@ export function ImageViewer({
   const dialog = useRef<HTMLDialogElement>(null)
   const ids = useId()
   const image = images[index]
-  const url = useImageUrl(image?.id ?? '')
+  const stored = useImageUrl(image && !image.src ? image.id : '')
+  const url = image?.src ?? stored
   const [name, setName] = useState(image?.name ?? '')
+  const [loaded, setLoaded] = useState<{ width: number; height: number } | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     const element = dialog.current
@@ -36,6 +43,11 @@ export function ImageViewer({
   useEffect(() => {
     setName(image?.name ?? '')
   }, [image?.id, image?.name])
+
+  useEffect(() => {
+    setLoaded(null)
+    setFailed(false)
+  }, [url])
 
   if (!image) {
     return null
@@ -102,7 +114,18 @@ export function ImageViewer({
             ‹
           </button>
         )}
-        {url ? <img src={url} alt={image.name || imageLabel(image, index)} /> : <span className="muted">正在加载…</span>}
+        {failed ? (
+          <span className="muted">图片打不开：文件不存在，或不是能显示的图片</span>
+        ) : url ? (
+          <img
+            src={url}
+            alt={image.name || imageLabel(image, index)}
+            onLoad={(event) => setLoaded({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
+            onError={() => setFailed(true)}
+          />
+        ) : (
+          <span className="muted">正在加载…</span>
+        )}
         {images.length > 1 && (
           <button type="button" className="image-viewer-step" aria-label="下一张" onClick={() => go(1)}>
             ›
@@ -110,7 +133,7 @@ export function ImageViewer({
         )}
       </div>
       <footer className="image-viewer-footer muted">
-        {image.width} × {image.height}
+        {image.width > 0 ? `${image.width} × ${image.height}` : loaded && `${loaded.width} × ${loaded.height}`}
       </footer>
     </dialog>
   )
