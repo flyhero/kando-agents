@@ -121,6 +121,15 @@ function ChatSkeleton() {
 
 type UserItem = Extract<ChatItem, { kind: 'user' }>
 
+function UserMessageFooter({ at, text }: { at: number; text: string }) {
+  return (
+    <div className="chat-user-footer">
+      <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={dayAndTime(at)}>{timeOfDay(at)}</time>
+      {text && <CopyButton text={text} label="复制消息" />}
+    </div>
+  )
+}
+
 // A long message the user sent, such as a task's first prompt, shows its start until opened.
 function UserMessage({ item }: { item: UserItem }) {
   const [open, setOpen] = useDisclosure(`message:${itemKey(item)}`)
@@ -139,7 +148,7 @@ function UserMessage({ item }: { item: UserItem }) {
           </button>
         </div>
       )}
-      {item.text && <div className="chat-message-actions" data-side="end"><CopyButton text={item.text} label="复制消息" /></div>}
+      <UserMessageFooter at={item.at} text={item.text} />
     </>
   )
 }
@@ -165,9 +174,13 @@ function ChatNotice({ item }: { item: NoticeItem }) {
 }
 
 function TerminalMessage({ message }: { message: ConversationMessage }) {
-  return message.role === 'user'
-    ? <div className="chat-user">{message.text}</div>
-    : <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
+  if (message.role === 'user') return (
+    <>
+      <div className="chat-user">{message.text}</div>
+      <UserMessageFooter at={message.createdAt} text={message.text} />
+    </>
+  )
+  return <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
 }
 
 function Item({ conversationId, item, completedAt, blockKey }: { conversationId: string; item: ChatItem; completedAt: number | undefined; blockKey: string }) {
