@@ -444,6 +444,10 @@ export function useAgentStatsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('agent-stats') ?? false)
 }
 
+export function useConversationStatsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('conversation-stats') ?? false)
+}
+
 export function useAwakeSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('keep-awake') ?? false)
 }

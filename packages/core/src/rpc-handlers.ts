@@ -1,6 +1,7 @@
 import { BROWSER_VIEWPORT, CORE_FEATURES, PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import type { AgentRunStore } from './agent-run-store'
+import type { ChatTurnStore } from './chat-turn-store'
 import type { AttachmentStore } from './attachment-store'
 import type { AttachmentUploads } from './attachment-uploads'
 import type { BrowserService } from './browser-service'
@@ -35,7 +36,8 @@ export function createRpcHandlers(
   awake: ComputerAwakeService,
   terminalCommands: TerminalCommandStore,
   limits: UsageLimitService,
-  runs: AgentRunStore
+  runs: AgentRunStore,
+  turns: ChatTurnStore
 ): RpcHandlers {
   // A page of chat items as clients see them: a usage limit with what core means to do about it.
   const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
@@ -254,6 +256,7 @@ export function createRpcHandlers(
     'usage.list': () => usage.list(),
     'usage.refresh': () => usage.refresh(),
     'agents.stats': () => runs.stats(),
+    'agents.conversationStats': () => turns.stats(),
     'sources.list': () => sources.list(),
     'sources.saveSettings': (params) => sources.saveSettings(params),
     'sources.login': ({ provider, instance, flowId }, connection) => ({

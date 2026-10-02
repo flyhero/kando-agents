@@ -158,7 +158,18 @@ export const MIGRATIONS = [
      input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER, work_ms INTEGER,
      outcome TEXT, outcome_at INTEGER
    );
-   CREATE INDEX agent_runs_task ON agent_runs(task_id, started_at DESC);`
+   CREATE INDEX agent_runs_task ON agent_runs(task_id, started_at DESC);`,
+  // Each chat turn as it ended, for how each agent does in conversations (ChatTurnStore), and the
+  // stages already counted. No foreign key, as with agent_runs: a deleted conversation still counts.
+  `CREATE TABLE chat_turns (
+     stage_id TEXT NOT NULL, item_id TEXT NOT NULL, conversation_id TEXT NOT NULL, task_id TEXT,
+     agent TEXT NOT NULL, model TEXT, state TEXT NOT NULL, duration_ms INTEGER,
+     input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
+     usage_limit INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL,
+     PRIMARY KEY (stage_id, item_id)
+   );
+   CREATE INDEX chat_turns_agent ON chat_turns(agent, model);
+   CREATE TABLE chat_turn_stages (stage_id TEXT PRIMARY KEY, counted_at INTEGER NOT NULL);`
 ]
 
 

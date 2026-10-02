@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
 import { AGENT_KINDS, AgentKind, isFinished, type AgentStats, type Task } from '@kando/protocol'
+import { median } from './median'
 
 // run: the first time an agent worked on the task · continue: picked up again in the same worktree
 export const RunKind = z.enum(['run', 'continue'])
@@ -166,13 +167,6 @@ export function summarizeRuns(runs: readonly AgentRun[]): AgentStats[] {
       Number(a.model === null) - Number(b.model === null) ||
       b.runs - a.runs
   )
-}
-
-function median(values: readonly number[]): number | null {
-  if (values.length === 0) return null
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? (sorted[middle] ?? null) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
 }
 
 function columns(measure: RunMeasure): Record<string, SQLInputValue> {

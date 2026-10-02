@@ -6,6 +6,7 @@ import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protoc
 import { readClaudeUsage } from './claude-usage'
 import { readCodexUsage } from './codex-usage'
 import { AgentRunStore } from './agent-run-store'
+import { ChatTurnStore } from './chat-turn-store'
 import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
 import { browserHostCommand } from './browser-host-command'
@@ -48,6 +49,12 @@ const projects = new ProjectRegistry(paths.database)
 const daemon = new DaemonClient(paths.daemonSocket)
 const conversationsStore = new ConversationStore(paths.database)
 const runs = new AgentRunStore(paths.database)
+// Reads its turns from the conversations, which are built below; nothing is read until they run.
+const turns = new ChatTurnStore(paths.database, {
+  facts: (id, stageId) => conversations.stageFacts(id, stageId),
+  stages: () => conversations.chatStageRefs(),
+  items: (id, stageId) => conversations.stageChatItems(id, stageId)
+})
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
 let awake: ComputerAwakeService | null = null
@@ -74,6 +81,7 @@ const conversations = new ConversationService(
     }
     else if (event.type === 'chatItems') {
       limits.observe(event.conversationId, event.items)
+      turns.observe(event.conversationId, event.items)
       notifyChatItems(event.conversationId, limits.decorate(event.items))
     } else if (event.type === 'planApproved') {
       service.recordPlan(event.taskId, event.plan)
@@ -202,7 +210,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
@@ -210,6 +218,8 @@ await awake.start()
 refreshAwake()
 usage.start()
 limits.start()
+// Stages that ended before turns were kept, counted once in the background.
+void turns.catchUp().catch((error: unknown) => console.error('[kando-core] counting earlier chat turns failed:', error))
 sources.start()
 // Idle chat agents are checked for once a minute, so one goes within a minute of its limit.
 setInterval(() => void conversations.releaseIdle(), 60_000).unref()
@@ -231,6 +241,7 @@ async function shutdown(): Promise<void> {
   store.close()
   conversationsStore.close()
   runs.close()
+  turns.close()
   projects.close()
   process.exit(0)
 }

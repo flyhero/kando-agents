@@ -3348,6 +3348,14 @@ button.task-tag-updated:hover {
   text-align: center;
 }
 
+.settings-stats-heading {
+  margin: 16px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-stats-heading + .settings-empty { padding-top: 8px; }
+
 .settings-stats-note {
   margin: 8px 0 14px;
   font-size: 12px;

@@ -390,8 +390,8 @@ const SECTIONS: readonly Section[] = [
     id: 'agent-stats',
     group: '任务',
     title: '智能体表现',
-    description: '每个 agent 和模型执行任务的结果：你接受、继续修改、重做各占多少，用了多久。从这一版开始记录，之前的任务不计入。',
-    keywords: ['表现', '统计', '通过率', '接受', '继续修改', '重做', '异常退出', '耗时', 'token', '模型', 'claude', 'codex'],
+    description: '每个 agent 和模型的表现。任务（包括在聊天界面里执行的任务）看结果：你接受、继续修改、重做各占多少，从 0.10.0 开始记录；自由会话没有验收，只看用量：回合、失败、撞额度、耗时和 token。',
+    keywords: ['表现', '统计', '通过率', '接受', '继续修改', '重做', '异常退出', '耗时', 'token', '模型', '会话', '用量', '回合', '失败', '额度', 'claude', 'codex'],
     Icon: GaugeIcon,
     Body: AgentStatsSettings
   },

@@ -36,6 +36,8 @@ export type ConversationEvent =
   // A running chat agent reported its account's limits.
   | { type: 'usage'; agent: AgentKind; report: UsageReport }
 
+export type ChatStageRef = { conversationId: string; taskId: string | null; stageId: string; agent: AgentKind; ended: boolean }
+
 // How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
 // while it only plans), and whether it goes on with the last session or takes one of its own (a first
 // start, or planning giving way to carrying the plan out).
@@ -630,10 +632,30 @@ export class ConversationService {
 
   // One item as the stage holds it now, for whoever has news about it; null once it is gone.
   chatItem(id: string, stageId: string, itemId: string): ChatItem | null {
+    return this.stageChatItems(id, stageId).find((item) => item.id === itemId) ?? null
+  }
+
+  // A chat stage's items, live or rebuilt from its log; none once the stage is gone.
+  stageChatItems(id: string, stageId: string): ChatItem[] {
     const conversation = this.store.get(id)
     const stage = conversation ? this.store.stages(id).find((each) => each.id === stageId) : undefined
-    if (!conversation || !stage || stage.mode !== 'chat') return null
-    return this.chats.items(this.chatStage(conversation, stage)).find((item) => item.id === itemId) ?? null
+    return conversation && stage?.mode === 'chat' ? this.chats.items(this.chatStage(conversation, stage)) : []
+  }
+
+  // Who ran a chat stage, for what, and on which model as its state item last said; null once gone.
+  stageFacts(id: string, stageId: string): { taskId: string | null; agent: AgentKind; model: string | null } | null {
+    const conversation = this.store.get(id)
+    const stage = conversation ? this.store.stages(id).find((each) => each.id === stageId) : undefined
+    if (!conversation || !stage) return null
+    const state = this.stageChatItems(id, stageId).findLast((item) => item.kind === 'state')
+    return { taskId: conversation.taskId ?? null, agent: stage.agent, model: state?.kind === 'state' ? state.model : null }
+  }
+
+  // Every chat stage of every conversation, task chats included, oldest first.
+  chatStageRefs(): ChatStageRef[] {
+    return this.store.list().flatMap((conversation) => this.store.stages(conversation.id)
+      .filter((stage) => stage.mode === 'chat')
+      .map((stage) => ({ conversationId: conversation.id, taskId: conversation.taskId ?? null, stageId: stage.id, agent: stage.agent, ended: stage.endedAt !== null })))
   }
 
   // Each image once, checked to be in the store before the agent is asked to look at it.

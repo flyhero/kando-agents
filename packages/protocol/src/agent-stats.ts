@@ -25,3 +25,21 @@ export type AgentStats = z.infer<typeof AgentStats>
 
 // Below this many judged runs a rate says more about luck than about the agent.
 export const MIN_DECIDED_RUNS = 5
+
+// How one agent's turns in free conversations (chat mode) went, for one model: what they cost and
+// how often they broke off. Conversations are never judged, so there is no rate of good results here.
+export const ConversationStats = z.object({
+  agent: AgentKind,
+  model: z.string().nullable(),
+  conversations: z.number().int().nonnegative(),
+  turns: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  interrupted: z.number().int().nonnegative(),
+  // Failed turns the account's usage limit stopped, counted among the failed too.
+  usageLimits: z.number().int().nonnegative(),
+  // The agent's own working time per turn.
+  medianTurnMs: z.number().nullable(),
+  medianTurnTokens: z.number().nullable(),
+  totalTokens: z.number().nonnegative()
+})
+export type ConversationStats = z.infer<typeof ConversationStats>
