@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ChatItem } from '@kando/protocol'
 import type { StageMessage } from './chat-driver'
+import type { UsageReport } from './usage-source'
 import { ChatHost, type ChatSink, type ChatStage } from './chat-host'
 import { AttachmentStore } from './attachment-store'
 import { fakeChatDaemon } from './fake-chat-agent'
@@ -20,6 +21,7 @@ function recordingSink() {
   const items: ChatItem[] = []
   const messages: StageMessage[] = []
   const offsets: number[] = []
+  const usage: UsageReport[] = []
   let activityChanges = 0
   const sink: ChatSink = {
     items: (_conversationId, changed) => items.push(...changed),
@@ -27,9 +29,10 @@ function recordingSink() {
     messages: (_stage, added) => messages.push(...added),
     provider: () => {},
     activity: () => { activityChanges++ },
-    offset: (_stageId, end) => offsets.push(end)
+    offset: (_stageId, end) => offsets.push(end),
+    usage: (_stage, report) => usage.push(report)
   }
-  return { sink, items, messages, offsets, activity: () => activityChanges }
+  return { sink, items, messages, offsets, usage, activity: () => activityChanges }
 }
 
 const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0))

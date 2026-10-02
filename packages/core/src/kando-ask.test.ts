@@ -20,7 +20,8 @@ describe('Kando\'s own questions in a chat', () => {
     messages: () => {},
     provider: () => {},
     activity: () => { activity++ },
-    offset: () => {}
+    offset: () => {},
+    usage: () => {}
   }
 
   beforeEach(() => {

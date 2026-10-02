@@ -71,7 +71,7 @@ export function parseResetCredits(body: unknown): ResetCredits | null {
   return { available: Math.max(0, Math.floor(count)), credits: listed, blockedBy: null }
 }
 
-function classify(minutes: number | null): UsageWindow['kind'] | null {
+export function classify(minutes: number | null): UsageWindow['kind'] | null {
   if (minutes === null) {
     return null
   }
@@ -81,20 +81,33 @@ function classify(minutes: number | null): UsageWindow['kind'] | null {
   return Math.abs(minutes - WEEK_MINUTES) <= WINDOW_TOLERANCE_MINUTES ? 'weekly' : null
 }
 
-function toWindow(raw: z.infer<typeof Window> | null | undefined, fallback: UsageWindow['kind']): UsageWindow | null {
-  if (!raw || !Number.isFinite(raw.used_percent)) {
+// One Codex window, as the usage endpoint and the app-server's rate-limit updates both describe it.
+export function windowOf(
+  usedPercent: number,
+  minutes: number | null,
+  resetsAtSeconds: number | null | undefined,
+  fallback: UsageWindow['kind']
+): UsageWindow | null {
+  if (!Number.isFinite(usedPercent)) {
     return null
   }
-  const minutes = raw.limit_window_seconds ? Math.ceil(raw.limit_window_seconds / 60) : null
   const kind = classify(minutes) ?? fallback
   return {
     kind,
     model: null,
-    usedPercent: Math.min(100, Math.max(0, raw.used_percent)),
+    usedPercent: Math.min(100, Math.max(0, usedPercent)),
     windowMinutes: kind === 'session' ? SESSION_MINUTES : WEEK_MINUTES,
     // Codex reports Unix seconds.
-    resetsAt: raw.reset_at ? raw.reset_at * 1000 : null
+    resetsAt: resetsAtSeconds ? resetsAtSeconds * 1000 : null
   }
+}
+
+function toWindow(raw: z.infer<typeof Window> | null | undefined, fallback: UsageWindow['kind']): UsageWindow | null {
+  if (!raw) {
+    return null
+  }
+  const minutes = raw.limit_window_seconds ? Math.ceil(raw.limit_window_seconds / 60) : null
+  return windowOf(raw.used_percent, minutes, raw.reset_at, fallback)
 }
 
 // `resetCredits` is undefined when the reply said nothing about them, null when it said something unreadable.

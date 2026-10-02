@@ -70,3 +70,38 @@ describe('UsageService', () => {
     expect(claude).toMatchObject({ status: 'error', error: 'request-failed', windows: [] })
   })
 })
+
+describe('UsageService.report', () => {
+  const weekly: UsageWindow = { kind: 'weekly', model: null, usedPercent: 10, windowMinutes: 10_080, resetsAt: null }
+  const opus: UsageWindow = { kind: 'weekly', model: 'Opus', usedPercent: 20, windowMinutes: 10_080, resetsAt: null }
+
+  it('replaces only the windows the agent named, and stamps the reading fresh', async () => {
+    const { service, events, advance } = setup(async () => ({ signedIn: true, windows: [window, weekly, opus], plan: 'max' }))
+    await service.refresh()
+    events.length = 0
+    advance(5_000)
+    const session = { ...window, usedPercent: 55 }
+    service.report('claude', { windows: [session] })
+    expect(events).toEqual([expect.objectContaining({ agent: 'claude', status: 'ok', plan: 'max', updatedAt: 1_005_000 })])
+    expect(service.list().find((u) => u.agent === 'claude')?.windows).toEqual([weekly, opus, session])
+  })
+
+  it('shows a report from an agent no poll has read yet', () => {
+    const { service, events } = setup(async () => ({ signedIn: false }))
+    service.report('codex', { windows: [weekly], plan: 'plus' })
+    expect(events).toEqual([expect.objectContaining({ agent: 'codex', status: 'ok', windows: [weekly], plan: 'plus', resetCredits: null })])
+  })
+
+  it('asks for a full reading when the report says so, within the usual throttle', async () => {
+    let reads = 0
+    const { service, events } = setup(async () => {
+      reads++
+      return { signedIn: true, windows: [window], plan: null }
+    })
+    service.report('claude', { windows: [], refresh: true })
+    // Joins the refresh the report started rather than reading again.
+    await service.refresh()
+    expect(reads).toBe(1)
+    expect(events.filter((e) => e.agent === 'claude')).toHaveLength(1)
+  })
+})

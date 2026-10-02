@@ -8,6 +8,8 @@ import { ChatItems, clip } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
+import { windowOf } from './codex-usage'
+import type { UsageReport } from './usage-source'
 
 // Codex's app-server protocol (`codex app-server`): JSON-RPC over stdio without the jsonrpc field,
 // as codex-cli 0.156.1 speaks it. `codex app-server generate-ts` prints the full schema; this reads
@@ -117,6 +119,18 @@ const TokenUsage = z.looseObject({
     modelContextWindow: z.number().nullish()
   })
 })
+const LimitWindow = z.looseObject({ usedPercent: z.number(), windowDurationMins: z.number().nullish(), resetsAt: z.number().nullish() })
+// A sparse rolling update: a null window has no news, not no window.
+const RateLimits = z.looseObject({
+  rateLimits: z.looseObject({
+    limitId: z.string().nullish(),
+    primary: LimitWindow.nullish().catch(null),
+    secondary: LimitWindow.nullish().catch(null),
+    planType: z.string().nullish().catch(null)
+  })
+})
+// The plan's own limit, the one the usage endpoint reports; other metered limits are left out.
+const PLAN_LIMIT_ID = 'codex'
 const PlanUpdated = z.looseObject({ plan: z.array(z.looseObject({ step: z.string(), status: z.string() })).catch([]) })
 const ModelEntry = z.looseObject({
   id: z.string(),
@@ -384,6 +398,8 @@ export class CodexAppServer implements ChatDriver {
   private sandbox: Sandbox | null = null
   // Whether the thread runs in Codex's plan mode, as the last turn set it or the thread reports.
   private planning = false
+  // Rate limits reported since the host last took them.
+  private usage: UsageReport | null = null
   // What the user chose, sent with every turn: Codex takes options per turn, not in between.
   private readonly chosen: ChatPreferences
 
@@ -578,6 +594,12 @@ export class CodexAppServer implements ChatDriver {
     const messages = this.messages
     this.messages = []
     return messages
+  }
+
+  takeUsage(): UsageReport | null {
+    const usage = this.usage
+    this.usage = null
+    return usage
   }
 
   private loggedResponse(frame: Frame): unknown {
@@ -801,6 +823,20 @@ export class CodexAppServer implements ChatDriver {
         if (model) this.model = model
         if (effort !== undefined) this.effort = effort
         if (collaborationMode) this.planning = collaborationMode.mode === PLAN_MODE
+        return
+      }
+      case 'account/rateLimits/updated': {
+        const update = RateLimits.safeParse(params)
+        if (!update.success) return
+        const { limitId, primary, secondary, planType } = update.data.rateLimits
+        if (limitId && limitId !== PLAN_LIMIT_ID) return
+        const windows = [
+          primary ? windowOf(primary.usedPercent, primary.windowDurationMins ?? null, primary.resetsAt, 'session') : null,
+          secondary ? windowOf(secondary.usedPercent, secondary.windowDurationMins ?? null, secondary.resetsAt, 'weekly') : null
+        ].filter((window) => window !== null)
+        // Later updates in the same batch win, window by window.
+        const kept = (this.usage?.windows ?? []).filter((old) => !windows.some((window) => window.kind === old.kind))
+        this.usage = { windows: [...kept, ...windows], plan: planType ?? this.usage?.plan }
         return
       }
       case 'thread/tokenUsage/updated': {

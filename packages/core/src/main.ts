@@ -69,6 +69,8 @@ const conversations = new ConversationService(
       watchers(event.conversationId).forEach((c) => c.notify('conversations.chatItems', { conversationId: event.conversationId, items: event.items }))
     } else if (event.type === 'planApproved') {
       service.recordPlan(event.taskId, event.plan)
+    } else if (event.type === 'usage') {
+      usage.report(event.agent, event.report)
     } else {
       const { conversationId, stageId, itemId, append } = event
       watchers(conversationId).forEach((c) => c.notify('conversations.chatDelta', { conversationId, stageId, itemId, append }))

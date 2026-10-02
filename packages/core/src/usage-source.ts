@@ -6,6 +6,10 @@ export type UsageReading =
 
 export type UsageSource = () => Promise<UsageReading>
 
+// What a running agent said about its limits: the windows it named (the rest unchanged), and
+// whether the full reading is worth fetching again now.
+export type UsageReport = { windows: UsageWindow[]; plan?: string | null; refresh?: boolean }
+
 export type UsageFailure = 'auth-expired' | 'request-failed'
 
 export class UsageFetchError extends Error {

@@ -1,6 +1,7 @@
 import type { ChatDecision, ChatImage, ChatOption, ChatTurnActivity } from '@kando/protocol'
 import type { AttachmentFile } from './attachment-store'
 import type { ChatItems } from './chat-items'
+import type { UsageReport } from './usage-source'
 
 // What happened in a chat stage, in order: a frame from the agent or to it, a note Kando made,
 // the process ending. A stage's log holds these, and replaying them rebuilds the stage.
@@ -88,4 +89,7 @@ export interface ChatDriver {
   logged(frame: unknown): unknown | null
   // Messages seen since the last call.
   takeMessages(): StageMessage[]
+  // What the agent reported about its limits since the last call. Only live frames carry it:
+  // logged() keeps none, so a replayed stage never reports old numbers.
+  takeUsage?(): UsageReport | null
 }

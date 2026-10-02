@@ -9,6 +9,7 @@ import { CodexAppServer } from './codex-app-server'
 import type { SessionHost } from './daemon-client'
 import { LineFramer } from './line-framer'
 import { Rejection } from './rejection'
+import type { UsageReport } from './usage-source'
 
 const START_TIMEOUT_MS = 30_000
 const STDERR_TAIL_CHARS = 8 * 1024
@@ -27,6 +28,8 @@ export type ChatSink = {
   activity(conversationId: string): void
   // How far the stage's output has been read, for picking up after a restart.
   offset(stageId: string, end: number): void
+  // The agent's account limits, as it reported them while running.
+  usage(stage: ChatStage, report: UsageReport): void
 }
 
 type Live = ChatStage & {
@@ -395,6 +398,8 @@ export class ChatHost {
     }
     const messages = live.driver.takeMessages()
     if (messages.length) this.sink.messages(live, messages)
+    const usage = live.driver.takeUsage?.()
+    if (usage) this.sink.usage(live, usage)
     const activity = live.driver.activity()
     if (activity !== live.activity) {
       live.activity = activity

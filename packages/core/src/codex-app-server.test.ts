@@ -572,3 +572,38 @@ describe('CodexAppServer subagents', () => {
     expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBe('cancelled')
   })
 })
+
+describe('CodexAppServer rate limits', () => {
+  const update = (rateLimits: Record<string, unknown>): ChatRecord => ({ dir: 'in', at: 1, frame: { method: 'account/rateLimits/updated', params: { rateLimits } } })
+  const limits = {
+    limitId: 'codex',
+    limitName: null,
+    primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: 1_790_000_000 },
+    secondary: { usedPercent: 7, windowDurationMins: 10_080, resetsAt: null },
+    planType: 'plus'
+  }
+
+  it('reports the plan limit once, as usage windows', () => {
+    const driver = replay([update(limits)])
+    expect(driver.takeUsage()).toEqual({
+      windows: [
+        { kind: 'session', model: null, usedPercent: 42, windowMinutes: 300, resetsAt: 1_790_000_000_000 },
+        { kind: 'weekly', model: null, usedPercent: 7, windowMinutes: 10_080, resetsAt: null }
+      ],
+      plan: 'plus'
+    })
+    expect(driver.takeUsage()).toBeNull()
+  })
+
+  it('treats a missing window as no news, and later updates as winning', () => {
+    const driver = replay([update(limits), update({ ...limits, primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: null }, secondary: null, planType: null })])
+    expect(driver.takeUsage()?.windows.map((w) => [w.kind, w.usedPercent])).toEqual([['weekly', 7], ['session', 50]])
+  })
+
+  it('leaves out other metered limits, and never logs the frame', () => {
+    const record = update({ ...limits, limitId: 'codex_other' })
+    const driver = replay([record])
+    expect(driver.takeUsage()).toBeNull()
+    expect(driver.logged({ method: 'account/rateLimits/updated', params: { rateLimits: limits } })).toBeNull()
+  })
+})

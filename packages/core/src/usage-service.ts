@@ -1,5 +1,5 @@
-import { AGENT_KINDS, type AgentKind, type AgentUsage } from '@kando/protocol'
-import { UsageFetchError, type UsageSource } from './usage-source'
+import { AGENT_KINDS, type AgentKind, type AgentUsage, type UsageWindow } from '@kando/protocol'
+import { UsageFetchError, type UsageReport, type UsageSource } from './usage-source'
 
 const POLL_MS = 15 * 60_000
 // Manual refreshes and session exits come in bursts, and the provider endpoints are rate-limited too.
@@ -44,6 +44,29 @@ export class UsageService {
       this.inFlight = null
     })
     return this.inFlight
+  }
+
+  // A running agent's own word on its limits, fresher than the last poll. Only the windows it names
+  // change; until a poll has signed the agent in, the report is all there is to show.
+  report(agent: AgentKind, report: UsageReport): void {
+    if (report.windows.length > 0) {
+      const previous = this.usage.get(agent)
+      const named = (window: UsageWindow) => report.windows.some((each) => each.kind === window.kind && each.model === window.model)
+      const next: AgentUsage = {
+        agent,
+        status: 'ok',
+        windows: [...(previous?.windows ?? []).filter((window) => !named(window)), ...report.windows],
+        plan: report.plan ?? previous?.plan ?? null,
+        error: null,
+        updatedAt: this.now(),
+        resetCredits: previous?.resetCredits ?? null
+      }
+      this.usage.set(agent, next)
+      this.emit(next)
+    }
+    if (report.refresh) {
+      void this.refresh()
+    }
   }
 
   private async refreshAgent(agent: AgentKind): Promise<AgentUsage> {

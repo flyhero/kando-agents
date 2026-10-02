@@ -22,6 +22,7 @@ import { commitAndPush } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { TerminalTranscript } from './terminal-transcript'
+import type { UsageReport } from './usage-source'
 import { normalizeRepoPath, projectHead } from './workspace'
 
 export type ConversationEvent =
@@ -31,6 +32,8 @@ export type ConversationEvent =
   | { type: 'chatDelta'; conversationId: string; stageId: string; itemId: string; append: string }
   // A plan approved in a task's chat, for the task to keep as the one it carries out.
   | { type: 'planApproved'; taskId: string; plan: { markdown: string; agent: AgentKind; stageId: string; requestId: string } }
+  // A running chat agent reported its account's limits.
+  | { type: 'usage'; agent: AgentKind; report: UsageReport }
 
 // How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
 // while it only plans), and whether it goes on with the last session or takes one of its own (a first
@@ -127,7 +130,8 @@ export class ConversationService {
         const current = this.store.get(conversationId)
         if (current) this.changed(current)
       },
-      offset: (stageId, end) => this.store.setChatOffset(stageId, end)
+      offset: (stageId, end) => this.store.setChatOffset(stageId, end),
+      usage: (stage, report) => this.emit({ type: 'usage', agent: stage.agent, report })
     })
   }
 
