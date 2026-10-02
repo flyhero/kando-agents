@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DaemonMethod, DaemonParams, DaemonResult } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
+import { AgentRunStore } from './agent-run-store'
 import { AttachmentStore } from './attachment-store'
 import { ConversationService } from './conversation-service'
 import { ConversationStore } from './conversation-store'
@@ -51,11 +52,13 @@ describe('TaskService', () => {
   let events: TaskEvent[]
   let service: TaskService
   let attachments: AttachmentStore
+  let runs: AgentRunStore
 
   beforeEach(() => {
     dir = mkdtempSync(path.join(os.tmpdir(), 'kando-test-'))
     store = new TaskStore(path.join(dir, 'kando.db'))
     projects = new ProjectRegistry(path.join(dir, 'kando.db'))
+    runs = new AgentRunStore(path.join(dir, 'kando.db'))
     sessions = fakeSessions()
     events = []
     attachments = new AttachmentStore(dir)
@@ -66,11 +69,15 @@ describe('TaskService', () => {
       path.join(dir, 'worktrees'),
       (e) => events.push(e),
       (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }),
-      attachments
+      attachments,
+      null,
+      null,
+      runs
     )
   })
 
   afterEach(() => {
+    runs.close()
     projects.close()
     store.close()
     rmSync(dir, { recursive: true, force: true })
@@ -160,6 +167,50 @@ describe('TaskService', () => {
     service.handleSessionExit(running.sessionId ?? '', 0)
     expect(service.get(task.id).status).toBe('review')
     expect(service.move(task.id, 'done').status).toBe('done')
+  })
+
+  describe('run records', () => {
+    const verdicts = (taskId: string) => runs.forTask(taskId).map(({ kind, view, endedBy, exitCode, outcome }) => ({ kind, view, endedBy, exitCode, outcome }))
+
+    it('keeps each run, how it ended, and the user accepting the result', async () => {
+      const task = readyTask('Accept me', [initRepo('app')])
+      expect(runs.forTask(task.id)).toEqual([])
+      const running = await service.run(task.id)
+      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'run', view: 'terminal', agent: 'claude', endedAt: null, outcome: null }])
+      service.handleSessionExit(running.sessionId ?? '', 0)
+      service.move(task.id, 'done')
+      expect(runs.forTask(task.id)).toMatchObject([{ endedBy: 'exit', exitCode: 0, outcome: 'accepted', model: null, inputTokens: null }])
+    })
+
+    it('marks a run sent back by continuing, and the last one given up by a redo', async () => {
+      const task = readyTask('Redo me', [initRepo('app')])
+      service.handleSessionExit((await service.run(task.id)).sessionId ?? '', 1)
+      service.handleSessionExit((await service.continue(task.id, 'again')).sessionId ?? '', 0)
+      service.redo(task.id, 'wrong approach')
+      expect(verdicts(task.id)).toEqual([
+        { kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: 1, outcome: 'continued' },
+        { kind: 'continue', view: 'terminal', endedBy: 'exit', exitCode: 0, outcome: 'redone' }
+      ])
+    })
+
+    it('keeps an accepted run accepted when the task reopens, and a run closed mid-way out of the verdicts', async () => {
+      const task = readyTask('Reopen me', [initRepo('app')])
+      service.handleSessionExit((await service.run(task.id)).sessionId ?? '', 0)
+      service.move(task.id, 'done')
+      await service.continue(task.id)
+      service.move(task.id, 'done')
+      expect(verdicts(task.id)).toEqual([
+        { kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: 0, outcome: 'accepted' },
+        { kind: 'continue', view: 'terminal', endedBy: 'closed', exitCode: null, outcome: 'closed' }
+      ])
+    })
+
+    it('ends a run whose session vanished with no exit code', async () => {
+      const task = readyTask('Lose me', [initRepo('app')])
+      await service.run(task.id)
+      service.reconcile([])
+      expect(verdicts(task.id)).toEqual([{ kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: null, outcome: null }])
+    })
   })
 
   it('starts a run\'s branch where the task picked, which it may change only until the branch exists', async () => {
@@ -761,6 +812,7 @@ describe('TaskService in the chat view', () => {
   let daemon: ReturnType<typeof fakeChatDaemon>
   let conversations: ConversationService
   let service: TaskService
+  let runs: AgentRunStore
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
   // Wired as main.ts wires them: the conversation service runs chat tasks and reports back.
@@ -779,7 +831,7 @@ describe('TaskService in the chat view', () => {
       else target.handleStderr(event.sessionId, event.data)
     }
     service = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), () => {},
-      (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }), attachments, null, conversations)
+      (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }), attachments, null, conversations, runs)
   }
 
   beforeEach(() => {
@@ -788,12 +840,14 @@ describe('TaskService in the chat view', () => {
     store = new TaskStore(database)
     conversationsStore = new ConversationStore(database)
     projects = new ProjectRegistry(database)
+    runs = new AgentRunStore(database)
     attachments = new AttachmentStore(path.join(dir, 'attachments'))
     daemon = fakeChatDaemon()
     serve()
   })
 
   afterEach(() => {
+    runs.close()
     projects.close()
     conversationsStore.close()
     store.close()
@@ -893,6 +947,28 @@ describe('TaskService in the chat view', () => {
     expect(daemon.spawns).toHaveLength(spawned + 1)
   })
 
+
+  it('adds up a chat run\'s turns when it is handed in, and starts another when it goes on', async () => {
+    daemon.reply = (sessionId, text) => {
+      daemon.emit(sessionId, { type: 'assistant', message: { id: `msg-${text}`, content: [{ type: 'text', text: 'ok' }] }, parent_tool_use_id: null })
+      daemon.emit(sessionId, {
+        type: 'result', subtype: 'success', is_error: false, result: 'ok', terminal_reason: 'completed', duration_ms: 30,
+        usage: { input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 20 }
+      })
+    }
+    const task = readyTask('Count me', path.join(dir, 'app'))
+    const started = await service.start(task.id)
+    await settle()
+    await conversations.send(started.conversationId ?? '', 'more')
+    await settle()
+    service.submit(task.id)
+    const [run] = runs.forTask(task.id)
+    // Input counts cached tokens too, as the chat's own turn usage does; the model is the stage's.
+    expect(run).toMatchObject({ kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, model: 'sonnet', inputTokens: 300, outputTokens: 40, totalTokens: 340, workMs: 60 })
+
+    await service.resumeChat(task.id)
+    expect(runs.forTask(task.id).map(({ kind, outcome }) => [kind, outcome])).toEqual([['run', 'continued'], ['continue', null]])
+  })
 
   it('keeps a chat task running when its agent goes, hands it in when the user says, and goes on by message', async () => {
     const task = readyTask('Chat me', path.join(dir, 'app'))

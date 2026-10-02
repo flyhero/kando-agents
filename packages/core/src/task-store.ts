@@ -148,7 +148,17 @@ export const MIGRATIONS = [
      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
      UNIQUE (stage_id, item_id)
    );
-   CREATE INDEX conversation_usage_limits_due ON conversation_usage_limits(status, continue_at);`
+   CREATE INDEX conversation_usage_limits_due ON conversation_usage_limits(status, continue_at);`,
+  // Each time an agent worked on a task, and what the user made of it (see AgentRunStore). No
+  // foreign key: a deleted task's runs still count toward how its agent did.
+  `CREATE TABLE agent_runs (
+     id TEXT PRIMARY KEY, task_id TEXT NOT NULL, kind TEXT NOT NULL, view TEXT NOT NULL,
+     agent TEXT NOT NULL, model TEXT, effort TEXT,
+     started_at INTEGER NOT NULL, ended_at INTEGER, ended_by TEXT, exit_code INTEGER,
+     input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER, work_ms INTEGER,
+     outcome TEXT, outcome_at INTEGER
+   );
+   CREATE INDEX agent_runs_task ON agent_runs(task_id, started_at DESC);`
 ]
 
 

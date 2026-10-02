@@ -3,6 +3,7 @@ import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
+import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
 import { catalogOf, probeChatCatalog } from './chat-catalog'
@@ -144,6 +145,38 @@ export class ConversationService {
   }
   messages(id: string): ConversationMessage[] { this.get(id); return this.store.messages(id) }
   stages(id: string): ConversationStage[] { this.get(id); return this.store.stages(id) }
+
+  // What a task's run cost in its chat: the turns that ended between `from` and `to`, across however
+  // many stages the run spanned, and the model and effort the last of them reported. null when the
+  // conversation is gone.
+  runUsage(id: string, from: number, to: number): RunMeasure | null {
+    const conversation = this.store.get(id)
+    if (!conversation) return null
+    const stages = this.store.stages(id).filter((stage) => stage.mode === 'chat' && stage.startedAt <= to && (stage.endedAt === null || stage.endedAt >= from))
+    const sum = { input: 0, output: 0, total: 0, work: 0, split: false, lumped: false, counted: false, timed: false }
+    let state: ChatItem | undefined
+    for (const stage of stages) {
+      const items = this.chats.items(this.chatStage(conversation, stage))
+      for (const item of items) {
+        if (item.kind !== 'turn' || item.at < from || item.at > to) continue
+        if (item.durationMs !== null) { sum.work += item.durationMs; sum.timed = true }
+        if (!item.usage) continue
+        sum.counted = true
+        if ('total' in item.usage) { sum.total += item.usage.total; sum.lumped = true }
+        else { sum.input += item.usage.input; sum.output += item.usage.output; sum.total += item.usage.input + item.usage.output; sum.split = true }
+      }
+      state = items.findLast((item) => item.kind === 'state') ?? state
+    }
+    return {
+      model: state?.kind === 'state' ? state.model : null,
+      effort: state?.kind === 'state' ? state.effort : null,
+      // Split only when every counted turn said which way its tokens went.
+      inputTokens: sum.split && !sum.lumped ? sum.input : null,
+      outputTokens: sum.split && !sum.lumped ? sum.output : null,
+      totalTokens: sum.counted ? sum.total : null,
+      workMs: sum.timed ? sum.work : null
+    }
+  }
   branches(id: string): Promise<ProjectHead[]> {
     return Promise.all(this.get(id).projectPaths.map(async (projectPath) => ({ path: projectPath, ...await projectHead(projectPath) })))
   }

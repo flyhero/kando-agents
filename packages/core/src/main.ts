@@ -5,6 +5,7 @@ import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
 import { readClaudeUsage } from './claude-usage'
 import { readCodexUsage } from './codex-usage'
+import { AgentRunStore } from './agent-run-store'
 import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
 import { browserHostCommand } from './browser-host-command'
@@ -46,6 +47,7 @@ const store = new TaskStore(paths.database)
 const projects = new ProjectRegistry(paths.database)
 const daemon = new DaemonClient(paths.daemonSocket)
 const conversationsStore = new ConversationStore(paths.database)
+const runs = new AgentRunStore(paths.database)
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
 let awake: ComputerAwakeService | null = null
@@ -122,7 +124,8 @@ const service = new TaskService(
   (taskId) => kandoMcpServer(taskId, paths.home),
   attachments,
   (taskId, session, agent) => cliCommand('task-event', paths.home, taskId, session, agent),
-  conversations
+  conversations,
+  runs
 )
 
 const sourceConfig = new SourceConfigStore(paths.sourcesConfig)
@@ -227,6 +230,7 @@ async function shutdown(): Promise<void> {
   await removeCoreEndpoint(process.pid)
   store.close()
   conversationsStore.close()
+  runs.close()
   projects.close()
   process.exit(0)
 }

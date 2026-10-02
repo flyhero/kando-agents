@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { MIGRATIONS, TaskStore } from './task-store'
 import { ProjectRegistry } from './project-registry'
 import { ConversationStore } from './conversation-store'
+import { AgentRunStore } from './agent-run-store'
 
 describe('TaskStore migrations', () => {
   let dir: string
@@ -135,6 +136,22 @@ describe('TaskStore migrations', () => {
     expect(conversations.get('00000000-0000-4000-8000-000000000001')?.projectPaths).toEqual(['/code/project'])
     expect(conversations.get('00000000-0000-4000-8000-000000000002')?.projectPaths).toEqual([])
     conversations.close()
+    tasks.close()
+  })
+
+  it('adds an empty run record to a database from before runs were kept, leaving its tasks as they were', () => {
+    const raw = new DatabaseSync(file)
+    const upgrade = MIGRATIONS.findIndex((sql) => sql.includes('CREATE TABLE agent_runs'))
+    MIGRATIONS.slice(0, upgrade).forEach((sql) => raw.exec(sql))
+    raw.exec(`PRAGMA user_version = ${upgrade}`)
+    raw.prepare("INSERT INTO tasks (id, title, details, status, agent, created_at, updated_at) VALUES ('t1', 'old', '', 'done', 'codex', 1, 1)").run()
+    raw.close()
+    const tasks = new TaskStore(file)
+    const runs = new AgentRunStore(file)
+    expect(tasks.get('t1')?.status).toBe('done')
+    // Nothing is made up for work done before: which done tasks were accepted cannot be told apart.
+    expect(runs.list()).toEqual([])
+    runs.close()
     tasks.close()
   })
 })

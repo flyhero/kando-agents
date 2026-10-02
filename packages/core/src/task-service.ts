@@ -35,6 +35,7 @@ import {
 import type { SessionInfo } from '@kando/protocol/node'
 import { agentCommand, refineCommand, type AgentCommand, type CommandImages, type EventCallback, type McpServer } from './agent-command'
 import { agentPrompt, chatPlanPrompt, chatStartPrompt, continuePrompt, refinePrompt, type PromptImages } from './agent-prompt'
+import type { AgentRunStore } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
 import type { ConversationService } from './conversation-service'
 import type { SessionHost } from './daemon-client'
@@ -47,7 +48,7 @@ import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHea
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
 // What a task needs of its chat.
-export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get'>
+export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get' | 'runUsage'>
 
 export class TaskService {
   private readonly launching = new Set<string>()
@@ -64,7 +65,9 @@ export class TaskService {
     // What the agent's hooks run to report its turns back (`kando task-event`); null leaves them out.
     private readonly agentEvents: ((taskId: string, session: TaskSession, agent: AgentKind) => EventCallback) | null = null,
     // Where a task in the chat view runs; null when core has no chat to offer.
-    private readonly chats: TaskConversations | null = null
+    private readonly chats: TaskConversations | null = null,
+    // Where each run and the user's verdict on it are kept; null keeps none.
+    private readonly runs: AgentRunStore | null = null
   ) {}
 
   list(status?: TaskStatus): Task[] {
@@ -313,7 +316,7 @@ export class TaskService {
     if (blocker) {
       throw new Rejection(blocker, `cannot move task from ${task.status} to ${status}`)
     }
-    return this.changed(this.store.update(task.id, { status }))
+    return this.changed(this.save(task.id, { status }))
   }
 
   async run(id: string): Promise<Task> {
@@ -337,7 +340,7 @@ export class TaskService {
       const prompt = agentPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt)
       return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent), workspace.extraDirs) }
     })
-    return this.changed(this.store.update(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
+    return this.changed(this.save(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
   }
 
   // A fresh session on the task's own worktree and branch: for "nearly right, change this".
@@ -366,7 +369,7 @@ export class TaskService {
       const prompt = continuePrompt(task, workspace, dependencies, images.prompt, note || null)
       return { cwd: workspace.cwd, command: agentCommand(agent, prompt, images.command, this.eventsFor(task.id, 'run', agent), workspace.extraDirs) }
     })
-    return this.changed(this.store.update(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
+    return this.changed(this.save(task.id, { status: 'running', sessionId, lastExit: null, awaitingInput: false }))
   }
 
   // For "wrong approach, start over": the done task is abandoned, keeping its worktree,
@@ -394,7 +397,7 @@ export class TaskService {
       const dependsOn = [...new Set(dependent.dependsOn.map((other) => (other === task.id ? successor.id : other)))]
       this.changed(this.store.update(dependent.id, { dependsOn }))
     })
-    this.changed(this.store.update(task.id, { status: 'abandoned', abandonReason: reason || null }))
+    this.changed(this.save(task.id, { status: 'abandoned', abandonReason: reason || null }))
     // The successor starts clean, without the chat; the abandoned one keeps it to read, idle.
     void this.chats?.stopForTask(task.id).catch(() => {})
     return this.changed(this.get(successor.id))
@@ -435,7 +438,7 @@ export class TaskService {
       })
       // The planning agent stopped for the new stage, so nothing reads there any more.
       await removePlanningCheckouts(task.id, this.worktreesRoot)
-      this.store.update(task.id, { status: 'running', lastExit: null, awaitingInput: false })
+      this.save(task.id, { status: 'running', lastExit: null, awaitingInput: false })
       const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
       await chats.send(conversation.id, prompt, imageIds)
       return this.changed(this.get(task.id))
@@ -472,7 +475,7 @@ export class TaskService {
       await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.command.all, allowBypass
       })
-      return task.status === 'running' ? this.get(task.id) : this.changed(this.store.update(task.id, { status: 'running', awaitingInput: false }))
+      return task.status === 'running' ? this.get(task.id) : this.changed(this.save(task.id, { status: 'running', awaitingInput: false }))
     })
   }
 
@@ -484,7 +487,7 @@ export class TaskService {
     if (blocker) {
       throw new Rejection(blocker)
     }
-    return this.changed(this.store.update(task.id, { status: 'review', awaitingInput: false }))
+    return this.changed(this.save(task.id, { status: 'review', awaitingInput: false }))
   }
 
   // Keeps the plan a task's read-only chat proposed, for when the task can run.
@@ -653,7 +656,7 @@ export class TaskService {
   handleSessionExit(sessionId: string, exitCode: number): void {
     const task = this.store.findBySession(sessionId)
     if (task?.status === 'running') {
-      this.changed(this.store.update(task.id, { status: 'review', lastExit: { code: exitCode }, awaitingInput: false }))
+      this.changed(this.save(task.id, { status: 'review', lastExit: { code: exitCode }, awaitingInput: false }))
     }
     // Ending a refining session leaves the task as it was, proposal and all.
     const refining = this.store.findByRefineSession(sessionId)
@@ -674,7 +677,7 @@ export class TaskService {
       }
       if (!task.sessionId || !live.has(task.sessionId)) {
         const code = task.sessionId ? (exitCodes.get(task.sessionId) ?? null) : null
-        this.changed(this.store.update(task.id, { status: 'review', lastExit: { code }, awaitingInput: false }))
+        this.changed(this.save(task.id, { status: 'review', lastExit: { code }, awaitingInput: false }))
       }
     })
     this.store.refining().forEach((task) => {
@@ -729,5 +732,21 @@ export class TaskService {
   private changed(task: Task): Task {
     this.emit({ type: 'changed', task })
     return task
+  }
+
+  // Every status change goes through here, so a run is counted however the task moved. Keeping
+  // the record is secondary: failing to never fails the move itself.
+  private save(id: string, patch: TaskPatch): Task {
+    const before = this.store.get(id)
+    const after = this.store.update(id, patch)
+    if (this.runs && before) {
+      try {
+        this.runs.transition(before, after, (run, endedAt) =>
+          after.conversationId && this.chats ? this.chats.runUsage(after.conversationId, run.startedAt, endedAt) : null)
+      } catch (error) {
+        console.error('[kando-core] recording the run failed:', error instanceof Error ? error.message : error)
+      }
+    }
+    return after
   }
 }
