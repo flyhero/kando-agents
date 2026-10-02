@@ -5,7 +5,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 import type { ResetCredit, ResetCredits, UsageWindow } from '@kando/protocol'
-import { fetchUsageJson, parseJson, type UsageReading } from './usage-source'
+import { fetchUsageJson, parseJson, type UsageReading, type UsageReport } from './usage-source'
 
 // The same endpoint Claude Code's /usage reads; it only accepts the OAuth token of a Claude subscription.
 // `cedar_ember` is Claude Code's name for the usage-limit resets promotion; asking adds its state.
@@ -136,6 +136,46 @@ export function parseClaudeUsage(body: unknown): UsageWindow[] {
     }
   }
   return windows.filter((window) => window !== null)
+}
+
+// The windows a stream-json `rate_limit_event` may name, by its keys for them.
+const EVENT_WINDOWS: Record<string, { kind: UsageWindow['kind']; model: string | null }> = {
+  five_hour: { kind: 'session', model: null },
+  seven_day: { kind: 'weekly', model: null },
+  seven_day_opus: { kind: 'weekly', model: 'Opus' },
+  seven_day_sonnet: { kind: 'weekly', model: 'Sonnet' }
+}
+
+const RateLimitEvent = z.looseObject({
+  rate_limit_info: z.looseObject({
+    status: z.string().nullish(),
+    rateLimitType: z.string().nullish(),
+    resetsAt: Reset,
+    unifiedWindows: z.record(z.string(), z.looseObject({ utilization: z.number().nullish(), resetsAt: Reset }).nullish().catch(null)).nullish().catch(null)
+  })
+})
+
+// Claude Code sends one when its limits change. Its utilization is a fraction (0.13 where /usage
+// says 13%). A refusal is taken at its word before /usage catches up; one without numbers, or any
+// warning, is a reason to read /usage again for the windows the event leaves out.
+export function rateLimitReport(frame: unknown): UsageReport | null {
+  const parsed = RateLimitEvent.safeParse(frame)
+  if (!parsed.success) {
+    return null
+  }
+  const { status, rateLimitType, resetsAt, unifiedWindows } = parsed.data.rate_limit_info
+  const windows = Object.entries(unifiedWindows ?? {}).flatMap(([key, reading]) => {
+    const known = EVENT_WINDOWS[key]
+    const used = reading?.utilization
+    const window = known && typeof used === 'number' ? toWindow(known.kind, known.model, used * 100, reading?.resetsAt) : null
+    return window ? [window] : []
+  })
+  const refused = status === 'rejected' && rateLimitType ? EVENT_WINDOWS[rateLimitType] : undefined
+  const capped = refused ? toWindow(refused.kind, refused.model, 100, resetsAt) : null
+  return {
+    windows: capped ? [...windows.filter((window) => window.kind !== capped.kind || window.model !== capped.model), capped] : windows,
+    refresh: windows.length === 0 || (Boolean(status) && status !== 'allowed')
+  }
 }
 
 // Each grant carries some resets; one credit per reset left, soonest to expire first.

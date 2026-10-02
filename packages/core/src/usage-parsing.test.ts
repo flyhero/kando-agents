@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseClaudeResets, parseClaudeUsage, parseCliVersion } from './claude-usage'
+import { parseClaudeResets, parseClaudeUsage, parseCliVersion, rateLimitReport } from './claude-usage'
 import { parseCodexUsage, parseResetCredits } from './codex-usage'
 
 describe('parseClaudeUsage', () => {
@@ -152,5 +152,45 @@ describe('parseClaudeResets', () => {
   it('reads the version the installed CLI reports', () => {
     expect(parseCliVersion('2.1.263 (Claude Code)\n')).toBe('2.1.263')
     expect(parseCliVersion('command not found')).toBeNull()
+  })
+})
+
+describe('rateLimitReport', () => {
+  // As Claude Code sent it in a session where /usage read 14% and 3%.
+  const event = {
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed',
+      resetsAt: 1790947200,
+      rateLimitType: 'five_hour',
+      overageStatus: 'rejected',
+      overageDisabledReason: 'org_level_disabled',
+      isUsingOverage: false,
+      unifiedWindows: { five_hour: { utilization: 0.13, resetsAt: 1790947200 }, seven_day: { utilization: 0.02, resetsAt: 1791511200 } }
+    },
+    uuid: '12e21192-16c1-4d22-bcf7-17f50dc40d7a',
+    session_id: 'a979bc4f-d9cb-45c6-b241-b6bff7540f04'
+  }
+
+  it('reads the windows it carries as percentages', () => {
+    expect(rateLimitReport(event)).toEqual({
+      windows: [
+        { kind: 'session', model: null, usedPercent: 13, windowMinutes: 300, resetsAt: 1_790_947_200_000 },
+        { kind: 'weekly', model: null, usedPercent: 2, windowMinutes: 10_080, resetsAt: 1_791_511_200_000 }
+      ],
+      refresh: false
+    })
+  })
+
+  it('takes a refusal as the named window at its cap, and asks for the rest', () => {
+    const refused = { ...event, rate_limit_info: { ...event.rate_limit_info, status: 'rejected', rateLimitType: 'seven_day_opus' } }
+    const report = rateLimitReport(refused)
+    expect(report?.windows.at(-1)).toEqual({ kind: 'weekly', model: 'Opus', usedPercent: 100, windowMinutes: 10_080, resetsAt: 1_790_947_200_000 })
+    expect(report?.refresh).toBe(true)
+  })
+
+  it('asks for a fresh reading when the event carries no numbers', () => {
+    expect(rateLimitReport({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } })).toEqual({ windows: [], refresh: true })
+    expect(rateLimitReport({ type: 'rate_limit_event' })).toBeNull()
   })
 })

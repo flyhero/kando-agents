@@ -10,6 +10,16 @@ export type UsageSource = () => Promise<UsageReading>
 // whether the full reading is worth fetching again now.
 export type UsageReport = { windows: UsageWindow[]; plan?: string | null; refresh?: boolean }
 
+// Two reports a driver saw before the host took them, the later winning window by window.
+export function mergeUsageReports(earlier: UsageReport | null, later: UsageReport): UsageReport {
+  const kept = (earlier?.windows ?? []).filter((old) => !later.windows.some((window) => window.kind === old.kind && window.model === old.model))
+  return {
+    windows: [...kept, ...later.windows],
+    plan: later.plan ?? earlier?.plan,
+    refresh: Boolean(earlier?.refresh || later.refresh)
+  }
+}
+
 export type UsageFailure = 'auth-expired' | 'request-failed'
 
 export class UsageFetchError extends Error {

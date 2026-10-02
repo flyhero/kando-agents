@@ -140,6 +140,13 @@ describe('ChatHost', () => {
   const finish = (sessionId: string, terminal: 'completed' | 'aborted_streaming') =>
     daemon.emit(sessionId, { type: 'result', subtype: terminal === 'completed' ? 'success' : 'error_during_execution', is_error: terminal !== 'completed', terminal_reason: terminal })
 
+  it('passes on the limits the agent reports while it runs', async () => {
+    const recorded = recordingSink()
+    const { sessionId } = await started(recorded.sink)
+    daemon.emit(sessionId, { type: 'rate_limit_event', rate_limit_info: { status: 'allowed', unifiedWindows: { five_hour: { utilization: 0.5, resetsAt: null } } } })
+    expect(recorded.usage).toEqual([{ windows: [expect.objectContaining({ kind: 'session', usedPercent: 50 })], refresh: false }])
+  })
+
   it('sends a message queued during a turn once the turn completes', async () => {
     const { host, sessionId } = await started()
     daemon.reply = () => {}

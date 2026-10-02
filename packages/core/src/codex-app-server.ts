@@ -9,7 +9,7 @@ import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
 import { windowOf } from './codex-usage'
-import type { UsageReport } from './usage-source'
+import { mergeUsageReports, type UsageReport } from './usage-source'
 
 // Codex's app-server protocol (`codex app-server`): JSON-RPC over stdio without the jsonrpc field,
 // as codex-cli 0.156.1 speaks it. `codex app-server generate-ts` prints the full schema; this reads
@@ -834,9 +834,7 @@ export class CodexAppServer implements ChatDriver {
           primary ? windowOf(primary.usedPercent, primary.windowDurationMins ?? null, primary.resetsAt, 'session') : null,
           secondary ? windowOf(secondary.usedPercent, secondary.windowDurationMins ?? null, secondary.resetsAt, 'weekly') : null
         ].filter((window) => window !== null)
-        // Later updates in the same batch win, window by window.
-        const kept = (this.usage?.windows ?? []).filter((old) => !windows.some((window) => window.kind === old.kind))
-        this.usage = { windows: [...kept, ...windows], plan: planType ?? this.usage?.plan }
+        this.usage = mergeUsageReports(this.usage, { windows, plan: planType })
         return
       }
       case 'thread/tokenUsage/updated': {

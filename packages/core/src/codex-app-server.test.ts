@@ -590,7 +590,8 @@ describe('CodexAppServer rate limits', () => {
         { kind: 'session', model: null, usedPercent: 42, windowMinutes: 300, resetsAt: 1_790_000_000_000 },
         { kind: 'weekly', model: null, usedPercent: 7, windowMinutes: 10_080, resetsAt: null }
       ],
-      plan: 'plus'
+      plan: 'plus',
+      refresh: false
     })
     expect(driver.takeUsage()).toBeNull()
   })

@@ -9,6 +9,8 @@ import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { CLAUDE_TASK_TOOLS, ClaudeTasks } from './claude-tasks'
 import { Rejection } from './rejection'
+import { rateLimitReport } from './claude-usage'
+import { mergeUsageReports, type UsageReport } from './usage-source'
 
 // Claude Code's stream-json protocol (`claude -p --input-format stream-json --output-format
 // stream-json`), as Claude Code 2.1.282 speaks it. It is only partly documented, so every frame is
@@ -344,6 +346,8 @@ export class ClaudeStream implements ChatDriver {
   private interrupts = 0
   private results = 0
   private messages: StageMessage[] = []
+  // Rate limits reported since the host last took them.
+  private usage: UsageReport | null = null
   private readonly state: StageState
   private readonly queue = new ChatQueue()
   private readonly tasks = new ClaudeTasks()
@@ -553,6 +557,12 @@ export class ClaudeStream implements ChatDriver {
     return messages
   }
 
+  takeUsage(): UsageReport | null {
+    const usage = this.usage
+    this.usage = null
+    return usage
+  }
+
   private ownRequest(requestId: string): boolean {
     return requestId === INIT_ID || requestId === SETTINGS_ID || requestId.startsWith(INTERRUPT_PREFIX) || requestId.startsWith(OPTION_PREFIX)
   }
@@ -667,6 +677,11 @@ export class ClaudeStream implements ChatDriver {
       case 'control_cancel_request': {
         const cancel = ControlCancel.safeParse(frame)
         if (cancel.success) this.resolve(cancel.data.request_id, 'cancelled', null, at)
+        return
+      }
+      case 'rate_limit_event': {
+        const report = rateLimitReport(frame)
+        if (report) this.usage = mergeUsageReports(this.usage, report)
       }
     }
   }
