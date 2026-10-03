@@ -2,14 +2,16 @@ import { useEffect, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { addQuote, useQuotes } from '../chat-quotes'
 import { selectedTextIn, type SelectedText } from '../text-selection'
+import { CommentAddIcon } from './icons'
 
 // Where each comment's passage lies in the plan, by quote id, for its highlight. A range lasts
 // while the plan's text stays rendered; one whose text is gone simply marks nothing.
 const passages = new Map<string, Range>()
 
 const DRAFT = 'kando-plan-draft'
-// As wide as .plan-comment-box.
-const BOX_WIDTH = 280
+// As .plan-comment-box is sized.
+const BOX_WIDTH = 300
+const BOX_HEIGHT = 48
 const COMMENTED = 'kando-plan-comments'
 
 function mark(name: string, ranges: readonly Range[]): void {
@@ -84,17 +86,20 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     document.getSelection()?.removeAllRanges()
     setDraft(null)
   }
-  // Centred on the passage, but kept within the panel the plan is in, and within the window.
+  // Under the passage, centred on it, kept within the panel the plan is in; over it where the
+  // window has no room below.
   const panel = body.current?.closest('.side-panel')?.getBoundingClientRect()
   const half = BOX_WIDTH / 2 + 8
   const left = Math.min(Math.max(draft.x, (panel?.left ?? 0) + half), (panel?.right ?? window.innerWidth) - half)
+  const passage = draft.range.getBoundingClientRect()
+  const above = passage.bottom + BOX_HEIGHT + 16 > window.innerHeight
   return createPortal(
-    <div className="plan-comment-box" data-below={draft.below || undefined} style={{ left, top: draft.y }} role="dialog" aria-label="评论这段计划">
+    <div className="plan-comment-box" data-above={above || undefined} style={{ left, top: above ? passage.top : passage.bottom }} role="dialog" aria-label="评论这段计划">
       <input
         className="plan-comment-input"
         autoFocus
         value={comment}
-        placeholder="对这段说点什么，回车添加"
+        placeholder="评论这段，回车保存"
         aria-label="评论"
         onChange={(event) => setComment(event.target.value)}
         onKeyDown={(event) => {
@@ -108,10 +113,9 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
           }
         }}
       />
-      <div className="plan-comment-actions">
-        <button type="button" className="button ghost" onClick={() => setDraft(null)}>取消</button>
-        <button type="button" className="button primary" onClick={add}>添加评论</button>
-      </div>
+      <button type="button" className="plan-comment-save" aria-label="保存评论" data-tooltip="保存评论（Enter）" data-tooltip-side="top-end" onClick={add}>
+        <CommentAddIcon />
+      </button>
     </div>,
     document.body
   )

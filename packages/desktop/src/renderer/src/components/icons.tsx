@@ -477,3 +477,13 @@ export function QuoteIcon() {
     </svg>
   )
 }
+
+// A speech bubble with a plus: for adding a comment.
+export function CommentAddIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M10 16.5a6.5 6.5 0 1 0-5.6-3.2L3.5 16.5l3.3-.9A6.5 6.5 0 0 0 10 16.5z" />
+      <path d="M10 7.2v5.6M7.2 10h5.6" />
+    </svg>
+  )
+}
