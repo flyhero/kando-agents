@@ -13,7 +13,6 @@
     "dev:daemon": "pnpm --filter @kando/daemon run dev",
     "dev:core": "pnpm --filter @kando/core run dev",
     "dev:desktop": "pnpm --filter @kando/desktop run dev",
-    "kando": "tsx packages/cli/src/main.ts",
     "browser:install": "PLAYWRIGHT_BROWSERS_PATH=${KANDO_HOME:-$HOME/.kando}/browser/ms-playwright pnpm --filter @kando/browser-host exec playwright-core install chromium --no-shell",
     "build": "pnpm --filter @kando/desktop run build",
     "typecheck": "pnpm -r run typecheck",

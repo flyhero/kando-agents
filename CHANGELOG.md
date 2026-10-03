@@ -2,6 +2,12 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。1.0 之前，破坏性改动升第二位，修复升第三位。桌面端、core 和 CLI 之间的通信协议另有版本号 `PROTOCOL_VERSION`，单独计数。
 
+## 未发布
+
+### 破坏性改动
+
+- 去掉了命令行客户端：`pnpm kando add / ls / show / edit / move / run / continue / redo / rm / source …` 都没有了，任务、会话和任务来源都在桌面端里操作。`packages/cli` 只剩 agent 用的 `kando mcp` 和 hooks 回调，由 core 启动 agent 时自动配置。
+
 ## 0.10.3 — 2026-10-02
 
 ### 新功能

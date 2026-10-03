@@ -19,7 +19,6 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 ┌──────────── 客户端（可以有多个）────────────┐
 │  desktop  Electron + React + xterm.js     │
 │           终端界面 / 聊天界面                │
-│  cli      kando add / ls / edit / run ... │
 └────────────────┬───────────────────────────┘
                  │ JSON-RPC 2.0 over WebSocket（127.0.0.1 + token）
 ┌────────────────▼───────────────────────────┐
@@ -49,7 +48,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 | `packages/protocol` | 唯一的类型来源：Task / Conversation 模型、状态流转规则、RPC 方法与通知的 zod schema、客户端。`/node` 子入口放路径、端点发现、daemon 协议 |
 | `packages/core` | 独立的任务与会话存储及业务逻辑；任务创建 git worktree；通过 daemon 启动 agent CLI |
 | `packages/daemon` | 进程宿主，独立进程：终端界面的 agent 和 shell 跑在 PTY 里，聊天界面的 agent 跑在 stdio 管道上；缓存最近输出，供重新连接时回放 |
-| `packages/cli` | 命令行客户端 |
+| `packages/cli` | 只给 agent 用的辅助命令：Kando 的 MCP 服务，以及 hooks 回报回合的回调；由 core 在启动 agent 时配置，不是给人用的命令行 |
 | `packages/desktop` | Electron 桌面端：看板、详情编辑、内嵌终端、聊天界面 |
 | `packages/browser-host` | 浏览器宿主，daemon 托管的独立进程：用 playwright-core 跑一个 Chromium，给 agent 的浏览器工具和检查器的实时画面提供页面 |
 
@@ -71,21 +70,6 @@ pnpm dev:daemon
 pnpm dev:core
 pnpm dev:desktop
 ```
-
-命令行：
-
-```bash
-pnpm kando add 重构登录模块
-pnpm kando ls
-pnpm kando edit 76b8 --details "拆分 AuthService，保留旧接口" --repo ~/code/api --repo ~/code/web --agent claude
-pnpm kando edit 9c1e --dep 76b8   # 76b8 执行完之后才能执行 9c1e
-pnpm kando run 76b8
-pnpm kando run 76b8 --chat     # 在聊天界面里开始：先规划，确认计划后再改
-pnpm kando continue 76b8       # 不太满意：在原来的 worktree 上开新会话接着改
-pnpm kando redo 76b8 --reason "不该改表结构"   # 方向错了：废弃，新建一个继承的任务从头来
-```
-
-任务 id 可以只写前几位。执行前需要填好项目和 agent，详情可以不写（只用标题作 prompt）。
 
 ### 执行之后
 
@@ -116,7 +100,7 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 - **开始规划**：还有依赖没完成时，agent 只读规划，不建任务分支。它读的是任务分支将来拉出的起点（见「分支起点」）：Kando 把起点提交检出成一个没有分支的只读副本，放在 `~/.kando/worktrees/<任务id>/.planning/<项目名>/`；起点就是项目当前检出的分支时，直接在项目里读。Claude Code 用规划模式并禁止改动这些目录里的文件，Codex 用 plan 模式配 `read-only` 沙箱，权限模式只有「规划」。未完成依赖的详情和计划直接写在第一条消息里。拿出计划后可以继续规划，也可以「保存计划」：计划存到任务上，任务仍是「未执行」，列表里标「计划已保存」。依赖都完成后点「开始执行」，Kando 结束规划用的 agent，在新建的 worktree 里开一个新会话，把保存的计划交给它，让它先对照当时的代码核对一遍。
 - **提交验收**：agent 退出不会让任务进入待验收，因为聊天界面的 agent 空闲 30 分钟就会被结束，下次发消息再接着同一个会话启动。觉得做完了就点「提交验收」（agent 正在处理时不行），检查器会打开到改动。
 - **验收之后**：「接受」和「重做」和终端界面一样。想接着改就直接在聊天里发消息：任务回到「执行中」，worktree 被删掉的会先重建，agent 接着原来的会话继续。
-- **其他**：任务的聊天不出现在「会话」列表和搜索里，从任务打开；删除任务时一并删除它的聊天记录，worktree 保留。已经开始的任务保持原来的界面：在终端里执行或细化过的任务仍用终端，反过来也一样。`kando show` 会显示任务的计划。聊天阶段有 Kando 的预览和浏览器工具，但没有细化用的 `read_task_details`。
+- **其他**：任务的聊天不出现在「会话」列表和搜索里，从任务打开；删除任务时一并删除它的聊天记录，worktree 保留。已经开始的任务保持原来的界面：在终端里执行或细化过的任务仍用终端，反过来也一样。聊天阶段有 Kando 的预览和浏览器工具，但没有细化用的 `read_task_details`。
 
 ### 和 agent 细化任务
 
@@ -183,11 +167,11 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 
 ### 多项目与依赖
 
-- **主项目与附加项目**：第一项为主项目，项目选择器里用高亮颜色标出；右键其他项目选「设为主项目」可以把它移到首位，其余项目顺序不变；移除主项目后下一项自动成为主项目。CLI 按传入的项目顺序确定主项目。任务执行中、细化中、启动准备期间及已废弃时不能调整项目。主项目就是 agent 会话的工作目录，会话途中不能换：在聊天界面开始的任务，对话开始后主项目就固定了，附加项目仍可增删，下一条消息时 agent 带上新的目录；终端里的任务每次执行、继续都是新会话，可以在两次之间更换主项目。
+- **主项目与附加项目**：第一项为主项目，项目选择器里用高亮颜色标出；右键其他项目选「设为主项目」可以把它移到首位，其余项目顺序不变；移除主项目后下一项自动成为主项目。任务执行中、细化中、启动准备期间及已废弃时不能调整项目。主项目就是 agent 会话的工作目录，会话途中不能换：在聊天界面开始的任务，对话开始后主项目就固定了，附加项目仍可增删，下一条消息时 agent 带上新的目录；终端里的任务每次执行、继续都是新会话，可以在两次之间更换主项目。
 - **多个仓库隔离执行**：每个 Git 仓库各建一个 worktree，放在 `~/.kando/worktrees/<任务id>/<项目名>/`，分支名相同。agent 在主项目的 worktree 中运行，通过 `--add-dir` 访问其他 worktree。Kando 在 prompt 中列出各项目目录和分支，提醒 agent 先读取附加项目适用的指令，并在对应仓库执行 Git、构建和测试。更换主项目保留已有 worktree 和分支。普通文件夹（非 Git）只能作为任务唯一的项目目录，原地执行。
 - **细化与历史任务**：细化和只读规划以主项目起点的只读副本为 cwd（起点是项目当前的分支时用原目录），只读访问其他项目，不建任务分支。开始执行后这些副本会被移除；副本里若有改动或只有它才有的提交，就留着不动。历史数据沿用原列表第一项作为主项目，无需数据库迁移。正在运行的旧任务和终端不改变 cwd；下次继续任务采用主项目 worktree。该启动行为需要新版 core，仅升级 UI 时旧 core 仍在共同父目录启动多仓库任务。
 - **依赖**：依赖的任务全部「已完成」（验收通过）后才能执行，「待验收」的不算，不能形成循环。同一个 Git 仓库里恰好有一个依赖留下了分支时，新 worktree 从那个分支拉出，直接用上前置任务的改动；prompt 里也会列出依赖任务和它们的分支。
-- **分支起点**：任务分支默认从 origin 的默认分支拉出（依次找 origin/HEAD、origin/main、origin/master），拉出前只拉取这一个分支，不用你当前检出的分支。拉取失败时用仓库里已有的副本；仓库没有 origin 的默认分支时，从项目当前的分支拉出。任务详情的「起点」一栏可以为每个项目另选：项目当前的分支，或任意本地、远端分支（远端分支同样先拉取），选了就不再叠在依赖的分支上。分支建好后这一栏记下从哪个提交拉出、什么时候，拉取失败或没有默认分支也写在这里；`kando show` 同样显示。任务分支不跟踪它的起点，检查器里的改动从记下的提交算起。重做沿用原任务选的起点。只读规划和细化读的也是这个起点，每次开始时重新拉取；接着同一个规划对话时，读的仍是上次那份。
+- **分支起点**：任务分支默认从 origin 的默认分支拉出（依次找 origin/HEAD、origin/main、origin/master），拉出前只拉取这一个分支，不用你当前检出的分支。拉取失败时用仓库里已有的副本；仓库没有 origin 的默认分支时，从项目当前的分支拉出。任务详情的「起点」一栏可以为每个项目另选：项目当前的分支，或任意本地、远端分支（远端分支同样先拉取），选了就不再叠在依赖的分支上。分支建好后这一栏记下从哪个提交拉出、什么时候，拉取失败或没有默认分支也写在这里。任务分支不跟踪它的起点，检查器里的改动从记下的提交算起。重做沿用原任务选的起点。只读规划和细化读的也是这个起点，每次开始时重新拉取；接着同一个规划对话时，读的仍是上次那份。
 
 ### 任务图片
 
@@ -197,30 +181,19 @@ Kando 不会自己删除任务的 worktree，它们可能是 agent 工作的唯�
 - **交给 agent**：执行、继续、细化时，prompt 会按编号列出每张图片的本机路径，让 agent 开始前先查看。Claude Code 只被授权读取这几张图片（`--allowedTools Read(//…)`），不会拿到整个图片目录；Codex 会把图片直接附在第一条消息里（`--image`）。细化的 agent 回写方案时只改详情，图片属性保持不变。
 - **导入的图片**：从 Jira 导入时，issue 里的图片附件也会下载下来（最多 20 张，单张 10MB，一共 50MB），显示在原文快照卡片的下方；正文里原来放图的地方写成「（图片：文件名）」。这些图片和原文一样属于外部内容：交给 agent 时它们和原文一起放在不可信数据块里，也不会通过 `--image` 附进消息。token 带权限范围但缺少 `read:attachment:jira` 时，图片下载不了，会在附件清单里注明。
 
-命令行也能加图：`pnpm kando add 修复登录页 --image ~/Desktop/shot.png`，`pnpm kando edit 76b8 --image a.png --image b.png`。
-
 ### 任务来源与收件箱
 
 任务除了手写，也可以从 issue 系统导入。每种系统是一个**任务来源**，目前内置 Jira 和 GitHub；来源的接口是通用的，以后可以补充禅道等更多来源，下一步会开放成外部插件。
 
 1. **设置**：在 设置 → 集成 → Jira 里填站点（如 `your-team.atlassian.net`）和 JQL（默认是分给你、还没完成的 issue），保存。
-2. **登录**：点「登录」，按提示输入邮箱和 [API token](https://id.atlassian.com/manage-profile/security/api-tokens)（只需要读权限）。登录流程由来源驱动，界面和命令行都按同一套提示渲染：`pnpm kando source login jira` 也能在终端里登录。
+2. **登录**：点「登录」，按提示输入邮箱和 [API token](https://id.atlassian.com/manage-profile/security/api-tokens)（只需要读权限）。登录流程由来源驱动，界面按来源给出的提示一步步渲染。
 3. **收件箱**：core 每 15 分钟同步一次，结果出现在左侧的收件箱里。每个 issue 可以**导入**成一个「未执行」任务，或者**忽略**（之后在「已忽略」里可以恢复）。
 
 GitHub 在 设置 → 集成 → GitHub 中登录，登录时输入 Personal access token。筛选条件的写法和 GitHub 网页上的搜索一样，默认是 `assignee:@me is:open`，即 token 可访问范围内、分配给当前账号且仍开放的 Issues 和 Pull Requests；条件里没写 `is:issue` 或 `is:pr` 时两种都同步，结果按更新时间排序。导入项使用 `owner/repository#number` 作为来源编号，并保存正文、标签和最近 20 条评论的快照。
 
 导入的任务详情是空的，留给你（或细化的 agent）写方案；issue 的描述、最近 20 条评论，以及来源支持时的附件清单作为**原文快照**单独保存，在任务详情里只读显示，可以「重新拉取」。交给 agent 时，原文快照被标记为**不可信的参考资料**包在 `<untrusted-source>` 里，其中的指令不会被当作你的要求。执行时分支名带上 issue key（`kando/PROJ-123-…`），Jira 靠这个把分支关联到 issue。删除导入的任务后 issue 会回到收件箱；重做出的新任务继承原任务的来源和快照。
 
-**凭据**：设置（`~/.kando/sources.json`）里没有密钥，凭据单独存在 `~/.kando/credentials.json`（权限 600），只交给对应的来源，永远不会返回给界面或命令行，也不会交给 agent。修改站点会自动退出登录，保存的 token 不会发往新地址。没有界面的机器上，Jira 可以用 `KANDO_JIRA_EMAIL` 和 `KANDO_JIRA_TOKEN`，GitHub 可以用 `KANDO_GITHUB_TOKEN`；环境变量优先于保存的凭据。旧版本的 `~/.kando/jira.json` 会在 core 启动时自动迁移。
-
-```bash
-pnpm kando source ls
-pnpm kando source set jira site=your-team.atlassian.net
-pnpm kando source login jira
-pnpm kando source import jira PROJ-123 --agent claude
-pnpm kando source login github
-pnpm kando source import github owner/repository#123 --agent codex
-```
+**凭据**：设置（`~/.kando/sources.json`）里没有密钥，凭据单独存在 `~/.kando/credentials.json`（权限 600），只交给对应的来源，永远不会返回给界面，也不会交给 agent。修改站点会自动退出登录，保存的 token 不会发往新地址。没有界面的机器上，Jira 可以用 `KANDO_JIRA_EMAIL` 和 `KANDO_JIRA_TOKEN`，GitHub 可以用 `KANDO_GITHUB_TOKEN`；环境变量优先于保存的凭据。旧版本的 `~/.kando/jira.json` 会在 core 启动时自动迁移。
 
 ## 打包与安装
 
