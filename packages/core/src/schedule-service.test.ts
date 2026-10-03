@@ -3,8 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Task, type AgentUsage, type ScheduledRun, type ScheduleTaskBlocker, type UnattendedMode } from '@kando/protocol'
-import { SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
+import { Task, type AgentUsage, type ChatItem, type ScheduledRun, type ScheduleTaskBlocker, type UnattendedMode } from '@kando/protocol'
+import { CONTINUE_TEXT, SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { AttachmentStore } from './attachment-store'
 import { ConversationService } from './conversation-service'
 import { ConversationStore } from './conversation-store'
@@ -12,6 +12,7 @@ import { fakeChatDaemon } from './fake-chat-agent'
 import { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { ScheduleService } from './schedule-service'
+import { UsageLimitResumes } from './usage-limit-resume'
 import { TaskStore } from './task-store'
 
 const HOUR = 3_600_000
@@ -40,8 +41,13 @@ describe('ScheduleService', () => {
   let starts: Array<{ id: string; unattended: UnattendedMode }>
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+  let limits: UsageLimitResumes
+  let emitted: ChatItem[]
+
   function serve(): void {
-    conversations = new ConversationService(store, daemon, path.join(root, 'sessions'), () => {}, projects, attachments())
+    conversations = new ConversationService(store, daemon, path.join(root, 'sessions'),
+      (event) => { if (event.type === 'chatItems') limits.observe(event.conversationId, event.items) },
+      projects, attachments())
     const target = conversations
     daemon.deliver = (event) => {
       if (event.event === 'data') target.handleData(event)
@@ -64,9 +70,40 @@ describe('ScheduleService', () => {
       conversations,
       usage: { list: () => usage, refresh: async () => usage },
       mode: () => mode,
-      emit: (runs) => { announced = runs }
+      emit: (runs) => { announced = runs },
+      limitChanged: (conversationId, limit) => limits.announce(conversationId, limit)
     }, () => clock)
+    limits = new UsageLimitResumes(schedules, conversations, { list: () => usage }, (_conversationId, items) => emitted.push(...items), () => clock)
   }
+
+  // The first `turns` messages Claude Code gets run into the five-hour limit; later ones go through.
+  function limitTurns(turns: number, resetsAt: number | null): void {
+    const answer = daemon.reply
+    let left = turns
+    daemon.reply = (sessionId, text) => {
+      if (left <= 0) return answer(sessionId, text)
+      left -= 1
+      if (resetsAt !== null) daemon.emit(sessionId, { type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour', resetsAt: resetsAt / 1000 } })
+      daemon.emit(sessionId, { type: 'result', subtype: 'success', is_error: true, result: "You've hit your session limit", duration_ms: 20 })
+    }
+  }
+
+  async function limitedChat(resetsAt: number | null = clock + HOUR) {
+    limitTurns(1, resetsAt)
+    const conversation = await conversations.create('claude', [])
+    await conversations.send(conversation.id, 'refactor the payments module')
+    await settle()
+    const item = conversations.chatPage(conversation.id).items.find((each) => each.kind === 'usageLimit')
+    if (!item) throw new Error('no usage limit item')
+    return { id: conversation.id, item }
+  }
+
+  const statusOf = (item: ChatItem) => {
+    const [decorated] = limits.decorate([item])
+    return decorated?.kind === 'usageLimit' ? decorated : null
+  }
+  const continues = (id: string) => userTexts(id).filter((text) => text === CONTINUE_TEXT)
+  const modeSwitches = (id: string) => daemon.written(conversations.get(id).sessionId ?? '').filter((frame) => JSON.stringify(frame).includes('set_permission_mode'))
 
   function attachments(): AttachmentStore {
     const dir = path.join(root, 'attachments')
@@ -99,6 +136,7 @@ describe('ScheduleService', () => {
     usage = []
     mode = 'acceptEdits'
     announced = []
+    emitted = []
     task = null
     blocker = null
     startFails = null
@@ -212,7 +250,7 @@ describe('ScheduleService', () => {
 
     task = pendingTask()
     const again = schedules.create({ kind: 'task', taskId: 'task-1' }, clock + HOUR)
-    schedules.taskChanged({ id: 'task-1', status: 'running' })
+    schedules.taskChanged({ id: 'task-1', status: 'running', conversationId: null })
     expect(run(again.id)).toMatchObject({ status: 'cancelled', error: 'task-started' })
     const third = schedules.create({ kind: 'task', taskId: 'task-1' }, clock + HOUR)
     schedules.taskDeleted('task-1')
@@ -262,5 +300,195 @@ describe('ScheduleService', () => {
     expect(() => schedules.cancel(scheduled.id)).toThrow(expect.objectContaining({ reason: 'schedule-settled' }))
     await expect(schedules.runNow(scheduled.id)).rejects.toMatchObject({ reason: 'schedule-settled' })
     expect(schedules.openCount()).toBe(0)
+  })
+
+  describe('resuming after a usage limit', () => {
+    it('schedules a resume ahead of the queue, and resumes once the limit lifts, keeping the mode', async () => {
+      const resetsAt = clock + HOUR
+      const { id, item } = await limitedChat(resetsAt)
+      const [run] = schedules.list()
+      expect(run).toMatchObject({ target: { kind: 'resume', conversationId: id, stageId: item.stageId, itemId: item.id }, status: 'waiting', notBefore: resetsAt + 5_000 })
+      expect(statusOf(item)).toMatchObject({ status: 'waiting', autoContinue: true, resetsAt, continueAt: resetsAt + 5_000, runId: run?.id })
+
+      await due()
+      expect(continues(id)).toHaveLength(0)
+      clock = resetsAt + 5_000
+      await due()
+      expect(continues(id)).toHaveLength(1)
+      expect(modeSwitches(id)).toEqual([])
+      expect(userTexts(id).at(-1)).not.toContain(UNATTENDED_NOTE)
+      expect(statusOf(item)).toMatchObject({ status: 'continued', continuedAt: clock, continueAt: null })
+      expect(emitted.at(-1)).toMatchObject({ kind: 'usageLimit', status: 'continued' })
+
+      clock += HOUR
+      await due()
+      expect(continues(id)).toHaveLength(1)
+    })
+
+    it('goes on in a new stage when the agent was released meanwhile, resuming its session', async () => {
+      const { id, item } = await limitedChat()
+      await conversations.releaseIdle(Date.now() + 31 * 60_000)
+      expect(conversations.get(id).sessionId).toBeNull()
+      clock += 2 * HOUR
+      await due()
+      expect(conversations.get(id).sessionId).not.toBeNull()
+      expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume']))
+      expect(continues(id)).toHaveLength(1)
+      expect(statusOf(item)?.status).toBe('continued')
+    })
+
+    it('waits on when the fresh reading says the limit has not lifted, and learns the reset from it when the agent did not say', async () => {
+      const { id, item } = await limitedChat()
+      const later = clock + 3 * HOUR
+      usage = exhausted(later)
+      clock += 2 * HOUR
+      await due()
+      expect(continues(id)).toHaveLength(0)
+      expect(statusOf(item)).toMatchObject({ status: 'waiting', resetsAt: later, continueAt: later + 5_000 })
+
+      clock = Date.now()
+      usage = exhausted(clock + HOUR)
+      const second = await limitedChat(null)
+      expect(statusOf(second.item)).toMatchObject({ resetsAt: clock + HOUR, continueAt: clock + HOUR + 5_000 })
+    })
+
+    it('stays put once the user goes on another way, or turns it off; checking again makes a new resume', async () => {
+      const first = await limitedChat()
+      // A limit the user's own message ran into, while it was being sent, stays.
+      limits.cancelFor(first.id, clock - 1)
+      expect(statusOf(first.item)?.status).toBe('waiting')
+      limits.cancelFor(first.id, clock + 1)
+      clock += 2 * HOUR
+      await due()
+      expect(continues(first.id)).toHaveLength(0)
+      expect(statusOf(first.item)).toMatchObject({ status: 'cancelled', autoContinue: false })
+      limits.setAutoContinue(first.id, first.item.stageId, first.item.id, true)
+      expect(statusOf(first.item)).toMatchObject({ status: 'waiting', autoContinue: true })
+      await due()
+      expect(continues(first.id)).toHaveLength(1)
+
+      clock = Date.now()
+      const second = await limitedChat(clock + HOUR)
+      limits.setAutoContinue(second.id, second.item.stageId, second.item.id, false)
+      clock += 2 * HOUR
+      await due()
+      expect(continues(second.id)).toHaveLength(0)
+      // Unchecked, the card stays for the user to check again or retry.
+      expect(statusOf(second.item)).toMatchObject({ status: 'waiting', autoContinue: false, continueAt: null })
+      expect(schedules.openCount()).toBe(0)
+    })
+
+    it('lets one retry through at a time, and continues at once without waiting for the reset', async () => {
+      const { id, item } = await limitedChat()
+      const [first, second] = await Promise.allSettled([
+        limits.retry(id, item.stageId, item.id),
+        limits.retry(id, item.stageId, item.id)
+      ])
+      expect(first.status).toBe('fulfilled')
+      expect(second).toMatchObject({ status: 'rejected', reason: expect.objectContaining({ reason: 'usage-limit-busy' }) })
+      await settle()
+      expect(continues(id)).toHaveLength(1)
+      await expect(limits.retry(id, item.stageId, item.id)).rejects.toMatchObject({ reason: 'usage-limit-settled' })
+    })
+
+    it('does not send again for a try that went out before core stopped, under either name', async () => {
+      const { id, item } = await limitedChat()
+      const [run] = schedules.list()
+      await conversations.send(id, CONTINUE_TEXT, [], false, false, `usage-limit:${run?.id}`)
+      await settle()
+      const raw = new DatabaseSync(database)
+      raw.prepare("UPDATE scheduled_runs SET status = 'starting'").run()
+      raw.close()
+      schedules.stop()
+      serve()
+      schedules.start()
+      expect(statusOf(item)?.status).toBe('continued')
+      expect(continues(id)).toHaveLength(1)
+    })
+
+    it('only shows a limit a replayed log brings back from before it was seen', async () => {
+      const { id, item } = await limitedChat()
+      const old = { ...item, id: 'limit:old', at: clock - HOUR }
+      limits.observe(id, [old])
+      expect(schedules.openCount()).toBe(1)
+      expect(statusOf(old)).toMatchObject({ status: 'cancelled', autoContinue: false, runId: null })
+      expect(statusOf({ ...item, id: 'limit:unknown' })).toMatchObject({ status: 'cancelled', autoContinue: false, continueAt: null })
+    })
+
+    it('drops the resume of a task chat whose task is no longer worked on, and of a chat handed to the other agent', async () => {
+      const first = await limitedChat()
+      schedules.taskChanged({ id: 'task-9', status: 'review', conversationId: first.id })
+      expect(statusOf(first.item)?.status).toBe('cancelled')
+      clock = Date.now()
+      const second = await limitedChat()
+      schedules.conversationChanged({ id: second.id, agent: 'codex' })
+      expect(statusOf(second.item)?.status).toBe('cancelled')
+      expect(schedules.openCount()).toBe(0)
+    })
+
+    it('lets a run the user scheduled take a limit over, continuing the stopped turn in its words', async () => {
+      limitTurns(1, clock + HOUR)
+      const conversation = await conversations.create('claude', [])
+      const scheduled = schedules.create({ kind: 'conversation', conversationId: conversation.id, text: '' }, clock + 2 * HOUR)
+      await conversations.send(conversation.id, 'refactor the payments module')
+      await settle()
+      const item = conversations.chatPage(conversation.id).items.find((each) => each.kind === 'usageLimit')
+      expect(schedules.list().filter((run) => run.status === 'waiting')).toHaveLength(1)
+      expect(run(scheduled.id)?.target).toMatchObject({ kind: 'conversation', resumes: { stageId: item?.stageId, itemId: item?.id } })
+      expect(item && statusOf(item)).toMatchObject({ status: 'waiting', autoContinue: true, continueAt: clock + 2 * HOUR, runId: scheduled.id })
+
+      clock += 2 * HOUR
+      await due()
+      expect(userTexts(conversation.id)).toEqual(['refactor the payments module', `${UNATTENDED_NOTE}\n\n${CONTINUE_TEXT}`])
+      expect(item && statusOf(item)?.status).toBe('continued')
+    })
+
+    it('turns a waiting resume into the run the user schedules on that chat, under the same id', async () => {
+      const { id, item } = await limitedChat()
+      const [resume] = schedules.list()
+      const converted = schedules.create({ kind: 'conversation', conversationId: id, text: 'and then run the tests' }, null)
+      expect(converted.id).toBe(resume?.id)
+      expect(converted.target).toMatchObject({ kind: 'conversation', text: 'and then run the tests', resumes: { stageId: item.stageId, itemId: item.id } })
+      expect(schedules.list()).toHaveLength(1)
+
+      await due()
+      expect(userTexts(id)).toEqual(['refactor the payments module', `${UNATTENDED_NOTE}\n\nand then run the tests`])
+      expect(statusOf(item)?.status).toBe('continued')
+    })
+
+    it('resumes before a run the user scheduled that is due at the same time', async () => {
+      const other = await conversations.create('claude', [])
+      usage = exhausted(clock + HOUR)
+      const user = schedules.create({ kind: 'conversation', conversationId: other.id, text: 'nightly' }, null)
+      await due()
+      const { id } = await limitedChat(clock + HOUR)
+      expect(schedules.list().map((each) => each.target.kind)).toEqual(['resume', 'conversation'])
+
+      usage = []
+      clock += HOUR + 5_000
+      await due()
+      expect(continues(id)).toHaveLength(1)
+      expect(run(user.id)?.status).toBe('waiting')
+    })
+
+    it('waits a while before resuming again when the resume itself ran into the limit', async () => {
+      // Items carry the real time, so the reset stays within a few minutes of it.
+      const MINUTE = 60_000
+      limitTurns(2, null)
+      usage = exhausted(clock + MINUTE)
+      const conversation = await conversations.create('claude', [])
+      await conversations.send(conversation.id, 'go')
+      await settle()
+      expect(schedules.list()[0]?.notBefore).toBe(clock + MINUTE + 5_000)
+
+      usage = []
+      clock += MINUTE + 5_000
+      await due()
+      expect(continues(conversation.id)).toHaveLength(1)
+      const again = schedules.list().find((each) => each.status === 'waiting')
+      expect(again?.notBefore).toBe(clock + 15 * 60_000)
+      await due()
+      expect(continues(conversation.id)).toHaveLength(1)
+    })
   })
 })

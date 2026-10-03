@@ -140,7 +140,16 @@ const REASON_TEXT: Record<string, string> = {
   'schedule-busy': '这条预约正在开始',
   'schedule-not-found': '找不到这条预约',
   'schedule-no-text': '只有会话的预约带消息',
-  'task-started': '任务已经开始了'
+  'task-started': '任务已经开始了',
+  'task-finished': '任务已经不在执行了',
+  'user-continued': '你自己继续了这条会话',
+  'agent-changed': '会话已移交给另一个 agent',
+  superseded: '又一次撞到了额度，以新的为准',
+  'auto-continue-off': '关掉了额度恢复后自动继续',
+  'usage-limit-settled': '这次额度用完的处理已经结束',
+  'usage-limit-busy': '正在重试，稍等',
+  'usage-limit-not-found': '找不到这次额度用完的记录',
+  'usage-limit-retry-failed': '重试没能继续'
 }
 
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.

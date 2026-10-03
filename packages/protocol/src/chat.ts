@@ -172,7 +172,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     continueAt: z.number().nullable().default(null),
     continuedAt: z.number().nullable().default(null),
     // Why the last try did not go through.
-    error: z.string().nullable().default(null)
+    error: z.string().nullable().default(null),
+    // The scheduled run that continues it (schedules.list), while core has one. Older cores leave it out.
+    runId: z.string().nullable().optional()
   }),
   // A turn's checklist as it last stood, where the turn first touched it.
   Base.extend({ kind: z.literal('todos'), todos: z.array(ChatTodo) }),

@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react'
 import { setSchedulesOpen, useCore } from '../core-store'
-import { cancelSchedule, openRunsForConversation, scheduleState } from '../schedules'
+import { cancelSchedule, openRunsForConversation, runAction, scheduleState } from '../schedules'
 import { isPlanApproval, type ChatItem, type Conversation } from '@kando/protocol'
 import { itemKey } from '../chat-state'
 import { toolLabel } from '../chat-tools'
@@ -98,9 +98,7 @@ function ChatSchedules({ conversationId }: { conversationId: string }) {
       {runs.map((run) => (
         <div key={run.id} className="chat-queue chat-queue-one chat-queued chat-scheduled">
           <span className="chat-queue-label">预约 · {scheduleState(run, now)}：</span>
-          <span className="chat-queued-text" title={run.target.kind === 'conversation' ? run.target.text : undefined}>
-            {run.target.kind === 'conversation' && run.target.text ? run.target.text : '批准计划或按计划开始实现'}
-          </span>
+          <span className="chat-queued-text" title={runAction(run)}>{runAction(run)}</span>
           <span className="chat-queued-actions">
             <button type="button" className="chat-queued-action" aria-label="管理预约" data-tooltip="管理预约" data-tooltip-side="top-end" onClick={() => setSchedulesOpen(true)}><ClockIcon /></button>
             <button type="button" className="chat-queued-action" aria-label="取消预约" data-tooltip="取消预约" data-tooltip-side="top-end" onClick={() => void cancelSchedule(run.id)}><CloseIcon /></button>

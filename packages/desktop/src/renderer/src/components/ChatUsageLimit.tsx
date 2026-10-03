@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { quotaVerdict, type ChatItem, type Conversation } from '@kando/protocol'
 import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
-import { perform, useCore, useUsageLimitSupported } from '../core-store'
+import { perform, setSchedulesOpen, useCore, useUsageLimitSupported } from '../core-store'
+import { scheduleTime, UNATTENDED_LABEL } from '../schedules'
 import { AGENT_LABEL } from '../labels'
 import { formatClock, useNow } from '../usage-format'
 import { useChatSurface } from './chat-surface'
@@ -44,7 +45,13 @@ export function ChatUsageLimitCard({ conversation, item }: { conversation: Conve
   const [wanted, setWanted] = useState<boolean | null>(null)
   const other = otherInstalledAgent(conversation.agent, useInstalledAgents())
   const otherUsage = useCore((s) => (other ? s.usage?.[other] : undefined))
+  // The run that continues it, as the schedule list has it; a run the user scheduled in this chat
+  // may have taken the limit over: it continues at its time, in the unattended mode, and is the
+  // user's to manage, so the checkbox (which would only cancel their run) gives way to a link.
+  const run = useCore((s) => (item.runId ? s.schedules.find((each) => each.id === item.runId) : undefined))
+  const mode = useCore((s) => s.chatSettings?.unattendedMode ?? 'acceptEdits')
   if (!supported) return null
+  const takenOver = run?.target.kind === 'conversation' && item.status === 'waiting' && item.autoContinue ? run : null
   const otherState = quotaVerdict(otherUsage, now).state
   // Handing off goes to the other agent only while it has room to take the work.
   const handoff = surface.handoff && other && (otherState === 'ok' || otherState === 'tight') ? surface.handoff : null
@@ -62,6 +69,8 @@ export function ChatUsageLimitCard({ conversation, item }: { conversation: Conve
   }
   const detail = retrying
     ? '正在重试…'
+    : takenOver
+      ? `将按预约${takenOver.notBefore !== null ? `在${scheduleTime(takenOver.notBefore, now)} ` : '在额度恢复后'}继续，以「${UNATTENDED_LABEL[mode]}」无人值守运行`
     : item.autoContinue && item.continueAt !== null
       ? `将在${formatClock(item.continueAt, now)} 自动继续`
       : item.resetsAt !== null
@@ -73,10 +82,17 @@ export function ChatUsageLimitCard({ conversation, item }: { conversation: Conve
       <p className="chat-request-detail muted">{detail}</p>
       {item.error && !retrying && <p className="chat-request-detail chat-usage-limit-error">上次没能继续：{item.error}</p>}
       <div className="chat-request-actions">
-        <label className="conversation-confirm">
-          <input type="checkbox" checked={wanted ?? item.autoContinue} disabled={retrying} onChange={(event) => void toggle(event.target.checked)} />
-          额度恢复后自动继续
-        </label>
+        {takenOver ? (
+          <button type="button" className="link-button settings-link" onClick={() => setSchedulesOpen(true)}>管理预约</button>
+        ) : (
+          <label className="conversation-confirm">
+            <input type="checkbox" checked={wanted ?? item.autoContinue} disabled={retrying} onChange={(event) => void toggle(event.target.checked)} />
+            额度恢复后自动继续
+          </label>
+        )}
+        {!takenOver && item.runId && item.autoContinue && item.status === 'waiting' && (
+          <button type="button" className="link-button" onClick={() => setSchedulesOpen(true)}>在预约页查看</button>
+        )}
         <span className="chat-dock-spacer" />
         {handoff && other && (
           <button type="button" className="button" disabled={retrying} data-tooltip={`移交给 ${AGENT_LABEL[other]}`} onClick={handoff}>

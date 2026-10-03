@@ -192,6 +192,10 @@ export function agentPrompt(
   return sections.filter((section) => section !== null).join('\n\n')
 }
 
+// What the agent is told once its usage limit lifts, as a user would say it: it shows, is searched
+// and is handed off like any other message.
+export const CONTINUE_TEXT = 'I hit my usage limit while you were working, but it has reset now. Please continue from where you left off.'
+
 // What a scheduled message says when the user left it empty: go on with the plan the chat has.
 export const SCHEDULED_GO_TEXT = '按上面定下的计划开始实现。'
 

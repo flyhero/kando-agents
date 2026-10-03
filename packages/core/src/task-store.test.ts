@@ -124,6 +124,39 @@ describe('TaskStore migrations', () => {
     store.close()
   })
 
+  it('moves the usage-limit resumes still waiting over to scheduled runs, and drops the ones turned off', () => {
+    const raw = new DatabaseSync(file)
+    raw.exec('PRAGMA foreign_keys = ON')
+    const fold = MIGRATIONS.findIndex((sql) => sql.includes('FROM conversation_usage_limits l'))
+    MIGRATIONS.slice(0, fold).forEach((sql) => raw.exec(sql))
+    raw.exec(`PRAGMA user_version = ${fold}`)
+    raw.prepare(`INSERT INTO conversations (id, title, title_locked, agent, workspace_path, managed_workspace, created_at, updated_at)
+      VALUES ('11111111-1111-4111-8111-111111111111', 'Payments', 0, 'claude', '/code/app', 0, 0, 0)`).run()
+    raw.prepare(`INSERT INTO scheduled_runs (id, target, title, agent, position, status, created_at, updated_at)
+      VALUES ('aaaaaaaa-0000-4000-8000-000000000001', '{"kind":"task","taskId":"t1"}', 'Night', 'claude', 3, 'waiting', 0, 0)`).run()
+    const limit = raw.prepare(`INSERT INTO conversation_usage_limits (id, conversation_id, stage_id, item_id, agent, resets_at, continue_at, auto_continue, status, attempts, error, created_at, updated_at)
+      VALUES (?, '11111111-1111-4111-8111-111111111111', ?, ?, 'claude', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    limit.run('bbbbbbbb-0000-4000-8000-000000000001', 'stage-1', 'limit:1', 1000, 1005, 1, 'waiting', 0, null, 10, 10)
+    limit.run('bbbbbbbb-0000-4000-8000-000000000002', 'stage-2', 'limit:2', null, 2000, 1, 'retrying', 1, 'spawn failed', 20, 20)
+    limit.run('bbbbbbbb-0000-4000-8000-000000000003', 'stage-3', 'limit:3', 3000, null, 0, 'waiting', 0, null, 30, 30)
+    limit.run('bbbbbbbb-0000-4000-8000-000000000004', 'stage-4', 'limit:4', 4000, null, 1, 'continued', 0, null, 40, 40)
+    raw.close()
+
+    new TaskStore(file).close()
+    const schema = new DatabaseSync(file)
+    const runs = schema.prepare('SELECT id, target, title, agent, not_before AS notBefore, check_at AS checkAt, resets_at AS resetsAt, position, status, attempts, error FROM scheduled_runs ORDER BY position').all()
+    expect(runs).toEqual([
+      expect.objectContaining({ id: 'aaaaaaaa-0000-4000-8000-000000000001', position: 3 }),
+      expect.objectContaining({
+        id: 'bbbbbbbb-0000-4000-8000-000000000001', title: 'Payments', agent: 'claude', notBefore: 6000, checkAt: 1005, resetsAt: 1000, position: 4, status: 'waiting', attempts: 0, error: null,
+        target: JSON.stringify({ kind: 'resume', conversationId: '11111111-1111-4111-8111-111111111111', stageId: 'stage-1', itemId: 'limit:1' })
+      }),
+      expect.objectContaining({ id: 'bbbbbbbb-0000-4000-8000-000000000002', notBefore: null, checkAt: 2000, position: 5, status: 'starting', attempts: 1, error: 'spawn failed' })
+    ])
+    expect(schema.prepare("SELECT name FROM sqlite_master WHERE name = 'conversation_usage_limits'").all()).toEqual([])
+    schema.close()
+  })
+
   it('keeps a task\'s plan, and finds the conversation that runs it through that conversation', () => {
     const store = new TaskStore(file)
     const conversations = new ConversationStore(file)

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import type { ScheduledRun } from '@kando/protocol'
 import { selectConversation, selectTask, setAwakeMode, setSchedulesOpen, showView, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
-import { cancelSchedule, clearSchedules, openRuns, reorderSchedules, rescheduleRun, runScheduleNow, scheduleState, UNATTENDED_LABEL } from '../schedules'
+import { cancelSchedule, clearSchedules, openRuns, reorderSchedules, rescheduleRun, runAction, runScheduleNow, scheduleState, TARGET_LABEL, UNATTENDED_LABEL } from '../schedules'
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, CloseIcon, PlayIcon } from './icons'
 import { SchedulePicker, SettingsLink } from './SchedulePicker'
 
@@ -21,11 +21,6 @@ function openTarget(run: ScheduledRun): void {
   } else if (conversations[target.conversationId]) {
     selectConversation(target.conversationId)
   }
-}
-
-function whatItDoes(run: ScheduledRun): string {
-  if (run.target.kind === 'task') return '执行任务'
-  return run.target.text ? `发送：${run.target.text}` : '批准计划或按计划开始实现'
 }
 
 function Reschedule({ run }: { run: ScheduledRun }) {
@@ -56,13 +51,13 @@ function OpenRow({ run, index, count, now, onMove }: { run: ScheduledRun; index:
       <span className="schedule-index">{index + 1}</span>
       <span className="schedule-main">
         <button type="button" className="schedule-title" onClick={() => openTarget(run)}>{run.title}</button>
-        <span className="schedule-meta" title={whatItDoes(run)}>{run.target.kind === 'task' ? '任务' : '会话'} · {AGENT_LABEL[run.agent]} · {whatItDoes(run)}</span>
+        <span className="schedule-meta" title={runAction(run)}>{TARGET_LABEL[run.target.kind]} · {AGENT_LABEL[run.agent]} · {runAction(run)}</span>
       </span>
       <span className="schedule-state">{scheduleState(run, now)}</span>
       <span className="schedule-actions">
         <button type="button" className="tool-button" aria-label="提前" data-tooltip="提前" disabled={index === 0} onClick={() => onMove(index, index - 1)}><ArrowUpIcon /></button>
         <button type="button" className="tool-button" aria-label="推后" data-tooltip="推后" disabled={index === count - 1} onClick={() => onMove(index, index + 1)}><ArrowDownIcon /></button>
-        {waiting && <Reschedule run={run} />}
+        {waiting && run.target.kind !== 'resume' && <Reschedule run={run} />}
         {waiting && (
           <button
             type="button"
@@ -90,7 +85,7 @@ function SettledRow({ run, now }: { run: ScheduledRun; now: number }) {
       <span className="schedule-index" />
       <span className="schedule-main">
         <button type="button" className="schedule-title" onClick={() => openTarget(run)}>{run.title}</button>
-        <span className="schedule-meta" title={whatItDoes(run)}>{run.target.kind === 'task' ? '任务' : '会话'} · {AGENT_LABEL[run.agent]} · {whatItDoes(run)}</span>
+        <span className="schedule-meta" title={runAction(run)}>{TARGET_LABEL[run.target.kind]} · {AGENT_LABEL[run.agent]} · {runAction(run)}</span>
       </span>
       <span className="schedule-state" data-warn={run.status === 'failed' || undefined}>{scheduleState(run, now)}</span>
       <span className="schedule-actions" />
@@ -120,7 +115,7 @@ export function SchedulesView() {
           <h2>预约</h2>
           <p className="muted">
             到点、而且 agent 的额度够用时自动开始；同一个 agent 的预约按下面的顺序一个接一个运行。
-            以「{UNATTENDED_LABEL[mode]}」无人值守运行，<SettingsLink />。
+            你预约的以「{UNATTENDED_LABEL[mode]}」无人值守运行，<SettingsLink />；撞到额度后的续跑沿用会话原来的模式。
           </p>
           {awake?.mode === 'off' && open.length > 0 && (
             <p className="schedule-warning">

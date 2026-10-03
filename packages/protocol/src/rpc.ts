@@ -12,10 +12,10 @@ import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 import { Environment } from './environment'
-import { ScheduledRun, ScheduledTarget } from './schedule'
+import { RequestedTarget, ScheduledRun, ScheduledRunList } from './schedule'
 
 // Bump only for breaking changes; additive optional fields keep the version.
-export const PROTOCOL_VERSION = 9
+export const PROTOCOL_VERSION = 10
 
 const TaskRef = z.object({ id: z.string().min(1) })
 const TaskTitle = z.string().trim().min(1).max(200)
@@ -326,8 +326,9 @@ export const rpcMethods = {
   // Runs that start on their own once their time comes and their agent has quota again, one per
   // agent at a time, in list order: the open ones, then the recently settled. reorder takes the
   // open ones' ids in their new order; clear drops the settled ones from the list.
-  'schedules.list': { params: z.object({}), result: z.array(ScheduledRun) },
-  'schedules.create': { params: z.object({ target: ScheduledTarget, notBefore: z.number().nullable() }), result: ScheduledRun },
+  'schedules.list': { params: z.object({}), result: ScheduledRunList },
+  // Only task and conversation targets are the client's to create; core makes the resume runs.
+  'schedules.create': { params: z.object({ target: RequestedTarget, notBefore: z.number().nullable() }), result: ScheduledRun },
   'schedules.update': {
     params: z.object({ id: z.string().uuid(), notBefore: z.number().nullable().optional(), text: z.string().trim().max(100000).optional() }),
     result: ScheduledRun
@@ -367,7 +368,7 @@ export const rpcNotifications = {
   'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
   'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
   // The whole list (schedules.list) whenever a run in it changes.
-  'schedules.changed': z.object({ runs: z.array(ScheduledRun) }),
+  'schedules.changed': z.object({ runs: ScheduledRunList }),
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.

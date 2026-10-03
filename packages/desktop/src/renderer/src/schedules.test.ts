@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScheduledRun } from '@kando/protocol'
-import { fromLocalInput, nextNight, scheduleNoticesBetween, scheduleState, scheduleTime, toLocalInput } from './schedules'
+import { fromLocalInput, nextNight, openRunsForConversation, runAction, scheduleNoticesBetween, scheduleState, scheduleTime, toLocalInput } from './schedules'
 
 const at = (year: number, month: number, day: number, hour: number, minute = 0) => new Date(year, month - 1, day, hour, minute).getTime()
 
@@ -74,3 +74,29 @@ describe('scheduleNoticesBetween', () => {
     expect(scheduleNoticesBetween([], [failed])).toEqual([])
   })
 })
+
+describe('runs in a conversation', () => {
+  const conversationId = '00000000-0000-4000-8000-00000000000c'
+  const limit = { stageId: 's', itemId: 'limit:1' }
+
+  it('lists what the user scheduled there, not the resume core made, which the limit card shows', () => {
+    const resume = run({ id: '00000000-0000-4000-8000-000000000002', target: { kind: 'resume', conversationId, ...limit } })
+    const sent = run({ id: '00000000-0000-4000-8000-000000000003', target: { kind: 'conversation', conversationId, text: 'go' } })
+    const elsewhere = run({ id: '00000000-0000-4000-8000-000000000004', target: { kind: 'conversation', conversationId: '00000000-0000-4000-8000-00000000000d', text: 'go' } })
+    expect(openRunsForConversation([resume, sent, elsewhere], conversationId).map((each) => each.id)).toEqual([sent.id])
+  })
+
+  it('says what each kind does, a run that took a limit over continuing rather than starting on the plan', () => {
+    expect(runAction({ target: { kind: 'resume', conversationId, ...limit } })).toBe('额度恢复后从中断处继续')
+    expect(runAction({ target: { kind: 'conversation', conversationId, text: '' } })).toBe('批准计划或按计划开始实现')
+    expect(runAction({ target: { kind: 'conversation', conversationId, text: '', resumes: limit } })).toBe('从中断处继续')
+    expect(runAction({ target: { kind: 'conversation', conversationId, text: '跑测试', resumes: limit } })).toBe('从中断处继续，并发送：跑测试')
+  })
+
+  it('tells of a resume that failed in its own words', () => {
+    const waiting = run({ target: { kind: 'resume', conversationId, ...limit } })
+    const failed = { ...waiting, status: 'failed' as const, error: 'chat-start-failed' }
+    expect(scheduleNoticesBetween([waiting], [failed])[0]?.body).toMatch(/^额度恢复后没能继续：/)
+  })
+})
+

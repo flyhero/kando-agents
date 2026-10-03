@@ -21,7 +21,7 @@ import { startRpcServer, type RpcServer } from './rpc-server'
 import { TaskService } from './task-service'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
-import { UsageLimitService } from './usage-limit-service'
+import { UsageLimitResumes } from './usage-limit-resume'
 import { ScheduleService } from './schedule-service'
 import { UsageService } from './usage-service'
 import { kandoChatMcpServer } from './kando-mcp-server'
@@ -74,7 +74,7 @@ const conversations = new ConversationService(
       server?.broadcast('conversations.changed', { conversation: event.conversation })
       // A task's conversation says whether its agent waits on the user.
       service.chatChanged(event.conversation)
-      limits.conversationChanged(event.conversation)
+      schedules.conversationChanged(event.conversation)
       refreshAwake()
     } else if (event.type === 'deleted') {
       server?.broadcast('conversations.deleted', { id: event.id })
@@ -123,7 +123,6 @@ const service = new TaskService(
   (event) => {
     if (event.type === 'changed') {
       server?.broadcast('tasks.changed', { task: event.task })
-      limits.taskChanged(event.task)
       schedules.taskChanged(event.task)
       refreshAwake()
     } else {
@@ -153,14 +152,6 @@ const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage 
   server?.broadcast('usage.changed', { usage: entry })
 )
 
-const limits = new UsageLimitService(paths.database, {
-  conversations,
-  resumeTask: (id) => service.resumeChat(id),
-  taskStatus: (id) => store.get(id)?.status ?? null,
-  usage,
-  emit: notifyChatItems
-})
-
 const schedules = new ScheduleService(paths.database, {
   tasks: {
     get: (id) => store.get(id),
@@ -174,8 +165,11 @@ const schedules = new ScheduleService(paths.database, {
   emit: (runs) => {
     server?.broadcast('schedules.changed', { runs })
     refreshAwake()
-  }
+  },
+  limitChanged: (conversationId, limit) => limits.announce(conversationId, limit)
 })
+// Speaks for the scheduler on the usage-limit cards; built after it, called only once runs change.
+const limits = new UsageLimitResumes(schedules, conversations, usage, notifyChatItems)
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
 const terminalCommands = new TerminalCommandStore(paths.database, (commands) => server?.broadcast('terminalCommands.changed', { commands }))
@@ -219,7 +213,6 @@ daemon.onConnect(() => {
       terminals.reconcile(sessions)
       await browser.reconcile(sessions)
       // What came due while core or the daemon was away goes now, not at the next tick.
-      await limits.tick()
       await schedules.tick()
     })
     .catch((error) => console.error('[kando-core] reconcile failed', error))
@@ -246,7 +239,6 @@ daemon.start()
 await awake.start()
 refreshAwake()
 usage.start()
-limits.start()
 schedules.start()
 refreshAwake()
 // Stages that ended before turns were kept, counted once in the background.
@@ -263,7 +255,6 @@ async function shutdown(): Promise<void> {
   }
   shuttingDown = true
   usage.stop()
-  limits.stop()
   schedules.stop()
   sources.stop()
   awake?.stop()

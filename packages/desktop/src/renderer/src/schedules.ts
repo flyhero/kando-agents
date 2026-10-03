@@ -1,4 +1,4 @@
-import { isScheduleOpen, type ScheduledRun, type ScheduledTarget, type UnattendedMode } from '@kando/protocol'
+import { isScheduleOpen, type RequestedTarget, type ScheduledRun, type UnattendedMode } from '@kando/protocol'
 import type { Notice } from './attention'
 import { perform } from './core-store'
 import { dayAndTime, reasonText } from './labels'
@@ -8,7 +8,7 @@ export const UNATTENDED_LABEL: Record<UnattendedMode, string> = { acceptEdits: '
 // The hour a night run defaults to: late enough that the day's work is over.
 const NIGHT_HOUR = 1
 
-export function createSchedule(target: ScheduledTarget, notBefore: number | null): Promise<ScheduledRun | null> {
+export function createSchedule(target: RequestedTarget, notBefore: number | null): Promise<ScheduledRun | null> {
   return perform((rpc) => rpc.call('schedules.create', { target, notBefore }))
 }
 
@@ -92,9 +92,21 @@ export function openRunForTask(runs: readonly ScheduledRun[], taskId: string): S
   return openRuns(runs).find((run) => run.target.kind === 'task' && run.target.taskId === taskId)
 }
 
+// The runs the user scheduled in a conversation; a resume core scheduled shows on its limit's card.
 export function openRunsForConversation(runs: readonly ScheduledRun[], conversationId: string): ScheduledRun[] {
   return openRuns(runs).filter((run) => run.target.kind === 'conversation' && run.target.conversationId === conversationId)
 }
+
+// What a run does when it starts, in a few words.
+export function runAction(run: Pick<ScheduledRun, 'target'>): string {
+  const { target } = run
+  if (target.kind === 'task') return '执行任务'
+  if (target.kind === 'resume') return '额度恢复后从中断处继续'
+  if (target.text) return target.resumes ? `从中断处继续，并发送：${target.text}` : `发送：${target.text}`
+  return target.resumes ? '从中断处继续' : '批准计划或按计划开始实现'
+}
+
+export const TARGET_LABEL: Record<ScheduledRun['target']['kind'], string> = { task: '任务', conversation: '会话', resume: '续跑' }
 
 // The runs that failed since the last list: told of, as nobody may have been there to see.
 export function scheduleNoticesBetween(prev: readonly ScheduledRun[], next: readonly ScheduledRun[]): Notice[] {
@@ -105,6 +117,7 @@ export function scheduleNoticesBetween(prev: readonly ScheduledRun[], next: read
     const target = run.target.kind === 'task'
       ? { kind: 'task' as const, id: run.target.taskId }
       : { kind: 'conversation' as const, id: run.target.conversationId }
-    return [{ title: run.title, body: `预约没能开始：${reasonText(run.error ?? '', run.error ?? '未知原因')}`, target }]
+    const what = run.target.kind === 'resume' ? '额度恢复后没能继续' : '预约没能开始'
+    return [{ title: run.title, body: `${what}：${reasonText(run.error ?? '', run.error ?? '未知原因')}`, target }]
   })
 }

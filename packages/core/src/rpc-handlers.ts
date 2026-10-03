@@ -12,7 +12,7 @@ import { Rejection } from './rejection'
 import type { SourceService } from './source-service'
 import type { RpcHandlers } from './rpc-server'
 import type { TaskService } from './task-service'
-import type { UsageLimitService } from './usage-limit-service'
+import type { UsageLimitResumes } from './usage-limit-resume'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalCommandStore } from './terminal-commands'
@@ -38,7 +38,7 @@ export function createRpcHandlers(
   browser: BrowserService,
   awake: ComputerAwakeService,
   terminalCommands: TerminalCommandStore,
-  limits: UsageLimitService,
+  limits: UsageLimitResumes,
   runs: AgentRunStore,
   turns: ChatTurnStore,
   chatSettings: ChatSettingsStore,
@@ -69,7 +69,11 @@ export function createRpcHandlers(
     'tasks.move': ({ id, status }) => service.move(id, status),
     'tasks.redo': ({ id, reason }) => service.redo(id, reason),
     'tasks.start': ({ id, allowBypass }) => service.start(id, allowBypass),
-    'tasks.resumeChat': ({ id, allowBypass }) => service.resumeChat(id, allowBypass),
+    // Going on by hand in a task's chat is the user acting there, as in a free conversation.
+    'tasks.resumeChat': ({ id, allowBypass }) => {
+      const { conversationId } = service.get(id)
+      return conversationId ? userActed(conversationId, () => service.resumeChat(id, allowBypass)) : service.resumeChat(id, allowBypass)
+    },
     'tasks.submit': ({ id }) => service.submit(id),
     'tasks.savePlan': ({ id, stageId, requestId }) => service.savePlan(id, stageId, requestId),
     'tasks.delete': async ({ id }) => {

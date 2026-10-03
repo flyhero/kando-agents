@@ -202,7 +202,21 @@ export const MIGRATIONS = [
      status TEXT NOT NULL, conversation_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
      created_at INTEGER NOT NULL, settled_at INTEGER, updated_at INTEGER NOT NULL
    );
-   CREATE INDEX scheduled_runs_status ON scheduled_runs(status, position);`
+   CREATE INDEX scheduled_runs_status ON scheduled_runs(status, position);`,
+  // Resuming after a usage limit became a scheduled run of its own kind: what still waited (or was
+  // being tried) moves over, with the time the limit lifts; what the user had turned off goes.
+  `INSERT INTO scheduled_runs (id, target, title, agent, not_before, check_at, resets_at, position, status, conversation_id, attempts, error, created_at, settled_at, updated_at)
+     SELECT l.id,
+       json_object('kind', 'resume', 'conversationId', l.conversation_id, 'stageId', l.stage_id, 'itemId', l.item_id),
+       COALESCE((SELECT c.title FROM conversations c WHERE c.id = l.conversation_id), ''), l.agent,
+       l.resets_at + 5000, l.continue_at, l.resets_at,
+       (SELECT COALESCE(MAX(position), 0) FROM scheduled_runs) + ROW_NUMBER() OVER (ORDER BY l.created_at, l.rowid),
+       CASE l.status WHEN 'retrying' THEN 'starting' ELSE 'waiting' END,
+       NULL, l.attempts, l.error, l.created_at, NULL, l.updated_at
+     FROM conversation_usage_limits l
+     WHERE l.status IN ('waiting', 'retrying') AND l.auto_continue = 1;
+   DROP INDEX conversation_usage_limits_due;
+   DROP TABLE conversation_usage_limits;`
 ]
 
 

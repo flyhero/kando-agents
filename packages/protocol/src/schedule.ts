@@ -1,14 +1,30 @@
 import { z } from 'zod'
 import { AgentKind, checkStart, startKind, type StartBlocker, type Task } from './task'
 
-// What a scheduled run does when it comes due: start a task, or go on in a conversation (a task's
-// included). A conversation's text may be empty: then a plan waiting there is approved, or the
-// agent is told to carry out the plan it has.
-export const ScheduledTarget = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('task'), taskId: z.string().min(1) }),
-  z.object({ kind: z.literal('conversation'), conversationId: z.string().uuid(), text: z.string().trim().max(100000) })
-])
+// The usageLimit chat item a run answers: the one whose turn the limit stopped.
+export const LimitRef = z.object({ stageId: z.string(), itemId: z.string() })
+export type LimitRef = z.infer<typeof LimitRef>
+
+// What a scheduled run does when it comes due: start a task; go on in a conversation (a task's
+// included) with a message, or, when the text is empty, by approving a plan waiting there or
+// telling the agent to carry out the plan it has; or resume a conversation whose turn the usage
+// limit stopped, in the mode it was in, which core schedules by itself when the limit is hit.
+// A conversation run made where a resume waited, or hit by the limit while it waited, takes the
+// limit over (`resumes`): it continues the stopped turn instead of starting on the plan.
+const TaskTarget = z.object({ kind: z.literal('task'), taskId: z.string().min(1) })
+const ConversationTarget = z.object({ kind: z.literal('conversation'), conversationId: z.string().uuid(), text: z.string().trim().max(100000), resumes: LimitRef.optional() })
+const ResumeTarget = z.object({ kind: z.literal('resume'), conversationId: z.string().uuid(), stageId: z.string(), itemId: z.string() })
+export const ScheduledTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget, ResumeTarget])
 export type ScheduledTarget = z.infer<typeof ScheduledTarget>
+// What a client may schedule; core makes the resume runs itself.
+export const RequestedTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget])
+export type RequestedTarget = z.infer<typeof RequestedTarget>
+
+// The limit a run answers, whichever way it does.
+export function limitOf(target: ScheduledTarget): LimitRef | null {
+  if (target.kind === 'resume') return { stageId: target.stageId, itemId: target.itemId }
+  return target.kind === 'conversation' ? target.resumes ?? null : null
+}
 
 // waiting: for its time, its agent's quota, or another of the agent's runs to finish · starting:
 // core is starting it now · started: under way, or done; its chat tells · failed: core gave up,
@@ -37,6 +53,15 @@ export const ScheduledRun = z.object({
   settledAt: z.number().nullable()
 })
 export type ScheduledRun = z.infer<typeof ScheduledRun>
+
+// Parsed one by one, so a run a newer core describes differently (a target kind this client does
+// not know) drops alone rather than taking the list with it.
+export const ScheduledRunList = z.array(z.unknown()).transform((runs) =>
+  runs.flatMap((run) => {
+    const parsed = ScheduledRun.safeParse(run)
+    return parsed.success ? [parsed.data] : []
+  })
+)
 
 export type ScheduleTaskBlocker = StartBlocker | 'dependencies-unfinished'
 
