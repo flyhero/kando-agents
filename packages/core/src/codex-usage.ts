@@ -146,11 +146,20 @@ async function supplementResetCredits(
   }
 }
 
-export async function readCodexUsage(): Promise<UsageReading> {
+async function readTokens() {
   const home = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex')
   const raw = await readFile(path.join(home, 'auth.json'), 'utf8').catch(() => null)
   const auth = Auth.safeParse(parseJson(raw))
-  const tokens = auth.success ? auth.data.tokens : null
+  return auth.success ? auth.data.tokens : null
+}
+
+// Whether Codex has an account here, without asking the service anything.
+export async function hasCodexCredentials(): Promise<boolean> {
+  return (await readTokens()) !== null
+}
+
+export async function readCodexUsage(): Promise<UsageReading> {
+  const tokens = await readTokens()
   if (!tokens) {
     return { signedIn: false }
   }

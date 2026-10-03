@@ -13,10 +13,12 @@ import {
   GlobeIcon,
   InboxIcon,
   InfoIcon,
+  PulseIcon,
   SearchIcon,
   SparkIcon
 } from './icons'
 import { AgentStatsSettings } from './AgentStatsSettings'
+import { EnvironmentSettings } from './EnvironmentSettings'
 import { settingsSectionOf } from './SourceInboxView'
 import { SourceSettingsSection } from './SourceSettingsSection'
 import { projectName } from './ProjectPicker'
@@ -400,6 +402,17 @@ const SECTIONS: readonly Section[] = [
   }
 ]
 
+// On a core that looks: what it found of git and the agent CLIs, and how to put a missing one there.
+const ENVIRONMENT_SECTION: Section = {
+  id: 'environment',
+  group: '其他',
+  title: '环境',
+  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。装好或登录后点「重新检查」。',
+  keywords: ['环境', '检查', '安装', '登录', 'git', 'claude', 'codex', '版本', 'path', '找不到', '未安装'],
+  Icon: PulseIcon,
+  Body: EnvironmentSettings
+}
+
 // The browser Kando hosts for chat agents, where core offers one; it follows the task sources.
 const BROWSER_SECTION: Section = {
   id: 'browser',
@@ -432,10 +445,12 @@ function matches(section: Section, needle: string): boolean {
 export function SettingsPage() {
   const sources = useCore((s) => s.sources)
   const browser = useBrowserSupported()
+  const environment = useCore((s) => s.environment !== null)
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
-    return [...SECTIONS.filter((section) => section.id !== 'about'), ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...about]
-  }, [sources, browser])
+    const own = SECTIONS.filter((section) => section.id !== 'about')
+    return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...about]
+  }, [sources, browser, environment])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()

@@ -442,3 +442,11 @@ export function BookmarkIcon() {
     </svg>
   )
 }
+
+export function PulseIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M2.5 10h3.2l2-5 3.6 10 2.2-5h4" />
+    </svg>
+  )
+}

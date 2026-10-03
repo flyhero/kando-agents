@@ -20,6 +20,7 @@ import type { TerminalService } from './terminal-service'
 import type { WorktreeService } from './worktree-service'
 import type { ComputerAwakeService } from './computer-awake-service'
 import type { ChatSettingsStore } from './chat-settings'
+import type { EnvironmentService } from './environment-check'
 
 const OK = { ok: true } as const
 
@@ -39,7 +40,8 @@ export function createRpcHandlers(
   limits: UsageLimitService,
   runs: AgentRunStore,
   turns: ChatTurnStore,
-  chatSettings: ChatSettingsStore
+  chatSettings: ChatSettingsStore,
+  environment: EnvironmentService
 ): RpcHandlers {
   // A page of chat items as clients see them: a usage limit with what core means to do about it.
   const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
@@ -56,6 +58,7 @@ export function createRpcHandlers(
     'system.setAwakeMode': ({ mode }) => awake.setMode(mode),
     'system.chatSettings': () => chatSettings.current(),
     'system.setChatSettings': (patch) => chatSettings.update(patch),
+    'system.environment': ({ refresh }) => environment.check(refresh ?? false),
     'tasks.list': ({ status }) => service.list(status),
     'tasks.get': ({ id }) => service.get(id),
     'tasks.create': (params) => service.createTask(params),

@@ -3,8 +3,9 @@ import { mkdir } from 'node:fs/promises'
 import { PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
-import { readClaudeUsage } from './claude-usage'
-import { readCodexUsage } from './codex-usage'
+import { hasClaudeCredentials, readClaudeUsage } from './claude-usage'
+import { hasCodexCredentials, readCodexUsage } from './codex-usage'
+import { EnvironmentService } from './environment-check'
 import { AgentRunStore } from './agent-run-store'
 import { ChatTurnStore } from './chat-turn-store'
 import { AttachmentStore } from './attachment-store'
@@ -203,6 +204,13 @@ daemon.onConnect(() => {
     .catch((error) => console.error('[kando-core] reconcile failed', error))
 })
 
+// Looked for where the daemon looks: it was started with the same PATH as core.
+const environment = new EnvironmentService({
+  pathEnv: process.env.PATH ?? '',
+  platform: process.platform,
+  signedIn: { claude: hasClaudeCredentials, codex: hasCodexCredentials }
+})
+
 const token = randomBytes(32).toString('hex')
 server = await startRpcServer({
   port: Number(process.env.KANDO_PORT ?? 0),
@@ -210,7 +218,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()

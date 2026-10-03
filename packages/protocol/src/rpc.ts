@@ -11,6 +11,7 @@ import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
+import { Environment } from './environment'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 9
@@ -42,7 +43,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // agent-stats: core keeps each task run and reports how each agent's went (agents.stats).
 // conversation-stats: core keeps each chat turn and reports what each agent's cost (agents.conversationStats).
 // prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions'] as const
+// environment: core checks for git and the agent CLIs on its path (system.environment).
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -65,6 +67,8 @@ export const rpcMethods = {
   'system.setAwakeMode': { params: z.object({ mode: ComputerAwakeMode }), result: ComputerAwakeStatus },
   'system.chatSettings': { params: z.object({}), result: ChatSettings },
   'system.setChatSettings': { params: ChatSettings.partial(), result: ChatSettings },
+  // What of git and the agent CLIs core finds on its path; the last answer, unless asked to look again.
+  'system.environment': { params: z.object({ refresh: z.boolean().optional() }), result: Environment },
   'tasks.list': {
     params: z.object({ status: TaskStatus.optional() }),
     result: z.array(Task)

@@ -2,6 +2,12 @@
 
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。1.0 之前，破坏性改动升第二位，修复升第三位。桌面端和 core 之间的通信协议另有版本号 `PROTOCOL_VERSION`，单独计数。
 
+## 未发布
+
+### 新功能
+
+- 环境检查：core 启动后在自己的 PATH 里找 `git`、`claude`、`codex`，问版本，看 Claude Code 和 Codex 登没登录（只读本机凭据，不访问网络）。找不到 Git、agent 一个都没装或都没登录时，左侧列表上方有一条红色提醒，点开是新的 设置 → 环境：每个工具的状态、版本、路径，没装或没登录的给出要敲的命令，可以复制；装好后点「重新检查」。页面底部列出 core 找工具用的目录。新增 RPC `system.environment` 和 core 特性 `environment`，旧 core 上设置里没有这一页。
+
 ## 0.11.0 — 2026-10-03
 
 ### 改进

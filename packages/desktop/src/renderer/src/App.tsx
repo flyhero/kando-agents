@@ -10,6 +10,7 @@ import { TaskChat } from './components/TaskChat'
 import { ConversationList } from './components/ConversationList'
 import { ConversationView } from './components/ConversationView'
 import { ConversationDraft } from './components/ConversationDraft'
+import { EnvironmentNotice } from './components/EnvironmentNotice'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
 import { UtilityPanelDock } from './components/UtilityPanelDock'
@@ -97,6 +98,7 @@ export function App() {
         ) : (
           <>
             <div className="sidebar">
+              <EnvironmentNotice />
               <TaskList />
               <ConversationList />
             </div>

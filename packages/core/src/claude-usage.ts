@@ -262,6 +262,11 @@ async function claudeCliVersion(): Promise<string> {
   return version
 }
 
+// Whether Claude Code has an account here, without asking the service anything.
+export async function hasClaudeCredentials(): Promise<boolean> {
+  return Credentials.safeParse(parseJson(await readCredentials())).success
+}
+
 export async function readClaudeUsage(): Promise<UsageReading> {
   const credentials = Credentials.safeParse(parseJson(await readCredentials()))
   if (!credentials.success) {

@@ -17,7 +17,8 @@ import {
   type TerminalCommand,
   type Conversation,
   type ComputerAwakeStatus,
-  type ChatSettings
+  type ChatSettings,
+  type Environment
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
 import { activeInboxes, inboxKey } from './source-inboxes'
@@ -75,6 +76,8 @@ type CoreState = {
   awake: ComputerAwakeStatus | null
   // How chats run, as core keeps them; null until core says, or on a core without them.
   chatSettings: ChatSettings | null
+  // What core found of git and the agent CLIs; null until it says, or on a core that does not look.
+  environment: Environment | null
   newTaskOpen: boolean
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -126,6 +129,7 @@ export const useCore = create<CoreState>()(() => ({
   browser: null,
   awake: null,
   chatSettings: null,
+  environment: null,
   newTaskOpen: false,
   settingsOpen: false,
   settingsSection: null,
@@ -440,6 +444,16 @@ export async function setChatSettings(patch: Partial<ChatSettings>): Promise<voi
   if (settings) useCore.setState({ chatSettings: settings })
 }
 
+export function useEnvironmentSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('environment') ?? false)
+}
+
+// Looks at the machine again, for the user who has just installed something.
+export async function refreshEnvironment(): Promise<void> {
+  const environment = await perform((rpc) => rpc.call('system.environment', { refresh: true }))
+  if (environment) useCore.setState({ environment })
+}
+
 export function useAwakeSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('keep-awake') ?? false)
 }
@@ -572,6 +586,7 @@ export function startCoreConnection(): void {
         if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
         if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
+        if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',
