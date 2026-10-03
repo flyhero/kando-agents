@@ -4,7 +4,7 @@ Task-first multi-agent manager. See README.md for the architecture diagram.
 
 ## Process boundaries
 
-- **daemon** owns every agent process and PTY. **core** owns tasks, git and persistence. **desktop** and **cli** are clients only.
+- **daemon** owns every agent process and PTY. **core** owns tasks, git and persistence. **desktop** is a client only, and so is core's MCP server (`mcp-main.ts`), a process of its own that agents start.
 - **browser-host** owns the Chromium, as a daemon pipe session; core drives it over its loopback WebSocket and keeps the policy (which conversation owns a tab, which sites the user allowed). Its stdout carries one line, where to connect: frames and screenshots never go through the daemon.
 - Electron main stays thin: no task logic, no git, no PTYs. A window closing or crashing must never touch a running agent.
 - Native modules (node-pty) load only in the daemon, which runs on plain Node. Never import a native module into Electron.
@@ -49,7 +49,7 @@ A trimmed version of Angular's [commit message format](https://github.com/angula
 ```
 
 - **type**: `feat` (new feature), `fix` (bug fix), `refactor` (neither), `perf`, `test`, `docs`, `build` (build, dependencies, scripts), or `chore` (repo housekeeping that fits nothing else, like `.gitignore`).
-- **scope**: the package: `protocol`, `core`, `daemon`, `cli`, `desktop` or `browser-host`. Leave it out when the change spans packages.
+- **scope**: the package: `protocol`, `core`, `daemon`, `desktop` or `browser-host`. Leave it out when the change spans packages.
 - **summary**: imperative, present tense, lowercase first letter, no trailing period, under 72 characters.
 - **body**: why the change is needed, and how behavior differs from before. Required except for `docs` and `chore`.
 - **footer**: `BREAKING CHANGE: <summary>` plus migration steps for anything that bumps `PROTOCOL_VERSION` or `DAEMON_PROTOCOL_VERSION`. `Fixes #<issue>` when there is one.

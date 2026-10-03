@@ -10,9 +10,9 @@ describe('handoffPromptPath', () => {
 
 describe('chatCommand', () => {
   it('gives Codex Kando\'s tools and hides the ChatGPT app\'s browser beside them', () => {
-    const mcp = { command: 'node', args: ['cli.mjs', 'mcp'] }
+    const mcp = { command: 'node', args: ['mcp.mjs', '--home', '/k'] }
     const args = chatCommand('codex', null, false, null, [], { mcp }).args
-    expect(args.slice(0, 5)).toEqual(['app-server', '-c', 'mcp_servers.kando.command="node"', '-c', 'mcp_servers.kando.args=["cli.mjs","mcp"]'])
+    expect(args.slice(0, 5)).toEqual(['app-server', '-c', 'mcp_servers.kando.command="node"', '-c', 'mcp_servers.kando.args=["mcp.mjs","--home","/k"]'])
     expect(args).toEqual(expect.arrayContaining(['-c', 'mcp_servers.cua_repl={command="/usr/bin/true",enabled=false}']))
     // Without Kando's tools there is nothing to choose between, and nothing is hidden.
     expect(chatCommand('codex', null, false, null, []).args).toEqual(['app-server'])

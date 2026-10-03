@@ -1,12 +1,12 @@
 # 更新日志
 
-版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。1.0 之前，破坏性改动升第二位，修复升第三位。桌面端、core 和 CLI 之间的通信协议另有版本号 `PROTOCOL_VERSION`，单独计数。
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。1.0 之前，破坏性改动升第二位，修复升第三位。桌面端和 core 之间的通信协议另有版本号 `PROTOCOL_VERSION`，单独计数。
 
 ## 未发布
 
 ### 破坏性改动
 
-- 去掉了命令行客户端：`pnpm kando add / ls / show / edit / move / run / continue / redo / rm / source …` 都没有了，任务、会话和任务来源都在桌面端里操作。`packages/cli` 只剩 agent 用的 `kando mcp` 和 hooks 回调，由 core 启动 agent 时自动配置。
+- 去掉了命令行客户端：`pnpm kando add / ls / show / edit / move / run / continue / redo / rm / source …` 都没有了，任务、会话和任务来源都在桌面端里操作。`packages/cli` 也删掉了，agent 用的 MCP 服务（预览和浏览器工具）挪进了 core，由 core 启动 agent 时自动配置；打包的 App 里对应的文件从 `cli.mjs` 换成了 `mcp.mjs`。
 - 去掉了 agent 的终端界面（TUI），会话和任务都只用聊天界面。设置里的「会话和任务的界面」和「执行后切到终端」一起去掉了。任务只剩「开始」：「交给 agent 执行」、和 agent 细化任务（细化会话、方案卡片、`propose_task_details` / `read_task_details`）都没有了，规划在开始后的聊天里进行。会话没有「继续」按钮，直接发消息就会接着聊；终端界面的完整输出记录（`terminal.log`）不再显示。状态栏的终端面板和常用命令不受影响。`PROTOCOL_VERSION` 升到 9，桌面端和 core 需要一起更新。
 
 ### 升级说明

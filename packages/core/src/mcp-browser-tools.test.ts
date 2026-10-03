@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RpcError, type BrowserTab, type RpcConnection, type RpcMethod, type RpcParams } from '@kando/protocol'
-import { browserToolsOverCore, BROWSER_ARGUMENTS } from './browser-tools'
+import { AttachmentStore } from './attachment-store'
+import { browserToolsOverCore, BROWSER_ARGUMENTS } from './mcp-browser-tools'
 
 const CONV = '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e'
 const TAB_A = '1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
@@ -49,7 +50,7 @@ describe('browser tools over core', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   it('opens a tab for the first navigation, then acts on that tab without being told which', async () => {
-    const tools = browserToolsOverCore(withCore, CONV, dir)
+    const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     const opened = await tools.call('navigate', { url: 'http://localhost:5173/' })
     expect(calls[1]).toMatchObject({ method: 'browser.open', params: { conversationId: CONV, url: 'http://localhost:5173/' } })
     expect(opened.text).toContain(`标签页 ${TAB_B}`)
@@ -61,7 +62,7 @@ describe('browser tools over core', () => {
   })
 
   it('tells the model to wait for the user, or that they refused', async () => {
-    const tools = browserToolsOverCore(withCore, CONV, dir)
+    const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     tabs = [tab(TAB_A, 'http://localhost/')]
     outcome = 'awaiting-host'
     expect((await tools.call('navigate', { url: 'https://example.com/x' })).text).toContain('等待用户确认：已在对话里请用户允许访问 example.com')
@@ -70,7 +71,7 @@ describe('browser tools over core', () => {
   })
 
   it('returns a screenshot as a picture and names its stored copy', async () => {
-    const tools = browserToolsOverCore(withCore, CONV, dir)
+    const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     tabs = [tab(TAB_A, 'http://localhost/')]
     const shot = await tools.call('screenshot', { fullPage: true })
     expect(shot.image).toEqual({ data: Buffer.from([0xff, 0xd8, 0xff]).toString('base64'), mimeType: 'image/jpeg' })
@@ -79,7 +80,7 @@ describe('browser tools over core', () => {
   })
 
   it('lists, switches and closes tabs, and reads the console', async () => {
-    const tools = browserToolsOverCore(withCore, CONV, dir)
+    const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     expect((await tools.call('tabs', { action: 'list' })).text).toContain('还没有打开标签页')
     tabs = [tab(TAB_A, 'http://localhost/'), tab(TAB_B, 'http://localhost:5173/', false)]
     expect((await tools.call('tabs', { action: 'switch', tabId: TAB_B })).text).toContain(TAB_B)
@@ -93,7 +94,7 @@ describe('browser tools over core', () => {
   })
 
   it('turns core\'s refusals into advice', async () => {
-    const tools = browserToolsOverCore(withCore, CONV, dir)
+    const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     failWith = new RpcError('downloading', -32000, 'browser-installing')
     expect(await tools.call('snapshot', {})).toMatchObject({ isError: true, text: expect.stringContaining('正在下载 Chromium') })
     failWith = null

@@ -46,9 +46,8 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 | 包 | 职责 |
 |---|---|
 | `packages/protocol` | 唯一的类型来源：Task / Conversation 模型、状态流转规则、RPC 方法与通知的 zod schema、客户端。`/node` 子入口放路径、端点发现、daemon 协议 |
-| `packages/core` | 独立的任务与会话存储及业务逻辑；任务创建 git worktree；通过 daemon 启动 agent CLI |
+| `packages/core` | 独立的任务与会话存储及业务逻辑；任务创建 git worktree；通过 daemon 启动 agent CLI；另有给 agent 用的 MCP 服务（`mcp-main.ts`，预览和浏览器工具），由 agent 作为独立进程启动 |
 | `packages/daemon` | 进程宿主，独立进程：agent 跑在 stdio 管道上，终端面板的 shell 跑在 PTY 里；缓存最近输出，供重新连接时回放 |
-| `packages/cli` | 只给 agent 用的 Kando MCP 服务（预览和浏览器工具），由 core 在启动 agent 时配置，不是给人用的命令行 |
 | `packages/desktop` | Electron 桌面端：看板、详情编辑、聊天界面、终端面板 |
 | `packages/browser-host` | 浏览器宿主，daemon 托管的独立进程：用 playwright-core 跑一个 Chromium，给 agent 的浏览器工具和检查器的实时画面提供页面 |
 
@@ -148,7 +147,7 @@ Claude Code 以 `claude -p --input-format stream-json --output-format stream-jso
 
 ### 浏览器
 
-聊天界面里的 agent 可以用 Kando 托管的浏览器看页面：`kando mcp` 给每个聊天会话提供一组 `browser_*` 工具——`browser_navigate` 打开页面，`browser_snapshot` 读无障碍树快照（每个可交互元素带 ref），`browser_click` / `browser_type` / `browser_press` / `browser_hover` / `browser_scroll` / `browser_select` 按 ref 操作，`browser_wait` 等待，`browser_screenshot` 截图，`browser_console` 读控制台和失败的请求，`browser_tabs` 管标签页。截图会显示在对话的卡片里。
+聊天界面里的 agent 可以用 Kando 托管的浏览器看页面：Kando 的 MCP 服务给每个聊天会话提供一组 `browser_*` 工具——`browser_navigate` 打开页面，`browser_snapshot` 读无障碍树快照（每个可交互元素带 ref），`browser_click` / `browser_type` / `browser_press` / `browser_hover` / `browser_scroll` / `browser_select` 按 ref 操作，`browser_wait` 等待，`browser_screenshot` 截图，`browser_console` 读控制台和失败的请求，`browser_tabs` 管标签页。截图会显示在对话的卡片里。
 
 - **安装**：第一次使用时下载 Chromium（playwright-core 的构建，约 150MB）到 `~/.kando/browser/ms-playwright`，设置 → 智能体 里能看进度，也能手动点「安装」；源码运行可以先 `pnpm browser:install`。
 - **隔离与登录态**：一个 Chromium 进程、一份持久 profile（`~/.kando/browser/profile`，权限 700），所以登录态在所有会话间共享；标签页按会话隔离，agent 只看到自己会话的标签页，删除会话时它的标签页一并关闭。
@@ -197,7 +196,7 @@ pnpm install
 pnpm dist:mac     # 产物在 packages/desktop/dist/Kando-<版本>-arm64.dmg
 ```
 
-`dist:mac` 依次执行 electron-vite 构建、`bundle-backend`（esbuild 把 core、daemon 和 CLI 各打成一个 JS，附上 node-pty 的 macOS 预编译）和 electron-builder。打包的 App 由 Electron 自带的 Node 运行这三个文件（`ELECTRON_RUN_AS_NODE`），所以**装了 App 的机器不需要 Node 和 pnpm**，只需要 `claude` / `codex` CLI 本身。
+`dist:mac` 依次执行 electron-vite 构建、`bundle-backend`（esbuild 把 core、daemon、MCP 服务和浏览器宿主各打成一个 JS，附上 node-pty 的 macOS 预编译）和 electron-builder。打包的 App 由 Electron 自带的 Node 运行这些文件（`ELECTRON_RUN_AS_NODE`），所以**装了 App 的机器不需要 Node 和 pnpm**，只需要 `claude` / `codex` CLI 本身。
 
 安装：打开 dmg，把 Kando 拖进「应用程序」。启动时 App 会检查 `~/.kando/core.json`，没有在运行的 core 就自动拉起随附的 daemon 和 core（日志在 `~/.kando/logs/`）；agent 的查找用的是登录 shell 的 PATH，所以 CLI 装在 Homebrew 或 `~/.local/bin` 都能找到。和从源码运行时一样，关闭或退出 App 不会停掉 core、daemon 和正在跑的 agent。
 

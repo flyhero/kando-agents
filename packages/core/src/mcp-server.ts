@@ -4,7 +4,8 @@ import { extname, isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { connectRpc, coreUrl, PREVIEW_EXTENSIONS, SHOW_PREVIEW_TOOL, type RpcConnection } from '@kando/protocol'
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
-import { BROWSER_ARGUMENTS, BROWSER_TOOL_SPECS, browserToolsOverCore, type BrowserTools, type ToolOutcome } from './browser-tools'
+import { AttachmentStore } from './attachment-store'
+import { BROWSER_ARGUMENTS, BROWSER_TOOL_SPECS, browserToolsOverCore, type BrowserTools, type ToolOutcome } from './mcp-browser-tools'
 
 // A tools-only MCP server over stdio, giving an agent Kando's own tools: showing a file it wrote in
 // the chat, and the browser Kando hosts.
@@ -180,7 +181,7 @@ export async function serveMcp(home: string | undefined, conversationId?: string
   }
   const handle = createMcpHandler({
     preview: checkPreviewFile,
-    ...(conversationId ? { browser: browserToolsOverCore(withCore, conversationId, kandoPaths(home).attachments) } : {})
+    ...(conversationId ? { browser: browserToolsOverCore(withCore, conversationId, new AttachmentStore(kandoPaths(home).attachments)) } : {})
   })
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY })
   for await (const line of lines) {

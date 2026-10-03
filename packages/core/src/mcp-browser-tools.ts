@@ -15,7 +15,7 @@ import {
   type BrowserToolKind,
   type RpcConnection
 } from '@kando/protocol'
-import { attachmentPath } from './attachment-path'
+import type { AttachmentStore } from './attachment-store'
 
 // What a browser tool gives the model: text, and for a screenshot the picture itself.
 export type ToolOutcome = { text: string; isError?: boolean; image?: { data: string; mimeType: string } }
@@ -302,7 +302,7 @@ const MIME: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', gif:
 export function browserToolsOverCore(
   withCore: <T>(work: (rpc: RpcConnection) => Promise<T>) => Promise<T>,
   conversationId: string,
-  attachmentsDir: string
+  attachments: Pick<AttachmentStore, 'pathOf'>
 ): BrowserTools {
   let currentTab: string | null = null
 
@@ -361,7 +361,7 @@ export function browserToolsOverCore(
       case 'screenshot': {
         const { tabId, ...options } = args
         const shot = await rpc.call('browser.screenshot', { conversationId, tabId: await tabFor(rpc, tabId), ...options })
-        const file = attachmentPath(attachmentsDir, shot.image.id)
+        const file = await attachments.pathOf(shot.image.id)
         const image = file ? { data: (await readFile(file)).toString('base64'), mimeType: MIME[shot.image.id.split('.').pop() ?? ''] ?? 'image/jpeg' } : undefined
         return { text: `截图已保存，用户在对话里能看到这张图。\n${describePage(shot.tab, null)}\n${imageMarker(shot.image)}`, ...(image ? { image } : {}) }
       }
