@@ -1,42 +1,18 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { addQuote } from '../chat-quotes'
+import { selectedTextIn, type SelectedText } from '../text-selection'
 import { QuoteIcon } from './icons'
-
-type Picked = { x: number; y: number; below: boolean; text: string; source: string | null }
-
-// The reply a node of the selection is in, if it is one of the agent's.
-function replyOf(node: Node | null): HTMLElement | null {
-  const element = node instanceof Element ? node : node?.parentElement
-  return element?.closest<HTMLElement>('.chat-assistant') ?? null
-}
 
 // Text selected within one of the agent's replies offers a button over it that quotes it into
 // the input, where the user can say what about it. The selection stays the browser's own.
 export function ChatQuotePicker({ conversationId, list }: { conversationId: string; list: RefObject<HTMLElement | null> }) {
-  const [picked, setPicked] = useState<Picked | null>(null)
+  const [picked, setPicked] = useState<SelectedText | null>(null)
 
   useEffect(() => {
     const element = list.current
     if (!element) return
-    const read = () => {
-      const selection = document.getSelection()
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return setPicked(null)
-      const range = selection.getRangeAt(0)
-      const reply = replyOf(range.startContainer)
-      const text = selection.toString().trim()
-      if (!reply || reply !== replyOf(range.endContainer) || !element.contains(reply) || !text) return setPicked(null)
-      const box = range.getBoundingClientRect()
-      // Over the selection, unless that would run above the list.
-      const below = box.top - 40 < element.getBoundingClientRect().top
-      setPicked({
-        x: box.left + box.width / 2,
-        y: below ? box.bottom : box.top,
-        below,
-        text,
-        source: reply.closest<HTMLElement>('[data-entry-key]')?.dataset.entryKey ?? null
-      })
-    }
+    const read = () => setPicked(selectedTextIn(element, '.chat-assistant'))
     // Once the pointer or the keys let go, so the button does not chase a drag.
     const settle = () => setTimeout(read, 0)
     const cleared = () => {
@@ -67,7 +43,7 @@ export function ChatQuotePicker({ conversationId, list }: { conversationId: stri
       // Pressing it must not drop the selection before the click reads it.
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => {
-        addQuote(conversationId, picked.source, picked.text)
+        addQuote(conversationId, picked.region.closest<HTMLElement>('[data-entry-key]')?.dataset.entryKey ?? null, picked.text)
         document.getSelection()?.removeAllRanges()
         setPicked(null)
         list.current?.closest('.chat-view')?.querySelector<HTMLTextAreaElement>('.chat-input')?.focus()

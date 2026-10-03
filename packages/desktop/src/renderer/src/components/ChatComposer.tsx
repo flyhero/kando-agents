@@ -2,14 +2,15 @@ import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
 import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
-import { composeMessage, parseQuotes, removeQuote, setQuoteNote, setQuotes, useQuotes, type ChatQuote } from '../chat-quotes'
+import { composeMessage, parseQuotes, setQuotes, useQuotes } from '../chat-quotes'
+import { QuoteCards } from './ChatQuoteCards'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, QuoteIcon, StopIcon } from './icons'
+import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
 import { createSchedule } from '../schedules'
 
@@ -43,39 +44,6 @@ function queuedText(text: string): string {
   const { quotes, body } = parseQuotes(text)
   const quoted = quotes.length ? `（引用 ${quotes.length} 段）` : ''
   return `${quoted}${body}` || '（只有图片）'
-}
-
-// The passages quoted into the next message, above the input: each with a line for what the
-// user says about it, and a way to drop it. Enter in that line goes on to the message.
-function QuoteCards({ conversationId, quotes, onDone }: { conversationId: string; quotes: readonly ChatQuote[]; onDone: () => void }) {
-  return (
-    <ul className="chat-quotes" aria-label="引用的段落">
-      {quotes.map((quote) => (
-        <li key={quote.id} className="chat-quote-card">
-          <span className="chat-quote-icon" aria-hidden="true"><QuoteIcon /></span>
-          <div className="chat-quote-body">
-            <p className="chat-quote-text" title={quote.text}>{quote.text}</p>
-            <input
-              className="chat-quote-note"
-              value={quote.note}
-              placeholder="对这段说点什么（可不填）"
-              aria-label="对这段引用的说明"
-              onChange={(event) => setQuoteNote(conversationId, quote.id, event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                  event.preventDefault()
-                  onDone()
-                }
-              }}
-            />
-          </div>
-          <button type="button" className="chat-quote-remove" aria-label="移除这段引用" data-tooltip="移除" data-tooltip-side="top-end" onClick={() => removeQuote(conversationId, quote.id)}>
-            <CloseIcon />
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
 }
 
 // Sends what the input holds later, unattended: once its time comes and the agent has quota again.
