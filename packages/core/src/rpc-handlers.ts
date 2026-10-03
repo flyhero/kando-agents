@@ -6,7 +6,7 @@ import type { AttachmentStore } from './attachment-store'
 import type { AttachmentUploads } from './attachment-uploads'
 import type { BrowserService } from './browser-service'
 import type { SessionHost } from './daemon-client'
-import { findFiles } from './file-search'
+import { findFiles, searchFiles } from './file-search'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { SourceService } from './source-service'
@@ -254,6 +254,7 @@ export function createRpcHandlers(
     'worktrees.list': () => worktrees.list(),
     'worktrees.clean': ({ paths }) => worktrees.clean(paths),
     'projects.findFile': ({ roots, path }) => findFiles(roots, path),
+    'projects.searchFiles': ({ roots, query }) => searchFiles(roots, query),
     'projects.forget': ({ path }) => {
       projects.forget(path)
       return OK

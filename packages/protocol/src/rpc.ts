@@ -9,6 +9,7 @@ import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
 import { ChatCommandFields, SavedChatCommand } from './chat-commands'
+import { ProjectFileMatch } from './project-files'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
@@ -47,7 +48,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
 // environment: core checks for git and the agent CLIs on its path (system.environment).
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands'] as const
+// file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -320,6 +322,12 @@ export const rpcMethods = {
   'projects.findFile': {
     params: z.object({ roots: z.array(z.string().min(1)).min(1).max(20), path: z.string().min(1).max(1000) }),
     result: z.array(z.string())
+  },
+  // Files and folders in these project folders that fuzzily match `query`, tracked or untracked but
+  // not ignored, the best first; an empty query gives each project's top level.
+  'projects.searchFiles': {
+    params: z.object({ roots: z.array(z.string().min(1)).min(1).max(20), query: z.string().max(200) }),
+    result: z.array(ProjectFileMatch)
   },
   // What older clients call projects.recent / projects.forget.
   'repos.recent': { params: z.object({}), result: z.array(z.string()) },
