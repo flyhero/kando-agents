@@ -4,7 +4,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 
 任务与会话并行的多 agent 管理工具。任务适合**记下标题 → 完善详情 → 交给 Claude Code / Codex 在独立 worktree 中执行**；会话适合持续聊天及在两个 agent 之间移交。
 
-当前版本 0.10.3（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 0.11.0（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
 未执行 pending ──开始──▶ 执行中 running ──提交──▶ 待验收 review ──接受──▶ 已完成 done
