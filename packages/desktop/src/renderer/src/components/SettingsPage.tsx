@@ -2,7 +2,7 @@ import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { PROTOCOL_VERSION, UNATTENDED_MODES, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
-import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
+import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported, useChatCommandsSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { UNATTENDED_LABEL } from '../schedules'
@@ -12,6 +12,7 @@ import { canNotify } from '../desktop-bridge'
 import {
   ArrowLeftIcon,
   BellIcon,
+  ChatIcon,
   ContrastIcon,
   FolderIcon,
   GaugeIcon,
@@ -23,6 +24,7 @@ import {
   SparkIcon
 } from './icons'
 import { AgentStatsSettings } from './AgentStatsSettings'
+import { ChatCommandSettings } from './ChatCommandSettings'
 import { EnvironmentSettings } from './EnvironmentSettings'
 import { settingsSectionOf } from './SourceInboxView'
 import { SourceSettingsSection } from './SourceSettingsSection'
@@ -442,6 +444,17 @@ const SECTIONS: readonly Section[] = [
   }
 ]
 
+// On a core that keeps them: the user's own slash commands; it follows 智能体.
+const CHAT_COMMANDS_SECTION: Section = {
+  id: 'chat-commands',
+  group: '任务',
+  title: '聊天命令',
+  description: '自己的斜杠命令：在聊天输入框里输入 / 选用，把存好的提示词展开到输入框，改完再发。Claude Code 和 Codex 都能用。',
+  keywords: ['命令', '斜杠', '/', '提示词', '模板', 'prompt', '聊天', '会话', '快捷'],
+  Icon: ChatIcon,
+  Body: ChatCommandSettings
+}
+
 // On a core that looks: what it found of git and the agent CLIs, and how to put a missing one there.
 const ENVIRONMENT_SECTION: Section = {
   id: 'environment',
@@ -486,11 +499,13 @@ export function SettingsPage() {
   const sources = useCore((s) => s.sources)
   const browser = useBrowserSupported()
   const environment = useCore((s) => s.environment !== null)
+  const chatCommands = useChatCommandsSupported()
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
     const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify()))
+      .flatMap((section) => (section.id === 'agents' && chatCommands ? [section, CHAT_COMMANDS_SECTION] : [section]))
     return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...about]
-  }, [sources, browser, environment])
+  }, [sources, browser, environment, chatCommands])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()

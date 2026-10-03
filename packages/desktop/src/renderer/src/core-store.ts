@@ -15,6 +15,7 @@ import {
   type Task,
   type Terminal,
   type TerminalCommand,
+  type SavedChatCommand,
   type Conversation,
   type ComputerAwakeStatus,
   type ChatSettings,
@@ -111,6 +112,8 @@ type CoreState = {
   activeTerminalId: string | null
   // Commands kept for the terminal panel, oldest first; empty from a core that keeps none.
   terminalCommands: TerminalCommand[]
+  // The user's own chat commands, oldest first; empty from a core that keeps none.
+  chatCommands: SavedChatCommand[]
   login: LoginState | null
 }
 
@@ -155,6 +158,7 @@ export const useCore = create<CoreState>()(() => ({
   utilityPanelOrder: [],
   activeTerminalId: null,
   terminalCommands: [],
+  chatCommands: [],
   login: null
 }))
 
@@ -290,6 +294,15 @@ export function saveTerminalCommand(params: RpcParams<'terminalCommands.save'>):
 
 export function deleteTerminalCommand(id: string): void {
   void perform((rpc) => rpc.call('terminalCommands.delete', { id }))
+}
+
+// The list updates when core says so, through chatCommands.changed.
+export function saveChatCommand(params: RpcParams<'chatCommands.save'>): Promise<SavedChatCommand | null> {
+  return perform((rpc) => rpc.call('chatCommands.save', params))
+}
+
+export function deleteChatCommand(id: string): void {
+  void perform((rpc) => rpc.call('chatCommands.delete', { id }))
 }
 
 export function setTerminalMaximized(maximized: boolean): void {
@@ -485,6 +498,10 @@ export function useTerminalCommandsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('terminal-commands') ?? false)
 }
 
+export function useChatCommandsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('chat-commands') ?? false)
+}
+
 // Whether core starts tasks and conversations later on their own (schedules.*).
 export function useSchedulesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('schedules') ?? false)
@@ -590,6 +607,7 @@ export function startCoreConnection(): void {
           })
         )
         rpc.on('terminalCommands.changed', ({ commands }) => useCore.setState({ terminalCommands: commands }))
+        rpc.on('chatCommands.changed', ({ commands }) => useCore.setState({ chatCommands: commands }))
         rpc.on('schedules.changed', ({ runs }) => useCore.setState({ schedules: runs }))
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
@@ -611,6 +629,7 @@ export function startCoreConnection(): void {
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
         if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
         if (rpc.features.includes('schedules')) void rpc.call('schedules.list', {}).then((schedules) => useCore.setState({ schedules })).catch(() => {})
+        if (rpc.features.includes('chat-commands')) void rpc.call('chatCommands.list', {}).then((chatCommands) => useCore.setState({ chatCommands })).catch(() => {})
         if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
           rpc,

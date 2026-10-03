@@ -16,6 +16,7 @@ import type { UsageLimitResumes } from './usage-limit-resume'
 import type { UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalCommandStore } from './terminal-commands'
+import type { ChatCommandStore } from './chat-commands'
 import type { TerminalService } from './terminal-service'
 import type { WorktreeService } from './worktree-service'
 import type { ComputerAwakeService } from './computer-awake-service'
@@ -43,7 +44,8 @@ export function createRpcHandlers(
   turns: ChatTurnStore,
   chatSettings: ChatSettingsStore,
   environment: EnvironmentService,
-  schedules: ScheduleService
+  schedules: ScheduleService,
+  chatCommands: ChatCommandStore
 ): RpcHandlers {
   // A page of chat items as clients see them: a usage limit with what core means to do about it.
   const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
@@ -211,6 +213,12 @@ export function createRpcHandlers(
     'terminalCommands.save': (params) => terminalCommands.save(params),
     'terminalCommands.delete': ({ id }) => {
       terminalCommands.delete(id)
+      return OK
+    },
+    'chatCommands.list': () => chatCommands.list(),
+    'chatCommands.save': (params) => chatCommands.save(params),
+    'chatCommands.delete': ({ id }) => {
+      chatCommands.delete(id)
       return OK
     },
     'sessions.attach': async ({ sessionId, fromOffset }, connection) => {

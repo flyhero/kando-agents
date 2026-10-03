@@ -216,7 +216,14 @@ export const MIGRATIONS = [
      FROM conversation_usage_limits l
      WHERE l.status IN ('waiting', 'retrying') AND l.auto_continue = 1;
    DROP INDEX conversation_usage_limits_due;
-   DROP TABLE conversation_usage_limits;`
+   DROP TABLE conversation_usage_limits;`,
+  // The user's own chat commands (ChatCommandStore). A name is taken once per project, and once
+  // across all of them: '' stands for every project, since NULLs never clash in a unique index.
+  `CREATE TABLE chat_commands (
+     id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, prompt TEXT NOT NULL,
+     project_path TEXT, created_at INTEGER NOT NULL
+   );
+   CREATE UNIQUE INDEX chat_commands_name ON chat_commands(lower(name), coalesce(project_path, ''));`
 ]
 
 
