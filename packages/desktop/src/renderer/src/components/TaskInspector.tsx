@@ -84,7 +84,7 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
       onClose={() => setInspectorOpen(false)}
     >
       {tab === 'plan' ? (
-        <ChatPlanView plans={plans} selected={selectedPlan} onSelect={showTaskPlan} note={planNote} />
+        <ChatPlanView conversationId={task.conversationId ?? null} plans={plans} selected={selectedPlan} onSelect={showTaskPlan} note={planNote} />
       ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">任务还没有 worktree，也就没有分支。</p>
       ) : selected && rpc ? (

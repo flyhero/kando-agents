@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { composeMessage, parseQuotes } from './chat-quotes'
+import { composeFeedback, composeMessage, FEEDBACK_LIMIT, parseQuotes } from './chat-quotes'
 
 describe('composeMessage', () => {
   it('puts each quote before the message: its marker, the passage, then the note', () => {
@@ -43,5 +43,19 @@ describe('parseQuotes', () => {
   it('leaves a message that does not open with a quote marker alone', () => {
     expect(parseQuotes('> just Markdown\n\ntext')).toEqual({ quotes: [], body: '> just Markdown\n\ntext' })
     expect(parseQuotes('text\n<!-- quote 1 -->\n> x')).toEqual({ quotes: [], body: 'text\n<!-- quote 1 -->\n> x' })
+  })
+})
+
+describe('composeFeedback', () => {
+  it('quotes each passage with its note, then the rest, without markers', () => {
+    expect(composeFeedback([{ text: 'step 2', note: 'skip it' }, { text: 'step 3', note: '' }], 'and add tests'))
+      .toBe('> step 2\n\nskip it\n\n> step 3\n\nand add tests')
+  })
+
+  it('cuts a long passage short, and the whole to what the answer takes', () => {
+    const long = 'x'.repeat(1000)
+    expect(composeFeedback([{ text: long, note: '' }], '')).toBe(`> ${'x'.repeat(400)}…`)
+    const many = Array.from({ length: 10 }, () => ({ text: long, note: 'n' }))
+    expect(composeFeedback(many, '').length).toBe(FEEDBACK_LIMIT)
   })
 })

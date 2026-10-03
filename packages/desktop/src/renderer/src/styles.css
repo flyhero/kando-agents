@@ -5207,6 +5207,56 @@ body.side-panel-resizing * {
 .chat-quote-remove svg { width: 12px; height: 12px; }
 .chat-quote-remove:hover { background: var(--fill-2); color: var(--text); }
 
+/* Comments on a plan: a box over the passage selected, the passage marked while it is written,
+   and every passage commented on marked after. */
+.plan-comment-box {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  gap: 8px;
+  width: 280px;
+  padding: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.plan-comment-box[data-below] { transform: translate(-50%, 8px); }
+
+.plan-comment-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.plan-comment-input:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.plan-comment-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.plan-comment-actions .button { height: 26px; padding: 0 10px; font-size: 12px; }
+
+::highlight(kando-plan-draft) { background-color: var(--accent-bg); }
+::highlight(kando-plan-comments) { background-color: color-mix(in srgb, var(--warning) 22%, transparent); }
+
+.chat-plan-view-hint { margin: 0; color: var(--text-3); font-size: 12px; }
+
+/* Inside the plan's approval card the comments sit between the plan and the answers, scrolling
+   on their own past a few; the card's submit row stays in view at its foot however tall it grows. */
+.chat-plan .chat-quotes { flex-shrink: 0; max-height: 168px; padding: 0; overflow-y: auto; }
+.chat-plan .chat-approve-footer {
+  position: sticky;
+  bottom: -12px;
+  margin: 4px -12px -12px;
+  padding: 8px 12px 12px;
+  background: var(--surface);
+}
+
 /* The button over text selected in a reply, which quotes it into the input. */
 .chat-quote-pick {
   position: fixed;

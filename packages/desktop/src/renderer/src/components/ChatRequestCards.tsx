@@ -26,11 +26,13 @@ const RESOLUTION_TEXT: Record<NonNullable<ApprovalItem['resolution']>, string> =
 
 export function useResponder(conversationId: string, requestId: string) {
   const [busy, setBusy] = useState(false)
-  const respond = async (decision: ChatDecision, extra: { message?: string; answers?: Record<string, string[]> } = {}) => {
-    if (busy) return
+  // Whether the answer went through.
+  const respond = async (decision: ChatDecision, extra: { message?: string; answers?: Record<string, string[]> } = {}): Promise<boolean> => {
+    if (busy) return false
     setBusy(true)
-    await perform((rpc) => rpc.call('conversations.respond', { id: conversationId, requestId, decision, ...extra }))
+    const done = await perform((rpc) => rpc.call('conversations.respond', { id: conversationId, requestId, decision, ...extra }))
     setBusy(false)
+    return done !== null
   }
   return { busy, respond }
 }

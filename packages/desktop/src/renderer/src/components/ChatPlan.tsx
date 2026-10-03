@@ -1,5 +1,8 @@
-import { useCallback, useState, useRef, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { itemKey, type PlanItem } from '../chat-state'
+import { composeFeedback, setQuotes, useQuotes } from '../chat-quotes'
+import { QuoteCards } from './ChatQuoteCards'
+import { PlanComments } from './PlanComments'
 import { useChatSurface } from './chat-surface'
 import { ChatMarkdown } from './ChatMarkdown'
 import { useResponder } from './ChatRequestCards'
@@ -75,6 +78,12 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
   const noteInput = useRef<HTMLInputElement>(null)
   const long = (item.detail ?? '').split('\n').length > PREVIEW_LINES
+  // Comments made on the plan, and passages quoted from the chat, go back with it to keep planning.
+  const quotes = useQuotes(conversationId)
+  const commented = quotes.length > 0
+  useEffect(() => {
+    if (commented) setChoice('revise')
+  }, [commented, quotes.length])
   const submit = async () => {
     if (busy || saving) return
     if (choice === 'save') {
@@ -83,7 +92,8 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
       await savePlan(item)
       setSaving(false)
     } else if (choice === 'revise') {
-      await respond('deny', note.trim() ? { message: note.trim() } : {})
+      const message = commented ? composeFeedback(quotes, note) : note.trim()
+      if (await respond('deny', message ? { message } : {}) && commented) setQuotes(conversationId, [])
     } else {
       await respond(choice)
     }
@@ -129,6 +139,7 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
           )}
         </div>
       )}
+      {commented && <QuoteCards conversationId={conversationId} quotes={quotes} onDone={() => noteInput.current?.focus()} />}
       <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">
         {choices.map((each, index) => (
           <div
@@ -145,7 +156,7 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
                 ref={noteInput}
                 className="chat-approve-reason"
                 aria-label="继续规划，告诉 agent 要改哪里"
-                placeholder="继续规划，告诉 agent 要改哪里（可不填）"
+                placeholder={commented ? `继续规划：带上 ${quotes.length} 条评论，还可以再补充（可不填）` : '继续规划，告诉 agent 要改哪里（可不填）'}
                 value={note}
                 disabled={busy || saving}
                 onFocus={() => setChoice('revise')}
@@ -170,15 +181,21 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
 
 // The inspector's plan tab: the newest plan, or an earlier version the user picked. It shows beside
 // the chat rather than in it, so it is told how to pick a version and what its owner kept.
-export function ChatPlanView({ plans, selected, onSelect, note = () => null }: {
+// Text selected in it takes a comment, where the chat it belongs to is known.
+export function ChatPlanView({ conversationId, plans, selected, onSelect, note = () => null }: {
+  conversationId: string | null
   plans: readonly PlanItem[]
   selected: string | null
   onSelect: (key: string) => void
   note?: (item: PlanItem) => string | null
 }) {
+  const body = useRef<HTMLDivElement>(null)
+  const quotes = useQuotes(conversationId ?? '')
   const plan = plans.find((each) => itemKey(each) === selected) ?? plans.at(-1)
   const said = (each: PlanItem) => note(each) ?? status(each)
   if (!plan) return <p className="inspector-empty muted">agent 还没有提出计划。</p>
+  const planKey = itemKey(plan)
+  const comments = quotes.filter((quote) => quote.source === planKey).length
   return (
     <div className="chat-plan-view">
       <div className="chat-plan-view-status" data-waiting={plan.resolution === null || undefined}>
@@ -189,7 +206,17 @@ export function ChatPlanView({ plans, selected, onSelect, note = () => null }: {
         ) : said(plan)}
         {plan.resolution === null && <span className="muted"> · 在对话下方确认</span>}
       </div>
-      {plan.detail ? <ChatMarkdown text={plan.detail} /> : <p className="muted">这份计划是空的。</p>}
+      {conversationId && plan.detail && (
+        <p className="chat-plan-view-hint">
+          {comments > 0
+            ? `${comments} 条评论${plan.resolution === null ? '，在下方选「继续规划」交给 agent' : '，在输入框里，发送后 agent 据此修改'}`
+            : '选中计划里的文字可以评论'}
+        </p>
+      )}
+      {plan.detail
+        ? <div className="chat-plan-body" ref={body}><ChatMarkdown text={plan.detail} /></div>
+        : <p className="muted">这份计划是空的。</p>}
+      {conversationId && plan.detail && <PlanComments conversationId={conversationId} planKey={planKey} body={body} />}
     </div>
   )
 }

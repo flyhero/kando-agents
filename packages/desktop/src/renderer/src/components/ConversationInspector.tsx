@@ -81,7 +81,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       onClose={() => setConversationInspectorOpen(false)}
     >
       {tab === 'plan' ? (
-        <ChatPlanView plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />
+        <ChatPlanView conversationId={conversation.id} plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />
       ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
       ) : selected && rpc ? (
