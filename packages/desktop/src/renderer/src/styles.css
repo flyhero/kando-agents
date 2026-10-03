@@ -5534,6 +5534,35 @@ body.side-panel-resizing * {
   .chat-options-note,
   .chat-usage-limit .conversation-confirm,
   .chat-usage-limit-error,
+  .chat-projects,
+  .chat-projects-count,
+  .chat-queue,
+  .chat-steer-button,
+  .chat-suggestion-hint,
+  .chat-preview-head,
+  .chat-image-missing,
+  .chat-intervention-tab,
+  .chat-intervention-count,
+  .chat-fold-bar,
+  .chat-reasoning-text,
+  .chat-subagent-chip,
+  .chat-subagent-metrics,
+  .chat-subagent-result,
+  .chat-todos-head,
+  .chat-todos-count,
+  .chat-tool-time,
+  .chat-user-steer,
+  .chat-page-sub,
+  .chat-page-more,
+  .chat-plan-preview-more,
+  .chat-changes-review,
+  .chat-approve-hint,
+  .chat-approve-command-more,
+  .chat-command-hint,
+  .chat-command-keys,
+  .chat-command-option-description,
+  .chat-command-option-hint,
+  .chat-command-scope,
   .muted
 ) { font-size: var(--chat-font-small); }
 
@@ -5544,7 +5573,8 @@ body.side-panel-resizing * {
   .chat-changes-summary .chat-diff-count,
   .chat-changes-file,
   .chat-changes-more,
-  .chat-todos
+  .chat-todos,
+  .chat-command-field
 ) { font-size: var(--chat-font-compact); }
 
 .chat-view .chat-changes-summary strong { font-size: var(--chat-font-size); }
