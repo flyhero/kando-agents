@@ -7,7 +7,7 @@ import { useChatSurface } from './chat-surface'
 import { ChatMarkdown } from './ChatMarkdown'
 import { useResponder } from './ChatRequestCards'
 import { SchedulePicker } from './SchedulePicker'
-import { useSchedulesSupported } from '../core-store'
+import { useCore, useSchedulesSupported } from '../core-store'
 import { createSchedule } from '../schedules'
 
 // Approving later, once the quota is back: an empty scheduled message approves the plan waiting.
@@ -78,6 +78,11 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
   const noteInput = useRef<HTMLInputElement>(null)
   const long = (item.detail ?? '').split('\n').length > PREVIEW_LINES
+  // The inspector beside the chat already shows this plan in full: no second copy here.
+  const key = itemKey(item)
+  const inView = useCore((s) => surface.inspector === 'task'
+    ? s.inspectorOpen && s.taskInspectorTab === 'plan' && (s.taskInspectorPlan === null || s.taskInspectorPlan === key)
+    : s.conversationInspectorOpen && s.conversationInspectorTab === 'plan' && (s.conversationPlan === null || s.conversationPlan === key))
   // Comments made on the plan, and passages quoted from the chat, go back with it to keep planning.
   const quotes = useQuotes(conversationId)
   const commented = quotes.length > 0
@@ -125,11 +130,13 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
     <div className="chat-request chat-plan" data-waiting onKeyDown={onKeyDown}>
       <div className="chat-request-title">
         计划等你确认
-        <button type="button" className="link-button" onClick={() => surface.showPlan(itemKey(item))}>在检查器里看完整计划</button>
+        {inView
+          ? <span className="chat-plan-aside">完整计划在右侧</span>
+          : <button type="button" className="link-button" onClick={() => surface.showPlan(key)}>在检查器里看完整计划</button>}
         {schedulable && <SchedulePlanButton conversationId={conversationId} />}
       </div>
       {savePlan && <p className="chat-request-detail muted">依赖的任务还没完成：现在只能保存计划，等它们完成后开始执行时再按计划做。</p>}
-      {item.detail && (
+      {item.detail && !inView && (
         <div className="chat-plan-preview" data-clipped={(long && !open) || undefined}>
           <ChatMarkdown text={item.detail} />
           {long && (

@@ -8,6 +8,8 @@ import { continueConversation } from './ConversationActions'
 // What the chat view does beyond itself, which a free conversation and a task's chat do differently:
 // where its plans and changes open, how an agent gets ready for a message, and what a plan offers.
 export type ChatSurface = {
+  // Which inspector the chat's side panel is: a task's or a free conversation's.
+  inspector: 'task' | 'conversation'
   // The side panel on a plan (by item key; null for the newest), or on the changes.
   showPlan(key: string | null): void
   showChanges(): void
@@ -40,6 +42,7 @@ export function useChatSurface(): ChatSurface {
 // A free conversation: its own inspector, its projects' changes, and chat mode to continue in.
 export function conversationSurface(conversation: Conversation, handoff: (() => void) | null = null): ChatSurface {
   return {
+    inspector: 'conversation',
     showPlan: showConversationPlan,
     showChanges: showConversationChanges,
     showBrowser: () => showBrowserPanel(conversation.id),

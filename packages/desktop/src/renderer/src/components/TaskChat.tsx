@@ -30,6 +30,7 @@ function planNote(task: Task, item: PlanItem): string | null {
 function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolean, bypassable: boolean): ChatSurface {
   const blocker = checkChatResume(task, dependencies)
   return {
+    inspector: 'task',
     showPlan: showTaskPlan,
     showChanges: showTaskChanges,
     showBrowser: () => showBrowserPanel(task.conversationId),

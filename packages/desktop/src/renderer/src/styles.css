@@ -5262,6 +5262,7 @@ body.side-panel-resizing * {
 ::highlight(kando-plan-comments) { background-color: color-mix(in srgb, var(--warning) 22%, transparent); }
 
 .chat-plan-view-hint { margin: 0; color: var(--text-3); font-size: 12px; }
+.chat-plan-aside { margin-left: 8px; color: var(--text-3); font-weight: 400; font-size: var(--chat-font-small); }
 
 /* Inside the plan's approval card the comments sit between the plan and the answers, scrolling
    on their own past a few; the card's submit row stays in view at its foot however tall it grows. */
