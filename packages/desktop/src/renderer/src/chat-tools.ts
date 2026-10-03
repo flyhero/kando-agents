@@ -7,6 +7,7 @@ const TOOL_LABEL: Record<string, string> = {
   Bash: '命令',
   commandExecution: '命令',
   Read: '读取',
+  imageView: '查看图片',
   Write: '写入',
   Edit: '编辑',
   MultiEdit: '编辑',

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { lstatSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { chmod, lstat, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { ATTACHMENT_ID_PATTERN, MAX_ATTACHMENT_BYTES, type AttachmentInfo } from '@kando/protocol'
@@ -17,7 +17,27 @@ export class AttachmentStore {
 
   constructor(private readonly dir: string) {}
 
-  async put(input: Uint8Array): Promise<AttachmentInfo> {
+  // The same, for a caller that cannot wait: an agent's output is read and logged in one go, and
+  // an image in it must be stored before the log names it.
+  putSync(input: Uint8Array): AttachmentInfo {
+    const { facts, info } = this.prepare(input)
+    const file = this.file(info.id)
+    if (!existsSync(file)) {
+      const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`
+      try {
+        writeFileSync(tmp, facts.bytes, { mode: 0o600 })
+        chmodSync(tmp, 0o600)
+        renameSync(tmp, file)
+      } catch (error) {
+        rmSync(tmp, { force: true })
+        throw error
+      }
+    }
+    this.infos.set(info.id, info)
+    return info
+  }
+
+  private prepare(input: Uint8Array): { facts: ImageFacts; info: AttachmentInfo } {
     if (input.byteLength > MAX_ATTACHMENT_BYTES) {
       throw new Rejection('attachment-too-large', `images are limited to ${MAX_ATTACHMENT_BYTES} bytes`)
     }
@@ -31,7 +51,12 @@ export class AttachmentStore {
       throw error
     }
     const id = `${createHash('sha256').update(facts.bytes).digest('hex')}.${facts.format}`
-    const info: AttachmentInfo = { id, mime: IMAGE_MIME[facts.format], size: facts.bytes.byteLength, width: facts.width, height: facts.height }
+    return { facts, info: { id, mime: IMAGE_MIME[facts.format], size: facts.bytes.byteLength, width: facts.width, height: facts.height } }
+  }
+
+  async put(input: Uint8Array): Promise<AttachmentInfo> {
+    const { facts, info } = this.prepare(input)
+    const { id } = info
     const file = this.file(id)
     if (!(await this.isFile(file))) {
       const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`

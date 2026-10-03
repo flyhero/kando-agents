@@ -232,6 +232,16 @@ export const PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm', '
 export function isPreviewImage(path: string): boolean {
   return PREVIEW_IMAGE_EXTENSIONS.has(path.split('.').at(-1)?.toLowerCase() ?? '')
 }
+
+// Codex's call that looks at a picture on disk (its view_image tool).
+export const CODEX_IMAGE_VIEW = 'imageView'
+
+// The picture a call looked at on disk, which the chat shows from where it is rather than from a
+// copy: Claude's Read of an image file, Codex's imageView. null for any other call.
+export function toolImagePath(item: { name: string; title: string }): string | null {
+  const reads = item.name === 'Read' || item.name === CODEX_IMAGE_VIEW
+  return reads && item.title.startsWith('/') && isPreviewImage(item.title) ? item.title : null
+}
 export function isPreviewTool(name: string): boolean {
   return kandoToolName(name) === SHOW_PREVIEW_TOOL
 }

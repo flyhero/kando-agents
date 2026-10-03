@@ -1,5 +1,5 @@
 import { useContext, useState } from 'react'
-import { browserToolKind, parseBrowserPage, type ChatItem } from '@kando/protocol'
+import { browserToolKind, parseBrowserPage, toolImagePath, type ChatItem } from '@kando/protocol'
 import { useImageUrl } from '../attachment-images'
 import { useBrowserTabs, ALL_TABS } from '../browser-state'
 import { useDisclosure } from '../chat-disclosure'
@@ -7,6 +7,8 @@ import { itemKey } from '../chat-state'
 import { toolLabel } from '../chat-tools'
 import { showBrowserTab, useCore } from '../core-store'
 import { ChatPaths, ChevronRightIcon, ToolStatus, clipped } from './chat-tool-parts'
+import { previewUrl } from '../file-links'
+import { LocalImageViewer } from './ChatMarkdown'
 import { ImageViewer } from './ImageViewer'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -19,6 +21,29 @@ function BrowserShot({ image, onOpen }: { image: NonNullable<ToolItem['images']>
       {url && <img src={url} alt="" draggable={false} />}
     </button>
   )
+}
+
+// A picture the call looked at on disk, read from where it is (main's preview protocol): what it
+// shows is the file as it is now, which a later shot under the same name replaces.
+function FileShot({ path }: { path: string }) {
+  const [viewing, setViewing] = useState(false)
+  const [missing, setMissing] = useState(false)
+  if (missing) return <p className="chat-tool-io chat-file-shot-missing muted">图片不在了：{path}</p>
+  const src = previewUrl(path)
+  return (
+    <>
+      <button type="button" className="chat-browser-shot chat-file-shot" aria-label={`查看图片 ${path}`} onClick={() => setViewing(true)}>
+        <img src={src} alt="" draggable={false} onError={() => setMissing(true)} />
+      </button>
+      {viewing && <LocalImageViewer images={[{ path, src }]} index={0} onIndex={() => {}} onClose={() => setViewing(false)} />}
+    </>
+  )
+}
+
+// What a result says besides its pictures: the placeholder a picture left is dropped where it shows.
+function outputBeside(output: string | null, shown: boolean): string | null {
+  if (!shown || output === null) return output
+  return output.split('\n').filter((line) => line.trim() !== '[图片]').join('\n').trim() || null
 }
 
 // The host a URL names, for a card's subtitle; the URL itself when it is not one.
@@ -67,12 +92,17 @@ export function ChatBrowserCard({ item }: { item: ToolItem }) {
   return <ChatShotCard item={item} />
 }
 
-function ChatShotCard({ item }: { item: ToolItem }) {
+// A call that brought back pictures, or looked at one on disk: the pictures are the point, so they
+// show whole under the call's line rather than behind a click. A browser screenshot is one; so is
+// any tool's (an MCP screenshot, a Read of an image).
+export function ChatShotCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const [viewing, setViewing] = useState<number | null>(null)
   const shorten = useContext(ChatPaths)
   const images = item.images ?? []
-  const details = Boolean(item.input || item.output)
+  const path = item.status === 'failed' || item.status === 'denied' ? null : toolImagePath(item)
+  const output = outputBeside(item.output, images.length > 0 || path !== null)
+  const details = Boolean(item.input || output)
   return (
     <div className="chat-tool chat-browser" data-status={item.status}>
       <button type="button" className="chat-tool-header" aria-expanded={details ? open : undefined} disabled={!details} onClick={() => setOpen(!open)}>
@@ -82,8 +112,9 @@ function ChatShotCard({ item }: { item: ToolItem }) {
         <ToolStatus status={item.status} since={item.at} />
       </button>
       {images.map((image, index) => <BrowserShot key={image.id} image={image} onOpen={() => setViewing(index)} />)}
+      {path && <FileShot path={path} />}
       {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}
-      {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}
+      {open && output && <pre className="chat-tool-io">{clipped(output)}</pre>}
       {viewing !== null && images.length > 0 && (
         <ImageViewer
           images={images.map((image) => ({ ...image, name: '' }))}

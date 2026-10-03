@@ -31,6 +31,15 @@ describe('AttachmentStore', () => {
     expect([...bytes]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   })
 
+  it('stores the same way without waiting, for an agent\'s output read in one go', async () => {
+    const kept = store.putSync(pngBytes(4, 3))
+    expect(kept).toEqual(await store.put(pngBytes(4, 3)))
+    if (process.platform !== 'win32') {
+      expect(statSync(path.join(dir, kept.id)).mode & 0o777).toBe(0o600)
+    }
+    expect(() => store.putSync(Uint8Array.from([1, 2, 3]))).toThrow(expect.objectContaining({ reason: expect.stringMatching(/^attachment-/) }))
+  })
+
   it('names by the stripped bytes, so metadata does not make a second copy', async () => {
     const plain = await store.put(pngBytes(4, 3))
     const tagged = await store.put(pngBytes(4, 3, [{ type: 'tEXt', data: 'where=home' }]))

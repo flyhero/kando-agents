@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
-import { stripImageBytes } from './image-frames'
+import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatPreferences, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip, type UsageLimitHit } from './chat-items'
@@ -55,6 +55,8 @@ const Item = z.looseObject({
   arguments: z.unknown().optional(),
   result: z.unknown().optional(),
   error: z.looseObject({ message: z.string().optional() }).nullish(),
+  // The picture an imageView item looked at.
+  path: z.string().optional(),
   query: z.string().optional(),
   prompt: z.string().nullish(),
   receiverThreadIds: z.array(z.string()).catch([]).optional(),
@@ -366,12 +368,15 @@ function diffOf(change: { path: string; kind: { type: string }; diff: string }):
   return { path: change.path, change: kind, patch: clip(patch, MAX_PATCH) }
 }
 
-// An MCP result's text and the images it names (see imageMarker); the error's message when it failed.
-function mcpResult(item: Item): { text: string | null; images: ChatImage[] } {
+const McpContent = z.looseObject({ content: z.array(z.looseObject({ type: z.string().optional(), text: z.string().optional() })).catch([]) })
+
+// An MCP result's text and the images it names (see imageMarker) or that were just kept from its
+// bytes; the error's message when it failed.
+function mcpResult(item: Item, kept: readonly ChatImage[] = []): { text: string | null; images: ChatImage[] } {
   if (item.error?.message) return { text: item.error.message, images: [] }
-  const content = z.looseObject({ content: z.array(z.looseObject({ type: z.string().optional(), text: z.string().optional() })).catch([]) }).safeParse(item.result)
+  const content = McpContent.safeParse(item.result)
   const taken = takeImageMarkers(content.success ? content.data.content.map((part) => part.text ?? '').filter(Boolean).join('\n') : '')
-  return { text: taken.text || null, images: taken.images }
+  return { text: taken.text || null, images: [...taken.images, ...kept] }
 }
 
 export class CodexAppServer implements ChatDriver {
@@ -395,6 +400,9 @@ export class CodexAppServer implements ChatDriver {
   private turnUsage: { input: number; output: number } | { total: number } | null = null
   private threadUsage: z.infer<typeof TokenCount> | null = null
   private readonly pending = new Map<string, Pending>()
+  // Images an MCP result carried in its bytes and the store took, by item id, until the log names
+  // them instead (withKeptImages).
+  private readonly keptImages = new Map<string, ChatImage[]>()
   private readonly unanswered = new Map<string, string | number>()
   private turns = 0
   private interrupts = 0
@@ -617,7 +625,29 @@ export class CodexAppServer implements ChatDriver {
       return { method, params: { turnId: usage.data.turnId, tokenUsage: { last: counts(last), total: total ? counts(total) : undefined, modelContextWindow } } }
     }
     const kept = ['thread/started', 'turn/started', 'turn/completed', 'turn/plan/updated', 'item/started', 'item/completed', 'serverRequest/resolved', 'error']
-    return kept.includes(method) ? stripImageBytes(frame) : null
+    return kept.includes(method) ? stripImageBytes(this.withKeptImages(parsed.data)) : null
+  }
+
+  // Stores the pictures an MCP result carries in its bytes (a screenshot), for the card to show.
+  private keepImages(item: Item): ChatImage[] {
+    const keep = this.options.keepImage
+    const result = z.looseObject({ content: z.array(z.unknown()).catch([]) }).safeParse(item.result)
+    if (!keep || !result.success) return []
+    const kept = keepImageBlocks(result.data.content, keep)
+    if (kept.length) this.keptImages.set(item.id, kept)
+    return kept
+  }
+
+  // A completed item as the log keeps it: each picture the store took named by its marker instead.
+  private withKeptImages(frame: Frame): unknown {
+    if (this.keptImages.size === 0 || frame.method !== 'item/completed') return frame
+    const event = ItemEvent.safeParse(frame.params)
+    const kept = event.success ? this.keptImages.get(event.data.item.id) : undefined
+    const result = event.success ? z.looseObject({ content: z.array(z.unknown()) }).safeParse(event.data.item.result) : null
+    if (!event.success || !kept || !result?.success) return frame
+    this.keptImages.delete(event.data.item.id)
+    const item = { ...event.data.item, result: { ...result.data, content: markKeptImages(result.data.content, kept) } }
+    return { ...frame, params: { ...event.data, item } }
   }
 
   takeMessages(): StageMessage[] {
@@ -995,7 +1025,7 @@ export class CodexAppServer implements ChatDriver {
         const name = `${item.server ?? 'mcp'}.${item.tool ?? 'tool'}`
         const browser = browserToolKind(name)
         const first = Object.values(args).find((value) => typeof value === 'string')
-        const result = completed ? mcpResult(item) : { text: null, images: [] }
+        const result = completed ? mcpResult(item, this.keepImages(item)) : { text: null, images: [] }
         const earlier = this.items.get(toolId)
         const images = result.images.length ? result.images : earlier?.kind === 'tool' ? earlier.images : undefined
         this.items.put({
@@ -1026,6 +1056,12 @@ export class CodexAppServer implements ChatDriver {
           resolution: null
         }, at)
         this.pending.set(requestId, { kind: 'plan', itemId: `a:${requestId}`, rawId: requestId, denial: 'decline' })
+        return
+      }
+      case CODEX_IMAGE_VIEW: {
+        // The picture is on disk; the chat shows it from there (toolImagePath).
+        if (!item.path) return
+        this.items.put({ id: toolId, kind: 'tool', name: CODEX_IMAGE_VIEW, title: item.path, input: null, status: completed ? 'done' : 'running', output: null, diffs: [] }, at)
         return
       }
       case 'webSearch': {

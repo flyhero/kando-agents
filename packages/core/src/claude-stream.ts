@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, toolImagePath, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { offeredCommand } from './agent-commands'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
-import { stripImageBytes } from './image-frames'
+import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
 import { messageText, type ChatAnswer, type ChatDriver, type ChatImageFile, type ChatOutgoing, type ChatRecord, type ChatStageOptions, type StageMessage } from './chat-driver'
 import { ChatItems, clip, type UsageLimitHit } from './chat-items'
@@ -310,17 +310,19 @@ function resultDiffs(previous: ChatDiff[], raw: unknown): ChatDiff[] {
   return [{ path: first.path, change, patch: clip(patch, MAX_PATCH) }]
 }
 
-// A result's text, and the images it names (see imageMarker). An image block a marker does not
-// name (a Read of a picture) shows as a placeholder, since its bytes are not kept.
-function toolResult(content: unknown): { text: string; images: ChatImage[] } {
+// A result's text, and the images it names (see imageMarker) or that were just kept from its bytes.
+// An image block neither names (a Read of a picture, which the chat shows from its file) shows as a
+// placeholder, since its bytes are not kept.
+function toolResult(content: unknown, kept: readonly ChatImage[] = []): { text: string; images: ChatImage[] } {
   if (typeof content === 'string') return takeImageMarkers(content)
   if (!Array.isArray(content)) return { text: '', images: [] }
   const blocks = content.map((block) => Block.safeParse(block)).flatMap((parsed) => (parsed.success ? [parsed.data] : []))
   const taken = takeImageMarkers(blocks.map((block) => (block.type === 'image' ? '' : (block.text ?? ''))).filter(Boolean).join('\n'))
+  const images = [...taken.images, ...kept]
   const pictures = blocks.filter((block) => block.type === 'image').length
-  const unnamed = Math.max(0, pictures - taken.images.length)
+  const unnamed = Math.max(0, pictures - images.length)
   const text = [taken.text, ...Array.from({ length: unnamed }, () => '[图片]')].filter(Boolean).join('\n')
-  return { text, images: taken.images }
+  return { text, images }
 }
 
 function resultText(content: unknown): string {
@@ -353,6 +355,9 @@ export class ClaudeStream implements ChatDriver {
   // which the plan it proposes shows in full.
   private readonly hiddenCalls = new Set<string>()
   private readonly planDrafts = new Set<string>()
+  // Images a tool result carried in its bytes and the store took, by tool_use_id, until the log
+  // names them instead (withKeptImages).
+  private readonly keptImages = new Map<string, ChatImage[]>()
   // The user asked the running turn to stop: calls that fail from here on were cut short.
   private stopping = false
   // Blocks of each API message seen as complete frames, and the streamed text items they finish.
@@ -555,7 +560,7 @@ export class ClaudeStream implements ChatDriver {
       }
       case 'user': {
         const user = UserFrame.safeParse(frame)
-        return user.success && user.data.isReplay ? null : stripImageBytes(frame)
+        return user.success && user.data.isReplay ? null : stripImageBytes(this.withKeptImages(frame))
       }
       case 'assistant': {
         // Signatures are opaque and large; the thinking text, when there is any, is what shows.
@@ -849,6 +854,30 @@ export class ClaudeStream implements ChatDriver {
     }, at)
   }
 
+  // Stores the pictures a result carries in its bytes (an MCP screenshot), for the card to show. A
+  // Read of an image file is shown from the file, so its bytes are not copied.
+  private keepImages(toolUseId: string, tool: { name: string; title: string }, content: unknown): ChatImage[] {
+    const keep = this.options.keepImage
+    if (!keep || !Array.isArray(content) || toolImagePath(tool)) return []
+    const kept = keepImageBlocks(content, keep)
+    if (kept.length) this.keptImages.set(toolUseId, kept)
+    return kept
+  }
+
+  // A user frame as the log keeps it: each picture the store took named by its marker instead.
+  private withKeptImages(frame: unknown): unknown {
+    if (this.keptImages.size === 0) return frame
+    const user = UserFrame.safeParse(frame)
+    if (!user.success || typeof user.data.message.content === 'string') return frame
+    const content = user.data.message.content.map((block) => {
+      const kept = block.type === 'tool_result' && block.tool_use_id ? this.keptImages.get(block.tool_use_id) : undefined
+      if (!kept || !block.tool_use_id || !Array.isArray(block.content)) return block
+      this.keptImages.delete(block.tool_use_id)
+      return { ...block, content: markKeptImages(block.content, kept) }
+    })
+    return { ...user.data, message: { ...user.data.message, content } }
+  }
+
   private toolResults(frame: unknown, at: number): void {
     const parsed = UserFrame.safeParse(frame)
     if (!parsed.success || parsed.data.isReplay || parsed.data.parent_tool_use_id) return
@@ -876,7 +905,7 @@ export class ClaudeStream implements ChatDriver {
       }
       const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
       const report = subagent?.success && subagent.data.content ? resultText(subagent.data.content) : null
-      const result = toolResult(block.content)
+      const result = toolResult(block.content, this.keepImages(block.tool_use_id, tool, block.content))
       const output = report ?? result.text.replace(HAND_BACK, '').replace(/^ {2}/gm, '')
       const images = result.images.length ? result.images : 'images' in tool ? tool.images : undefined
       const metrics = subagent?.success && subagent.data.status === 'completed'

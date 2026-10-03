@@ -482,6 +482,17 @@ export class ConversationService {
     return this.changed(this.store.touch(id))
   }
 
+  // A picture a tool returned in its bytes (an MCP screenshot), kept so the chat can show it after
+  // the log has left the bytes out. One the store refuses (too large, not an image) stays a placeholder.
+  private keepImage(data: string): ChatImage | null {
+    try {
+      const { id, width, height } = this.attachments.putSync(Buffer.from(data, 'base64'))
+      return { id, width, height }
+    } catch {
+      return null
+    }
+  }
+
   private chatStage(conversation: Conversation, stage: ConversationStage): ChatStage {
     const chosen = this.store.chatOptions(conversation.id)
     return {
@@ -496,7 +507,8 @@ export class ConversationService {
         planOnly: stage.planOnly ?? false,
         allowBypass: !stage.planOnly && (chosen.allowBypass ?? false),
         promptSuggestions: this.promptSuggestions,
-        preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] }
+        preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] },
+        keepImage: (data) => this.keepImage(data)
       }
     }
   }

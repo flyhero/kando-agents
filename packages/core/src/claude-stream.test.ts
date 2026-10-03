@@ -587,4 +587,32 @@ describe('ClaudeStream usage limits', () => {
     const next = replay([...turn([refused, allowed]), ...turn([failed('API Error: 500')]).slice(0, 1).map((record) => ({ ...record, ref: 'ref-2' })), { dir: 'in', at, frame: failed('API Error: 500') }])
     expect(limits(next)).toEqual([])
   })
+
+  it('keeps a picture a tool returns in its bytes and logs its marker instead; a Read of an image file is left to its path', () => {
+    const id = `${'b'.repeat(64)}.png`
+    const taken: string[] = []
+    const driver = new ClaudeStream('stage-1', { ...OPTIONS, keepImage: (data) => { taken.push(data); return { id, width: 8, height: 6 } } })
+    const call = (useId: string, name: string, input: object) =>
+      ({ type: 'assistant', message: { id: `m-${useId}`, content: [{ type: 'tool_use', id: useId, name, input }] }, parent_tool_use_id: null })
+    const result = (useId: string, content: unknown[]) =>
+      ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: useId, content }] }, parent_tool_use_id: null })
+    const picture = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }
+    const frames = [
+      call('t1', 'mcp__playwright__browser_take_screenshot', {}), result('t1', [picture, { type: 'text', text: 'saved' }]),
+      call('t2', 'Read', { file_path: '/tmp/shot.png' }), result('t2', [picture])
+    ]
+    const logged = frames.map((frame) => {
+      driver.apply({ dir: 'in', at: 1, frame })
+      return driver.logged(frame)
+    })
+    expect(taken).toEqual(['AAAA'])
+    expect(driver.items.get('t:t1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
+    expect(driver.items.get('t:t2')).toMatchObject({ output: '[图片]' })
+    expect(driver.items.get('t:t2')).not.toHaveProperty('images')
+    expect(JSON.stringify(logged)).not.toContain('AAAA')
+    expect(JSON.stringify(logged[1])).toContain(`[kando-image ${id} 8x6]`)
+
+    const replayed = replay(logged.flatMap((frame) => (frame === null ? [] : [{ dir: 'in' as const, at: 1, frame }])))
+    expect(replayed.items.get('t:t1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
+  })
 })

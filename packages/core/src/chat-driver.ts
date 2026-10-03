@@ -58,6 +58,9 @@ export type ChatStageOptions = {
   planOnly?: boolean
   // Whether the agent, one that can, suggests the user's next message after each turn.
   promptSuggestions?: boolean
+  // Stores an image a tool result carries in its bytes (base64), for the chat to show; null when it
+  // cannot. Without it, such an image shows as a placeholder.
+  keepImage?: (data: string) => ChatImage | null
 }
 
 export type ChatPreferences = { permissionMode?: string; model?: string; effort?: string }

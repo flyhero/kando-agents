@@ -720,4 +720,23 @@ describe('CodexAppServer usage limits', () => {
       expect(ofKind(items, 'usageLimit')).toEqual([])
     }
   })
+
+  it('keeps a picture an MCP tool returns in its bytes and logs its marker instead, and shows a view_image by its path', () => {
+    const id = `${'c'.repeat(64)}.png`
+    const driver = new CodexAppServer('stage-1', { ...OPTIONS, keepImage: () => ({ id, width: 8, height: 6 }) })
+    const completed = { method: 'item/completed', params: { item: {
+      type: 'mcpToolCall', id: 'i1', server: 'playwright', tool: 'screenshot', status: 'completed', arguments: {},
+      result: { content: [{ type: 'image', data: 'AAAA', mimeType: 'image/png' }, { type: 'text', text: 'saved' }] }
+    } } }
+    driver.apply({ dir: 'in', at: 1, frame: completed })
+    expect(driver.items.get('t:i1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
+    const logged = driver.logged(completed)
+    expect(JSON.stringify(logged)).not.toContain('AAAA')
+    expect(JSON.stringify(logged)).toContain(`[kando-image ${id} 8x6]`)
+    const replayed = replay([{ dir: 'in', at: 1, frame: logged }])
+    expect(replayed.items.get('t:i1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
+
+    driver.apply({ dir: 'in', at: 2, frame: { method: 'item/completed', params: { item: { type: 'imageView', id: 'i2', path: '/tmp/shot.png' } } } })
+    expect(driver.items.get('t:i2')).toMatchObject({ kind: 'tool', name: 'imageView', title: '/tmp/shot.png', status: 'done' })
+  })
 })

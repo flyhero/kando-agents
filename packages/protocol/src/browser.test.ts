@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BrowserInputEvent, browserHostOf, describeBrowserPage, isLocalHost, normalizeBrowserUrl, parseBrowserPage } from './browser'
-import { browserToolKind, imageMarker, isBrowserTool, isPreviewImage, isPreviewTool, kandoToolName, takeImageMarkers } from './chat'
+import { browserToolKind, imageMarker, isBrowserTool, isPreviewImage, isPreviewTool, kandoToolName, takeImageMarkers, toolImagePath } from './chat'
 
 describe('isLocalHost', () => {
   it('takes the names a developer serves on', () => {
@@ -23,6 +23,14 @@ describe('tool names', () => {
     expect(kandoToolName('Bash')).toBeNull()
     expect(kandoToolName('mcp__other__browser_click')).toBeNull()
     expect(isPreviewTool('kando.show_preview')).toBe(true)
+  })
+
+  it('shows a picture a call looked at on disk from the file, for a Read or a view_image alone', () => {
+    expect(toolImagePath({ name: 'Read', title: '/tmp/shot.png' })).toBe('/tmp/shot.png')
+    expect(toolImagePath({ name: 'imageView', title: '/tmp/shot.JPG' })).toBe('/tmp/shot.JPG')
+    expect(toolImagePath({ name: 'Read', title: '/tmp/notes.md' })).toBeNull()
+    expect(toolImagePath({ name: 'Read', title: 'shot.png' })).toBeNull()
+    expect(toolImagePath({ name: 'Bash', title: '/tmp/shot.png' })).toBeNull()
   })
 
   it('shows a picture as an image and a page or an SVG in a frame', () => {

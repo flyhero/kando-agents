@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { stripImageBytes } from './image-frames'
+import { imageBlockData, keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 
 describe('stripImageBytes', () => {
   it('empties image data wherever it sits, keeping the frame\'s shape', () => {
@@ -18,5 +18,30 @@ describe('stripImageBytes', () => {
   it('returns a frame without images as it was', () => {
     const frame = { type: 'assistant', message: { content: [{ type: 'text', text: 'hi' }] } }
     expect(stripImageBytes(frame)).toBe(frame)
+  })
+})
+
+describe('kept images', () => {
+  const claude = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }
+  const mcp = { type: 'image', data: 'BBBB', mimeType: 'image/png' }
+  const text = { type: 'text', text: 'saved' }
+  const image = (n: string) => ({ id: `${n.repeat(64)}.png`, width: 2, height: 1 })
+
+  it('reads the bytes of either shape of image block, and none of an emptied one or other blocks', () => {
+    expect([claude, mcp, text, { ...mcp, data: '' }, null].map(imageBlockData)).toEqual(['AAAA', 'BBBB', null, null, null])
+  })
+
+  it('keeps each image the store takes, in order, skipping one it refuses', () => {
+    const kept = keepImageBlocks([claude, text, mcp], (data) => (data === 'AAAA' ? image('a') : null))
+    expect(kept).toEqual([image('a')])
+  })
+
+  it('puts the marker of each kept image where its block was, leaving the rest', () => {
+    expect(markKeptImages([claude, text, mcp], [image('a'), image('b')])).toEqual([
+      { type: 'text', text: `[kando-image ${'a'.repeat(64)}.png 2x1]` },
+      text,
+      { type: 'text', text: `[kando-image ${'b'.repeat(64)}.png 2x1]` }
+    ])
+    expect(markKeptImages([claude, mcp], [image('a')])).toEqual([{ type: 'text', text: `[kando-image ${'a'.repeat(64)}.png 2x1]` }, mcp])
   })
 })

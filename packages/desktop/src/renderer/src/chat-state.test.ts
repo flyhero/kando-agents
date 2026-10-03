@@ -125,6 +125,13 @@ describe('chatBlocks', () => {
       .toEqual(['u', 'tools:a+b', 'e', 'tools:c', 'r'])
   })
 
+  it('gives a call that looked at a picture, or brought one back, a card of its own', () => {
+    const read = { ...tool('/tmp/shot.png'), id: 'p' }
+    const shot = { ...tool('s', 'mcp__playwright__screenshot'), images: [{ id: `${'a'.repeat(64)}.png`, width: 2, height: 1 }] }
+    expect(shape(blocksOf([user('u'), tool('a'), read, tool('b'), shot, tool('c'), reply('r')])))
+      .toEqual(['u', 'tools:a', 'p', 'tools:b', 's', 'tools:c', 'r'])
+  })
+
   // The turn's own line follows the answer: how it ended reads there, the fold only how it worked.
   it('folds a finished turn\'s work behind one line and leaves its answer and ending in view', () => {
     expect(shape(blocksOf([user('u'), reply('looking'), thought('t', 'hm'), tool('a'), tool('b'), reply('answer'), turn('end')])))

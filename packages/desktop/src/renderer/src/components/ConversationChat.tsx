@@ -1,7 +1,7 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isBrowserTool, isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
+import { isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
 import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
-import { ChatBrowserCard } from './ChatBrowserCard'
+import { ChatBrowserCard, ChatShotCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
@@ -191,7 +191,9 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'reasoning':
       return <Reasoning item={item} />
     case 'tool':
-      return isPreviewTool(item.name) ? <ChatPreviewCard conversationId={conversationId} item={item} /> : isBrowserTool(item.name) ? <ChatBrowserCard item={item} /> : <ChatToolCard item={item} />
+      if (isPreviewTool(item.name)) return <ChatPreviewCard conversationId={conversationId} item={item} />
+      if (isBrowserTool(item.name)) return <ChatBrowserCard item={item} />
+      return item.images?.length || toolImagePath(item) ? <ChatShotCard item={item} /> : <ChatToolCard item={item} />
     case 'approval':
       return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine item={item} />
     case 'question':
