@@ -374,6 +374,13 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
+  // A task's conversation is listed under its task, so only a free one is pinned.
+  setPinned(id: string, pinned: boolean): Conversation {
+    const current = this.free(id)
+    if ((current.pinnedAt != null) === pinned) return current
+    return this.changed(this.store.setPinned(id, pinned))
+  }
+
   // Readies the agent for a message: one already up stays as it is.
   async continue(id: string, allowBypass?: boolean): Promise<Conversation> {
     const current = this.free(id)

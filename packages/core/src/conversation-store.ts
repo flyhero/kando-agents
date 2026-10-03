@@ -10,7 +10,7 @@ const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
   updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt,
   (SELECT plan_only FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS planOnly,
-  task_id AS taskId
+  task_id AS taskId, pinned_at AS pinnedAt
   FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
@@ -130,6 +130,12 @@ export class ConversationStore {
       this.db.prepare(`UPDATE conversations SET ${entries.map(([key]) => `${key} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
         .run(...entries.map(([, value]) => value), this.now(), id)
     }
+    return this.get(id)!
+  }
+
+  // Leaves updated_at alone: pinning is not activity, and would reorder the list by recency.
+  setPinned(id: string, pinned: boolean): Conversation {
+    this.db.prepare('UPDATE conversations SET pinned_at = ? WHERE id = ?').run(pinned ? this.now() : null, id)
     return this.get(id)!
   }
 

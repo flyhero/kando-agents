@@ -147,6 +147,22 @@ describe('ConversationService', () => {
     expect(projects.recent()).toEqual([project])
   })
 
+  it('pins and unpins a conversation without counting it as activity, but not a task\'s', () => {
+    const events: ConversationEvent[] = []
+    service = serve((event) => events.push(event))
+    const created = store.create('claude', root, [root])
+    const pinned = service.setPinned(created.id, true)
+    expect(pinned.pinnedAt).toEqual(expect.any(Number))
+    expect(pinned.updatedAt).toBe(created.updatedAt)
+    expect(events).toEqual([{ type: 'changed', conversation: pinned }])
+    expect(service.setPinned(created.id, true).pinnedAt).toBe(pinned.pinnedAt)
+    expect(events).toHaveLength(1)
+    expect(service.setPinned(created.id, false).pinnedAt).toBeNull()
+
+    const task = store.create('claude', root, [root], randomUUID(), {}, { id: randomUUID(), title: 'Task' })
+    expect(() => service.setPinned(task.id, true)).toThrow(expect.objectContaining({ reason: 'task-conversation' }))
+  })
+
   it('passes only unseen messages on a return handoff, which resumes the first agent under the title the user gave', async () => {
     const created = await service.create('claude', [root])
     const [first] = service.stages(created.id)

@@ -191,7 +191,9 @@ export const MIGRATIONS = [
    ALTER TABLE conversations DROP COLUMN output_offset;
    ALTER TABLE conversation_stages DROP COLUMN mode;
    ALTER TABLE agent_runs DROP COLUMN view;
-   ALTER TABLE agent_runs DROP COLUMN exit_code;`
+   ALTER TABLE agent_runs DROP COLUMN exit_code;`,
+  // When the user pinned a conversation to the top of the list.
+  `ALTER TABLE conversations ADD COLUMN pinned_at INTEGER;`
 ]
 
 

@@ -44,7 +44,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // conversation-stats: core keeps each chat turn and reports what each agent's cost (agents.conversationStats).
 // prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
 // environment: core checks for git and the agent CLIs on its path (system.environment).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -136,6 +136,8 @@ export const rpcMethods = {
     result: Conversation
   },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
+  // Keeps it at the top of the conversation list, without counting as activity.
+  'conversations.setPinned': { params: ConversationRef.extend({ pinned: z.boolean() }), result: Conversation },
   'conversations.continue': { params: ConversationRef.extend({ allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {
     params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), allowBypass: AllowBypass }),

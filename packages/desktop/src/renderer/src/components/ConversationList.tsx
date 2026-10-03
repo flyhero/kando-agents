@@ -39,19 +39,23 @@ function groupOf(conversation: Conversation, by: Exclude<GroupBy, 'none'>): { la
   }
 }
 
-type Group = { label: string | null; rank: number; items: Conversation[] }
+type Group = { key: string; label: string | null; rank: number; items: Conversation[] }
 
+// Pinned conversations come first, in a group of their own, whatever the grouping.
 function arrange(conversations: Conversation[], by: GroupBy, sort: SortBy): Group[] {
   const sorted = [...conversations].sort(COMPARE[sort])
-  if (by === 'none') return [{ label: null, rank: 0, items: sorted }]
+  const pinned = sorted.filter((conversation) => conversation.pinnedAt != null)
+  const rest = sorted.filter((conversation) => conversation.pinnedAt == null)
+  const top: Group[] = pinned.length > 0 ? [{ key: 'pinned', label: '已置顶', rank: -1, items: pinned }] : []
+  if (by === 'none') return rest.length > 0 ? [...top, { key: 'all', label: null, rank: 0, items: rest }] : top
   const groups = new Map<string, Group>()
-  for (const conversation of sorted) {
+  for (const conversation of rest) {
     const { label, rank } = groupOf(conversation, by)
-    const group = groups.get(label) ?? { label, rank, items: [] }
+    const group = groups.get(label) ?? { key: `group:${label}`, label, rank, items: [] }
     group.items.push(conversation)
     groups.set(label, group)
   }
-  return [...groups.values()].sort((a, b) => a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '', 'zh-CN'))
+  return [...top, ...[...groups.values()].sort((a, b) => a.rank - b.rank || (a.label ?? '').localeCompare(b.label ?? '', 'zh-CN'))]
 }
 
 // By title or project name, ignoring case. Message text is searched by core.
@@ -246,8 +250,8 @@ export function ConversationList() {
       {all.length === 0 ? <p className="task-list-empty">还没有会话，点右上角的 ＋ 新建。</p> :
         visible.length === 0 ? snippets && <p className="task-list-empty">没有找到匹配「{needle}」的会话。</p> :
         groups.map((group) => group.label === null
-          ? <ul key="all">{group.items.map(row)}</ul>
-          : <section key={group.label} className="conversation-group" aria-label={group.label}>
+          ? <ul key={group.key}>{group.items.map(row)}</ul>
+          : <section key={group.key} className="conversation-group" aria-label={group.label}>
             <h3 className="conversation-group-title">{group.label}<span className="count">{group.items.length}</span></h3>
             <ul>{group.items.map(row)}</ul>
           </section>)}

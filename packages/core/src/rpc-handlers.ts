@@ -87,6 +87,7 @@ export function createRpcHandlers(
     'conversations.chatCatalog': ({ agent }) => conversations.chatCatalog(agent),
     'conversations.setAdditionalProjects': ({ id, projectPaths }) => conversations.setAdditionalProjects(id, projectPaths),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
+    'conversations.setPinned': ({ id, pinned }) => conversations.setPinned(id, pinned),
     'conversations.continue': ({ id, allowBypass }) => userActed(id, () => conversations.continue(id, allowBypass)),
     'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, allowBypass),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },

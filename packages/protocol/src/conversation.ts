@@ -32,9 +32,11 @@ export const Conversation = z.object({
   // The task this conversation runs, which keeps it out of the free conversations. Older cores leave it out.
   taskId: z.string().nullable().optional(),
   // Whether its latest stage may only plan: read-only, the plan kept rather than carried out.
-  planOnly: z.boolean().optional()
+  planOnly: z.boolean().optional(),
+  // When the user pinned it to the top of the list; null when it is not pinned. Older cores leave it out.
+  pinnedAt: z.number().nullable().optional()
 })
-export type Conversation = z.infer<typeof Conversation>
+export type Conversation= z.infer<typeof Conversation>
 
 export const ConversationStage = z.object({
   id: z.string().uuid(),

@@ -1,5 +1,5 @@
 import type { Conversation } from '@kando/protocol'
-import { openConversationDraft, perform, useCore } from '../core-store'
+import { openConversationDraft, perform, useConversationPinSupported, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
@@ -30,6 +30,10 @@ export function renameConversation(id: string, title: string) {
   return perform((rpc) => rpc.call('conversations.rename', { id, title }))
 }
 
+export function pinConversation(id: string, pinned: boolean) {
+  return perform((rpc) => rpc.call('conversations.setPinned', { id, pinned }))
+}
+
 export async function deleteConversation(conversation: Conversation): Promise<boolean> {
   if (!window.confirm('删除这条会话及其聊天记录？项目目录或 Kando 托管目录都会保留，不会改动其中的文件。')) return false
   return (await perform((rpc) => rpc.call('conversations.delete', { id: conversation.id }))) !== null
@@ -49,11 +53,14 @@ export function ConversationContextMenu({ conversation, at, onClose, onRename, o
   }
   // Offered only while another agent is installed to take the work.
   const other = otherInstalledAgent(conversation.agent, useInstalledAgents())
+  const pinnable = useConversationPinSupported() && !conversation.taskId
+  const pinned = conversation.pinnedAt != null
   return (
     <ContextMenu at={at} label={`会话「${conversation.title}」的操作`} onClose={onClose}>
       {conversation.sessionId && <MenuItem label="停止会话" onSelect={pick(() => void stopConversation(conversation.id))} />}
       {other && <MenuItem label="移交给其他智能体…" onSelect={pick(onHandoff)} />}
       <div className="menu-separator" role="separator" />
+      {pinnable && <MenuItem label={pinned ? '取消置顶' : '置顶'} onSelect={pick(() => void pinConversation(conversation.id, !pinned))} />}
       <MenuItem label="重命名" onSelect={pick(onRename)} />
       <div className="menu-separator" role="separator" />
       <MenuItem label="删除会话" danger onSelect={pick(() => void deleteConversation(conversation))} />

@@ -77,8 +77,9 @@ describe('TaskStore migrations', () => {
   it('drops what the terminal view left: tasks run there with their runs, terminal stages, and conversations with no other', () => {
     const raw = new DatabaseSync(file)
     raw.exec('PRAGMA foreign_keys = ON')
-    MIGRATIONS.slice(0, -1).forEach((sql) => raw.exec(sql))
-    raw.exec(`PRAGMA user_version = ${MIGRATIONS.length - 1}`)
+    const dropTerminal = MIGRATIONS.findIndex((sql) => sql.includes('DROP COLUMN output_offset'))
+    MIGRATIONS.slice(0, dropTerminal).forEach((sql) => raw.exec(sql))
+    raw.exec(`PRAGMA user_version = ${dropTerminal}`)
     const task = raw.prepare("INSERT INTO tasks (id, title, status, agent, session_id, created_at, updated_at) VALUES (?, ?, ?, 'claude', ?, 0, 0)")
     task.run('terminal-done', 'Ran in a terminal', 'done', 'pty-1')
     task.run('refined', 'Only refined', 'pending', null)
