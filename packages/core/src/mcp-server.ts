@@ -2,7 +2,7 @@ import readline from 'node:readline'
 import { stat } from 'node:fs/promises'
 import { extname, isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { connectRpc, coreUrl, PREVIEW_EXTENSIONS, SHOW_PREVIEW_TOOL, type RpcConnection } from '@kando/protocol'
+import { connectRpc, coreUrl, isPreviewImage, PREVIEW_EXTENSIONS, SHOW_PREVIEW_TOOL, type RpcConnection } from '@kando/protocol'
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
 import { AttachmentStore } from './attachment-store'
 import { BROWSER_ARGUMENTS, BROWSER_TOOL_SPECS, browserToolsOverCore, type BrowserTools, type ToolOutcome } from './mcp-browser-tools'
@@ -26,15 +26,16 @@ const FALLBACK_PROTOCOL_VERSION = '2025-06-18'
 
 const PREVIEW_TOOL = {
   name: SHOW_PREVIEW_TOOL,
-  title: '在对话里展示 HTML 或 SVG 文件',
+  title: '在对话里展示网页或图片',
   description:
-    '把你写好的 HTML 或 SVG 文件直接渲染在用户的对话里，用户能看到、能点，不需要截图。' +
-    '做完样稿、原型、图表想让用户看时调用；中间产物不要调。文件要已经写到磁盘上，用绝对路径。' +
-    '文件里可以用相对路径引用同目录的样式和图片；页面跟随用户的浅色/深色主题，不能访问网络。',
+    '把磁盘上的文件直接展示在用户的对话里：HTML 或 SVG 渲染成页面，用户能看到、能点；' +
+    'PNG、JPEG、GIF、WebP 显示成图片，用户点开能放大。做完样稿、原型、图表，或截了图想让用户看时调用；中间产物不要调。' +
+    '文件要已经写到磁盘上，用绝对路径。HTML 里可以用相对路径引用同目录的样式和图片；页面跟随用户的浅色/深色主题，不能访问网络。' +
+    '要给用户看截图就用它，不要只在回复里写文件路径。',
   inputSchema: {
     type: 'object',
     properties: {
-      path: { type: 'string', description: '文件的绝对路径，.html / .htm / .svg' },
+      path: { type: 'string', description: '文件的绝对路径：.html / .htm / .svg，或 .png / .jpg / .jpeg / .gif / .webp' },
       title: { type: 'string', description: '给用户看的标题，可选' }
     },
     required: ['path'],
@@ -44,7 +45,7 @@ const PREVIEW_TOOL = {
 } as const
 
 export type McpTools = {
-  // Checks the file may be shown (it exists, and is HTML or SVG); throws with the reason if not.
+  // Checks the file may be shown (it exists, and is a page, an SVG or a picture); throws with the reason if not.
   preview: (path: string) => Promise<void>
   // The browser tools, there when the server was started for a conversation.
   browser?: BrowserTools
@@ -85,7 +86,9 @@ function toolTable({ preview, browser }: McpTools): ToolEntry[] {
         if (!args.success) return textResult('path 需要是文件的绝对路径。', true)
         try {
           await preview(args.data.path)
-          return textResult('已在对话里展示给用户，不用再截图。用户会在这一条下面看到页面。')
+          return textResult(isPreviewImage(args.data.path)
+            ? '已在对话里展示给用户。用户会在这一条下面看到这张图片。'
+            : '已在对话里展示给用户，不用再截图。用户会在这一条下面看到页面。')
         } catch (error) {
           return textResult(`没能展示：${describe(error)}`, true)
         }
@@ -158,7 +161,7 @@ export function createMcpHandler(tools: McpTools) {
 export async function checkPreviewFile(path: string): Promise<void> {
   if (!isAbsolute(path)) throw new Error('要用绝对路径')
   const extension = extname(path).slice(1).toLowerCase()
-  if (!PREVIEW_EXTENSIONS.has(extension)) throw new Error('只能展示 .html、.htm 或 .svg 文件')
+  if (!PREVIEW_EXTENSIONS.has(extension)) throw new Error('只能展示 .html、.htm、.svg，或 .png、.jpg、.jpeg、.gif、.webp 图片')
   const info = await stat(path).catch(() => null)
   if (!info?.isFile()) throw new Error(`文件不存在：${path}`)
 }

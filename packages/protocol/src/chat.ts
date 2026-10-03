@@ -224,9 +224,14 @@ export function kandoToolName(name: string): string | null {
   return null
 }
 
-// Shows the user an HTML or SVG file the agent wrote, in the conversation.
+// Shows the user a file the agent wrote, in the conversation: an HTML page or an SVG in a frame of
+// its own, a picture (a screenshot, a chart it rendered) as an image.
 export const SHOW_PREVIEW_TOOL = 'show_preview'
-export const PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm', 'svg'])
+export const PREVIEW_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp'])
+export const PREVIEW_EXTENSIONS: ReadonlySet<string> = new Set(['html', 'htm', 'svg', ...PREVIEW_IMAGE_EXTENSIONS])
+export function isPreviewImage(path: string): boolean {
+  return PREVIEW_IMAGE_EXTENSIONS.has(path.split('.').at(-1)?.toLowerCase() ?? '')
+}
 export function isPreviewTool(name: string): boolean {
   return kandoToolName(name) === SHOW_PREVIEW_TOOL
 }

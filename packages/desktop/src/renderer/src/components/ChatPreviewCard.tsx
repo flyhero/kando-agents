@@ -1,6 +1,8 @@
 import { useContext, useState } from 'react'
-import type { ChatItem } from '@kando/protocol'
+import { isPreviewImage, type ChatItem } from '@kando/protocol'
 import { canRevealFile, revealFile } from '../desktop-bridge'
+import { previewUrl } from '../file-links'
+import { LocalImageViewer } from './ChatMarkdown'
 import { ChatPaths } from './ChatToolCard'
 import { RefreshIcon } from './icons'
 
@@ -21,10 +23,25 @@ function previewArgs(item: ToolItem): { path: string; title: string | null } {
   return { path: item.title, title: null }
 }
 
-// A file the agent asked to show, rendered where it asked: in a frame that is a page of its own,
-// with no way to the app around it or to the network (main's kando-preview protocol sets the
-// policy), following the app's light or dark scheme. It reads the file as it stands now, so a
-// later edit shows on refresh.
+// A picture the agent asked to show: fitted to the card, opened full size on a click.
+function PreviewImage({ path, src, label }: { path: string; src: string; label: string }) {
+  const [viewing, setViewing] = useState(false)
+  const [missing, setMissing] = useState(false)
+  if (missing) return <p className="chat-preview-note muted">图片不在了：{path}</p>
+  return (
+    <>
+      <button type="button" className="chat-preview-image" aria-label={`查看图片 ${label}`} onClick={() => setViewing(true)}>
+        <img src={src} alt="" draggable={false} onError={() => setMissing(true)} />
+      </button>
+      {viewing && <LocalImageViewer images={[{ path, src }]} index={0} onIndex={() => {}} onClose={() => setViewing(false)} />}
+    </>
+  )
+}
+
+// A file the agent asked to show, rendered where it asked. A page or an SVG is a frame that is a
+// page of its own, with no way to the app around it or to the network (main's kando-preview
+// protocol sets the policy), following the app's light or dark scheme; a picture is an image. It
+// reads the file as it stands now, so a later edit shows on refresh.
 export function ChatPreviewCard({ item }: { item: ToolItem }) {
   const { path, title } = previewArgs(item)
   const shorten = useContext(ChatPaths)
@@ -45,7 +62,9 @@ export function ChatPreviewCard({ item }: { item: ToolItem }) {
       </div>
       {refused
         ? <p className="chat-preview-note muted">{item.output ?? '没能展示这个文件。'}</p>
-        : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" />}
+        : isPreviewImage(path)
+          ? <PreviewImage key={generation} path={path} src={`${previewUrl(path)}?v=${generation}`} label={title ?? path} />
+          : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" />}
     </div>
   )
 }

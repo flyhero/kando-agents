@@ -11,6 +11,12 @@
   - agent 自己的命令：Claude Code 列出它报告的全部命令（内置命令、`.claude/commands` 和技能），原样发给它。Codex 的 app-server 不认斜杠命令，Kando 提供 `/compact`（压缩上下文）、`/review [分支]`（审查未提交的改动，或与给定分支之间的改动）和每个启用的技能（随消息带上这个技能）。
 - 新增 RPC `chatCommands.*`、通知 `chatCommands.changed` 和 core 特性 `chat-commands`，旧 core 上没有「我的命令」和这一页设置。stage 的 `state` 多了可选字段 `commands`，旧 core 不报时列表里只有自己的命令。
 
+## 未发布
+
+### 新功能
+
+- `show_preview` 能展示图片了：除了 HTML 和 SVG，agent 现在也可以把 PNG、JPEG、GIF、WebP 文件直接展示在对话里，比如它截的图或画好的图表。图片按卡片宽度显示，点开放大；文件被删了会说「图片不在了」，改了点「重新加载」看新的。工具说明里也告诉 agent：要给你看截图就用它，不要只在回复里写路径。
+
 ## 0.12.0 — 2026-10-03
 
 ### 改进

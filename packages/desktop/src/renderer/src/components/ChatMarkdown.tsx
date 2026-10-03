@@ -44,7 +44,7 @@ function FileLink({ reference, code = true, children }: { reference: FileReferen
   )
 }
 
-type LocalImage = { path: string; src: string }
+export type LocalImage = { path: string; src: string }
 
 // An image file a reply names, read through main's preview protocol: one with an absolute path, or
 // a relative one under the conversation's primary folder, where the agent works.
@@ -59,7 +59,7 @@ function viewerImage(image: LocalImage): ViewerImage {
 }
 
 // The viewer is a modal of its own; portaled, it never ends up inside the paragraph that opened it.
-function LocalImageViewer({ images, index, onIndex, onClose }: {
+export function LocalImageViewer({ images, index, onIndex, onClose }: {
   images: readonly LocalImage[]
   index: number
   onIndex: (index: number) => void

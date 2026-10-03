@@ -45,17 +45,21 @@ describe('kando MCP server', () => {
     expect(unknown?.error?.code).toBe(-32602)
   })
 
-  it('shows an HTML file that exists and refuses anything else', async () => {
+  it('shows an HTML file or a picture that exists, and refuses anything else', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'kando-preview-'))
     try {
       const page = path.join(dir, 'index.html')
       writeFileSync(page, '<h1>hi</h1>')
       const ok = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: page } }))
-      expect(ok?.result).toMatchObject({ isError: false })
+      expect(ok?.result).toMatchObject({ isError: false, content: [{ text: expect.stringContaining('页面') }] })
+      const shot = path.join(dir, 'Shot.PNG')
+      writeFileSync(shot, 'png bytes')
+      const picture = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: shot } }))
+      expect(picture?.result).toMatchObject({ isError: false, content: [{ text: expect.stringContaining('图片') }] })
       const missing = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: path.join(dir, 'gone.html') } }))
       expect(missing?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('文件不存在') }] })
       const other = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: path.join(dir, 'notes.md') } }))
-      expect(other?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('.html') }] })
+      expect(other?.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('.png') }] })
       const relative = await handle(frame('tools/call', { name: 'show_preview', arguments: { path: 'index.html' } }))
       expect(relative?.result).toMatchObject({ isError: true })
     } finally {

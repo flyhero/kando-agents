@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BrowserInputEvent, browserHostOf, describeBrowserPage, isLocalHost, normalizeBrowserUrl, parseBrowserPage } from './browser'
-import { browserToolKind, imageMarker, isBrowserTool, isPreviewTool, kandoToolName, takeImageMarkers } from './chat'
+import { browserToolKind, imageMarker, isBrowserTool, isPreviewImage, isPreviewTool, kandoToolName, takeImageMarkers } from './chat'
 
 describe('isLocalHost', () => {
   it('takes the names a developer serves on', () => {
@@ -23,6 +23,13 @@ describe('tool names', () => {
     expect(kandoToolName('Bash')).toBeNull()
     expect(kandoToolName('mcp__other__browser_click')).toBeNull()
     expect(isPreviewTool('kando.show_preview')).toBe(true)
+  })
+
+  it('shows a picture as an image and a page or an SVG in a frame', () => {
+    expect(isPreviewImage('/tmp/shot.PNG')).toBe(true)
+    expect(isPreviewImage('/tmp/chart.webp')).toBe(true)
+    expect(isPreviewImage('/tmp/chart.svg')).toBe(false)
+    expect(isPreviewImage('/tmp/index.html')).toBe(false)
   })
 
   it('knows the browser tools and no other', () => {
