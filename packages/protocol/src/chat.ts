@@ -58,6 +58,16 @@ export const ChatModel = z.object({
 })
 export type ChatModel = z.infer<typeof ChatModel>
 
+// A slash command the agent offers: the composer sends it as the text `/name args`, and the
+// driver passes it on in whatever form its agent takes.
+export const ChatCommand = z.object({
+  name: z.string(),
+  description: z.string(),
+  // What the command takes after its name ("[branch]"), or null when it takes nothing.
+  argumentHint: z.string().nullable()
+})
+export type ChatCommand = z.infer<typeof ChatCommand>
+
 // What an agent offers a chat before one starts: the models it lists, its default among them.
 export const ChatCatalog = z.object({ models: z.array(ChatModel) })
 export type ChatCatalog = z.infer<typeof ChatCatalog>
@@ -199,7 +209,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     queued: z.object({ text: z.string(), held: z.boolean(), images: z.array(ChatImage).default([]) }).nullable(),
     queue: z.array(ChatQueued).default([]),
     // Whether the agent takes a message into a running turn (Claude Code does, Codex does not).
-    steerable: z.boolean().default(false)
+    steerable: z.boolean().default(false),
+    // The slash commands the agent offers; older cores leave it out.
+    commands: z.array(ChatCommand).default([])
   })
 ])
 export type ChatItem = z.infer<typeof ChatItem>

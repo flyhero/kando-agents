@@ -8,6 +8,8 @@ import { ChatItems, clip, type UsageLimitHit } from './chat-items'
 import { ChatQueue } from './chat-queue'
 import { StageState } from './chat-stage-state'
 import { Rejection } from './rejection'
+import { codexCommand, codexCommands, commandRequest, requestText, type CodexSkill } from './codex-commands'
+import { offeredCommand } from './agent-commands'
 import { windowOf } from './codex-usage'
 import { mergeUsageReports, type UsageReport } from './usage-source'
 
@@ -143,6 +145,16 @@ const ModelEntry = z.looseObject({
 })
 type ModelEntry = z.infer<typeof ModelEntry>
 const ModelList = z.looseObject({ data: z.array(z.unknown()).catch([]) })
+const SkillsList = z.looseObject({ data: z.array(z.looseObject({ skills: z.array(z.unknown()).catch([]) })).catch([]) })
+const SkillEntry = z.looseObject({
+  name: z.string().min(1),
+  description: z.string().nullish(),
+  shortDescription: z.string().nullish(),
+  path: z.string(),
+  enabled: z.boolean().optional()
+})
+// The requests that start a turn: a message, and the commands Kando offers.
+const TURN_METHODS: ReadonlySet<string> = new Set(['turn/start', 'thread/compact/start', 'review/start'])
 // Of the effective config, only the model: the rest may hold secrets and stays out of the log.
 const ConfigRead = z.looseObject({ config: z.looseObject({ model: z.string().nullish() }) })
 const ErrorEvent = z.looseObject({
@@ -394,6 +406,8 @@ export class CodexAppServer implements ChatDriver {
   private readonly queue = new ChatQueue()
   private modelsRequested = false
   private configRequested = false
+  private skillsRequested = false
+  private skills: CodexSkill[] = []
   private catalog: ModelEntry[] = []
   // The model config.toml names, which a thread runs when none is chosen, over the catalog's default.
   private configModel: string | null = null
@@ -466,6 +480,7 @@ export class CodexAppServer implements ChatDriver {
     if (!this.threadRequested) frames.push(this.openThread())
     if (!this.modelsRequested) frames.push({ id: 'kando-models', method: 'model/list', params: {} })
     if (!this.configRequested) frames.push({ id: 'kando-config', method: 'config/read', params: { cwd: this.options.cwd } })
+    if (!this.skillsRequested) frames.push({ id: 'kando-skills', method: 'skills/list', params: { cwds: [this.options.cwd] } })
     return frames
   }
 
@@ -493,7 +508,14 @@ export class CodexAppServer implements ChatDriver {
   send(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
     if (!this.ready() || !this.threadId) throw new Rejection('chat-starting', 'the agent is still starting')
     if (this.turn) throw new Rejection('chat-busy', 'the agent is still working on the last message')
-    const frame = this.turnStart(this.threadId, text, this.chosen.permissionMode, images)
+    const command = codexCommand(text, this.skills)
+    if (command && command.kind !== 'skill') {
+      if (images.length > 0) throw new Rejection('chat-command-images', `/${command.kind} takes no images`)
+      const frame = commandRequest(command, `kando-turn-${this.turns + 1}`, this.threadId)
+      return { wire: frame, logged: frame }
+    }
+    const skill = command?.kind === 'skill' ? { type: 'skill', name: command.skill.name, path: command.skill.path } : null
+    const frame = this.turnStart(this.threadId, text, this.chosen.permissionMode, images, skill)
     return { wire: frame, logged: frame }
   }
 
@@ -506,9 +528,10 @@ export class CodexAppServer implements ChatDriver {
     return false
   }
 
-  private turnStart(threadId: string, text: string, permissionMode: string | undefined, images: readonly ChatImageFile[] = []): unknown {
+  private turnStart(threadId: string, text: string, permissionMode: string | undefined, images: readonly ChatImageFile[] = [], skill: unknown = null): unknown {
     const input = [
       ...(text || images.length === 0 ? [{ type: 'text', text, text_elements: [] }] : []),
+      ...(skill ? [skill] : []),
       ...images.map((image) => ({ type: 'localImage', path: image.path }))
     ]
     return {
@@ -623,8 +646,9 @@ export class CodexAppServer implements ChatDriver {
       return { id: frame.id, result: { data: list.success ? this.modelEntries(list.data.data) : [] } }
     }
     if (method === 'config/read') return { id: frame.id, result: { config: { model: ConfigRead.safeParse(frame.result).data?.config.model ?? null } } }
+    if (method === 'skills/list') return { id: frame.id, result: { data: [{ skills: this.skillEntries(frame.result) }] } }
     const turn = TurnEvent.safeParse(frame.result)
-    if (method === 'turn/start' && turn.success) return { id: frame.id, result: { turn: { id: turn.data.turn.id } } }
+    if (method && TURN_METHODS.has(method)) return { id: frame.id, result: turn.success ? { turn: { id: turn.data.turn.id } } : {} }
     return method === 'initialize' ? { id: frame.id, result: {} } : frame
   }
 
@@ -634,6 +658,18 @@ export class CodexAppServer implements ChatDriver {
       if (!entry.success || entry.data.hidden) return []
       const { id, displayName, description, isDefault, supportedReasoningEfforts, defaultReasoningEffort } = entry.data
       return [{ id, displayName, description, isDefault, supportedReasoningEfforts, defaultReasoningEffort }]
+    })
+  }
+
+  // The skills the user may call on, a line of what each does: the log keeps no more.
+  private skillEntries(result: unknown): CodexSkill[] {
+    const list = SkillsList.safeParse(result)
+    if (!list.success) return []
+    return list.data.data.flatMap((entry) => entry.skills).flatMap((raw) => {
+      const skill = SkillEntry.safeParse(raw)
+      if (!skill.success || skill.data.enabled === false) return []
+      const { name, path, shortDescription, description } = skill.data
+      return [{ name, path, description: offeredCommand(name, shortDescription ?? description, null).description }]
     })
   }
 
@@ -651,6 +687,7 @@ export class CodexAppServer implements ChatDriver {
       queued: this.queue.first,
       queue: this.queue.view,
       steerable: false,
+      commands: codexCommands(this.skills),
       models,
       model: this.model,
       // A thread on its model's default effort reports none.
@@ -752,7 +789,9 @@ export class CodexAppServer implements ChatDriver {
       if (list.success) this.catalog = this.modelEntries(list.data.data)
     } else if (method === 'config/read') {
       this.configModel = ConfigRead.safeParse(frame.result).data?.config.model ?? null
-    } else if (method === 'turn/start') {
+    } else if (method === 'skills/list') {
+      if (!error) this.skills = this.skillEntries(frame.result)
+    } else if (method && TURN_METHODS.has(method)) {
       const turn = TurnEvent.safeParse(frame.result)
       if (turn.success && this.turn && !this.turn.turnId) this.turn.turnId = turn.data.turn.id
       if (error) this.endTurn('failed', error, null, at)
@@ -788,6 +827,9 @@ export class CodexAppServer implements ChatDriver {
     const child = this.childThread(method, params)
     if (child) return this.childNotification(child, method, params, at)
     switch (method) {
+      case 'skills/changed':
+        this.skillsRequested = false
+        return
       case 'thread/started': {
         const thread = ThreadEvent.safeParse(params)
         if (thread.success && !this.threadId) this.threadId = thread.data.thread.id
@@ -1103,11 +1145,12 @@ export class CodexAppServer implements ChatDriver {
       if (frame.method === 'thread/start' || frame.method === 'thread/resume') this.threadRequested = true
       if (frame.method === 'model/list') this.modelsRequested = true
       if (frame.method === 'config/read') this.configRequested = true
+      if (frame.method === 'skills/list') this.skillsRequested = true
       if (frame.method === 'turn/interrupt') {
         this.interrupts++
         if (this.turn) this.stopping = true
       }
-      if (frame.method === 'turn/start') this.startTurn(frame, at, ref, images)
+      if (TURN_METHODS.has(frame.method)) this.startTurn(frame, at, ref, images)
       return
     }
     if (frame.method === 'initialized') {
@@ -1133,9 +1176,11 @@ export class CodexAppServer implements ChatDriver {
     this.turnUsage = null
     this.state.set({ turnUsage: null })
     const params = TurnParams.safeParse(frame.params)
-    if (params.success) this.turnMode(params.data, at)
+    // A command's turn runs in the thread's mode and leaves a waiting plan waiting.
+    if (params.success && frame.method === 'turn/start') this.turnMode(params.data, at)
     const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(frame.params)
-    const text = input.success ? input.data.input.flatMap((part) => (part.type === 'text' ? [part.text ?? ''] : [])).join('\n') : ''
+    const typed = input.success ? input.data.input.flatMap((part) => (part.type === 'text' ? [part.text ?? ''] : [])).join('\n') : ''
+    const text = frame.method ? (requestText(frame.method, frame.params) ?? typed) : typed
     const id = ref ?? `turn-${this.turns}`
     this.items.put({ id: `u:${id}`, kind: 'user', text, images: [...images] }, at)
     this.queue.sent(ref)

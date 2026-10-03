@@ -16,7 +16,8 @@ const INITIAL: StageStateFields = {
   turnUsage: null,
   queued: null,
   queue: [],
-  steerable: false
+  steerable: false,
+  commands: []
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)

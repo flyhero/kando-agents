@@ -252,7 +252,53 @@ describe('ClaudeStream state', () => {
       response: { subtype: 'success', request_id: 'kando-init', response: { account: { email: 'someone@example.com' }, commands: [{ name: 'x' }], current_permission_mode: 'default', models: [] } }
     })
     expect(JSON.stringify(kept)).not.toContain('example.com')
-    expect(JSON.stringify(kept)).not.toContain('commands')
+  })
+})
+
+describe('ClaudeStream slash commands', () => {
+  const stateOf = (driver: ClaudeStream) => ofKind(driver.items.list(), 'state')[0]
+  const init: ChatRecord = { dir: 'out', at: 1, frame: { type: 'control_request', request_id: 'kando-init', request: { subtype: 'initialize' } } }
+  const answer = (commands: unknown[]): ChatRecord => ({
+    dir: 'in',
+    at: 2,
+    frame: { type: 'control_response', response: { subtype: 'success', request_id: 'kando-init', response: { commands, models: [], account: { email: 'someone@example.com' } } } }
+  })
+  const skill = { name: 'review-pr', description: `Review a pull request.\n${'More detail. '.repeat(40)}`, argumentHint: '<pr#>', aliases: ['rp'] }
+
+  it('offers the commands initialize lists, a line of each, and none of the CLI plumbing', () => {
+    const commands = stateOf(replay([init, answer([{ name: 'compact', description: 'Free up context', argumentHint: '' }, skill, { name: '__remote-workflow', description: '' }])]))?.commands
+    expect(commands).toEqual([
+      { name: 'compact', description: 'Free up context', argumentHint: null },
+      { name: 'review-pr', description: 'Review a pull request.', argumentHint: '<pr#>' }
+    ])
+  })
+
+  it('logs the commands it offers, so a replayed stage offers the same', () => {
+    const live = new ClaudeStream('stage-1', OPTIONS)
+    const records = [init, answer([skill])].map((record) => (record.dir === 'in' ? { ...record, frame: live.logged(record.frame) } : record))
+    expect(JSON.stringify(records)).not.toContain('example.com')
+    expect(stateOf(replay(records))?.commands).toEqual([{ name: 'review-pr', description: 'Review a pull request.', argumentHint: '<pr#>' }])
+  })
+
+  it('follows the commands as the CLI reports them change', () => {
+    const changed: ChatRecord = { dir: 'in', at: 3, frame: { type: 'system', subtype: 'commands_changed', commands: [{ name: 'init', description: 'Write CLAUDE.md' }] } }
+    const driver = new ClaudeStream('stage-1', OPTIONS)
+    expect(driver.logged(changed.frame)).toEqual({ type: 'system', subtype: 'commands_changed', commands: [{ name: 'init', description: 'Write CLAUDE.md', argumentHint: null }] })
+    expect(stateOf(replay([init, answer([skill]), changed]))?.commands.map((command) => command.name)).toEqual(['init'])
+  })
+
+  it('shows what a local command answers, which comes as a message of its own', () => {
+    const records: ChatRecord[] = [
+      init,
+      answer([]),
+      { dir: 'out', at: 3, frame: { type: 'user', message: { role: 'user', content: '/usage' } }, ref: 'ref-1' },
+      { dir: 'in', at: 4, frame: { type: 'system', subtype: 'init', session_id: 's-1', model: 'claude-haiku-4-5-20251001', permissionMode: 'default' } },
+      { dir: 'in', at: 5, frame: { type: 'assistant', message: { id: 'm-1', model: '<synthetic>', role: 'assistant', content: [{ type: 'text', text: 'Current session: 72% used' }] } } },
+      { dir: 'in', at: 6, frame: { type: 'result', subtype: 'success', is_error: false, num_turns: 0, result: '', session_id: 's-1' } }
+    ]
+    const driver = replay(records)
+    expect(ofKind(driver.items.list(), 'assistant').map((item) => item.text)).toEqual(['Current session: 72% used'])
+    expect(driver.activity()).toBe('idle')
   })
 })
 

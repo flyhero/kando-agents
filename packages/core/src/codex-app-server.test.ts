@@ -206,10 +206,11 @@ describe('CodexAppServer commands', () => {
   const handshake = (driver: CodexAppServer, threadId = 'thread-1', thread: Record<string, unknown> = {}) => {
     driver.due().forEach((frame) => driver.apply({ dir: 'out', at, frame }))
     driver.apply({ dir: 'in', at, frame: { id: 'kando-init', result: {} } })
-    const [initialized, open, models, config] = driver.due()
+    const [initialized, open, models, config, skills] = driver.due()
     expect(models).toEqual({ id: 'kando-models', method: 'model/list', params: {} })
     expect(config).toEqual({ id: 'kando-config', method: 'config/read', params: { cwd: '/work/repo' } })
-    for (const frame of [initialized, open, models, config]) driver.apply({ dir: 'out', at, frame })
+    expect(skills).toEqual({ id: 'kando-skills', method: 'skills/list', params: { cwds: ['/work/repo'] } })
+    for (const frame of [initialized, open, models, config, skills]) driver.apply({ dir: 'out', at, frame })
     driver.apply({ dir: 'in', at, frame: { id: 'kando-thread', result: { thread: { id: threadId }, ...thread } } })
     return { initialized, open }
   }
@@ -258,6 +259,89 @@ describe('CodexAppServer commands', () => {
     expect(driver.logged(reply)).toEqual({ id: 'kando-config', result: { config: { model: 'gpt-y' } } })
     driver.apply({ dir: 'in', at, frame: reply })
     expect(ofKind(driver.items.list(), 'state')[0]?.models.map((model) => [model.id, model.isDefault])).toEqual([['gpt-x', false], ['gpt-y', true]])
+  })
+
+  const skillsReply = {
+    id: 'kando-skills',
+    result: {
+      data: [{
+        cwd: '/work/repo',
+        errors: [],
+        skills: [
+          { name: 'simplify', description: `Simplify code.\n${'Detail. '.repeat(50)}`, path: '/home/.codex/skills/simplify/SKILL.md', scope: 'user', enabled: true },
+          { name: 'old', description: 'Off', path: '/home/.codex/skills/old/SKILL.md', scope: 'user', enabled: false },
+          { name: 'review', description: 'Shadowed', path: '/home/.codex/skills/review/SKILL.md', scope: 'user', enabled: true }
+        ]
+      }]
+    }
+  }
+  const withSkills = () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver)
+    driver.apply({ dir: 'in', at, frame: driver.logged(skillsReply) })
+    return driver
+  }
+  const userTexts = (driver: CodexAppServer) => ofKind(driver.items.list(), 'user').map((item) => item.text)
+
+  it('offers /compact, /review and each enabled skill, and logs a line of each', () => {
+    const driver = withSkills()
+    expect(JSON.stringify(driver.logged(skillsReply))).not.toContain('Detail.')
+    expect(ofKind(driver.items.list(), 'state')[0]?.commands).toEqual([
+      { name: 'compact', description: expect.any(String), argumentHint: null },
+      { name: 'review', description: expect.any(String), argumentHint: '[分支]' },
+      { name: 'simplify', description: 'Simplify code.', argumentHint: null }
+    ])
+  })
+
+  it('compacts the thread on /compact, as a turn of its own', () => {
+    const driver = withSkills()
+    const { wire } = driver.send('/compact')
+    expect(wire).toEqual({ id: 'kando-turn-1', method: 'thread/compact/start', params: { threadId: 'thread-1' } })
+    driver.apply({ dir: 'out', at, frame: wire, ref: 'ref-1' })
+    expect(userTexts(driver)).toEqual(['/compact'])
+    driver.apply({ dir: 'in', at, frame: { id: 'kando-turn-1', result: {} } })
+    driver.apply({ dir: 'in', at, frame: { method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 't-1', status: 'inProgress' } } } })
+    expect(driver.interrupt()).toContainEqual(expect.objectContaining({ method: 'turn/interrupt', params: { threadId: 'thread-1', turnId: 't-1' } }))
+    driver.apply({ dir: 'in', at, frame: { method: 'item/completed', params: { threadId: 'thread-1', item: { type: 'contextCompaction', id: 'c-1' } } } })
+    driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 't-1', status: 'completed', error: null } } } })
+    expect(driver.activity()).toBe('idle')
+    expect(ofKind(driver.items.list(), 'notice').map((notice) => notice.text)).toHaveLength(1)
+    expect(() => driver.send('/compact', [{ id: `${'a'.repeat(64)}.png`, width: 4, height: 3, mime: 'image/png' as const, path: '/store/a.png', read: () => Uint8Array.from([]) }])).toThrow(expect.objectContaining({ reason: 'chat-command-images' }))
+  })
+
+  it('reviews uncommitted changes on /review, or those against a branch', () => {
+    const driver = withSkills()
+    expect(driver.send('/review').wire).toMatchObject({ method: 'review/start', params: { threadId: 'thread-1', target: { type: 'uncommittedChanges' }, delivery: 'inline' } })
+    const { wire } = driver.send('/review  main ')
+    expect(wire).toMatchObject({ method: 'review/start', params: { target: { type: 'baseBranch', branch: 'main' } } })
+    driver.apply({ dir: 'out', at, frame: wire, ref: 'ref-1' })
+    driver.apply({ dir: 'in', at, frame: driver.logged({ id: 'kando-turn-1', result: { turn: { id: 't-1', items: [{ type: 'userMessage' }] }, reviewThreadId: 'thread-1' } }) })
+    expect(userTexts(driver)).toEqual(['/review main'])
+    expect(driver.interrupt()).toContainEqual(expect.objectContaining({ params: { threadId: 'thread-1', turnId: 't-1' } }))
+  })
+
+  it('sends a skill along with the message that names it, and anything else as typed', () => {
+    const driver = withSkills()
+    expect(driver.send('/simplify calc.py').wire).toMatchObject({
+      method: 'turn/start',
+      params: { input: [{ type: 'text', text: '/simplify calc.py' }, { type: 'skill', name: 'simplify', path: '/home/.codex/skills/simplify/SKILL.md' }] }
+    })
+    expect(driver.send('/old').wire).toMatchObject({ method: 'turn/start', params: { input: [{ type: 'text', text: '/old' }] } })
+    expect(driver.send('/review is this right?').wire).toMatchObject({ method: 'turn/start' })
+  })
+
+  it('lists the skills again when Codex says they changed', () => {
+    const driver = withSkills()
+    expect(driver.due()).toEqual([])
+    driver.apply({ dir: 'in', at, frame: { method: 'skills/changed', params: {} } })
+    expect(driver.due()).toEqual([{ id: 'kando-skills', method: 'skills/list', params: { cwds: ['/work/repo'] } }])
+  })
+
+  it('leaves a waiting plan waiting through a command', () => {
+    const { driver } = planned()
+    const { wire } = driver.send('/compact')
+    driver.apply({ dir: 'out', at, frame: wire, ref: 'ref-2' })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: null })
   })
 
   it('plans in Codex plan mode, and carries the plan out in the mode picked', () => {

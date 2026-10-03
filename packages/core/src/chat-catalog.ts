@@ -6,8 +6,9 @@ import type { AgentCommand } from './agent-command'
 import type { ChatDriver } from './chat-driver'
 
 const PROBE_TIMEOUT_MS = 20_000
-// Frames that would open a thread, which Codex keeps in its history: a probe has no use for one.
-const THREAD_METHODS: ReadonlySet<string> = new Set(['thread/start', 'thread/resume'])
+// Frames a probe has no use for: a thread, which Codex keeps in its history, and the skills a
+// chat offers as commands.
+const SKIPPED_METHODS: ReadonlySet<string> = new Set(['thread/start', 'thread/resume', 'skills/list'])
 
 const Request = z.union([
   z.looseObject({ type: z.literal('control_request'), request_id: z.string() }).transform((frame) => frame.request_id),
@@ -45,7 +46,7 @@ export function probeChatCatalog(driver: ChatDriver, command: AgentCommand, cwd:
     const write = () => {
       for (const frame of driver.due()) {
         const method = z.looseObject({ method: z.string() }).safeParse(frame)
-        if (method.success && THREAD_METHODS.has(method.data.method)) continue
+        if (method.success && SKIPPED_METHODS.has(method.data.method)) continue
         driver.apply({ dir: 'out', at: Date.now(), frame })
         const id = Request.safeParse(frame)
         if (id.success) waiting.add(id.data)

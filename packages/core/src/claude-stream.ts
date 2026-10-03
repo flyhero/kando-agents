@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { offeredCommand } from './agent-commands'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
@@ -86,10 +87,14 @@ const ModelRow = z.looseObject({
   supportsAutoMode: z.boolean().optional()
 })
 type ModelRow = z.infer<typeof ModelRow>
+const CommandRow = z.looseObject({ name: z.string().min(1), description: z.string().nullish(), argumentHint: z.string().nullish() })
 const InitResponse = z.looseObject({
   current_permission_mode: z.string().optional(),
-  models: z.array(z.unknown()).catch([]).optional()
+  models: z.array(z.unknown()).catch([]).optional(),
+  commands: z.array(z.unknown()).catch([]).optional()
 })
+// The CLI's word that its commands changed, as skills and plugins load.
+const CommandsChanged = z.looseObject({ subtype: z.literal('commands_changed'), commands: z.array(z.unknown()).catch([]) })
 const SettingsResponse = z.looseObject({ effective: z.looseObject({ effortLevel: z.string().nullish() }).optional() })
 const Usage = z.looseObject({
   input_tokens: z.number().optional(),
@@ -202,6 +207,15 @@ function modelRows(value: unknown): ModelRow[] {
   return (Array.isArray(value) ? value : []).flatMap((row) => {
     const parsed = ModelRow.safeParse(row)
     return parsed.success ? [parsed.data] : []
+  })
+}
+
+// Names with a leading __ are the CLI's own plumbing, not for a person to type.
+function commandRows(value: unknown): ChatCommand[] {
+  return (Array.isArray(value) ? value : []).flatMap((row) => {
+    const parsed = CommandRow.safeParse(row)
+    if (!parsed.success || parsed.data.name.startsWith('__')) return []
+    return [offeredCommand(parsed.data.name, parsed.data.description, parsed.data.argumentHint)]
   })
 }
 
@@ -358,6 +372,7 @@ export class ClaudeStream implements ChatDriver {
   private settingsSent = false
   // What the stage runs: the CLI's model catalog, the model it reports, and its context window.
   private catalog: ModelRow[] = []
+  private commands: ChatCommand[] = []
   private reportedModel: string | null = null
   private contextWindow: number | null = null
   private permissionMode: string | null = null
@@ -534,6 +549,8 @@ export class ClaudeStream implements ChatDriver {
         if (subtype === 'init') return { type: 'system', subtype, session_id, model, permissionMode }
         // A status frame names the permission mode only when it changed.
         if (subtype === 'status' && permissionMode) return { type: 'system', subtype, permissionMode }
+        const changed = CommandsChanged.safeParse(frame)
+        if (changed.success) return { type: 'system', subtype: changed.data.subtype, commands: commandRows(changed.data.commands) }
         return subtype === 'compact_boundary' ? { type: 'system', subtype } : null
       }
       case 'user': {
@@ -588,15 +605,15 @@ export class ClaudeStream implements ChatDriver {
     return [{ type: 'control_request', request_id: `${SUGGESTIONS_PREFIX}${this.suggestionPauses + 1}`, request: { subtype: 'set_prompt_suggestions_paused', paused } }]
   }
 
-  // What of an answer to Kando's request to keep: the models and mode initialize reports (it also
-  // carries the account, commands and more, none of which belongs in a log), and the effort.
+  // What of an answer to Kando's request to keep: the models, mode and commands initialize reports
+  // (it also carries the account and more, none of which belongs in a log), and the effort.
   private keptAnswer(response: { request_id: string; response?: unknown }): { response?: unknown } {
     if (response.request_id === INIT_ID) {
       const init = InitResponse.safeParse(response.response)
       if (!init.success) return {}
       const models = modelRows(init.data.models).map(({ value, resolvedModel, displayName, description, supportedEffortLevels, supportsAutoMode }) =>
         ({ value, resolvedModel, displayName, description, supportedEffortLevels, supportsAutoMode }))
-      return { response: { current_permission_mode: init.data.current_permission_mode, models } }
+      return { response: { current_permission_mode: init.data.current_permission_mode, models, commands: commandRows(init.data.commands) } }
     }
     if (response.request_id === SETTINGS_ID) {
       const settings = SettingsResponse.safeParse(response.response)
@@ -620,6 +637,7 @@ export class ClaudeStream implements ChatDriver {
       queued: this.queue.first,
       queue: this.queue.view,
       steerable: true,
+      commands: this.commands,
       models,
       model: current?.value ?? this.reportedModel,
       effort: this.effort,
@@ -732,6 +750,8 @@ export class ClaudeStream implements ChatDriver {
     if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
     if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
     if (subtype === 'compact_boundary') this.items.notice('info', CONTEXT_COMPACTED, at)
+    const changed = CommandsChanged.safeParse(frame)
+    if (changed.success) this.commands = commandRows(changed.data.commands)
   }
 
   private stream(frame: unknown, at: number): void {
@@ -1049,6 +1069,7 @@ export class ClaudeStream implements ChatDriver {
     const init = InitResponse.safeParse(response)
     if (!init.success) return
     this.catalog = modelRows(init.data.models)
+    this.commands = commandRows(init.data.commands)
     const mode = init.data.current_permission_mode
     if (mode) this.permissionMode = PERMISSION_MODES[mode] ?? mode
   }
