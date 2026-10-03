@@ -4086,11 +4086,7 @@ body.side-panel-resizing * {
 }
 
 /* The chat's font, from the settings: the tokens are redefined here, so code and prose inside
-   follow without a rule each. Geist ships with the app; Chinese falls back to the system font. */
-.chat-view[data-font='geist'] {
-  --font: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
-  --mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
+   follow without a rule each. */
 .chat-view[data-font='serif'] {
   --font: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC', 'Noto Serif CJK SC', 'SimSun', serif;
 }

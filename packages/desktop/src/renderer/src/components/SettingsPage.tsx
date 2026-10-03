@@ -87,7 +87,7 @@ function AppearanceSettings() {
       />
       <SettingsRow
         label="聊天字体"
-        description="聊天消息和过程信息用的字体。系统跟随 macOS / Windows 的界面字体；Geist 是随 Kando 打包的无衬线体，中文仍回落到系统字体；衬线只改正文，代码不变；其他可以从这台电脑装的字体里挑，它没有的字仍回落到系统字体。"
+        description="聊天消息和过程信息用的字体。系统跟随 macOS / Windows 的界面字体；衬线只改正文，代码不变；其他可以从这台电脑装的字体里挑，它没有的字仍回落到系统字体。"
         control={(labelId) => <ChatFontPicker labelId={labelId} />}
       />
       <SettingsRow

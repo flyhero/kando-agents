@@ -83,7 +83,6 @@ export function ChatFontPicker({ labelId }: { labelId: string }) {
         onChange={choose}
         options={[
           { value: 'system', label: '系统' },
-          { value: 'geist', label: 'Geist' },
           { value: 'serif', label: '衬线' },
           { value: 'custom', label: '其他' }
         ]}

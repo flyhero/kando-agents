@@ -13,9 +13,9 @@ const Preferences = z.object({
   theme: z.enum(['system', 'light', 'dark']).catch('system'),
   terminalFontSize: z.number().int().min(10).max(20).catch(12),
   chatFontSize: z.number().int().min(10).max(20).catch(14),
-  // What the chat is set in: the system's font, Geist (bundled), a serif for the prose, or a
-  // family the user picked from those installed (chatFontFamily).
-  chatFont: z.enum(['system', 'geist', 'serif', 'custom']).catch('system'),
+  // What the chat is set in: the system's font, a serif for the prose, or a family the user
+  // picked from those installed (chatFontFamily). A preset since dropped reads as the system's.
+  chatFont: z.enum(['system', 'serif', 'custom']).catch('system'),
   chatFontFamily: z.string().max(200).catch(''),
   // How wide a chat's messages and composer may grow: 800px, 1200px, or the whole chat pane.
   chatWidth: z.enum(['narrow', 'medium', 'full']).catch('narrow'),
