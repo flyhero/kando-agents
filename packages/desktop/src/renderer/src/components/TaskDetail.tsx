@@ -4,7 +4,6 @@ import { selectTask, updateTask, useCore } from '../core-store'
 import { dayAndTime, STATUS_LABEL } from '../labels'
 import { saveTaskText, unsavedTaskText, useTaskSaveState, type SaveState } from '../unsaved-edits'
 import { MarkdownEditor } from './MarkdownEditor'
-import { ProposalCard, RestoreBar } from './ProposalCard'
 import { SourceLink } from './SourceLink'
 import { SourceSnapshotCard } from './SourceSnapshotCard'
 import { StatusIcon } from './StatusIcon'
@@ -86,9 +85,6 @@ function TaskDetailBody({ task }: { task: Task }) {
     }
   })
   const dependents = Object.values(tasks).filter((other) => other.dependsOn.includes(task.id))
-  // The editor reads its value once; bump this when the details change from elsewhere.
-  const [editorRevision, setEditorRevision] = useState(0)
-  const reloadEditor = () => setEditorRevision((revision) => revision + 1)
   const images = useImageAdder(task.id)
 
   return (
@@ -151,11 +147,8 @@ function TaskDetailBody({ task }: { task: Task }) {
         <div className="task-detail-main">
           <SourceSnapshotCard task={task} />
           <TaskPlanCard task={task} />
-          <ProposalCard task={task} onApplied={reloadEditor} />
-          <RestoreBar task={task} onRestored={reloadEditor} />
 
           <MarkdownEditor
-            key={editorRevision}
             value={unsavedTaskText(task.id, 'details') ?? task.details}
             onSave={(next) => saveTaskText(task.id, 'details', next)}
             label="任务详情"

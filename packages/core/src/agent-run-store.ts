@@ -90,13 +90,13 @@ export class AgentRunStore {
     if (from === 'running') {
       const run = this.open(after.id)
       if (!run) return
+      // A terminal run of a Kando before 0.11 ended by its agent exiting, how is no longer known.
       const endedBy = to === 'review' ? (after.conversationId ? 'submit' : 'exit') : 'closed'
-      const exitCode = endedBy === 'exit' ? (after.lastExit?.code ?? null) : null
       const measured = run.view === 'chat' ? measure(run, at) : null
       this.update(run.id, {
         ended_at: at,
         ended_by: endedBy,
-        exit_code: exitCode,
+        exit_code: null,
         ...(measured ? columns(measured) : {}),
         ...(endedBy === 'closed' ? { outcome: 'closed', outcome_at: at } : {})
       })

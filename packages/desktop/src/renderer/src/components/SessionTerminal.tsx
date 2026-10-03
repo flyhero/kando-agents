@@ -15,7 +15,7 @@ export function SessionTerminal({ sessionId }: { sessionId: string }) {
     }
     const surface = createTerminalSurface(element, rpc, sessionId)
     const { term, sendSize } = surface
-    // Shown full-pane right after a run starts: keystrokes should reach the agent.
+    // Opened by the user, so keystrokes should reach the shell at once.
     term.focus()
 
     let disposed = false

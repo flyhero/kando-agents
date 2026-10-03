@@ -11,7 +11,6 @@ import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
 import { browserHostCommand } from './browser-host-command'
 import { BrowserService, WATCH_ALL } from './browser-service'
-import { cliCommand } from './cli-command'
 import { CredentialStore } from './credential-store'
 import { DaemonClient } from './daemon-client'
 import { githubProvider } from './github-provider'
@@ -23,7 +22,7 @@ import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 import { UsageLimitService } from './usage-limit-service'
 import { UsageService } from './usage-service'
-import { kandoChatMcpServer, kandoMcpServer } from './kando-mcp-server'
+import { kandoChatMcpServer } from './kando-mcp-server'
 import { SourceConfigStore } from './source-config'
 import { LoginFlows } from './source-login-flow'
 import { migrateLegacyJira } from './source-migration'
@@ -59,7 +58,7 @@ const turns = new ChatTurnStore(paths.database, {
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
 let awake: ComputerAwakeService | null = null
-const refreshAwake = () => awake?.refresh(service.workingCount() + conversations.workingCount())
+const refreshAwake = () => awake?.refresh(conversations.workingCount())
 
 const notifyChatItems = (conversationId: string, items: ChatItem[]) =>
   [...(server?.connections ?? [])].filter((c) => c.watching.has(conversationId)).forEach((c) => c.notify('conversations.chatItems', { conversationId, items }))
@@ -67,7 +66,6 @@ const notifyChatItems = (conversationId: string, items: ChatItem[]) =>
 // Built before the task service, which runs its chat tasks in it; each hands the other its events.
 const conversations = new ConversationService(
   conversationsStore, daemon, paths.sessions,
-  (id, stageId, agent) => cliCommand('conversation-event', paths.home, id, stageId, agent),
   (event) => {
     const watchers = (id: string) => [...(server?.connections ?? [])].filter((c) => c.watching.has(id))
     if (event.type === 'changed') {
@@ -130,9 +128,7 @@ const service = new TaskService(
       sources.tasksChanged()
     }
   },
-  (taskId) => kandoMcpServer(taskId, paths.home),
   attachments,
-  (taskId, session, agent) => cliCommand('task-event', paths.home, taskId, session, agent),
   conversations,
   runs
 )
@@ -183,11 +179,10 @@ daemon.onEvent((event) => {
     attached.forEach((c) => c.notify('sessions.data', { sessionId, data: event.data, offset: event.offset }))
   } else if (event.event === 'exit') {
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
-    service.handleSessionExit(sessionId, event.exitCode)
     conversations.handleExit(sessionId, event.exitCode)
     terminals.handleExit(sessionId)
     browser.handleExit(sessionId)
-    // A finished run is when the numbers most likely moved.
+    // An agent that ended is when the numbers most likely moved.
     void usage.refresh()
     refreshAwake()
   } else {
@@ -200,7 +195,7 @@ daemon.onConnect(() => {
   daemon
     .request('list', {})
     .then(async ({ sessions }) => {
-      service.reconcile(sessions)
+      await service.endTerminalRuns(sessions)
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
       await browser.reconcile(sessions)

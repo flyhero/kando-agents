@@ -40,6 +40,10 @@ export class TerminalService {
       .map((row) => Terminal.parse(row))
   }
 
+  owns(sessionId: string): boolean {
+    return this.db.prepare('SELECT 1 FROM terminals WHERE session_id = ?').get(sessionId) !== undefined
+  }
+
   // In the folder the user is looking at when there is one, else their home.
   async open(cwd: string | undefined): Promise<Terminal> {
     const folder = cwd && path.isAbsolute(cwd) && (await stat(cwd).catch(() => null))?.isDirectory() ? cwd : os.homedir()

@@ -7,11 +7,9 @@ import { SourceLoginDialog } from './components/SourceLoginDialog'
 import { TaskDetail } from './components/TaskDetail'
 import { TaskList } from './components/TaskList'
 import { TaskChat } from './components/TaskChat'
-import { TaskTerminal } from './components/TaskTerminal'
 import { ConversationList } from './components/ConversationList'
-import { ConversationTerminal } from './components/ConversationTerminal'
+import { ConversationView } from './components/ConversationView'
 import { ConversationDraft } from './components/ConversationDraft'
-import { NewConversationDialog } from './components/NewConversationDialog'
 import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
 import { UtilityPanelDock } from './components/UtilityPanelDock'
@@ -21,7 +19,6 @@ export function App() {
   const selectedId = useCore((s) => s.selectedId)
   const section = useCore((s) => s.section)
   const selectedConversationId = useCore((s) => s.selectedConversationId)
-  const newConversationOpen = useCore((s) => s.newConversationOpen)
   const conversationDraft = useCore((s) => s.conversationDraft)
   const view = useCore((s) => s.view)
   const error = useCore((s) => s.error)
@@ -106,13 +103,11 @@ export function App() {
             {worktreesOpen ? (
               <WorktreeManager />
             ) : section === 'conversations' ? (
-              selectedConversationId ? <ConversationTerminal key={selectedConversationId} id={selectedConversationId} /> :
+              selectedConversationId ? <ConversationView key={selectedConversationId} id={selectedConversationId} /> :
                 conversationDraft ? <ConversationDraft /> :
                 <section className="detail-empty">选择或新建一条会话</section>
             ) : inboxOpen ? (
               <SourceInboxView />
-            ) : selectedId && view === 'terminal' ? (
-              <TaskTerminal key={selectedId} taskId={selectedId} />
             ) : selectedId && view === 'chat' ? (
               <TaskChat key={selectedId} taskId={selectedId} />
             ) : selectedId ? (
@@ -133,7 +128,6 @@ export function App() {
       </main>
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}
-      {newConversationOpen && <NewConversationDialog />}
       {loginOpen && <SourceLoginDialog />}
       {error && !newTaskOpen && (
         <div className="toast" role="alert">

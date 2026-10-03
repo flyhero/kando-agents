@@ -45,7 +45,7 @@ export function conversationSurface(conversation: Conversation, handoff: (() => 
     showBrowser: () => showBrowserPanel(conversation.id),
     changes: conversation.projectPaths.length > 0 ? { kind: 'conversation', id: conversation.id } : null,
     changesHint: '项目里还没提交的改动，也可能有你自己的；点开检查器看',
-    prepareSend: async (stopped) => !stopped || Boolean(await continueConversation(conversation.id, 'chat')),
+    prepareSend: async (stopped) => !stopped || Boolean(await continueConversation(conversation.id)),
     sendBlocker: null,
     savePlan: null,
     planNote: () => null,

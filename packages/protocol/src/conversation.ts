@@ -7,7 +7,7 @@ export const Conversation = z.object({
   title: z.string(),
   titleLocked: z.boolean(),
   agent: AgentKind,
-  // PTY cwd: the first selected project, or the managed directory when no project is selected.
+  // The agent's cwd: the first selected project, or the managed directory when no project is selected.
   workspacePath: z.string(),
   // Ordered: primary project first, followed by additional directories.
   projectPaths: z.array(z.string()),
@@ -18,8 +18,6 @@ export const Conversation = z.object({
   // How the agent last stopped: code is null when it was stopped rather than exiting on its own.
   // null before any run has ended. Older cores leave it out.
   lastExit: z.object({ code: z.number().int().nullable(), at: z.number() }).nullable().optional(),
-  // How the latest stage runs its agent. Older cores leave it out: every stage was a TUI.
-  mode: ConversationMode.catch('tui').optional(),
   // Set while a chat-mode agent is running, to tell whether it works or waits on the user.
   // suggestion: what the agent predicts the user will type next, once a turn has ended, until the
   // next message; only when the user has them on. Older cores leave it out.
@@ -48,6 +46,8 @@ export const ConversationStage = z.object({
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   exitCode: z.number().nullable(),
+  // tui for a stage run in a terminal by a Kando older than 0.11, of which only the messages its
+  // hooks recorded are left.
   mode: ConversationMode.catch('tui').optional(),
   // A stage that may only plan (see Conversation.planOnly).
   planOnly: z.boolean().optional()
@@ -112,25 +112,23 @@ export const ProjectBranches = z.object({
 })
 export type ProjectBranches = z.infer<typeof ProjectBranches>
 
-export type BranchSwitchBlocker = 'task-conversation' | 'conversation-running' | 'chat-busy'
+export type BranchSwitchBlocker = 'task-conversation' | 'chat-busy'
 
-// A switch changes the files under the agent, so it waits for a terminal agent to be stopped and
-// a chat one to be idle. A task's conversation runs in the task's worktrees, whose branch is its.
-export function checkSwitchBranch(conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'mode' | 'chat'>): BranchSwitchBlocker | null {
+// A switch changes the files under the agent, so it waits for the agent to be idle. A task's
+// conversation runs in the task's worktrees, whose branch is its.
+export function checkSwitchBranch(conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'chat'>): BranchSwitchBlocker | null {
   if (conversation.taskId) return 'task-conversation'
   if (!conversation.sessionId) return null
-  if (conversation.mode !== 'chat') return 'conversation-running'
   return conversation.chat?.turn === 'idle' ? null : 'chat-busy'
 }
 
 export type AdditionalProjectsBlocker = BranchSwitchBlocker | 'managed-workspace'
 
-// The agent is given its directories at launch, so a change restarts it on the same session: a
-// chat agent once it is idle, a terminal one never behind the user's back. The primary is the cwd
-// the session began in and stays. A conversation begun without projects works in a directory of
-// Kando's own; a task's has its projects set on the task.
+// The agent is given its directories at launch, so a change restarts it on the same session once
+// it is idle. The primary is the cwd the session began in and stays. A conversation begun without
+// projects works in a directory of Kando's own; a task's has its projects set on the task.
 export function checkEditAdditionalProjects(
-  conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'mode' | 'chat' | 'managedWorkspace'>
+  conversation: Pick<Conversation, 'taskId' | 'sessionId' | 'chat' | 'managedWorkspace'>
 ): AdditionalProjectsBlocker | null {
   if (conversation.taskId) return 'task-conversation'
   if (conversation.managedWorkspace) return 'managed-workspace'

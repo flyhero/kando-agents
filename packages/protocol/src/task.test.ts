@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkRefine, checkRun, checkSavePlan, checkStart, checkSubmit, isStartRef, startKind, type Task } from './task'
+import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkSavePlan, checkStart, checkSubmit, isStartRef, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -10,16 +10,11 @@ function task(overrides: Partial<Task> = {}): Task {
     repos: [],
     dependsOn: [],
     agent: null,
-    sessionId: null,
-    refineSessionId: null,
-    proposal: null,
-    previousDetails: null,
     derivedFrom: null,
     abandonReason: null,
     source: null,
     sourceSnapshot: null,
     images: [],
-    lastExit: null,
     awaitingInput: false,
     conversationId: null,
     plan: null,
@@ -32,7 +27,6 @@ function task(overrides: Partial<Task> = {}): Task {
 describe('checkEditProjects', () => {
   it('locks projects for live, launching and abandoned tasks', () => {
     expect(checkEditProjects(task({ status: 'running' }))).toBe('task-running')
-    expect(checkEditProjects(task({ refineSessionId: 'session' }))).toBe('refining')
     expect(checkEditProjects(task({ status: 'abandoned' }))).toBe('task-abandoned')
     expect(checkEditProjects(task(), true)).toBe('run-in-progress')
     for (const status of ['pending', 'review', 'done'] as const) {
@@ -60,7 +54,7 @@ describe('isStartRef', () => {
 describe('checkChangePrimary', () => {
   it('keeps the primary project once a task\'s chat has begun', () => {
     expect(checkChangePrimary(task({ conversationId: 'chat' }))).toBe('primary-fixed')
-    expect(checkChangePrimary(task({ sessionId: 'terminal', status: 'review' }))).toBeNull()
+    expect(checkChangePrimary(task({ status: 'review' }))).toBeNull()
     expect(checkChangePrimary(task())).toBeNull()
   })
 })
@@ -83,51 +77,8 @@ describe('checkMove', () => {
     expect(checkMove(task({ status: 'review' }), 'running')).toBe('invalid-transition')
   })
 
-  it('lets a pending task be closed without running, unless it is being refined', () => {
+  it('lets a pending task be closed without running', () => {
     expect(checkMove(task(), 'done')).toBeNull()
-    expect(checkMove(task({ refineSessionId: 'session-1' }), 'done')).toBe('refining')
-  })
-})
-
-describe('checkRun', () => {
-  const repos = [{ path: '/repo', worktreePath: null, branch: null, startRef: null, start: null }]
-
-  it('reports the first missing prerequisite', () => {
-    const ready = { repos, agent: 'claude' } as const
-    expect(checkRun(task({ ...ready, status: 'done' }), [])).toBe('not-pending')
-    expect(checkRun(task({ ...ready, repos: [] }), [])).toBe('missing-repo')
-    expect(checkRun(task({ ...ready, agent: null }), [])).toBe('missing-agent')
-    expect(checkRun(task(ready), [])).toBeNull()
-  })
-
-  it('runs on the title alone when there are no details', () => {
-    expect(checkRun(task({ details: '', repos, agent: 'codex' }), [])).toBeNull()
-  })
-
-  it('holds off while a refining session is open', () => {
-    expect(checkRun(task({ repos, agent: 'claude', refineSessionId: 's1' }), [])).toBe('refining')
-  })
-
-  it('waits until every dependency is accepted, not just finished', () => {
-    const ready = task({ repos, agent: 'codex' })
-    expect(checkRun(ready, [{ status: 'done' }, { status: 'running' }])).toBe('blocked')
-    expect(checkRun(ready, [{ status: 'done' }, { status: 'review' }])).toBe('blocked')
-    expect(checkRun(ready, [{ status: 'done' }, { status: 'done' }])).toBeNull()
-  })
-})
-
-describe('checkRefine', () => {
-  const repos = [{ path: '/repo', worktreePath: null, branch: null, startRef: null, start: null }]
-
-  it('needs a repo and an agent, but not finished dependencies', () => {
-    expect(checkRefine(task({ agent: 'claude' }))).toBe('missing-repo')
-    expect(checkRefine(task({ repos }))).toBe('missing-agent')
-    expect(checkRefine(task({ repos, agent: 'codex', dependsOn: ['other'] }))).toBeNull()
-  })
-
-  it('allows one refining session at a time, and only before running', () => {
-    expect(checkRefine(task({ repos, agent: 'claude', refineSessionId: 's1' }))).toBe('refine-in-progress')
-    expect(checkRefine(task({ repos, agent: 'claude', status: 'done' }))).toBe('not-pending')
   })
 })
 
@@ -163,14 +114,8 @@ describe('a task in the chat view', () => {
     expect(checkStart(task({ ...ready, conversationId: 'c' }), unfinished)).toBe('planning')
     expect(checkStart(task({ ...ready, conversationId: 'c' }), done)).toBeNull()
     expect(checkStart(task({ ...ready, status: 'running' }), done)).toBe('not-pending')
-    expect(checkStart(task({ ...ready, refineSessionId: 'r' }), done)).toBe('refining')
     expect(checkStart(task({ agent: 'claude' }), done)).toBe('missing-repo')
     expect(checkStart(task({ ...ready, agent: null }), done)).toBe('missing-agent')
-  })
-
-  it('keeps a task in the view it started in', () => {
-    expect(checkRun(task({ ...ready, conversationId: 'c' }), done)).toBe('chat-task')
-    expect(checkRefine(task({ ...ready, conversationId: 'c' }))).toBe('chat-task')
   })
 
   it('hands a running chat task in for review, never mid-turn', () => {

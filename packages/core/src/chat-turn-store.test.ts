@@ -32,7 +32,6 @@ describe('ChatTurnStore', () => {
     const attachments = path.join(root, 'attachments')
     mkdirSync(attachments, { recursive: true })
     conversations = new ConversationService(store, daemon, path.join(root, 'sessions'),
-      (id, stage, agent) => ['node', 'callback.js', id, stage, agent],
       // Wired as main.ts wires it: every batch a live stage puts out.
       (event) => { if (event.type === 'chatItems') turns.observe(event.conversationId, event.items) },
       projects, new AttachmentStore(attachments))
@@ -65,7 +64,7 @@ describe('ChatTurnStore', () => {
   })
 
   async function chat(...messages: string[]): Promise<string> {
-    const conversation = await conversations.create('claude', [], 'chat')
+    const conversation = await conversations.create('claude', [])
     for (const message of messages) {
       await conversations.send(conversation.id, message)
       await settle()

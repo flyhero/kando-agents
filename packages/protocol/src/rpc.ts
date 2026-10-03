@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, RepoStartOptions, Task, TaskSession, TaskStatus } from './task'
+import { AgentKind, MAX_DETAILS_LENGTH, MAX_TASK_REPOS, RepoStartOptions, Task, TaskStatus } from './task'
 import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, ImageRef, MAX_ATTACHMENT_BYTES, MAX_CHAT_IMAGES, MAX_TASK_IMAGES } from './attachments'
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { AgentStats, ConversationStats } from './agent-stats'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
-import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings, ConversationMode } from './chat'
+import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
@@ -13,7 +13,7 @@ import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInp
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 
 // Bump only for breaking changes; additive optional fields keep the version.
-export const PROTOCOL_VERSION = 8
+export const PROTOCOL_VERSION = 9
 
 const TaskRef = z.object({ id: z.string().min(1) })
 const TaskTitle = z.string().trim().min(1).max(200)
@@ -36,16 +36,15 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // What core can do beyond this protocol version's baseline; an older core sends none.
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
-// task-chat: a task can start in the chat view (tasks.start and the methods beside it).
 // conversation-projects: a conversation's additional projects can change (conversations.setAdditionalProjects).
 // browser: core hosts a browser for chat agents (the browser.* methods).
 // usage-limit: core continues a chat whose turn hit a usage limit once it lifts (usageLimit items).
 // agent-stats: core keeps each task run and reports how each agent's went (agents.stats).
 // conversation-stats: core keeps each chat turn and reports what each agent's cost (agents.conversationStats).
 // prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
-export const CORE_FEATURES = ['chat', 'chat-options', 'chat-images', 'task-chat', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions'] as const
-// Whether a chat-mode start may offer running with nothing asked and nothing sandboxed; the
-// conversation keeps what its latest start said.
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions'] as const
+// Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
+// keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
 // One page of a conversation's chat history; `before` fetches the page older than it, null when none is left.
 const ChatPage = z.object({ items: ChatItemList, before: z.string().nullable() })
@@ -87,33 +86,19 @@ export const rpcMethods = {
   // What each of the task's repos could start from, read from git on every call.
   'tasks.startOptions': { params: TaskRef, result: z.array(RepoStartOptions) },
   'tasks.move': { params: TaskRef.extend({ status: TaskStatus }), result: Task },
-  'tasks.run': { params: TaskRef, result: Task },
-  // Runs a done task again in its own worktree, starting a fresh agent session.
-  // What the user found wrong under review, handed to the continuing agent.
-  'tasks.continue': { params: TaskRef.extend({ note: z.string().trim().max(2000).optional() }), result: Task },
+  // Picks a finished task up again in its own worktree, the note (what the user found wrong under
+  // review) its next message. A task run in a terminal before 0.11 has no chat yet: this starts one.
+  'tasks.continue': { params: TaskRef.extend({ note: z.string().trim().max(2000).optional(), allowBypass: AllowBypass }), result: Task },
   // Abandons a done task and returns the new pending task that takes over from it.
   'tasks.redo': { params: TaskRef.extend({ reason: z.string().trim().max(500).optional() }), result: Task },
-  // Opens a read-only session to talk the task through; the agent answers via tasks.propose.
-  'tasks.refine': { params: TaskRef, result: Task },
-  // A task in the chat view (task-chat). start plans first, then carries the plan out in the task's
-  // worktree, or only plans while its dependencies are unfinished. resumeChat readies its agent
-  // before a message, reopening a finished task as continuing does. submit hands a running one in
-  // for review. savePlan keeps a plan-only stage's plan for when the task can run.
+  // A task runs in its chat. start plans first, then carries the plan out in the task's worktree,
+  // or only plans while its dependencies are unfinished. resumeChat readies its agent before a
+  // message, reopening a finished task as continuing does. submit hands a running one in for
+  // review. savePlan keeps a plan-only stage's plan for when the task can run.
   'tasks.start': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
   'tasks.resumeChat': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
   'tasks.submit': { params: TaskRef, result: Task },
   'tasks.savePlan': { params: TaskRef.extend({ stageId: z.string().uuid(), requestId: z.string().min(1).max(200) }), result: Task },
-  // From the agent's own hooks via `kando task-event`: its turn ended (waiting) or the user answered.
-  'tasks.event': { params: TaskRef.extend({ session: TaskSession, waiting: z.boolean() }), result: Ok },
-  'tasks.propose': {
-    params: TaskRef.extend({ markdown: z.string().trim().min(1).max(MAX_DETAILS_LENGTH) }),
-    result: Task
-  },
-  'tasks.resolveProposal': {
-    params: TaskRef.extend({ action: z.enum(['replace', 'append', 'discard']) }),
-    result: Task
-  },
-  'tasks.restoreDetails': { params: TaskRef, result: Task },
   'tasks.delete': { params: TaskRef, result: Ok },
   // Appended on the server, so uploads that finish together do not overwrite each other.
   'tasks.addImages': { params: TaskRef.extend({ images: z.array(ImageRef).min(1).max(MAX_TASK_IMAGES) }), result: Task },
@@ -127,14 +112,12 @@ export const rpcMethods = {
   'tasks.diff': { params: TaskRef.extend({ repo: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
   'conversations.list': { params: z.object({}), result: z.array(Conversation) },
   'conversations.get': { params: ConversationRef, result: Conversation },
-  // mode defaults to tui, which is all an older core knows; check CORE_FEATURES before asking for chat.
   'conversations.create': {
-    // permissionMode, model and effort: what a chat-mode start begins with, from what the agent has.
+    // permissionMode, model and effort: what the first start begins with, from what the agent has.
     params: z.object({
       agent: AgentKind,
       // Primary (cwd) first; other directories are available to the agent in place.
       projectPaths: z.array(z.string().trim().min(1)).max(MAX_TASK_REPOS),
-      mode: ConversationMode.optional(),
       allowBypass: AllowBypass,
       permissionMode: ChatPermissionMode.optional(),
       model: z.string().trim().min(1).max(200).optional(),
@@ -152,12 +135,12 @@ export const rpcMethods = {
     result: Conversation
   },
   'conversations.rename': { params: ConversationRef.extend({ title: z.string().trim().min(1).max(200) }), result: Conversation },
-  'conversations.continue': { params: ConversationRef.extend({ mode: ConversationMode.optional(), allowBypass: AllowBypass }), result: Conversation },
+  'conversations.continue': { params: ConversationRef.extend({ allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {
-    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), mode: ConversationMode.optional(), allowBypass: AllowBypass }),
+    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), allowBypass: AllowBypass }),
     result: Conversation
   },
-  // Chat mode only: a message for the agent, text and/or images already uploaded (attachments.commit),
+  // A message for the agent, text and/or images already uploaded (attachments.commit),
   // in the order they show. With queue, one sent while a turn runs waits its turn behind any
   // already waiting; with steer, it goes into the running turn (state.steerable says whether the
   // agent takes that); with neither, the agent must be idle.
@@ -185,7 +168,7 @@ export const rpcMethods = {
     params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1).max(300) }),
     result: Ok
   },
-  // Chat mode only: switches one of the stage's options to a value its state item offers. The
+  // Switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },
   // Ends the running turn; the agent stays up for the next message.
@@ -207,10 +190,6 @@ export const rpcMethods = {
   'conversations.chatItems': { params: ConversationRef.extend({ before: z.string().uuid() }), result: ChatPage },
   'conversations.stop': { params: ConversationRef, result: Conversation },
   'conversations.delete': { params: ConversationRef, result: Ok },
-  'conversations.history': {
-    params: ConversationRef.extend({ offset: z.number().int().nonnegative(), length: z.number().int().min(1).max(65536) }),
-    result: z.object({ data: z.string(), nextOffset: z.number().int(), totalBytes: z.number().int(), sessionOffset: z.number().int() })
-  },
   'conversations.messages': { params: ConversationRef, result: z.array(ConversationMessage) },
   'conversations.stages': { params: ConversationRef, result: z.array(ConversationStage) },
   // Messages only: clients match titles and projects themselves. Older cores lack it.
@@ -232,12 +211,6 @@ export const rpcMethods = {
   'conversations.changes': { params: ConversationRef, result: z.array(FolderChanges) },
   'conversations.diff': { params: ConversationRef.extend({ project: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
   'conversations.search': { params: z.object({ query: z.string().trim().min(1).max(200) }), result: z.array(ConversationSearchHit) },
-  'conversations.event': {
-    params: ConversationRef.extend({
-      stageId: z.string().uuid(), agent: AgentKind, providerSessionId: z.string().nullable(),
-      role: z.enum(['user', 'assistant']), text: z.string().max(200000), eventKey: z.string().min(1).max(300), complete: z.boolean()
-    }), result: Ok
-  },
   // The browser core hosts (feature `browser`). The agent's side, from its MCP tools: every call
   // names the conversation it acts for, and sees only that conversation's tabs. A screenshot is
   // stored as an attachment; snapshots are AI-mode aria snapshots whose refs the actions take.
@@ -304,7 +277,7 @@ export const rpcMethods = {
     }),
     result: z.object({ data: z.string() })
   },
-  // Shells in the app's own terminal panel; their output flows through sessions.* like an agent's.
+  // Shells in the app's own terminal panel; their output flows through sessions.*.
   'terminals.list': { params: z.object({}), result: z.array(Terminal) },
   'terminals.open': { params: z.object({ cwd: z.string().optional() }), result: Terminal },
   'terminals.close': { params: z.object({ id: z.string().uuid() }), result: Ok },

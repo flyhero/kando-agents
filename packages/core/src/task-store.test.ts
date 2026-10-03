@@ -59,19 +59,38 @@ describe('TaskStore migrations', () => {
     store.close()
   })
 
-  it('round-trips a proposal and treats unreadable ones as absent', () => {
+  it('round-trips a source and treats an unreadable one as absent', () => {
     const store = new TaskStore(file)
     const task = store.create('A')
-    const proposal = { markdown: '# Plan', agent: 'claude' as const, createdAt: 5 }
-    expect(store.update(task.id, { proposal }).proposal).toEqual(proposal)
+    const source = { provider: 'jira', instance: 'default', name: 'Jira', key: 'PROJ-1', url: 'https://acme.atlassian.net/browse/PROJ-1' }
+    expect(store.update(task.id, { source }).source).toEqual(source)
     store.close()
 
     const raw = new DatabaseSync(file)
-    raw.prepare('UPDATE tasks SET proposal = ? WHERE id = ?').run('{not json', task.id)
+    raw.prepare('UPDATE tasks SET source = ? WHERE id = ?').run('{not json', task.id)
     raw.close()
     const reopened = new TaskStore(file)
-    expect(reopened.get(task.id)?.proposal).toBeNull()
+    expect(reopened.get(task.id)?.source).toBeNull()
     reopened.close()
+  })
+
+  it('lists the terminal sessions an older Kando kept on tasks, until they are forgotten', () => {
+    const store = new TaskStore(file)
+    const ran = store.create('Ran in a terminal')
+    const refining = store.create('Refining')
+    store.create('Never started')
+    const raw = new DatabaseSync(file)
+    raw.prepare('UPDATE tasks SET session_id = ? WHERE id = ?').run('run-1', ran.id)
+    raw.prepare('UPDATE tasks SET session_id = ?, refine_session_id = ? WHERE id = ?').run('run-2', 'refine-2', refining.id)
+    raw.close()
+    expect(store.terminalSessions()).toEqual(expect.arrayContaining([
+      { id: ran.id, sessionIds: ['run-1'] },
+      { id: refining.id, sessionIds: ['run-2', 'refine-2'] }
+    ]))
+    expect(store.terminalSessions()).toHaveLength(2)
+    store.forgetTerminalSessions(ran.id)
+    expect(store.terminalSessions()).toEqual([{ id: refining.id, sessionIds: ['run-2', 'refine-2'] }])
+    store.close()
   })
 
   it('keeps a task\'s plan, and finds the conversation that runs it through that conversation', () => {
@@ -85,7 +104,7 @@ describe('TaskStore migrations', () => {
     expect(conversation).toMatchObject({ taskId: task.id, title: 'Chat me', titleLocked: true, planOnly: false })
     expect(store.get(task.id)?.conversationId).toBe(conversation.id)
     expect(conversations.byTask(task.id)?.id).toBe(conversation.id)
-    const stage = conversations.startStage(conversation.id, 'claude', null, 0, undefined, 'chat', true)
+    const stage = conversations.startStage(conversation.id, 'claude', null, 0, undefined, true)
     expect(stage.planOnly).toBe(true)
     expect(conversations.get(conversation.id)?.planOnly).toBe(true)
     const moved = conversations.moveWorkspace(conversation.id, '/wt/app', ['/wt/app', '/wt/web'])

@@ -31,7 +31,6 @@ describe('UsageLimitService', () => {
 
   function serve(): void {
     conversations = new ConversationService(store, daemon, path.join(root, 'sessions'),
-      (id, stage, agent) => ['node', 'callback.js', id, stage, agent],
       (event) => { if (event.type === 'chatItems') limits.observe(event.conversationId, event.items) },
       projects, attachments())
     const target = conversations
@@ -69,7 +68,7 @@ describe('UsageLimitService', () => {
 
   async function limitedChat(resetsAt = clock + HOUR) {
     limitFirstTurn(resetsAt)
-    const conversation = await conversations.create('claude', [], 'chat')
+    const conversation = await conversations.create('claude', [])
     await conversations.send(conversation.id, 'refactor the payments module')
     await settle()
     const item = conversations.chatPage(conversation.id).items.find((each) => each.kind === 'usageLimit')
@@ -159,7 +158,7 @@ describe('UsageLimitService', () => {
       first = false
       daemon.emit(sessionId, { type: 'result', subtype: 'success', is_error: true, result: "You've hit your session limit", duration_ms: 20 })
     }
-    const conversation = await conversations.create('claude', [], 'chat')
+    const conversation = await conversations.create('claude', [])
     await conversations.send(conversation.id, 'go')
     await settle()
     const item = conversations.chatPage(conversation.id).items.find((each) => each.kind === 'usageLimit')

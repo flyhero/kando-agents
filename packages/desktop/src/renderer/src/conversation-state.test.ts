@@ -9,28 +9,18 @@ const base: Conversation = {
 const label = (patch: Partial<Conversation>) => conversationState({ ...base, ...patch })
 
 describe('conversationState', () => {
-  it('tells how the agent last stopped', () => {
-    expect(label({ sessionId: 's', lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '运行中', running: true, failed: false })
-    expect(label({ lastExit: null }).label).toBe('未启动')
-    expect(label({ lastExit: { code: null, at: 1 } }).label).toBe('已停止')
-    expect(label({ lastExit: { code: 0, at: 1 } })).toMatchObject({ label: '已退出', failed: false })
-    expect(label({ lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true, detail: 'agent 异常退出（code 1）' })
+  it('tells an agent that waits on the user from one that works', () => {
+    expect(label({ sessionId: 's', chat: { turn: 'running' } }).label).toBe('运行中')
+    expect(label({ sessionId: 's', chat: { turn: 'awaiting' } }).label).toBe('等待确认')
   })
 
-  it('tells a chat-mode agent that waits on the user from one that works', () => {
-    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'running' } }).label).toBe('运行中')
-    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'awaiting' } }).label).toBe('等待确认')
-  })
-
-  it('calls a chat conversation idle whether or not its agent is up, unless it crashed', () => {
-    expect(label({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } })).toMatchObject({ label: '空闲', running: false })
-    expect(label({ mode: 'chat', lastExit: { code: null, at: 1 } }).label).toBe('空闲')
-    expect(label({ mode: 'chat', lastExit: { code: 0, at: 1 } }).label).toBe('空闲')
-    expect(label({ mode: 'chat', lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true })
-  })
-
-  it('says only "not running" to an older core that sends no exit', () => {
-    expect(label({}).label).toBe('未运行')
+  it('calls a conversation idle whether or not its agent is up, unless it crashed', () => {
+    expect(label({ sessionId: 's', chat: { turn: 'idle' } })).toMatchObject({ label: '空闲', running: false })
+    expect(label({}).label).toBe('空闲')
+    expect(label({ lastExit: null }).label).toBe('空闲')
+    expect(label({ lastExit: { code: null, at: 1 } }).label).toBe('空闲')
+    expect(label({ lastExit: { code: 0, at: 1 } }).label).toBe('空闲')
+    expect(label({ lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true, detail: 'agent 异常退出（code 1），发消息会重新启动它' })
   })
 })
 
@@ -38,15 +28,14 @@ describe('conversationGlyph', () => {
   const glyph = (patch: Partial<Conversation>, unseen = false) => conversationGlyph({ ...base, ...patch }, unseen)
 
   it('puts what waits on the user before an agent at work, and that before a failure', () => {
-    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'awaiting' } })).toBe('awaiting')
-    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'running' } })).toBe('running')
-    expect(glyph({ sessionId: 's' })).toBe('running')
-    expect(glyph({ mode: 'chat', lastExit: { code: 1, at: 1 } }, true)).toBe('failed')
+    expect(glyph({ sessionId: 's', chat: { turn: 'awaiting' } })).toBe('awaiting')
+    expect(glyph({ sessionId: 's', chat: { turn: 'running' } })).toBe('running')
+    expect(glyph({ lastExit: { code: 1, at: 1 } }, true)).toBe('failed')
   })
 
   it('marks a finished turn the user has not seen, and otherwise nothing going on', () => {
-    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } }, true)).toBe('unseen')
-    expect(glyph({ sessionId: 's', mode: 'chat', chat: { turn: 'idle' } })).toBe('idle')
+    expect(glyph({ sessionId: 's', chat: { turn: 'idle' } }, true)).toBe('unseen')
+    expect(glyph({ sessionId: 's', chat: { turn: 'idle' } })).toBe('idle')
   })
 })
 

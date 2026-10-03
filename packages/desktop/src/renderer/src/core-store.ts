@@ -32,7 +32,7 @@ export type ConnectionState = 'waiting-for-core' | 'connecting' | 'connected'
 
 // What the right-hand pane shows for the selected task.
 // terminal: a task's agent in a terminal · chat: a task started in the chat view, in its chat
-export type TaskView = 'detail' | 'terminal' | 'chat'
+export type TaskView = 'detail' | 'chat'
 export type Section = 'tasks' | 'conversations'
 
 // A sign-in this window started. The flow lives in core and ends if the connection drops.
@@ -56,7 +56,6 @@ type CoreState = {
   unseen: Readonly<Record<string, true>>
   section: Section
   selectedConversationId: string | null
-  newConversationOpen: boolean
   // The page a new conversation starts from while chats are the default (see ConversationDraft).
   conversationDraft: boolean
   selectedId: string | null
@@ -115,7 +114,6 @@ export const useCore = create<CoreState>()(() => ({
   unseen: {},
   section: 'tasks',
   selectedConversationId: null,
-  newConversationOpen: false,
   conversationDraft: false,
   selectedId: null,
   view: 'detail',
@@ -149,20 +147,22 @@ export const useCore = create<CoreState>()(() => ({
   login: null
 }))
 
-// A task with a live agent opens on its terminal: that is where the work is happening. One under
-// review opens there too, with the inspector showing what the agent changed. A task started in the
-// chat view opens on its chat until it is closed.
+// A started task opens on its chat until it is closed: that is where the work happens. One under
+// review opens with the inspector showing what the agent changed; one a Kando before 0.11 ran in a
+// terminal has no chat, but opens there too for its changes.
 export function selectTask(id: string | null): void {
   useCore.setState((s) => {
     const task = id ? s.tasks[id] : undefined
-    const review = task?.status === 'review' && task.sessionId !== null
-    const chat = task?.conversationId && task.status !== 'done' && task.status !== 'abandoned'
+    const review = task?.status === 'review'
+    const chat = task?.conversationId
+      ? task.status !== 'done' && task.status !== 'abandoned'
+      : review && task.repos.some((repo) => repo.worktreePath !== null)
     return {
       selectedId: id,
       section: 'tasks',
       inboxOpen: false,
       worktreesOpen: false,
-      view: chat ? 'chat' : task && (task.status === 'running' || task.refineSessionId || review) ? 'terminal' : 'detail',
+      view: chat ? 'chat' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
   })
@@ -323,10 +323,6 @@ export function closeConversationDraft(): void {
   useCore.setState({ conversationDraft: false })
 }
 
-export function setNewConversationOpen(open: boolean): void {
-  useCore.setState({ newConversationOpen: open })
-}
-
 // The sidebar entry shows a failure in place of the count, so opening it then shows that failure.
 export function openInbox(): void {
   useCore.setState((s) => ({
@@ -405,12 +401,7 @@ export function closeLogin(): void {
   }
 }
 
-// Whether the core this window talks to can run a conversation in chat mode.
-export function useChatSupported(): boolean {
-  return useCore((s) => s.rpc?.features.includes('chat') ?? false)
-}
-
-// Whether it can also switch a chat stage's permission mode, model and effort.
+// Whether the core this window talks to can switch a chat stage's permission mode, model and effort.
 export function useChatOptionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('chat-options') ?? false)
 }
@@ -423,11 +414,6 @@ export function useChatImagesSupported(): boolean {
 // Whether core can look a file up by name in the projects (projects.findFile).
 export function useFindFileSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('find-file') ?? false)
-}
-
-// Whether a task can start in the chat view.
-export function useTaskChatSupported(): boolean {
-  return useCore((s) => s.rpc?.features.includes('task-chat') ?? false)
 }
 
 export function useWorktreesSupported(): boolean {

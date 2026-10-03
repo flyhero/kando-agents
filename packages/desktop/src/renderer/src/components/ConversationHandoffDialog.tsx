@@ -3,23 +3,22 @@ import type { AgentKind, Conversation } from '@kando/protocol'
 import { dismissError, perform, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
 import { AgentQuotaHint, confirmQuota } from './AgentQuota'
-import { defaultMode, startOptions } from './ConversationActions'
+import { startOptions } from './ConversationActions'
 
 export function ConversationHandoffDialog({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
-  // An idle chat agent has nothing to lose, so core lets it go without asking.
-  const mustConfirm = conversation.sessionId !== null && !(conversation.mode === 'chat' && conversation.chat?.turn === 'idle')
+  // An idle agent has nothing to lose, so core lets it go without asking.
+  const mustConfirm = conversation.sessionId !== null && conversation.chat?.turn !== 'idle'
   const error = useCore((s) => s.error)
   const target: AgentKind = conversation.agent === 'claude' ? 'codex' : 'claude'
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
     if (busy || (mustConfirm && !confirmed) || !confirmQuota(target)) return
     setBusy(true)
-    // The new agent starts in the interface settings choose, as a new conversation does.
-    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(defaultMode()) }))
+    const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions() }))
     setBusy(false)
     if (result) onClose()
   }

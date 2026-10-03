@@ -27,26 +27,13 @@ export function timeAgo(at: number, now: number): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
-// One wording for the list, the header and grouping. "Not running" alone hid whether the agent
-// finished, was stopped, crashed at once or never started.
+// One wording for the list, the header and grouping. A conversation has no stopped state: its
+// agent starts again with the next message and goes when idle, so what it is doing, or how it
+// last failed, is all there is to say.
 export function conversationState(conversation: Conversation): ConversationState {
   const { sessionId, lastExit, chat } = conversation
-  // A chat conversation has no stopped state: its agent starts again with the next message and
-  // goes when idle, so what it is doing, or how it last failed, is all there is to say.
-  if (conversation.mode === 'chat') {
-    if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
-    if (sessionId && chat?.turn === 'running') return { label: '运行中', running: true, failed: false, detail: null }
-    if (!sessionId && lastExit?.code) return { label: '异常退出', running: false, failed: true, detail: `agent 异常退出（code ${lastExit.code}），发消息会重新启动它` }
-    return { label: '空闲', running: false, failed: false, detail: '发消息就会接着聊' }
-  }
-  // A chat-mode agent says whether it is working; a TUI's is only known to be up.
   if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
-  if (sessionId && chat?.turn === 'idle') return { label: '等待输入', running: true, failed: false, detail: 'agent 在等你的下一条消息' }
-  if (sessionId) return { label: '运行中', running: true, failed: false, detail: null }
-  // An older core sends no lastExit, so there is nothing more to say than before.
-  if (lastExit === undefined) return { label: '未运行', running: false, failed: false, detail: null }
-  if (lastExit === null) return { label: '未启动', running: false, failed: false, detail: null }
-  if (lastExit.code === null) return { label: '已停止', running: false, failed: false, detail: 'agent 被停止了' }
-  if (lastExit.code === 0) return { label: '已退出', running: false, failed: false, detail: 'agent 正常退出（code 0）' }
-  return { label: '异常退出', running: false, failed: true, detail: `agent 异常退出（code ${lastExit.code}）` }
+  if (sessionId && chat?.turn === 'running') return { label: '运行中', running: true, failed: false, detail: null }
+  if (!sessionId && lastExit?.code) return { label: '异常退出', running: false, failed: true, detail: `agent 异常退出（code ${lastExit.code}），发消息会重新启动它` }
+  return { label: '空闲', running: false, failed: false, detail: '发消息就会接着聊' }
 }

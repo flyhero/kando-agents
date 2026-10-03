@@ -1,12 +1,9 @@
 import path from 'node:path'
 import {
   isFinished,
-  PROPOSE_DETAILS_TOOL,
-  READ_TASK_TOOL,
   shortTaskId,
   taskPrompt,
   untrustedSource,
-  type AgentKind,
   type SnapshotImagePath,
   type Task,
   type TaskPlan,
@@ -39,11 +36,8 @@ type Dependency = Pick<Task, 'id' | 'title' | 'repos' | 'status' | 'details'> & 
 
 const STATUS_TEXT: Record<TaskStatus, string> = { pending: '未执行', running: '执行中', review: '待验收', done: '已完成', abandoned: '已废弃' }
 
-// Plans of unfinished dependencies go inline up to this much each; the agent reads the
-// rest (and anything else it wants) through the read tool.
-const PLAN_EXCERPT_LIMIT = 2_000
-// A chat stage has no read tool, so it gets more of each inline.
-const CHAT_PLAN_EXCERPT_LIMIT = 8_000
+// Plans of unfinished dependencies go inline up to this much each.
+const PLAN_EXCERPT_LIMIT = 8_000
 
 function branchNotes(workspace: Workspace, dependency: Pick<Task, 'repos'>): string[] {
   const stackedOn = new Set(workspace.entries.flatMap((entry) => (entry.base ? [entry.base] : [])))
@@ -147,22 +141,19 @@ function planText(dependency: Dependency): string {
   return [dependency.details.trim(), kept ? `（在聊天里定下的计划）\n${kept}` : ''].filter(Boolean).join('\n\n')
 }
 
-function planExcerpt(dependency: Dependency, readTool: boolean): string {
+function planExcerpt(dependency: Dependency): string {
   const plan = planText(dependency)
-  const limit = readTool ? PLAN_EXCERPT_LIMIT : CHAT_PLAN_EXCERPT_LIMIT
   if (plan === '') {
     return '（还没有详情）'
   }
-  if (plan.length <= limit) {
+  if (plan.length <= PLAN_EXCERPT_LIMIT) {
     return plan
   }
-  const rest = plan.length - limit
-  return `${plan.slice(0, limit)}\n……（还有 ${rest} 字${readTool ? `，用 ${READ_TASK_TOOL} 读取完整内容` : '没有列出'}）`
+  return `${plan.slice(0, PLAN_EXCERPT_LIMIT)}\n……（还有 ${plan.length - PLAN_EXCERPT_LIMIT} 字没有列出）`
 }
 
 // Tags keep an unfinished dependency's own headings from reading as part of this task.
-// readTool: the agent has kando's read tool for the rest (a chat stage does not).
-function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: readonly Dependency[], readTool = true): string | null {
+function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: readonly Dependency[]): string | null {
   if (dependencies.length === 0) {
     return null
   }
@@ -170,15 +161,14 @@ function dependencyDetailsSection(workspace: RefineWorkspace, dependencies: read
     .filter((dependency) => !isFinished(dependency.status))
     .map((dependency) => {
       const attributes = `id="${shortTaskId(dependency.id)}" title="${dependency.title.replaceAll('"', "'")}" status="${STATUS_TEXT[dependency.status]}"`
-      return `<dependency ${attributes}>\n${planExcerpt(dependency, readTool)}\n</dependency>`
+      return `<dependency ${attributes}>\n${planExcerpt(dependency)}\n</dependency>`
     })
   return [
     [
       '本任务依赖下面这些任务，它们完成后本任务才能执行。细化时要衔接好它们：不重复它们的工作，用好它们留下的接口。',
       ...dependencies.map((dependency) => dependencyLine(workspace.landed, dependency))
     ].join('\n'),
-    ...plans,
-    ...(readTool ? [`需要某个依赖任务（包括依赖的依赖）的完整详情时，调用 kando 的 ${READ_TASK_TOOL} 工具，传入任务 id。`] : [])
+    ...plans
   ].join('\n\n')
 }
 
@@ -202,8 +192,8 @@ export function agentPrompt(
   return sections.filter((section) => section !== null).join('\n\n')
 }
 
-// Continuing is a new session on the old worktree: the agent only knows what the code
-// and its history tell it, so it catches up first and then waits for the new ask.
+// Continuing a task run in a terminal starts its chat on the old worktree: the agent only knows
+// what the code and its history tell it, so it catches up first and then waits for the new ask.
 export function continuePrompt(
   task: Pick<Task, 'title' | 'details' | 'repos' | 'source' | 'sourceSnapshot'>,
   workspace: Workspace,
@@ -254,7 +244,7 @@ export function chatStartPrompt(
 }
 
 // Planning a task whose dependencies are unfinished: read-only in the projects as they are, the plan
-// kept on the task for when it can run. No kando tools here: the dependencies' plans go inline.
+// kept on the task for when it can run. The dependencies' plans go inline.
 export function chatPlanPrompt(
   task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
   workspace: RefineWorkspace,
@@ -269,7 +259,7 @@ export function chatPlanPrompt(
     imageSection(images.attached),
     sourceSection(task, images),
     codeSection(workspace),
-    dependencyDetailsSection(workspace, dependencies, false),
+    dependencyDetailsSection(workspace, dependencies),
     predecessorSection(predecessor),
     [
       '请这样进行：',
@@ -277,40 +267,6 @@ export function chatPlanPrompt(
       '2. 有不清楚的地方先问我，每次问几个最关键的问题。',
       '3. 我们达成一致后，给出完整的实现计划：目标、实现方案、涉及的文件、验收标准。我保存后，它会在依赖完成、开始执行时交给执行的 agent。'
     ].join('\n')
-  ]
-  return sections.filter((section) => section !== null).join('\n\n')
-}
-
-// Refining is a conversation, so the prompt sets the rules and asks for the plan back
-// through the tool; the agent should not start implementing.
-export function refinePrompt(
-  task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
-  agent: AgentKind,
-  workspace: RefineWorkspace,
-  dependencies: readonly Dependency[],
-  predecessor: Predecessor | null = null,
-  images: PromptImages = NO_IMAGES
-): string {
-  const steps = [
-    '1. 先阅读相关代码，了解现状。',
-    '2. 有不清楚的地方先问我，每次问几个最关键的问题。',
-    `3. 我们达成一致后，调用 kando 的 ${PROPOSE_DETAILS_TOOL} 工具，提交一份完整的任务详情（Markdown），包含：目标、背景、实现方案、涉及的文件、验收标准。它会替换现在的详情，所以要写完整，不要只写改动的部分。`,
-    '4. 之后我可能还会请你修改，改完重新提交即可，新的一版会替换上一版。'
-  ]
-  if (agent === 'claude') {
-    // ExitPlanMode would hand the session over to implementing once the user says yes.
-    steps.push('5. 不要调用 ExitPlanMode，方案只通过上面的工具提交。')
-  }
-  const sections = [
-    '我们先一起把这个开发任务细化清楚。这次只讨论和规划，不要修改任何文件，也不要开始实现。',
-    `任务：${task.title}`,
-    `现在的详情：\n${task.details.trim() || '（还没有详情）'}`,
-    imageSection(images.attached),
-    sourceSection(task, images),
-    codeSection(workspace),
-    dependencyDetailsSection(workspace, dependencies),
-    predecessorSection(predecessor),
-    ['请这样进行：', ...steps].join('\n')
   ]
   return sections.filter((section) => section !== null).join('\n\n')
 }

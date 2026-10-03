@@ -2,9 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { DaemonMethod, DaemonParams, DaemonResult } from '@kando/protocol/node'
-import type { SessionHost } from './daemon-client'
+import { z } from 'zod'
+import type { Task } from '@kando/protocol'
 import { AgentRunStore } from './agent-run-store'
 import { AttachmentStore } from './attachment-store'
 import { ConversationService } from './conversation-service'
@@ -14,71 +15,67 @@ import { gifBytes, pngBytes } from './image-fixtures'
 import { ProjectRegistry } from './project-registry'
 import { TaskService, type TaskEvent } from './task-service'
 import { TaskStore } from './task-store'
+import { prepareWorkspace } from './workspace'
 
-type FakeHandlers = { [M in DaemonMethod]: (params: DaemonParams<M>) => DaemonResult<M> }
+// A message to a Claude chat agent: its text, after any images as blocks of their own.
+const UserMessage = z.object({
+  type: z.literal('user'),
+  message: z.object({ content: z.union([z.string(), z.array(z.object({ type: z.string(), text: z.string().optional() }))]) })
+})
 
-function fakeSessions(): SessionHost & { spawns: DaemonParams<'spawn'>[]; live: Set<string> } {
-  const spawns: DaemonParams<'spawn'>[] = []
-  // What list reports as still running; tests add to it where that matters.
-  const live = new Set<string>()
-  const handlers: FakeHandlers = {
-    spawn: (params) => {
-      spawns.push(params)
-      return { sessionId: `session-${spawns.length}` }
-    },
-    write: () => ({ ok: true }),
-    resize: () => ({ ok: true }),
-    kill: () => ({ ok: true }),
-    attach: ({ sessionId }) => ({ sessionId, exited: false, exitCode: null, buffer: '', bufferStart: 0, endOffset: 0 }),
-    list: () => ({ sessions: [...live].map((sessionId) => ({ sessionId, exited: false, exitCode: null })) }),
-    spawnPipe: () => { throw new Error('unused') },
-    release: () => ({ ok: true }),
-    awakeSet: () => ({ active: false, supported: true, problem: null }),
-    awakeStatus: () => ({ active: false, supported: true, problem: null })
-  }
-  return {
-    spawns,
-    live,
-    request: async (method, params) => handlers[method](params),
-    onEvent: () => () => {}
-  }
+function userText(frame: unknown): string[] {
+  const parsed = UserMessage.safeParse(frame)
+  if (!parsed.success) return []
+  const { content } = parsed.data.message
+  return typeof content === 'string' ? [content] : content.flatMap((block) => (block.text === undefined ? [] : [block.text]))
 }
+
+// What Claude prints when a turn is over.
+const turnEnd = { type: 'result', subtype: 'success', is_error: false, result: 'done', terminal_reason: 'completed', duration_ms: 5 }
 
 describe('TaskService', () => {
   let dir: string
   let store: TaskStore
+  let conversationsStore: ConversationStore
   let projects: ProjectRegistry
-  let sessions: ReturnType<typeof fakeSessions>
-  let events: TaskEvent[]
-  let service: TaskService
   let attachments: AttachmentStore
   let runs: AgentRunStore
+  let daemon: ReturnType<typeof fakeChatDaemon>
+  let conversations: ConversationService
+  let events: TaskEvent[]
+  let service: TaskService
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
   beforeEach(() => {
     dir = mkdtempSync(path.join(os.tmpdir(), 'kando-test-'))
-    store = new TaskStore(path.join(dir, 'kando.db'))
-    projects = new ProjectRegistry(path.join(dir, 'kando.db'))
-    runs = new AgentRunStore(path.join(dir, 'kando.db'))
-    sessions = fakeSessions()
-    events = []
+    const database = path.join(dir, 'kando.db')
+    store = new TaskStore(database)
+    conversationsStore = new ConversationStore(database)
+    projects = new ProjectRegistry(database)
+    runs = new AgentRunStore(database)
     attachments = new AttachmentStore(dir)
-    service = new TaskService(
-      store,
-      projects,
-      sessions,
-      path.join(dir, 'worktrees'),
-      (e) => events.push(e),
-      (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }),
-      attachments,
-      null,
-      null,
-      runs
-    )
+    daemon = fakeChatDaemon()
+    events = []
+    // Wired as main.ts wires them: the conversation service runs each task's chat and reports back.
+    conversations = new ConversationService(conversationsStore, daemon, path.join(dir, 'sessions'),
+      (event) => {
+        if (event.type === 'changed') service.chatChanged(event.conversation)
+        else if (event.type === 'planApproved') service.recordPlan(event.taskId, event.plan)
+      },
+      projects, attachments)
+    const target = conversations
+    daemon.deliver = (event) => {
+      if (event.event === 'data') target.handleData(event)
+      else if (event.event === 'exit') target.handleExit(event.sessionId, event.exitCode)
+      else target.handleStderr(event.sessionId, event.data)
+    }
+    service = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), (event) => events.push(event), attachments, conversations, runs)
   })
 
   afterEach(() => {
     runs.close()
     projects.close()
+    conversationsStore.close()
     store.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -99,6 +96,20 @@ describe('TaskService', () => {
   function readyTask(title: string, repos: string[]) {
     const task = service.create({ title })
     return service.update({ id: task.id, details: 'x', repos, agent: 'claude' })
+  }
+
+  const exitPlanMode = (requestId: string) => ({
+    type: 'control_request', request_id: requestId,
+    request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: `toolu_${requestId}` }
+  })
+  const sessionOf = (taskId: string) => conversations.get(service.get(taskId).conversationId ?? '').sessionId ?? ''
+  // What the task's agent has been told in its current session.
+  const told = (taskId: string) => daemon.written(sessionOf(taskId)).flatMap(userText).join('\n\n')
+
+  // Hands a task in once its agent's turn is over.
+  async function handIn(taskId: string): Promise<Task> {
+    await settle()
+    return service.submit(taskId)
   }
 
   it('creates pending tasks and keeps them pending while details are written', () => {
@@ -142,12 +153,12 @@ describe('TaskService', () => {
     expect(() => service.get('ffffffff')).toThrow(/no task/)
   })
 
-  it('runs a single repo inside its own worktree and waits for review when the session exits', async () => {
+  it('starts a single repo inside its own worktree and waits for review once handed in', async () => {
     const repo = initRepo('app')
     const task = service.create({ title: 'Add dark mode' })
     service.update({ id: task.id, details: 'Use CSS tokens', repos: [repo], agent: 'claude' })
 
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     const short = task.id.slice(0, 8)
     expect(running.status).toBe('running')
     expect(running.repos).toEqual([{
@@ -158,14 +169,10 @@ describe('TaskService', () => {
       // No origin here: the branch starts from what the repo has checked out, and says why.
       start: { ref: git(repo, 'symbolic-ref', '--short', 'HEAD'), commit: git(repo, 'rev-parse', 'HEAD'), note: 'no-remote-default', at: expect.any(Number) }
     }])
-    expect(sessions.spawns[0]).toMatchObject({
-      command: 'claude',
-      args: ['--', 'Add dark mode\n\nUse CSS tokens'],
-      cwd: running.repos[0]?.worktreePath
-    })
+    expect(daemon.spawns[0]).toMatchObject({ command: 'claude', cwd: realpathSync(running.repos[0]?.worktreePath ?? '') })
+    expect(told(task.id)).toContain('Add dark mode\n\nUse CSS tokens')
 
-    service.handleSessionExit(running.sessionId ?? '', 0)
-    expect(service.get(task.id).status).toBe('review')
+    expect((await handIn(task.id)).status).toBe('review')
     expect(service.move(task.id, 'done').status).toBe('done')
   })
 
@@ -175,45 +182,42 @@ describe('TaskService', () => {
     it('keeps each run, how it ended, and the user accepting the result', async () => {
       const task = readyTask('Accept me', [initRepo('app')])
       expect(runs.forTask(task.id)).toEqual([])
-      const running = await service.run(task.id)
-      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'run', view: 'terminal', agent: 'claude', endedAt: null, outcome: null }])
-      service.handleSessionExit(running.sessionId ?? '', 0)
+      await service.start(task.id)
+      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'run', view: 'chat', agent: 'claude', endedAt: null, outcome: null }])
+      await handIn(task.id)
       service.move(task.id, 'done')
-      expect(runs.forTask(task.id)).toMatchObject([{ endedBy: 'exit', exitCode: 0, outcome: 'accepted', model: null, inputTokens: null }])
+      expect(runs.forTask(task.id)).toMatchObject([{ endedBy: 'submit', exitCode: null, outcome: 'accepted' }])
     })
 
     it('marks a run sent back by continuing, and the last one given up by a redo', async () => {
       const task = readyTask('Redo me', [initRepo('app')])
-      service.handleSessionExit((await service.run(task.id)).sessionId ?? '', 1)
-      service.handleSessionExit((await service.continue(task.id, 'again')).sessionId ?? '', 0)
+      await service.start(task.id)
+      await handIn(task.id)
+      await service.continue(task.id, 'again')
+      await handIn(task.id)
       service.redo(task.id, 'wrong approach')
+      await settle()
       expect(verdicts(task.id)).toEqual([
-        { kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: 1, outcome: 'continued' },
-        { kind: 'continue', view: 'terminal', endedBy: 'exit', exitCode: 0, outcome: 'redone' }
+        { kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'continued' },
+        { kind: 'continue', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'redone' }
       ])
     })
 
     it('keeps an accepted run accepted when the task reopens, and a run closed mid-way out of the verdicts', async () => {
       const task = readyTask('Reopen me', [initRepo('app')])
-      service.handleSessionExit((await service.run(task.id)).sessionId ?? '', 0)
+      await service.start(task.id)
+      await handIn(task.id)
       service.move(task.id, 'done')
       await service.continue(task.id)
       service.move(task.id, 'done')
       expect(verdicts(task.id)).toEqual([
-        { kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: 0, outcome: 'accepted' },
-        { kind: 'continue', view: 'terminal', endedBy: 'closed', exitCode: null, outcome: 'closed' }
+        { kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'accepted' },
+        { kind: 'continue', view: 'chat', endedBy: 'closed', exitCode: null, outcome: 'closed' }
       ])
-    })
-
-    it('ends a run whose session vanished with no exit code', async () => {
-      const task = readyTask('Lose me', [initRepo('app')])
-      await service.run(task.id)
-      service.reconcile([])
-      expect(verdicts(task.id)).toEqual([{ kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: null, outcome: null }])
     })
   })
 
-  it('starts a run\'s branch where the task picked, which it may change only until the branch exists', async () => {
+  it('starts a task\'s branch where it picked, which it may change only until the branch exists', async () => {
     const repo = initRepo('app')
     const other = initRepo('web')
     git(repo, 'branch', 'release/2.4')
@@ -233,31 +237,35 @@ describe('TaskService', () => {
     expect(options.map((each) => [each.path, each.git, each.fallback])).toEqual([[repo, true, null], [other, true, null]])
     expect(options[0]?.refs).toContain('refs/heads/release/2.4')
 
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     expect(git(running.repos[0]!.worktreePath!, 'rev-parse', 'HEAD')).toBe(release)
     expect(running.repos[0]?.start).toMatchObject({ ref: 'release/2.4', commit: release, note: null })
-    service.handleSessionExit(running.sessionId ?? '', 0)
+    await handIn(task.id)
     expect(() => service.update({ id: task.id, starts: [{ path: repo, ref: null }] })).toThrow(expect.objectContaining({ reason: 'branch-exists' }))
     // A redo is a new attempt from the same start, on a branch of its own.
     service.move(task.id, 'done')
     const successor = service.redo(task.id, undefined)
+    await settle()
     expect(successor.repos.map((each) => [each.startRef, each.branch, each.start])).toEqual([['refs/heads/release/2.4', null, null], [null, null, null]])
   })
 
   it('lets a cleaned worktree go, and lays it out again from its branch when the task goes on', async () => {
     const repo = initRepo('app')
     const task = readyTask('Clean me', [repo])
-    const run = await service.run(task.id)
+    // The agent is still at work on its first message.
+    daemon.reply = () => {}
+    const run = await service.start(task.id)
     const worktree = run.repos[0]!.worktreePath!
     git(worktree, 'commit', '-q', '--allow-empty', '-m', 'work')
-    service.handleSessionExit(run.sessionId ?? '', 0)
-    service.move(task.id, 'done')
 
-    // A terminal agent still open keeps its worktree; one that ended does not.
-    sessions.live.add(run.sessionId ?? '')
+    // An agent at work keeps its worktree; an idle one is stopped for it to go.
     await expect(service.releaseAgent(task.id)).rejects.toMatchObject({ reason: 'worktree-in-use' })
-    sessions.live.clear()
+    const session = sessionOf(task.id)
+    daemon.emit(session, turnEnd)
+    await handIn(task.id)
+    service.move(task.id, 'done')
     await service.releaseAgent(task.id)
+    expect(daemon.killed).toEqual([{ sessionId: session, force: false }])
     git(repo, 'worktree', 'remove', worktree)
     service.forgetWorktree(task.id, worktree)
     expect(service.get(task.id).repos[0]).toMatchObject({ worktreePath: null, branch: run.repos[0]!.branch })
@@ -266,11 +274,11 @@ describe('TaskService', () => {
     expect(git(worktree, 'log', '-1', '--format=%s')).toBe('work')
   })
 
-  it('reads a run\'s changes from its worktree, and diffs only the task\'s own repos', async () => {
+  it('reads a task\'s changes from its worktree, and diffs only the task\'s own repos', async () => {
     const repo = initRepo('app')
     const task = readyTask('Add theme', [repo])
     expect((await service.changes(task.id))[0]).toMatchObject({ base: null, files: [] })
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     writeFileSync(path.join(running.repos[0]!.worktreePath!, 'theme.css'), 'body {}\n')
     expect((await service.changes(task.id))[0]?.files).toEqual([
       { path: 'theme.css', oldPath: null, kind: 'untracked', additions: null, deletions: null }
@@ -279,11 +287,11 @@ describe('TaskService', () => {
     await expect(service.diff(task.id, dir, 'theme.css')).rejects.toMatchObject({ reason: 'repo-not-found' })
   })
 
-  it('reads branches from the task\'s worktrees only, once a run has made them', async () => {
+  it('reads branches from the task\'s worktrees only, once its start has made them', async () => {
     const repo = initRepo('app')
     const task = readyTask('Add dark mode', [repo])
     expect(await service.branches(task.id)).toEqual([{ path: repo, branch: null, detached: false }])
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     writeFileSync(path.join(running.repos[0]!.worktreePath!, 'theme.css'), '')
     expect(await service.branches(task.id)).toEqual([
       { path: repo, branch: running.repos[0]!.branch, detached: false, upstream: null, ahead: 0, behind: 0, changes: 1 }
@@ -326,12 +334,15 @@ describe('TaskService', () => {
     await service.addImages(task.id, [{ id: mine.id, name: '登录页' }])
     service.update({ id: task.id, repos: [repo] })
 
-    await service.run(task.id)
-    const args = sessions.spawns[0]?.args ?? []
-    const prompt = args.at(-1) ?? ''
+    await service.start(task.id)
+    const prompt = told(task.id)
     expect(prompt).toContain(`任务附了 1 张图片，开始前先用读取文件的工具查看（如果它们已经附在这条消息里，直接看即可）：\n- 图 1 登录页：${path.join(dir, mine.id)}`)
     expect(prompt).toMatch(new RegExp(`<untrusted-source[^>]*>[\\s\\S]*- shot.gif：${path.join(dir, theirs.id).replace(/[.]/g, '\\.')}[\\s\\S]*</untrusted-source>`))
-    expect(args[1]).toBe(`Read(/${path.join(dir, mine.id)}),Read(/${path.join(dir, theirs.id)})`)
+    // The user's image goes along with the message too; the issue's only by path.
+    const [first] = daemon.written(sessionOf(task.id)).filter((frame) => userText(frame).length > 0)
+    expect(JSON.stringify(first).match(/"type":"image"/g)).toHaveLength(1)
+    const args = daemon.spawns.at(-1)?.args ?? []
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe(`Read(/${path.join(dir, mine.id)}),Read(/${path.join(dir, theirs.id)})`)
   })
 
   it('puts the issue key of an imported task into its branch, where Jira looks for it', async () => {
@@ -340,32 +351,32 @@ describe('TaskService', () => {
     const task = service.importTask({ title: '菜单分类排序', agent: 'claude', source, snapshot: { markdown: 'x', fetchedAt: 0, images: [] } })
     service.update({ id: task.id, repos: [repo] })
 
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     expect(running.repos[0]?.branch).toBe(`kando/PROJ-7-${task.id.slice(0, 8)}`)
-    expect(sessions.spawns[0]?.args[1]).toContain('这个任务来自 Jira PROJ-7')
+    expect(told(task.id)).toContain('这个任务来自 Jira PROJ-7')
   })
 
-  it('runs in place for a plain folder workspace', async () => {
+  it('works in place for a plain folder workspace', async () => {
     const folder = path.join(dir, 'notes')
     mkdirSync(folder)
-    const running = await service.run(readyTask('Tidy notes', [folder]).id)
+    const running = await service.start(readyTask('Tidy notes', [folder]).id)
     expect(running.repos[0]?.worktreePath).toBeNull()
-    expect(sessions.spawns[0]?.cwd).toBe(folder)
+    expect(daemon.spawns[0]?.cwd).toBe(realpathSync(folder))
   })
 
-  it.each(['claude', 'codex'] as const)('runs %s in the primary worktree with isolated additional repos', async (agent) => {
+  it('works in the primary worktree with isolated additional repos', async () => {
     const api = initRepo('api')
     const web = initRepo('web')
     const task = readyTask('Rename user id', [api, web])
-    service.update({ id: task.id, agent })
 
-    const running = await service.run(task.id)
+    const running = await service.start(task.id)
     const taskDir = path.join(dir, 'worktrees', task.id.slice(0, 8))
-    expect(sessions.spawns[0]?.cwd).toBe(path.join(taskDir, 'api'))
     expect(running.repos.map((repo) => repo.worktreePath)).toEqual([path.join(taskDir, 'api'), path.join(taskDir, 'web')])
+    expect(daemon.spawns[0]?.cwd).toBe(realpathSync(path.join(taskDir, 'api')))
+    const args = daemon.spawns[0]?.args ?? []
+    expect(args[args.indexOf('--add-dir') + 1]).toBe(realpathSync(path.join(taskDir, 'web')))
     expect(git(path.join(taskDir, 'web'), 'branch', '--show-current')).toBe(running.repos[1]?.branch)
-    expect(sessions.spawns[0]?.args.slice(0, 2)).toEqual(['--add-dir', path.join(taskDir, 'web')])
-    expect(sessions.spawns[0]?.args.at(-1)).toContain(`主项目：.（${path.join(taskDir, 'api')}） ← ${api}`)
+    expect(told(task.id)).toContain(`主项目：.（${path.join(taskDir, 'api')}） ← ${api}`)
     for (const repo of running.repos) {
       writeFileSync(path.join(repo.worktreePath!, 'draft.txt'), repo.path)
       expect(existsSync(path.join(repo.path, 'draft.txt'))).toBe(false)
@@ -374,90 +385,22 @@ describe('TaskService', () => {
     expect((await service.changes(task.id)).map((repo) => repo.files.length)).toEqual([1, 1])
   })
 
-  it('persists primary selection and reuses worktrees, branches and edits when continuing', async () => {
-    const api = initRepo('api')
-    const web = initRepo('web')
-    const task = readyTask('Primary', [api, web])
-    const running = await service.run(task.id)
-    const original = running.repos
-    writeFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'keep me')
-    service.handleSessionExit(running.sessionId!, 0)
-    const updated = service.update({ id: task.id, repos: [web, api] })
-    expect(updated.repos).toEqual([original[1], original[0]])
-    const reopened = new TaskStore(path.join(dir, 'kando.db'))
-    try {
-      expect(reopened.get(task.id)?.repos).toEqual(updated.repos)
-    } finally {
-      reopened.close()
-    }
-    const continued = await service.continue(task.id)
-    expect(continued.repos).toEqual(updated.repos)
-    expect(sessions.spawns[1]?.cwd).toBe(original[1]?.worktreePath)
-    expect(sessions.spawns[1]?.args.slice(0, 2)).toEqual(['--add-dir', original[0]?.worktreePath])
-    expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
-    service.handleSessionExit(continued.sessionId!, 0)
-    const redo = service.redo(task.id, undefined)
-    expect(redo.repos.map((repo) => repo.path)).toEqual([web, api])
-    const redone = await service.run(redo.id)
-    expect(sessions.spawns[2]?.cwd).toBe(redone.repos[0]?.worktreePath)
-    expect(redone.repos[0]?.worktreePath).not.toBe(original[1]?.worktreePath)
-    expect(existsSync(path.join(redone.repos[0]!.worktreePath!, 'draft.txt'))).toBe(false)
-    expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
-  })
-
-  it('promotes the next project when the primary is removed without deleting its worktree', async () => {
-    const api = initRepo('api')
-    const web = initRepo('web')
-    const task = readyTask('Remove primary', [api, web])
-    const running = await service.run(task.id)
-    service.handleSessionExit(running.sessionId!, 0)
-    const updated = service.update({ id: task.id, repos: [web] })
-    expect(updated.repos).toEqual([running.repos[1]])
-    await service.continue(task.id)
-    expect(sessions.spawns[1]?.cwd).toBe(running.repos[1]?.worktreePath)
-    expect(existsSync(running.repos[0]!.worktreePath!)).toBe(true)
-  })
-
-  it('reserves existing same-name worktrees when adding a new primary', async () => {
-    for (const name of ['first', 'second', 'third']) mkdirSync(path.join(dir, name))
-    const first = initRepo('first/app')
-    const second = initRepo('second/app')
-    const third = initRepo('third/app')
-    const task = readyTask('Same names', [first, second])
-    const running = await service.run(task.id)
-    service.handleSessionExit(running.sessionId!, 0)
-    service.update({ id: task.id, repos: [third, second, first] })
-    const continued = await service.continue(task.id)
-    expect(continued.repos.slice(1)).toEqual([running.repos[1], running.repos[0]])
-    expect(new Set(continued.repos.map((repo) => repo.worktreePath)).size).toBe(3)
-    expect(git(continued.repos[0]!.worktreePath!, 'rev-parse', '--git-common-dir')).toBe(git(third, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-    expect(sessions.spawns[1]?.cwd).toBe(continued.repos[0]?.worktreePath)
-  })
-
-  it('rejects project edits throughout run, refine and continue preparation', async () => {
+  it('rejects project edits while a start or a continue is under way', async () => {
     const api = initRepo('api')
     const web = initRepo('web')
     const task = readyTask('Starting', [api, web])
-    const running = service.run(task.id)
+    const starting = service.start(task.id)
     expect(() => service.update({ id: task.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
-    service.handleSessionExit((await running).sessionId!, 0)
+    await starting
+    await handIn(task.id)
     const continuing = service.continue(task.id)
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
     await continuing
-
-    const pending = readyTask('Refining', [api, web])
-    const refining = service.refine(pending.id)
-    expect(() => service.update({ id: pending.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
-    await refining
-    expect(() => service.update({ id: pending.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'refining' }))
-    service.handleSessionExit(service.get(pending.id).refineSessionId!, 0)
-    expect(service.update({ id: pending.id, repos: [web, api] }).repos[0]?.path).toBe(web)
   })
 
-  it('rejects changes to an abandoned task through the service', async () => {
+  it('rejects changes to an abandoned task through the service', () => {
     const task = readyTask('Abandoned', [initRepo('api')])
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId!, 0)
+    store.update(task.id, { status: 'review' })
     service.redo(task.id, undefined)
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'task-abandoned' }))
   })
@@ -466,47 +409,14 @@ describe('TaskService', () => {
     const folder = path.join(dir, 'notes')
     mkdirSync(folder)
     const task = readyTask('Mixed', [initRepo('api'), folder])
-    await expect(service.run(task.id)).rejects.toMatchObject({ reason: 'repo-not-git' })
+    await expect(service.start(task.id)).rejects.toMatchObject({ reason: 'repo-not-git' })
+    expect(daemon.spawns).toEqual([])
   })
 
   it('keeps repos fixed while the agent runs', async () => {
     const task = readyTask('Locked', [initRepo('api')])
-    await service.run(task.id)
+    await service.start(task.id)
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'task-running' }))
-  })
-
-  it('sends running tasks to review when the daemon no longer has their session', async () => {
-    const task = readyTask('Ghost', [dir])
-    await service.run(task.id)
-
-    service.reconcile([])
-    expect(service.get(task.id).status).toBe('review')
-  })
-
-  it('continues a finished task on its own worktree and branch', async () => {
-    const task = readyTask('Retry', [initRepo('app')])
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId ?? '', 0)
-    await expect(service.run(task.id)).rejects.toMatchObject({ reason: 'not-pending' })
-
-    const continued = await service.continue(task.id)
-    expect(continued).toMatchObject({ status: 'running', repos: run.repos })
-    expect(sessions.spawns[1]).toMatchObject({ cwd: run.repos[0]?.worktreePath })
-    expect(sessions.spawns[1]?.args.at(-1)).toContain('这个任务之前已经执行过一次')
-    service.handleSessionExit(continued.sessionId ?? '', 0)
-    expect(service.get(task.id).status).toBe('review')
-  })
-
-  it('hands what the review found wrong to the continuing agent', async () => {
-    const task = readyTask('Retry', [initRepo('app')])
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId ?? '', 0)
-
-    await service.continue(task.id, '登录后没有跳回原页面')
-    const prompt = sessions.spawns[1]?.args.at(-1) ?? ''
-    expect(prompt).toContain('验收时发现要改的地方：\n登录后没有跳回原页面')
-    expect(prompt).toContain('然后按这些意见修改')
-    expect(prompt).not.toContain('等我告诉你接下来要改什么')
   })
 
   it('redoes a done task as a fresh pending one and moves its dependents over', async () => {
@@ -515,12 +425,13 @@ describe('TaskService', () => {
     const dependent = service.update({ id: service.create({ title: 'Later' }).id, dependsOn: [task.id] })
     expect(() => service.redo(task.id, undefined)).toThrow(expect.objectContaining({ reason: 'not-done' }))
 
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId ?? '', 0)
-    // Dependencies are inherited too; added after the run so it was not blocked.
+    const run = await service.start(task.id)
+    await handIn(task.id)
+    // Dependencies are inherited too; added after the start so it did not only plan.
     const base = service.create({ title: 'Base' })
     service.update({ id: task.id, dependsOn: [base.id] })
     const successor = service.redo(task.id, '方向错了')
+    await settle()
 
     expect(service.get(task.id)).toMatchObject({ status: 'abandoned', abandonReason: '方向错了', repos: run.repos })
     expect(successor).toMatchObject({
@@ -536,16 +447,16 @@ describe('TaskService', () => {
     expect(() => service.move(task.id, 'pending')).toThrow(expect.objectContaining({ reason: 'invalid-transition' }))
   })
 
-  it('runs a redo on a new branch and tells the agent about the abandoned attempt', async () => {
+  it('starts a redo on a new branch and tells the agent about the abandoned attempt', async () => {
     const repo = initRepo('app')
     const task = readyTask('Attempt', [repo])
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId ?? '', 0)
+    const run = await service.start(task.id)
+    await handIn(task.id)
     const successor = service.redo(task.id, '')
 
-    const redone = await service.run(successor.id)
+    const redone = await service.start(successor.id)
     expect(redone.repos[0]?.branch).not.toBe(run.repos[0]?.branch)
-    expect(sessions.spawns[1]?.args.at(-1)).toContain(`上一次尝试 ${task.id.slice(0, 8)}「Attempt」已废弃。`)
+    expect(told(successor.id)).toContain(`上一次尝试 ${task.id.slice(0, 8)}「Attempt」已废弃。`)
     expect(service.get(task.id).abandonReason).toBeNull()
   })
 
@@ -554,28 +465,28 @@ describe('TaskService', () => {
     const first = readyTask('Add api', [repo])
     const second = service.update({ id: readyTask('Use api', [repo]).id, dependsOn: [first.id.slice(0, 8)] })
     expect(second.dependsOn).toEqual([first.id])
-    await expect(service.run(second.id)).rejects.toMatchObject({ reason: 'blocked' })
 
-    const firstRun = await service.run(first.id)
+    const firstRun = await service.start(first.id)
     const firstRepo = firstRun.repos[0]
     git(firstRepo?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', 'api from first')
-    service.handleSessionExit(firstRun.sessionId ?? '', 0)
-    // Under review the first task may still have failed; only accepting it lets the second go.
-    await expect(service.run(second.id)).rejects.toMatchObject({ reason: 'blocked' })
+    await handIn(first.id)
+    // Under review the first task may still have failed: the second only plans, laying out nothing.
+    expect(await service.start(second.id)).toMatchObject({ status: 'pending', repos: [{ worktreePath: null, branch: null }] })
+    await settle()
     service.move(first.id, 'done')
 
-    const secondRun = await service.run(second.id)
+    const secondRun = await service.start(second.id)
     expect(git(secondRun.repos[0]?.worktreePath ?? '', 'log', '--format=%s')).toContain('api from first')
-    expect(sessions.spawns[1]?.args[1]).toContain(`${firstRepo?.branch}，本任务的分支从它拉出`)
+    expect(told(second.id)).toContain(`${firstRepo?.branch}，本任务的分支从它拉出`)
   })
 
   it('starts from HEAD when several dependencies left branches in the same repo', async () => {
     const repo = initRepo('app')
     const done = async (title: string) => {
       const task = readyTask(title, [repo])
-      const run = await service.run(task.id)
+      const run = await service.start(task.id)
       git(run.repos[0]?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', `from ${title}`)
-      service.handleSessionExit(run.sessionId ?? '', 0)
+      await handIn(task.id)
       service.move(task.id, 'done')
       return run
     }
@@ -583,14 +494,61 @@ describe('TaskService', () => {
     const second = await done('second')
     const task = service.update({ id: readyTask('both', [repo]).id, dependsOn: [first.id, second.id] })
 
-    const run = await service.run(task.id)
+    const run = await service.start(task.id)
     const log = git(run.repos[0]?.worktreePath ?? '', 'log', '--format=%s')
     expect(log).not.toContain('from first')
     expect(log).not.toContain('from second')
-    const prompt = sessions.spawns.at(-1)?.args[1] ?? ''
+    const prompt = told(task.id)
     expect(prompt).toContain(first.repos[0]?.branch)
     expect(prompt).toContain(second.repos[0]?.branch)
     expect(prompt).not.toContain('本任务的分支从它拉出')
+  })
+
+  it('tells whether a finished dependency has landed in the code being planned', async () => {
+    const repo = initRepo('app')
+    const first = readyTask('Add api', [repo])
+    const firstRun = await service.start(first.id)
+    git(firstRun.repos[0]?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', 'api')
+    await handIn(first.id)
+
+    // Nothing picked: planning reads the dependency's branch, which the task will stack on.
+    const stacked = service.update({ id: readyTask('Use api', [repo]).id, dependsOn: [first.id] })
+    await service.start(stacked.id)
+    expect(told(stacked.id)).toContain('已执行但还没验收，结果可能还要改')
+    expect(told(stacked.id)).toContain('改动已在当前代码里')
+
+    // What the project has checked out is read where it is, which has the work only once it is merged.
+    const here = readyTask('Use api here', [repo])
+    service.update({ id: here.id, dependsOn: [first.id], starts: [{ path: repo, ref: 'HEAD' }] })
+    await service.start(here.id)
+    expect(daemon.spawns.at(-1)?.cwd).toBe(realpathSync(repo))
+    expect(told(here.id)).toContain('上的改动还没进当前代码')
+  })
+
+  it('plans in a checkout of the start with no branch of its own, which goes once the task runs', async () => {
+    const origin = initRepo('origin')
+    const repo = path.join(dir, 'clone')
+    execFileSync('git', ['clone', '-q', origin, repo])
+    git(repo, 'checkout', '-q', '-b', 'feature/mine')
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'mine')
+    const dependency = service.create({ title: 'First' })
+    const task = service.update({ id: readyTask('Plan it', [repo]).id, dependsOn: [dependency.id] })
+    const taskBranches = () => git(repo, 'branch', '--list', 'kando/*')
+
+    await service.start(task.id)
+    const checkout = path.join(dir, 'worktrees', task.id.slice(0, 8), '.planning', 'clone')
+    expect(daemon.spawns.at(-1)?.cwd).toBe(realpathSync(checkout))
+    expect(git(checkout, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'origin/HEAD'))
+    expect(git(checkout, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD')
+    expect(taskBranches()).toBe('')
+    expect(told(task.id)).toContain('的只读副本，任务分支将从这里拉出')
+    await settle()
+
+    store.update(dependency.id, { status: 'done' })
+    const running = await service.start(task.id)
+    expect(existsSync(checkout)).toBe(false)
+    expect(existsSync(running.repos[0]!.worktreePath!)).toBe(true)
+    expect(git(repo, 'worktree', 'list')).not.toContain('.planning')
   })
 
   it('rejects dependency loops, including on itself', () => {
@@ -624,263 +582,15 @@ describe('TaskService', () => {
     expect(projects.recent()).toEqual([dir])
   })
 
-  it('refines read-only in the repo itself, creating no worktree or branch', async () => {
-    const repo = initRepo('app')
-    const task = readyTask('Tidy auth', [repo])
-
-    const refining = await service.refine(task.id)
-    expect(refining).toMatchObject({ status: 'pending', refineSessionId: 'session-1' })
-    expect(refining.repos).toEqual([{ path: repo, worktreePath: null, branch: null, startRef: null, start: null }])
-    expect(git(repo, 'branch', '--list', 'kando/*')).toBe('')
-    const spawn = sessions.spawns[0]
-    expect(spawn?.cwd).toBe(repo)
-    expect(spawn?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit']))
-    expect(spawn?.args).toContain(JSON.stringify({ mcpServers: { kando: { type: 'stdio', command: 'kando', args: ['mcp', '--task', task.id] } } }))
-    expect(spawn?.args.at(-1)).toContain('propose_task_details')
-
-    // One agent per task: no run and no second refine while this one is open.
-    await expect(service.run(task.id)).rejects.toMatchObject({ reason: 'refining' })
-    await expect(service.refine(task.id)).rejects.toMatchObject({ reason: 'refine-in-progress' })
-
-    service.handleSessionExit('session-1', 0)
-    expect(service.get(task.id)).toMatchObject({ status: 'pending', refineSessionId: null })
-  })
-
-  it('reads the other repos of a multi-repo task through --add-dir', async () => {
-    const api = initRepo('api')
-    const web = initRepo('web')
-    await service.refine(readyTask('Rename id', [api, web]).id)
-    expect(sessions.spawns[0]?.cwd).toBe(api)
-    expect(sessions.spawns[0]?.args.slice(0, 2)).toEqual(['--add-dir', web])
-  })
-
-  it('tells whether a finished dependency has landed in the code being refined', async () => {
-    const repo = initRepo('app')
-    const first = readyTask('Add api', [repo])
-    const firstRun = await service.run(first.id)
-    git(firstRun.repos[0]?.worktreePath ?? '', 'commit', '-q', '--allow-empty', '-m', 'api')
-    service.handleSessionExit(firstRun.sessionId ?? '', 0)
-    const second = service.update({ id: readyTask('Use api', [repo]).id, dependsOn: [first.id] })
-
-    // Nothing picked: planning reads the dependency's branch, which the task will stack on.
-    await service.refine(second.id)
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('已执行但还没验收，结果可能还要改')
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('改动已在当前代码里')
-    service.handleSessionExit(service.get(second.id).refineSessionId ?? '', 0)
-
-    // What the project has checked out is read where it is, which has the work once it is merged.
-    service.update({ id: second.id, starts: [{ path: repo, ref: 'HEAD' }] })
-    await service.refine(second.id)
-    expect(sessions.spawns.at(-1)?.cwd).toBe(repo)
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('上的改动还没进当前代码')
-    service.handleSessionExit(service.get(second.id).refineSessionId ?? '', 0)
-    git(repo, 'merge', '-q', '--ff-only', firstRun.repos[0]?.branch ?? '')
-    await service.refine(second.id)
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('改动已在当前代码里')
-  })
-
-  it('plans in a checkout of the start with no branch of its own, which goes once the task runs', async () => {
-    const origin = initRepo('origin')
-    const repo = path.join(dir, 'clone')
-    execFileSync('git', ['clone', '-q', origin, repo])
-    git(repo, 'checkout', '-q', '-b', 'feature/mine')
-    git(repo, 'commit', '-q', '--allow-empty', '-m', 'mine')
-    const task = readyTask('Plan it', [repo])
-    const taskBranches = () => git(repo, 'branch', '--list', 'kando/*')
-
-    await service.refine(task.id)
-    const checkout = sessions.spawns.at(-1)?.cwd ?? ''
-    expect(checkout).toBe(path.join(dir, 'worktrees', task.id.slice(0, 8), '.planning', 'clone'))
-    expect(git(checkout, 'rev-parse', 'HEAD')).toBe(git(repo, 'rev-parse', 'origin/HEAD'))
-    expect(git(checkout, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD')
-    expect(taskBranches()).toBe('')
-    expect(sessions.spawns.at(-1)?.args.at(-1)).toContain('的只读副本，任务分支将从这里拉出')
-    service.handleSessionExit(service.get(task.id).refineSessionId ?? '', 0)
-
-    const running = await service.run(task.id)
-    expect(existsSync(checkout)).toBe(false)
-    expect(existsSync(running.repos[0]!.worktreePath!)).toBe(true)
-    expect(git(repo, 'worktree', 'list')).not.toContain('.planning')
-  })
-
-  it('refines Codex inside its read-only sandbox', async () => {
-    const task = service.create({ title: 'Plan', repos: [dir], agent: 'codex' })
-    await service.refine(task.id)
-    expect(sessions.spawns[0]?.args.slice(0, 2)).toEqual(['--sandbox', 'read-only'])
-  })
-
-  it('clears a refining session the daemon no longer has', async () => {
-    const task = service.create({ title: 'Plan', repos: [dir], agent: 'claude' })
-    await service.refine(task.id)
-    service.reconcile([])
-    expect(service.get(task.id).refineSessionId).toBeNull()
-  })
-
-  it('keeps only the newest proposal and lets the user replace, append or drop it', () => {
-    const task = service.create({ title: 'Plan', details: 'rough idea' })
-    service.propose(task.id, 'first draft')
-    expect(service.propose(task.id, 'second draft').proposal?.markdown).toBe('second draft')
-
-    const appended = service.resolveProposal(task.id, 'append')
-    expect(appended).toMatchObject({ details: 'rough idea\n\nsecond draft', proposal: null, previousDetails: 'rough idea' })
-
-    service.propose(task.id, 'final plan')
-    const replaced = service.resolveProposal(task.id, 'replace')
-    expect(replaced).toMatchObject({ details: 'final plan', previousDetails: 'rough idea\n\nsecond draft' })
-
-    service.propose(task.id, 'ignored')
-    expect(service.resolveProposal(task.id, 'discard')).toMatchObject({ details: 'final plan', proposal: null })
-    expect(() => service.resolveProposal(task.id, 'discard')).toThrow(expect.objectContaining({ reason: 'no-proposal' }))
-  })
-
-  it('undoes an accepted proposal until the details are edited again', () => {
-    const task = service.create({ title: 'Plan', details: 'mine' })
-    service.propose(task.id, 'theirs')
-    service.resolveProposal(task.id, 'replace')
-    expect(service.restoreDetails(task.id)).toMatchObject({ details: 'mine', previousDetails: null })
-
-    service.propose(task.id, 'theirs')
-    service.resolveProposal(task.id, 'replace')
-    service.update({ id: task.id, details: 'theirs, tweaked' })
-    expect(() => service.restoreDetails(task.id)).toThrow(expect.objectContaining({ reason: 'nothing-to-restore' }))
-  })
-
-  it('keeps how the last run ended, and clears it when the task runs again', async () => {
-    const task = readyTask('Exit', [initRepo('exit')])
-    const run = await service.run(task.id)
-    service.handleSessionExit(run.sessionId ?? '', 2)
-    expect(service.get(task.id)).toMatchObject({ status: 'review', lastExit: { code: 2 } })
-    expect(await service.continue(task.id)).toMatchObject({ status: 'running', lastExit: null })
-  })
-
-  it('records an unknown exit for a run whose session is gone, and the code for one that exited', async () => {
-    const lost = await service.run(readyTask('Lost', [initRepo('lost')]).id)
-    const exited = await service.run(readyTask('Exited', [initRepo('exited')]).id)
-    service.reconcile([{ sessionId: exited.sessionId ?? '', exited: true, exitCode: 1 }])
-    expect(service.get(lost.id)).toMatchObject({ status: 'review', lastExit: { code: null } })
-    expect(service.get(exited.id)).toMatchObject({ status: 'review', lastExit: { code: 1 } })
-  })
-
-  it('tracks when the agent waits for the user, but only while its session is open', async () => {
-    const task = readyTask('Wait', [initRepo('wait')])
-    const run = await service.run(task.id)
-    service.agentEvent(task.id, 'run', true)
-    expect(service.get(task.id).awaitingInput).toBe(true)
-    service.noteInput(run.sessionId ?? '')
-    expect(service.get(task.id).awaitingInput).toBe(false)
-
-    service.agentEvent(task.id, 'run', true)
-    service.handleSessionExit(run.sessionId ?? '', 0)
-    expect(service.get(task.id).awaitingInput).toBe(false)
-    service.agentEvent(task.id, 'run', true)
-    service.agentEvent(task.id, 'refine', true)
-    expect(service.get(task.id).awaitingInput).toBe(false)
-  })
-
-  it('gives both agents hooks that report their turns back', async () => {
-    const reporting = new TaskService(
-      store,
-      projects,
-      sessions,
-      path.join(dir, 'worktrees'),
-      () => {},
-      (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }),
-      attachments,
-      (taskId, session, agent) => ['kando', 'task-event', taskId, session, agent]
-    )
-    const claude = reporting.update({ id: reporting.create({ title: 'Hooks' }).id, repos: [initRepo('hooks')], agent: 'claude' })
-    await reporting.run(claude.id)
-    const claudeArgs = sessions.spawns.at(-1)?.args ?? []
-    const settings = JSON.parse(claudeArgs[claudeArgs.indexOf('--settings') + 1] ?? '{}')
-    expect(Object.keys(settings.hooks)).toEqual(['UserPromptSubmit', 'Stop', 'StopFailure', 'Notification'])
-    expect(settings.hooks.Stop[0].hooks[0]).toEqual({ type: 'command', command: 'kando', args: ['task-event', claude.id, 'run', 'claude'] })
-
-    const codex = reporting.update({ id: reporting.create({ title: 'Notify' }).id, repos: [initRepo('notify')], agent: 'codex' })
-    await reporting.refine(codex.id)
-    expect(sessions.spawns.at(-1)?.args).toEqual(
-      expect.arrayContaining(['-c', `notify=${JSON.stringify(['kando', 'task-event', codex.id, 'refine', 'codex'])}`])
-    )
-  })
-})
-
-describe('TaskService in the chat view', () => {
-  let dir: string
-  let store: TaskStore
-  let conversationsStore: ConversationStore
-  let projects: ProjectRegistry
-  let attachments: AttachmentStore
-  let daemon: ReturnType<typeof fakeChatDaemon>
-  let conversations: ConversationService
-  let service: TaskService
-  let runs: AgentRunStore
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-  // Wired as main.ts wires them: the conversation service runs chat tasks and reports back.
-  function serve(): void {
-    conversations = new ConversationService(conversationsStore, daemon, path.join(dir, 'sessions'),
-      (id, stage, agent) => ['node', 'callback.js', id, stage, agent],
-      (event) => {
-        if (event.type === 'changed') service.chatChanged(event.conversation)
-        else if (event.type === 'planApproved') service.recordPlan(event.taskId, event.plan)
-      },
-      projects, attachments)
-    const target = conversations
-    daemon.deliver = (event) => {
-      if (event.event === 'data') target.handleData(event)
-      else if (event.event === 'exit') target.handleExit(event.sessionId, event.exitCode)
-      else target.handleStderr(event.sessionId, event.data)
-    }
-    service = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), () => {},
-      (taskId) => ({ command: 'kando', args: ['mcp', '--task', taskId] }), attachments, null, conversations, runs)
-  }
-
-  beforeEach(() => {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'kando-task-chat-'))
-    const database = path.join(dir, 'kando.db')
-    store = new TaskStore(database)
-    conversationsStore = new ConversationStore(database)
-    projects = new ProjectRegistry(database)
-    runs = new AgentRunStore(database)
-    attachments = new AttachmentStore(path.join(dir, 'attachments'))
-    daemon = fakeChatDaemon()
-    serve()
-  })
-
-  afterEach(() => {
-    runs.close()
-    projects.close()
-    conversationsStore.close()
-    store.close()
-    rmSync(dir, { recursive: true, force: true })
-  })
-
-  function git(repo: string, ...args: string[]): string {
-    return execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim()
-  }
-
-  function readyTask(title: string, repo: string) {
-    execFileSync('git', ['init', '-q', repo])
-    git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
-    const task = service.create({ title })
-    return service.update({ id: task.id, details: 'x', repos: [repo], agent: 'claude' })
-  }
-
-  const exitPlanMode = (requestId: string) => ({
-    type: 'control_request', request_id: requestId,
-    request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: `toolu_${requestId}` }
-  })
-  const sessionOf = (taskId: string) => conversations.get(service.get(taskId).conversationId ?? '').sessionId ?? ''
-  const sentTo = (taskId: string) => JSON.stringify(daemon.written(sessionOf(taskId)))
-
   it('starts a runnable task in its worktree, planning first, and keeps the plan it approves', async () => {
-    const task = readyTask('Chat me', path.join(dir, 'app'))
+    const task = readyTask('Chat me', [initRepo('app')])
     const started = await service.start(task.id)
-    expect(started).toMatchObject({ status: 'running', sessionId: null })
+    expect(started.status).toBe('running')
     const worktree = started.repos[0]?.worktreePath ?? ''
     expect(worktree).not.toBe('')
     expect(daemon.spawns.at(-1)).toMatchObject({ command: 'claude', cwd: realpathSync(worktree) })
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan']))
-    expect(sentTo(task.id)).toContain('然后给出实现计划')
+    expect(told(task.id)).toContain('然后给出实现计划')
     expect(conversations.list()).toEqual([])
 
     daemon.emit(sessionOf(task.id), exitPlanMode('plan-1'))
@@ -890,7 +600,7 @@ describe('TaskService in the chat view', () => {
   })
 
   it('takes a task by the id prefix the CLI names it by', async () => {
-    const task = readyTask('Chat me', path.join(dir, 'app'))
+    const task = readyTask('Chat me', [initRepo('app')])
     const prefix = task.id.slice(0, 8)
     const started = await service.start(prefix)
     expect(started.repos[0]?.worktreePath).toBeTruthy()
@@ -901,11 +611,9 @@ describe('TaskService in the chat view', () => {
   })
 
   it('works in the primary project and reaches the others as additional directories', async () => {
-    const api = path.join(dir, 'api')
-    const web = path.join(dir, 'web')
-    const dependency = readyTask('First', api)
-    execFileSync('git', ['init', '-q', web])
-    git(web, 'commit', '-q', '--allow-empty', '-m', 'init')
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const dependency = readyTask('First', [api])
     const created = service.create({ title: 'Both' })
     const task = service.update({ id: created.id, details: 'x', repos: [web, api], agent: 'claude', dependsOn: [dependency.id] })
 
@@ -923,11 +631,9 @@ describe('TaskService in the chat view', () => {
   })
 
   it('keeps a chat task\'s primary project and lets its agent take the projects added meanwhile', async () => {
-    const api = path.join(dir, 'api')
-    const web = path.join(dir, 'web')
-    const dependency = readyTask('First', api)
-    execFileSync('git', ['init', '-q', web])
-    git(web, 'commit', '-q', '--allow-empty', '-m', 'init')
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const dependency = readyTask('First', [api])
     const created = service.create({ title: 'Both' })
     const task = service.update({ id: created.id, details: 'x', repos: [api], agent: 'claude', dependsOn: [dependency.id] })
     await service.start(task.id)
@@ -947,7 +653,6 @@ describe('TaskService in the chat view', () => {
     expect(daemon.spawns).toHaveLength(spawned + 1)
   })
 
-
   it('adds up a chat run\'s turns when it is handed in, and starts another when it goes on', async () => {
     daemon.reply = (sessionId, text) => {
       daemon.emit(sessionId, { type: 'assistant', message: { id: `msg-${text}`, content: [{ type: 'text', text: 'ok' }] }, parent_tool_use_id: null })
@@ -956,7 +661,7 @@ describe('TaskService in the chat view', () => {
         usage: { input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 20 }
       })
     }
-    const task = readyTask('Count me', path.join(dir, 'app'))
+    const task = readyTask('Count me', [initRepo('app')])
     const started = await service.start(task.id)
     await settle()
     await conversations.send(started.conversationId ?? '', 'more')
@@ -971,14 +676,16 @@ describe('TaskService in the chat view', () => {
   })
 
   it('keeps a chat task running when its agent goes, hands it in when the user says, and goes on by message', async () => {
-    const task = readyTask('Chat me', path.join(dir, 'app'))
+    const repo = initRepo('app')
+    const task = readyTask('Chat me', [repo])
     const started = await service.start(task.id)
     await settle()
     // The first turn is over: the agent waits on the user.
     expect(service.get(task.id).awaitingInput).toBe(true)
     daemon.exit(sessionOf(task.id), 0)
     await settle()
-    service.reconcile([])
+    // Core reconnecting to the daemon leaves it be: its agent was never a terminal one.
+    await service.endTerminalRuns((await daemon.request('list', {})).sessions)
     expect(service.get(task.id)).toMatchObject({ status: 'running', awaitingInput: true })
 
     const resumed = await service.resumeChat(task.id)
@@ -994,15 +701,15 @@ describe('TaskService in the chat view', () => {
 
     // Going on from review lays out a worktree the user removed and reopens the task.
     const worktree = service.get(task.id).repos[0]?.worktreePath ?? ''
-    git(path.join(dir, 'app'), 'worktree', 'remove', '--force', worktree)
+    git(repo, 'worktree', 'remove', '--force', worktree)
     const reopened = await service.resumeChat(task.id)
     expect(reopened.status).toBe('running')
     expect(existsSync(worktree)).toBe(true)
   })
 
   it('only plans while a dependency is unfinished, keeps the plan, and carries it out once it is done', async () => {
-    const repo = path.join(dir, 'app')
-    const dependency = readyTask('First', repo)
+    const repo = initRepo('app')
+    const dependency = readyTask('First', [repo])
     const second = service.create({ title: 'Second' })
     const task = service.update({ id: second.id, details: 'x', repos: [repo], agent: 'claude', dependsOn: [dependency.id] })
     const planning = await service.start(task.id)
@@ -1010,9 +717,8 @@ describe('TaskService in the chat view', () => {
     expect(git(repo, 'branch', '--list', 'kando/*')).toBe('')
     expect(daemon.spawns.at(-1)).toMatchObject({ cwd: realpathSync(repo) })
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--disallowedTools']))
-    expect(sentTo(task.id)).toContain('这次只读代码、讨论和规划')
+    expect(told(task.id)).toContain('这次只读代码、讨论和规划')
     await expect(service.start(task.id)).rejects.toMatchObject({ reason: 'planning' })
-    await expect(service.run(task.id)).rejects.toMatchObject({ reason: 'chat-task' })
 
     daemon.emit(sessionOf(task.id), exitPlanMode('plan-1'))
     await settle()
@@ -1027,17 +733,17 @@ describe('TaskService in the chat view', () => {
     const args = daemon.spawns.at(-1)?.args ?? []
     expect(args).not.toContain('--resume')
     expect(args).not.toContain('--disallowedTools')
-    expect(sentTo(task.id)).toContain('<saved-plan>')
+    expect(told(task.id)).toContain('<saved-plan>')
   })
 
   it('goes on from review with a note, redoes without the chat, and deletes the chat with its task', async () => {
-    const task = readyTask('Chat me', path.join(dir, 'app'))
+    const task = readyTask('Chat me', [initRepo('app')])
     const started = await service.start(task.id)
     await settle()
     service.submit(task.id)
     const continued = await service.continue(task.id, 'rename the button')
     expect(continued.status).toBe('running')
-    expect(sentTo(task.id)).toContain('rename the button')
+    expect(told(task.id)).toContain('rename the button')
     await settle()
     service.submit(task.id)
     const successor = service.redo(task.id, 'wrong approach')
@@ -1046,5 +752,167 @@ describe('TaskService in the chat view', () => {
     await service.delete(task.id)
     expect(() => conversations.get(started.conversationId ?? '')).toThrow(expect.objectContaining({ reason: 'conversation-not-found' }))
     expect(existsSync(started.repos[0]?.worktreePath ?? '')).toBe(true)
+  })
+
+  it('continues a chat task in its own session, with the note as the next message', async () => {
+    const task = readyTask('Chat me', [initRepo('app')])
+    const started = await service.start(task.id)
+    await handIn(task.id)
+    service.move(task.id, 'done')
+    // Its agent went meanwhile, as it does when the machine restarts.
+    daemon.exit(sessionOf(task.id), 0)
+    await settle()
+
+    const continued = await service.continue(task.id, 'rename the button')
+    expect(continued).toMatchObject({ status: 'running', conversationId: started.conversationId })
+    expect(daemon.spawns).toHaveLength(2)
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume']))
+    // The agent has the work in its session already: only the note goes to it.
+    expect(told(task.id)).toBe('rename the button')
+  })
+
+  describe('a task a Kando before 0.11 ran in a terminal', () => {
+    // Its worktrees laid out, handed in for review, and no chat.
+    async function ranInTerminal(task: Task): Promise<Task> {
+      const workspace = await prepareWorkspace(task, [], path.join(dir, 'worktrees'))
+      return store.update(task.id, { repos: workspace.repos, status: 'review' })
+    }
+
+    it('goes on in a chat of its own on its worktrees, told where the work stands and what to change', async () => {
+      const image = await attachments.put(pngBytes(40, 30))
+      const task = await service.createTask({ title: 'Retry', details: 'x', repos: [initRepo('app')], agent: 'claude', images: [{ id: image.id, name: '登录页' }] })
+      const ran = await ranInTerminal(task)
+      await expect(service.start(task.id)).rejects.toMatchObject({ reason: 'not-pending' })
+      const offline = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), () => {}, attachments)
+      await expect(offline.continue(task.id)).rejects.toMatchObject({ reason: 'chat-unavailable' })
+
+      const continued = await service.continue(task.id, '登录后没有跳回原页面')
+      expect(continued).toMatchObject({ status: 'running', repos: ran.repos })
+      expect(conversations.get(continued.conversationId ?? '').taskId).toBe(task.id)
+      // A session of its own, working in the worktree rather than only planning.
+      expect(daemon.spawns).toHaveLength(1)
+      expect(daemon.spawns[0]).toMatchObject({ command: 'claude', cwd: realpathSync(ran.repos[0]?.worktreePath ?? '') })
+      const args = daemon.spawns[0]?.args ?? []
+      expect(args).toContain('--session-id')
+      expect(args).not.toContain('--resume')
+      expect(args).not.toContain('--disallowedTools')
+      expect(args[args.indexOf('--allowedTools') + 1]).toBe(`Read(/${path.join(dir, image.id)})`)
+      const [first] = daemon.written(sessionOf(task.id)).filter((frame) => userText(frame).length > 0)
+      expect(JSON.stringify(first)).toContain('"type":"image"')
+      const prompt = userText(first).join('')
+      expect(prompt).toContain('这个任务之前已经执行过一次')
+      expect(prompt).toContain('验收时发现要改的地方：\n登录后没有跳回原页面')
+      expect(prompt).toContain('然后按这些意见修改')
+      expect(prompt).not.toContain('等我告诉你接下来要改什么')
+      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'continue', view: 'chat', endedAt: null }])
+      // From here on it is a chat task, handed in when the user says so.
+      expect((await handIn(task.id)).status).toBe('review')
+    })
+
+    it('takes a new primary project before its chat starts, reusing worktrees, branches and edits', async () => {
+      const api = initRepo('api')
+      const web = initRepo('web')
+      const task = readyTask('Primary', [api, web])
+      const original = (await ranInTerminal(task)).repos
+      writeFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'keep me')
+      const updated = service.update({ id: task.id, repos: [web, api] })
+      expect(updated.repos).toEqual([original[1], original[0]])
+      const reopened = new TaskStore(path.join(dir, 'kando.db'))
+      try {
+        expect(reopened.get(task.id)?.repos).toEqual(updated.repos)
+      } finally {
+        reopened.close()
+      }
+      const continued = await service.continue(task.id)
+      expect(continued.repos).toEqual(updated.repos)
+      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(original[1]!.worktreePath!))
+      const args = daemon.spawns[0]?.args ?? []
+      expect(args[args.indexOf('--add-dir') + 1]).toBe(realpathSync(original[0]!.worktreePath!))
+      expect(told(task.id)).toContain('等我告诉你接下来要改什么')
+      expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
+      // Its chat holds on to the primary from here on.
+      await handIn(task.id)
+      expect(() => service.update({ id: task.id, repos: [api, web] })).toThrow(expect.objectContaining({ reason: 'primary-fixed' }))
+
+      const redo = service.redo(task.id, undefined)
+      await settle()
+      expect(redo.repos.map((repo) => repo.path)).toEqual([web, api])
+      const redone = await service.start(redo.id)
+      expect(daemon.spawns.at(-1)?.cwd).toBe(realpathSync(redone.repos[0]!.worktreePath!))
+      expect(redone.repos[0]?.worktreePath).not.toBe(original[1]?.worktreePath)
+      expect(existsSync(path.join(redone.repos[0]!.worktreePath!, 'draft.txt'))).toBe(false)
+      expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
+    })
+
+    it('promotes the next project when the primary is removed without deleting its worktree', async () => {
+      const api = initRepo('api')
+      const web = initRepo('web')
+      const ran = await ranInTerminal(readyTask('Remove primary', [api, web]))
+      const updated = service.update({ id: ran.id, repos: [web] })
+      expect(updated.repos).toEqual([ran.repos[1]])
+      await service.continue(ran.id)
+      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(ran.repos[1]!.worktreePath!))
+      expect(existsSync(ran.repos[0]!.worktreePath!)).toBe(true)
+    })
+
+    it('reserves existing same-name worktrees when adding a new primary', async () => {
+      for (const name of ['first', 'second', 'third']) mkdirSync(path.join(dir, name))
+      const first = initRepo('first/app')
+      const second = initRepo('second/app')
+      const third = initRepo('third/app')
+      const ran = await ranInTerminal(readyTask('Same names', [first, second]))
+      service.update({ id: ran.id, repos: [third, second, first] })
+      const continued = await service.continue(ran.id)
+      expect(continued.repos.slice(1)).toEqual([ran.repos[1], ran.repos[0]])
+      expect(new Set(continued.repos.map((repo) => repo.worktreePath)).size).toBe(3)
+      expect(git(continued.repos[0]!.worktreePath!, 'rev-parse', '--git-common-dir')).toBe(git(third, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(continued.repos[0]!.worktreePath!))
+    })
+
+    it('ends the terminal agents it left open, forgets them, and hands in the tasks they ran', async () => {
+      const terminal = async () => (await daemon.request('spawn', { command: 'claude', args: [], cwd: dir, env: {}, cols: 80, rows: 24 })).sessionId
+      // Still running in a terminal: its run counted, its agent waiting on the user.
+      const orphan = readyTask('Orphan', [dir])
+      runs.transition(orphan, store.update(orphan.id, { status: 'running', awaitingInput: true }), () => null)
+      const refining = readyTask('Refining', [dir])
+      const exited = readyTask('Exited', [dir])
+      store.update(exited.id, { status: 'review' })
+      const gone = readyTask('Gone', [dir])
+      store.update(gone.id, { status: 'done' })
+      const chat = readyTask('Chat', [initRepo('app')])
+      await service.start(chat.id)
+
+      const live = await terminal()
+      const planning = await terminal()
+      const ended = await terminal()
+      daemon.exit(ended, 0)
+      const database = new DatabaseSync(path.join(dir, 'kando.db'))
+      try {
+        const record = (column: 'session_id' | 'refine_session_id', taskId: string, sessionId: string) =>
+          database.prepare(`UPDATE tasks SET ${column} = ? WHERE id = ?`).run(sessionId, taskId)
+        record('session_id', orphan.id, live)
+        record('refine_session_id', refining.id, planning)
+        record('session_id', exited.id, ended)
+        record('session_id', gone.id, 'pty-gone')
+      } finally {
+        database.close()
+      }
+      expect(store.terminalSessions()).toHaveLength(4)
+
+      const { sessions } = await daemon.request('list', {})
+      await service.endTerminalRuns(sessions)
+      // Only the agents still up are ended; the chat's own is none of them.
+      expect(daemon.killed.map((each) => each.sessionId).sort()).toEqual([live, planning].sort())
+      expect(store.terminalSessions()).toEqual([])
+      const statuses = Object.fromEntries([orphan, refining, exited, gone, chat].map((task) => [task.title, service.get(task.id).status]))
+      expect(statuses).toEqual({ Orphan: 'review', Refining: 'pending', Exited: 'review', Gone: 'done', Chat: 'running' })
+      expect(service.get(orphan.id).awaitingInput).toBe(false)
+      // How its agent ended is no longer known.
+      expect(runs.forTask(orphan.id)).toMatchObject([{ kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: null }])
+
+      // Forgotten, they are not ended again.
+      await service.endTerminalRuns((await daemon.request('list', {})).sessions)
+      expect(daemon.killed).toHaveLength(2)
+    })
   })
 })

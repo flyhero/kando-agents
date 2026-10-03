@@ -52,8 +52,9 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
   }
 }
 
-// A task started in the chat view: its chat where the terminal would be, the task's own header and
-// toolbar above, and the task's inspector beside it with the plans its agent proposed.
+// A started task: its chat, the task's own header and toolbar above, and the task's inspector beside
+// it with the plans its agent proposed. A task a Kando before 0.11 ran in a terminal has no chat
+// until it is continued, only its changes.
 export function TaskChat({ taskId }: { taskId: string }) {
   const task = useCore((s) => s.tasks[taskId])
   const tasks = useCore((s) => s.tasks)
@@ -116,8 +117,10 @@ export function TaskChat({ taskId }: { taskId: string }) {
       <div className="terminal-body">
         {conversation ? (
           <ConversationChat conversation={conversation} surface={surface} />
-        ) : (
+        ) : conversationId ? (
           <p className="terminal-view-empty muted">正在读取聊天记录…</p>
+        ) : (
+          <p className="terminal-view-empty muted">这个任务是在终端里执行的，没有聊天记录。改动在检查器里；要接着改，点工具栏的继续按钮，会在它的 worktree 里开始聊天。</p>
         )}
         {showInspector && (
           <TaskInspector

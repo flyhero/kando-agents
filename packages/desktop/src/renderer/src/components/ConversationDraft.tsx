@@ -71,7 +71,7 @@ export function ConversationDraft() {
     const chosen = optionsSupported
       ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions('chat'), ...chosen }))
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(), ...chosen }))
   }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.

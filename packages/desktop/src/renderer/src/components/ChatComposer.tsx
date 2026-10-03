@@ -123,7 +123,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const imagesSupported = useChatImagesSupported()
   const optionsSupported = useChatOptionsSupported()
   const attached = useComposerImages()
-  const running = conversation.sessionId !== null && conversation.mode === 'chat'
+  const running = conversation.sessionId !== null
   // An older core reports only the first waiting message, without a ref to act on it by.
   const queue: readonly ChatQueued[] = !running || !state ? []
     : state.queue.length > 0 ? state.queue

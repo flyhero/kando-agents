@@ -56,7 +56,7 @@ function timeOfDay(ms: number): string {
 
 // A task's chat says where each stage ran: only planning beside the projects, or in its worktrees.
 function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean }) {
-  const where = stage.mode !== 'chat' ? '终端，这里只有记下的消息，细节在终端记录里'
+  const where = stage.mode !== 'chat' ? '终端（0.11 之前的界面），这里只有记下的消息'
     : stage.planOnly ? '聊天界面 · 只读规划'
     : task ? '聊天界面 · 在 worktree 里执行'
     : '聊天界面'

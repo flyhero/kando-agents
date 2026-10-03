@@ -8,14 +8,13 @@ import { BranchStatus } from './BranchStatus'
 import { ConversationChat } from './ConversationChat'
 import { ConversationInspector } from './ConversationInspector'
 import { ConversationStatus } from './ConversationStatus'
-import { ConversationTranscript } from './ConversationTranscript'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
-import { continueConversation, renameConversation, stopConversation } from './ConversationActions'
-import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon, PlayIcon, StopIcon } from './icons'
+import { renameConversation } from './ConversationActions'
+import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon } from './icons'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
 
-export function ConversationTerminal({ id }: { id: string }) {
+export function ConversationView({ id }: { id: string }) {
   const conversation = useCore((state) => state.conversations[id])
   const [handoffOpen, setHandoffOpen] = useState(false)
   // Stable, so the chat's surface is not rebuilt on every render.
@@ -26,8 +25,7 @@ export function ConversationTerminal({ id }: { id: string }) {
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   const plans = usePlans(id)
   if (!conversation) return null
-  const chat = conversation.mode === 'chat'
-  // A chat agent starts with the next message and goes when idle: no continue or stop to press.
+  // The agent starts with the next message and goes when idle: no continue or stop to press.
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
   // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
@@ -54,9 +52,7 @@ export function ConversationTerminal({ id }: { id: string }) {
       </div>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>
-        {!chat && !conversation.sessionId && <button type="button" className="tool-button run-button" aria-label="继续" data-tooltip="继续" disabled={busy} onClick={() => void action(() => continueConversation(id))}><PlayIcon /></button>}
         <button type="button" className="tool-button" aria-label="移交给其他智能体" data-tooltip="移交给其他智能体" disabled={busy} onClick={() => setHandoffOpen(true)}><HandoffIcon /></button>
-        {!chat && conversation.sessionId && <button type="button" className="tool-button" aria-label="停止会话" data-tooltip="停止会话" disabled={busy} onClick={() => void action(() => stopConversation(id))}><StopIcon /></button>}
         {hasPanel && (
           <button
             type="button"
@@ -74,9 +70,7 @@ export function ConversationTerminal({ id }: { id: string }) {
       </div>
     </header>
     <div className="terminal-body">
-      {chat
-        ? <ConversationChat conversation={conversation} onHandoff={openHandoff} />
-        : <ConversationTranscript key={conversation.sessionId ?? 'history'} id={id} sessionId={conversation.sessionId} />}
+      <ConversationChat conversation={conversation} onHandoff={openHandoff} />
       {hasPanel && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
     </div>
     {handoffOpen && <ConversationHandoffDialog conversation={conversation} onClose={() => setHandoffOpen(false)} />}

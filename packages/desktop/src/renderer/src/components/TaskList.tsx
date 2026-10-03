@@ -177,12 +177,10 @@ export function TaskList() {
             <StatusIcon status={task.status} />
             <span className="task-row-title">{task.title}</span>
             {meta && <span className="task-row-meta">{meta}</span>}
-            {(waiting > 0 || task.refineSessionId || task.proposal || planning || hasTaskAlerts(task)) && (
+            {(waiting > 0 || planning || hasTaskAlerts(task)) && (
               <span className="task-row-tags">
                 <TaskAlerts task={task} />
                 {waiting > 0 && <span className="task-row-waiting">等待 {waiting} 个任务</span>}
-                {task.refineSessionId && <span className="task-tag task-tag-refining">细化中</span>}
-                {task.proposal && <span className="task-tag task-tag-proposal">方案待确认</span>}
                 {planning && (
                   <span className="task-tag task-tag-refining">{task.plan && !task.plan.approved ? '计划已保存' : '规划中'}</span>
                 )}

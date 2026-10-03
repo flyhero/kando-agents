@@ -684,20 +684,10 @@ body.stacked-panel-resizing * {
   color: var(--status-running);
 }
 
-.task-tag-proposal {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-
 .task-tag-awaiting {
   background: color-mix(in srgb, var(--warning) 18%, transparent);
   color: var(--warning);
   font-weight: 600;
-}
-
-.task-tag-exit {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
 }
 
 button.task-tag {
@@ -908,7 +898,6 @@ button.task-tag:hover {
   opacity: 0.45;
 }
 
-
 /* Tooltips for icon-only buttons. Right-aligned, since these toolbars sit at the
    right edge of their pane and a centered label would spill past it. */
 [data-tooltip] {
@@ -1055,11 +1044,6 @@ button.task-tag:hover {
 
 .launch-button[aria-busy='true'] svg {
   animation: pulse 1s ease-in-out infinite;
-}
-
-.refine-button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--status-running) 14%, transparent);
-  color: var(--status-running);
 }
 
 .menu-item-danger {
@@ -1705,7 +1689,6 @@ button.task-tag:hover {
   color: var(--text);
 }
 
-
 .mono {
   font-family: var(--mono);
   font-size: 12px;
@@ -1783,8 +1766,8 @@ button.task-tag:hover {
   opacity: 0.6;
 }
 
-/* Sized by what it holds, from a few lines up: the page scrolls, not the editor. The plan and
-   proposals have their own cards now, so the details are short more often than not. */
+/* Sized by what it holds, from a few lines up: the page scrolls, not the editor. The plan has its
+   own card now, so the details are short more often than not. */
 .md-editor {
   flex: none;
   min-height: 180px;
@@ -1886,44 +1869,6 @@ button.task-tag:hover {
   border-top: 1px solid var(--border);
 }
 
-.proposal {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-}
-
-.proposal-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.proposal-icon {
-  display: grid;
-  color: var(--accent);
-}
-
-.proposal-icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.proposal-title {
-  font-weight: 600;
-}
-
-.proposal-actions {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
 .md-editor.md-editor-readonly {
   flex: none;
   background: var(--surface);
@@ -1934,7 +1879,7 @@ button.task-tag:hover {
   box-shadow: none;
 }
 
-/* Long proposals scroll inside the card instead of pushing the editor off screen. */
+/* A long plan or snapshot scrolls inside its card instead of pushing the editor off screen. */
 .md-editor-readonly .cm-editor {
   max-height: 280px;
 }
@@ -2078,8 +2023,8 @@ body.side-panel-resizing * {
   user-select: none !important;
 }
 
-/* A panel beside the terminal: the proposal, the inspector. Opening reserves its width
-   immediately; the slide animation is visual only. */
+/* A panel beside the chat, such as the inspector. Opening reserves its width immediately; the
+   slide animation is visual only. */
 .side-panel {
   min-width: 0;
   flex-grow: 0;
@@ -2096,10 +2041,6 @@ body.side-panel-resizing * {
 
 .side-panel[data-closing='true'] {
   animation: panel-out 0.18s ease-in forwards;
-}
-
-.proposal-panel {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
 @keyframes panel-in {
@@ -2124,53 +2065,7 @@ body.side-panel-resizing * {
   }
 }
 
-.proposal-panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px 8px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.proposal-panel-close {
-  margin-left: auto;
-}
-
-.proposal-panel-hint {
-  margin: 0;
-  padding: 8px 14px;
-  font-size: 12px;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-}
-
-.proposal-panel-body {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  padding: 10px;
-}
-
-.proposal-panel-body .md-editor.md-editor-readonly {
-  flex: 1;
-  min-height: 0;
-  border: 0;
-}
-
-.proposal-panel-body .md-editor-readonly .cm-editor {
-  max-height: none;
-}
-
-.proposal-panel-footer {
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-}
-
-.proposal-panel-footer .proposal-actions {
-  margin-left: 0;
-}
-
-/* The task inspector: what the agent changed, next to its terminal. */
+/* The task inspector: what the agent changed, next to its chat. */
 .inspector-header {
   display: flex;
   align-items: center;
@@ -2438,15 +2333,6 @@ body.side-panel-resizing * {
 
 .diff-meta {
   color: var(--text-muted);
-}
-
-.task-tag-updated {
-  background: color-mix(in srgb, var(--status-done) 14%, transparent);
-  color: var(--status-done);
-}
-
-button.task-tag-updated:hover {
-  background: color-mix(in srgb, var(--status-done) 24%, transparent);
 }
 
 .terminal-frame {
@@ -5200,7 +5086,6 @@ button.task-tag-updated:hover {
 
 .chat-queued-images { flex: none; color: var(--text-muted); }
 
-
 /* Below the input: plain text that reads as a setting until hovered, like the agents' own CLIs. */
 /* The input's toolbar, inside its box under the text. */
 .chat-options {
@@ -5299,7 +5184,6 @@ button.task-tag-updated:hover {
 .chat-context circle { fill: none; stroke-width: 2.5; }
 .chat-context-track { stroke: var(--border); }
 .chat-context-fill { stroke: var(--context-fill); stroke-linecap: round; }
-
 
 /* The dock sits at the bottom, and below the chip is the queued message and the input. */
 .chat-todos-anchor .menu { top: auto; bottom: calc(100% + 4px); min-width: 240px; padding: 6px 8px; }

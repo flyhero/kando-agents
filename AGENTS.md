@@ -4,7 +4,7 @@ Task-first multi-agent manager. See README.md for the architecture diagram.
 
 ## Process boundaries
 
-- **daemon** owns every PTY. **core** owns tasks, git and persistence. **desktop** and **cli** are clients only.
+- **daemon** owns every agent process and PTY. **core** owns tasks, git and persistence. **desktop** and **cli** are clients only.
 - **browser-host** owns the Chromium, as a daemon pipe session; core drives it over its loopback WebSocket and keeps the policy (which conversation owns a tab, which sites the user allowed). Its stdout carries one line, where to connect: frames and screenshots never go through the daemon.
 - Electron main stays thin: no task logic, no git, no PTYs. A window closing or crashing must never touch a running agent.
 - Native modules (node-pty) load only in the daemon, which runs on plain Node. Never import a native module into Electron.
@@ -15,7 +15,7 @@ Task-first multi-agent manager. See README.md for the architecture diagram.
 - `packages/protocol` is the single source of truth. Define a new RPC method or notification there as a zod schema, then implement it in `core/src/rpc-handlers.ts`.
 - Clients and core can be on different versions. Adding an optional field is safe. A breaking change bumps `PROTOCOL_VERSION`, or `DAEMON_PROTOCOL_VERSION` for the daemon wire.
 - Index `rpcSchemas` / `daemonSchemas` with a generic method name. Indexing the raw `rpcMethods` widens to a union of every schema.
-- Status rules live in `checkMove` / `checkRun` / `manualMoves`. The UI and CLI call them; they never re-encode the rules.
+- Status rules live in `checkMove` / `checkStart` / `manualMoves`. The UI calls them; it never re-encodes the rules.
 
 ## Safety
 

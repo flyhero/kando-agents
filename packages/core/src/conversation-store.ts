@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
-import { Conversation, ConversationMessage, ConversationStage, type AgentKind, type ConversationMode } from '@kando/protocol'
+import { Conversation, ConversationMessage, ConversationStage, type AgentKind } from '@kando/protocol'
 
 const lastEnded = (column: string) => `(SELECT ${column} FROM conversation_stages
   WHERE conversation_id = conversations.id AND ended_at IS NOT NULL ORDER BY started_at DESC, rowid DESC LIMIT 1)`
@@ -9,7 +9,6 @@ const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_
   project_paths AS projectPaths,
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
   updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt,
-  (SELECT mode FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS mode,
   (SELECT plan_only FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS planOnly,
   task_id AS taskId
   FROM conversations`
@@ -31,8 +30,8 @@ const ChatOptions = z.object({
 export type ChatOptions = z.infer<typeof ChatOptions>
 
 function conversation(row: Record<string, unknown>): Conversation {
-  const { lastExitCode, lastExitAt, mode, ...rest } = row
-  return Conversation.parse({ ...rest, mode: mode ?? 'tui', projectPaths: JSON.parse(String(row.projectPaths)),
+  const { lastExitCode, lastExitAt, ...rest } = row
+  return Conversation.parse({ ...rest, projectPaths: JSON.parse(String(row.projectPaths)),
     titleLocked: Boolean(row.titleLocked), managedWorkspace: Boolean(row.managedWorkspace), planOnly: Boolean(row.planOnly),
     lastExit: lastExitAt === null ? null : { code: lastExitCode, at: lastExitAt } })
 }
@@ -121,13 +120,12 @@ export class ConversationStore {
       : {}
   }
 
-  update(id: string, patch: { title?: string; titleLocked?: boolean; agent?: AgentKind; sessionId?: string | null; outputOffset?: number }): Conversation {
+  update(id: string, patch: { title?: string; titleLocked?: boolean; agent?: AgentKind; sessionId?: string | null }): Conversation {
     const entries: Array<[string, string | number | null]> = []
     if (patch.title !== undefined) entries.push(['title', patch.title])
     if (patch.titleLocked !== undefined) entries.push(['title_locked', Number(patch.titleLocked)])
     if (patch.agent !== undefined) entries.push(['agent', patch.agent])
     if (patch.sessionId !== undefined) entries.push(['session_id', patch.sessionId])
-    if (patch.outputOffset !== undefined) entries.push(['output_offset', patch.outputOffset])
     if (entries.length) {
       this.db.prepare(`UPDATE conversations SET ${entries.map(([key]) => `${key} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
         .run(...entries.map(([, value]) => value), this.now(), id)
@@ -146,11 +144,6 @@ export class ConversationStore {
 
   setChatOptions(id: string, patch: ChatOptions): void {
     this.db.prepare('UPDATE conversations SET chat_options = ? WHERE id = ?').run(JSON.stringify({ ...this.chatOptions(id), ...patch }), id)
-  }
-
-  outputOffset(id: string): number {
-    const row = this.db.prepare('SELECT output_offset FROM conversations WHERE id = ?').get(id)
-    return Number(row?.output_offset ?? 0)
   }
 
   touch(id: string): Conversation {
@@ -188,18 +181,13 @@ export class ConversationStore {
     return row ? stage(row) : null
   }
 
-  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), mode: ConversationMode = 'tui', planOnly = false): ConversationStage {
+  startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), planOnly = false): ConversationStage {
     this.db.prepare(`INSERT INTO conversation_stages
       (id, conversation_id, agent, provider_session_id, received_sequence, started_at, mode, plan_only)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), mode, Number(planOnly))
+      VALUES (?, ?, ?, ?, ?, ?, 'chat', ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), Number(planOnly))
     return this.stage(id)!
   }
 
-  // The stage a daemon session runs, ended or not.
-  stageBySession(sessionId: string): ConversationStage | null {
-    const row = this.db.prepare(`${STAGE_SELECT} WHERE session_id = ? ORDER BY rowid DESC LIMIT 1`).get(sessionId)
-    return row ? stage(row) : null
-  }
 
   // How far a chat stage's output has been read, counted like the daemon's offsets.
   chatOffset(id: string): number {

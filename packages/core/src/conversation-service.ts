@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationMode, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, isKandoRequest } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
@@ -15,14 +15,13 @@ import { folderChanges, folderDiff, folderHead } from './conversation-changes'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 import { CODEX_MODES } from './codex-app-server'
 import type { McpServer } from './agent-command'
-import { chatCommand, conversationCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
+import { chatCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
 import { commitAndPush } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
-import { TerminalTranscript } from './terminal-transcript'
 import type { UsageReport } from './usage-source'
 import { normalizeRepoPath, projectHead } from './workspace'
 
@@ -95,12 +94,10 @@ async function resolveProjects(projectPaths: readonly string[], taken: readonly 
 }
 
 export class ConversationService {
-  private readonly tuiWorking = new Map<string, boolean>()
   // Core's chat settings say; main hands them over before any stage starts.
   private promptSuggestions = false
   private readonly launching = new Set<string>()
   private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
-  private readonly transcript: TerminalTranscript
   private readonly chats: ChatHost
   // Sessions being stopped on purpose: their exit reads as a stop, not a crash.
   private readonly stopping = new Set<string>()
@@ -112,15 +109,13 @@ export class ConversationService {
     private readonly store: ConversationStore,
     private readonly daemon: SessionHost,
     private readonly sessionsRoot: string,
-    private readonly callbackCommand: (conversationId: string, stageId: string, agent: AgentKind) => string[],
     private readonly emit: (event: ConversationEvent) => void,
     private readonly projects: ProjectRegistry,
     private readonly attachments: AttachmentStore,
-    // Kando's MCP server for a chat's agent, acting for that conversation; null leaves the agent
-    // without Kando's tools.
+    // Kando's MCP server for a conversation's agent, acting for that conversation; null leaves the
+    // agent without Kando's tools.
     private readonly mcp: ((conversationId: string) => McpServer) | null = null
   ) {
-    this.transcript = new TerminalTranscript(sessionsRoot)
     this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
       items: (conversationId, items) => {
         this.rememberMode(conversationId, items)
@@ -166,7 +161,7 @@ export class ConversationService {
   runUsage(id: string, from: number, to: number): RunMeasure | null {
     const conversation = this.store.get(id)
     if (!conversation) return null
-    const stages = this.store.stages(id).filter((stage) => stage.mode === 'chat' && stage.startedAt <= to && (stage.endedAt === null || stage.endedAt >= from))
+    const stages = this.chatStages(id).filter((stage) => stage.startedAt <= to && (stage.endedAt === null || stage.endedAt >= from))
     const sum = { input: 0, output: 0, total: 0, work: 0, split: false, lumped: false, counted: false, timed: false }
     let state: ChatItem | undefined
     for (const stage of stages) {
@@ -258,7 +253,6 @@ export class ConversationService {
   async create(
     agent: AgentKind,
     projectPaths: readonly string[],
-    mode: ConversationMode = 'tui',
     allowBypass?: boolean,
     start: { permissionMode?: string; model?: string; effort?: string } = {}
   ): Promise<Conversation> {
@@ -295,10 +289,10 @@ export class ConversationService {
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
     this.changed(created)
-    return this.start(id, agent, '', false, mode)
+    return this.start(id, agent, '', false)
   }
 
-  // Everything but the primary changes (checkEditAdditionalProjects). A chat agent is given its
+  // Everything but the primary changes (checkEditAdditionalProjects). The agent is given its
   // directories at launch, so an idle one restarts and goes on from where it was, as after /add-dir.
   async setAdditionalProjects(id: string, projectPaths: readonly string[]): Promise<Conversation> {
     const conversation = this.free(id)
@@ -318,7 +312,7 @@ export class ConversationService {
       if (head) this.store.setProjectStart(id, project, head)
     }
     this.projects.remember(picked)
-    return live ? this.start(id, conversation.agent, '', false, 'chat') : this.changed(this.get(id))
+    return live ? this.start(id, conversation.agent, '', false) : this.changed(this.get(id))
   }
 
   // A task's chat is driven from its task, which checks what the task may do first.
@@ -352,7 +346,7 @@ export class ConversationService {
     if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
     // A stage of its own plans first; one going on keeps the mode it was left in.
     if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: 'plan' })
-    return this.start(id, task.agent, '', false, 'chat', {
+    return this.start(id, task.agent, '', false, {
       fresh: launch.session === 'new',
       moved,
       planOnly: launch.planOnly,
@@ -380,28 +374,27 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
-  // An idle chat agent makes way for the terminal without the user stopping it first.
-  async continue(id: string, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
+  // Readies the agent for a message: one already up stays as it is.
+  async continue(id: string, allowBypass?: boolean): Promise<Conversation> {
     const current = this.free(id)
     if (this.launching.has(id)) throw new Rejection('conversation-running')
-    if (current.sessionId && mode === 'chat' && this.chats.activity(id) !== null) return current
-    if (current.sessionId && !this.chats.idle(id)) throw new Rejection('conversation-running')
+    if (current.sessionId && this.chats.activity(id) !== null) return current
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (current.sessionId) await this.stop(id)
-    return this.start(id, current.agent, '', false, mode)
+    return this.start(id, current.agent, '', false)
   }
 
-  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, mode: ConversationMode = 'tui', allowBypass?: boolean): Promise<Conversation> {
+  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, allowBypass?: boolean): Promise<Conversation> {
     const current = this.free(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning && !this.chats.idle(id)) throw new Rejection('conversation-running')
     if (current.sessionId) await this.stop(id)
-    return this.start(id, agent, note, true, mode)
+    return this.start(id, agent, note, true)
   }
 
-  private async start(id: string, agent: AgentKind, note: string, handoff: boolean, mode: ConversationMode, launch: StageLaunch = {}): Promise<Conversation> {
+  private async start(id: string, agent: AgentKind, note: string, handoff: boolean, launch: StageLaunch = {}): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     this.launching.add(id)
     try {
@@ -427,31 +420,8 @@ export class ConversationService {
         await writeFile(handoffPath, buildHandoff(current, messages, note, current.agent, agent), { mode: 0o600 })
       }
       const stageId = randomUUID()
-      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, mode, launch.planOnly ?? false)
-      if (mode === 'chat') return await this.startChat(current, stage, saved !== null, handoffPath, handoff, previous !== null, launch.readable ?? [])
-      // A terminal agent cannot be told of a switch; the user tells it, so a later chat does not.
-      this.store.setSwitchedBranches(id, {})
-      const callback = this.callbackCommand(id, stage.id, agent)
-      const command = conversationCommand(agent, providerSessionId, saved !== null, callback, handoffPath, current.projectPaths.slice(1))
-      const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : previous ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
-      this.transcript.marker(id, marker)
-      let sessionId: string
-      try {
-        const spawned = await this.daemon.request('spawn', {
-          command: command.command, args: command.args, cwd: current.workspacePath, env: {}, cols: 100, rows: 30
-        })
-        sessionId = spawned.sessionId
-      } catch (error) {
-        this.store.deleteStage(stage.id)
-        this.transcript.marker(id, this.launchFailure(agent, command.command, error))
-        throw error
-      }
-      this.store.attachStage(stage.id, sessionId)
-      this.tuiWorking.set(id, true)
-      const updated = this.changed(this.store.update(id, { agent, sessionId, outputOffset: 0 }))
-      // PTY may have written before spawn's reply reached core. A failed attach does not undo a running PTY.
-      await this.recover(updated).catch((error: unknown) => console.error('[kando-core] conversation replay failed', error))
-      return this.get(id)
+      const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, launch.planOnly ?? false)
+      return await this.startChat(current, stage, saved !== null, handoffPath, launch.readable ?? [])
     } finally {
       this.launching.delete(id)
     }
@@ -463,8 +433,6 @@ export class ConversationService {
     stage: ConversationStage,
     resume: boolean,
     handoffPath: string | null,
-    handoff: boolean,
-    continued: boolean,
     readable: readonly string[]
   ): Promise<Conversation> {
     const { id } = current
@@ -482,14 +450,11 @@ export class ConversationService {
       ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
     } catch (error) {
       this.store.deleteStage(stage.id)
-      this.transcript.marker(id, this.launchFailure(agent, command.command, error))
       throw error instanceof Rejection && error.reason === 'unknown-method'
         ? new Rejection('daemon-outdated', 'the running daemon predates chat mode; restart it')
         : error
     }
     this.store.attachStage(stage.id, sessionId)
-    const marker = handoff ? `已从 ${current.agent} 移交给 ${agent}` : continued ? `继续 ${agent} 会话` : `开始 ${agent} 会话`
-    this.transcript.marker(id, `${marker}（聊天界面，此段不在终端显示）`)
     this.changed(this.store.update(id, { agent, sessionId }))
     try {
       await this.chats.open(this.chatStage(current, stage), sessionId, 0, true)
@@ -501,17 +466,10 @@ export class ConversationService {
       this.store.deleteStage(stage.id)
       await rm(ChatLog.of(this.sessionsRoot, id, stage.id).file, { force: true })
       this.changed(this.store.update(id, { sessionId: null }))
-      this.transcript.marker(id, `${agent} 聊天界面启动失败`)
       throw error
     }
     // Announced again now that the agent can take a message: clients learn it is idle.
     return this.changed(this.store.touch(id))
-  }
-
-  private launchFailure(agent: AgentKind, command: string, error: unknown): string {
-    return error instanceof Rejection && error.reason === 'command-not-found'
-      ? `${agent} 启动失败：找不到 ${command} 命令，请先安装并确认它在 PATH 里`
-      : `${agent} 启动失败`
   }
 
   private chatStage(conversation: Conversation, stage: ConversationStage): ChatStage {
@@ -551,7 +509,7 @@ export class ConversationService {
 
   private chooseForNextStart(conversation: Conversation, option: ChatOption, value: string): void {
     const { id, agent } = conversation
-    const stage = this.store.stages(id).filter((each) => each.mode === 'chat').at(-1)
+    const stage = this.chatStages(id).at(-1)
     const state = stage?.agent === agent
       ? this.chats.items(this.chatStage(conversation, stage)).findLast((item) => item.kind === 'state')
       : undefined
@@ -638,8 +596,8 @@ export class ConversationService {
   // Whether a message with this ref went to the agent in a chat stage still open at `since` or later.
   sentRef(id: string, ref: string, since: number): boolean {
     const conversation = this.get(id)
-    return this.store.stages(id)
-      .filter((stage) => stage.mode === 'chat' && (stage.endedAt === null || stage.endedAt >= since))
+    return this.chatStages(id)
+      .filter((stage) => stage.endedAt === null || stage.endedAt >= since)
       .some((stage) => this.chats.items(this.chatStage(conversation, stage)).some((item) => item.id === `u:${ref}`))
   }
 
@@ -666,8 +624,7 @@ export class ConversationService {
 
   // Every chat stage of every conversation, task chats included, oldest first.
   chatStageRefs(): ChatStageRef[] {
-    return this.store.list().flatMap((conversation) => this.store.stages(conversation.id)
-      .filter((stage) => stage.mode === 'chat')
+    return this.store.list().flatMap((conversation) => this.chatStages(conversation.id)
       .map((stage) => ({ conversationId: conversation.id, taskId: conversation.taskId ?? null, stageId: stage.id, agent: stage.agent, ended: stage.endedAt !== null })))
   }
 
@@ -737,7 +694,7 @@ export class ConversationService {
   // The newest chat stages' items, oldest first; `before` pages further back.
   chatPage(id: string, before?: string): { items: ChatItem[]; before: string | null } {
     const conversation = this.get(id)
-    const stages = this.store.stages(id).filter((stage) => stage.mode === 'chat')
+    const stages = this.chatStages(id)
     const until = before === undefined ? stages.length : stages.findIndex((stage) => stage.id === before)
     if (until < 0) throw new Rejection('stage-not-found', `no chat stage ${before}`)
     const pages: ChatItem[][] = []
@@ -752,29 +709,25 @@ export class ConversationService {
     return { items: pages.flat(), before: index > 0 ? stages[index]!.id : null }
   }
 
-  isChatSession(sessionId: string): boolean {
-    return this.store.stageBySession(sessionId)?.mode === 'chat'
+  // Stages a Kando before 0.11 ran in a terminal hold only the messages their hooks recorded.
+  private chatStages(id: string): ConversationStage[] {
+    return this.store.stages(id).filter((stage) => stage.mode === 'chat')
   }
 
   async stop(id: string): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     const current = this.get(id)
     if (!current.sessionId) return current
-    if (this.store.activeStage(id)?.mode === 'chat') {
-      await this.stopChat(current.sessionId)
-      if (this.store.get(id)?.sessionId === null) return this.get(id)
-    } else {
-      await this.daemon.request('kill', { sessionId: current.sessionId })
-    }
+    await this.stopAgent(current.sessionId)
+    if (this.store.get(id)?.sessionId === null) return this.get(id)
     const stage = this.store.activeStage(id)
     if (stage) this.store.endStage(stage.id, null)
-    this.transcript.marker(id, '会话已停止')
     return this.changed(this.store.update(id, { sessionId: null }))
   }
 
-  // A chat agent is gone only once the daemon says so: clearing the session any earlier would let a
+  // An agent is gone only once the daemon says so: clearing the session any earlier would let a
   // continue start a second writer on the same Claude session or Codex thread.
-  private async stopChat(sessionId: string): Promise<void> {
+  private async stopAgent(sessionId: string): Promise<void> {
     const exited = new Promise<void>((resolve) => this.exitWaiters.set(sessionId, resolve))
     this.stopping.add(sessionId)
     await this.daemon.request('kill', { sessionId })
@@ -808,6 +761,7 @@ export class ConversationService {
     const current = this.get(id)
     if (current.sessionId) await this.stop(id)
     const directory = path.join(this.sessionsRoot, id)
+    // What a terminal stage of a Kando before 0.11 printed.
     await rm(path.join(directory, 'terminal.log'), { force: true })
     await rm(path.join(directory, 'handoffs'), { recursive: true, force: true })
     await rm(path.join(directory, 'stages'), { recursive: true, force: true })
@@ -817,33 +771,11 @@ export class ConversationService {
     this.emit({ type: 'deleted', id })
   }
 
-  history(id: string, offset: number, length: number) {
-    this.get(id)
-    return { ...this.transcript.read(id, offset, length), sessionOffset: this.store.outputOffset(id) }
-  }
-
-  recordEvent(input: {
-    id: string; stageId: string; agent: AgentKind; providerSessionId: string | null;
-    role: 'user' | 'assistant'; text: string; eventKey: string; complete: boolean
-  }): void {
-    const conversation = this.get(input.id)
-    const stage = this.store.stage(input.stageId)
-    if (!stage || stage.conversationId !== input.id || stage.agent !== input.agent) throw new Rejection('conversation-event-invalid')
-    if (input.providerSessionId) {
-      if (stage.providerSessionId && stage.providerSessionId !== input.providerSessionId) throw new Rejection('conversation-event-invalid')
-      this.store.setProviderSession(stage.id, input.providerSessionId)
-    }
-    this.recordStageMessage(conversation, stage, input)
-  }
-
+  // The message itself, then what it says about the rest.
   private recordChatMessage(chat: ChatStage, message: StageMessage): void {
     const conversation = this.store.get(chat.conversationId)
     const stage = this.store.stage(chat.stageId)
-    if (conversation && stage) this.recordStageMessage(conversation, stage, message)
-  }
-
-  // Shared by hook reports and chat stages: the message itself, then what it says about the rest.
-  private recordStageMessage(conversation: Conversation, stage: ConversationStage, message: StageMessage): void {
+    if (!conversation || !stage) return
     const text = message.text.trim()
     if (!text || (message.role === 'user' && this.isHandoffPrompt(conversation.id, text))) return
     const saved = this.store.addMessage({
@@ -851,7 +783,6 @@ export class ConversationService {
       text, eventKey: message.eventKey, complete: message.complete
     })
     if (!saved) return
-    if (stage.mode === 'tui') this.tuiWorking.set(conversation.id, message.role === 'user' || !message.complete)
     if (message.role === 'assistant' && message.complete) this.store.completePendingUsers(stage.id)
     if (message.role === 'user' && !conversation.titleLocked && conversation.title === '新会话') {
       // The user's own words name it, not Kando's note of a branch switch before them.
@@ -864,20 +795,10 @@ export class ConversationService {
     this.changed(this.store.touch(conversation.id))
   }
 
+  // Output before the host has opened the stage (core just restarted) is left: open() reads it from
+  // the daemon's buffer.
   handleData(event: Extract<DaemonEvent, { event: 'data' }>): void {
-    if (this.chats.handleData(event.sessionId, event.offset, event.data)) return
-    const current = this.store.bySession(event.sessionId)
-    if (!current) return
-    // Chat output before the host has opened the stage (core just restarted): open() reads it
-    // from the daemon's buffer, and it is JSON, not terminal output.
-    if (this.isChatSession(event.sessionId)) return
-    const cursor = this.store.outputOffset(current.id)
-    const start = Math.max(0, cursor - event.offset)
-    if (start < event.data.length) {
-      if (event.offset > cursor) this.transcript.marker(current.id, 'daemon 缓存之外的终端输出已丢失')
-      this.transcript.append(current.id, event.data.slice(start))
-      this.store.update(current.id, { outputOffset: event.offset + event.data.length })
-    }
+    this.chats.handleData(event.sessionId, event.offset, event.data)
   }
 
   handleStderr(sessionId: string, data: string): void {
@@ -889,33 +810,21 @@ export class ConversationService {
     const stopped = this.stopping.has(sessionId)
     const current = this.store.bySession(sessionId)
     if (current) {
-      this.tuiWorking.delete(current.id)
       const stage = this.store.activeStage(current.id)
       if (stage?.sessionId === sessionId) this.store.endStage(stage.id, stopped ? null : exitCode)
-      this.transcript.marker(current.id, stopped ? '会话已停止' : `agent 已退出，code ${exitCode}`)
       this.changed(this.store.update(current.id, { sessionId: null }))
     }
     this.exitWaiters.get(sessionId)?.()
   }
 
-  noteInput(sessionId: string): void {
-    const conversation = this.store.bySession(sessionId)
-    if (conversation && conversation.mode === 'tui' && this.tuiWorking.get(conversation.id) !== true) {
-      this.tuiWorking.set(conversation.id, true)
-      this.changed(conversation)
-    }
-  }
-
   workingCount(): number {
-    return this.store.list().reduce((count, conversation) => {
-      if (!conversation.sessionId) return count
-      if (conversation.mode === 'chat') return count + (this.chats.activity(conversation.id) === 'running' ? 1 : 0)
-      return count + (this.tuiWorking.get(conversation.id) ?? true ? 1 : 0)
-    }, 0)
+    return this.store.list().reduce((count, conversation) =>
+      count + (conversation.sessionId && this.chats.activity(conversation.id) === 'running' ? 1 : 0), 0)
   }
 
   // Every session the daemon still knows is drained before it counts as ended, so output from
-  // while core was down is kept; only one the daemon never heard of ended unseen.
+  // while core was down is kept; only one the daemon never heard of ended unseen. An agent a Kando
+  // before 0.11 left in a terminal is ended: nothing shows it any more.
   async reconcile(sessions: readonly SessionInfo[]): Promise<void> {
     const known = new Map(sessions.map((session) => [session.sessionId, session]))
     for (const conversation of this.store.list()) {
@@ -931,29 +840,15 @@ export class ConversationService {
           // A question left open across a restart has no browser navigation waiting on it now.
           if (!info.exited) this.chats.cancelAsks(conversation.id)
           if (info.exited) this.handleExit(info.sessionId, info.exitCode ?? -1)
+        } else if (info.exited) {
+          this.handleExit(info.sessionId, info.exitCode ?? -1)
         } else {
-          await this.recover(conversation)
+          await this.stopAgent(info.sessionId)
         }
       } catch (error) {
         console.error(`[kando-core] recovering conversation ${conversation.id} failed`, error)
       }
     }
-  }
-
-  private async recover(conversation: Conversation): Promise<void> {
-    if (!conversation.sessionId) return
-    const attached = await this.daemon.request('attach', { sessionId: conversation.sessionId })
-    const cursor = this.store.outputOffset(conversation.id)
-    if (attached.bufferStart > cursor) {
-      this.transcript.marker(conversation.id, 'daemon 缓存之外的终端输出已丢失')
-      this.store.update(conversation.id, { outputOffset: attached.bufferStart })
-    }
-    const start = Math.max(cursor, attached.bufferStart)
-    if (start < attached.endOffset) {
-      this.transcript.append(conversation.id, attached.buffer.slice(start - attached.bufferStart))
-      this.store.update(conversation.id, { outputOffset: attached.endOffset })
-    }
-    if (attached.exited) this.handleExit(conversation.sessionId, attached.exitCode ?? 0)
   }
 
   // Kando's own instruction, not something the user said: kept out of the title, search and later handoffs.

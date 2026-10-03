@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
-import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskProposal, TaskSource, TaskStart, type TaskStatus } from '@kando/protocol'
+import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskSource, TaskStart, type TaskStatus } from '@kando/protocol'
 
 // Append-only: each entry upgrades PRAGMA user_version by one.
 export const MIGRATIONS = [
@@ -173,10 +173,9 @@ export const MIGRATIONS = [
 ]
 
 
-const SELECT = `SELECT id, title, details, status, agent, session_id AS sessionId,
-  refine_session_id AS refineSessionId, proposal, previous_details AS previousDetails,
+const SELECT = `SELECT id, title, details, status, agent,
   derived_from AS derivedFrom, abandon_reason AS abandonReason, source, source_snapshot AS sourceSnapshot, images,
-  last_exit AS lastExit, awaiting_input AS awaitingInput, plan,
+  awaiting_input AS awaitingInput, plan,
   (SELECT id FROM conversations WHERE task_id = tasks.id ORDER BY created_at DESC LIMIT 1) AS conversationId,
   created_at AS createdAt, updated_at AS updatedAt FROM tasks`
 
@@ -184,24 +183,21 @@ const SELECT = `SELECT id, title, details, status, agent, session_id AS sessionI
 const TaskRow = Task.omit({
   repos: true,
   dependsOn: true,
-  proposal: true,
   source: true,
   sourceSnapshot: true,
   images: true,
-  lastExit: true,
   awaitingInput: true,
   plan: true
 }).extend({
-  proposal: z.string().nullable(),
   source: z.string().nullable(),
   sourceSnapshot: z.string().nullable(),
   images: z.string().nullable(),
-  lastExit: z.string().nullable(),
   awaitingInput: z.number(),
   plan: z.string().nullable()
 })
 const TaskImages = z.array(TaskImage)
-const LastExit = Task.shape.lastExit.unwrap().unwrap()
+// A Kando before 0.11 ran agents in terminals and kept their sessions on the task.
+const TerminalRow = z.object({ id: z.string(), sessionId: z.string().nullable(), refineSessionId: z.string().nullable() })
 
 // A column that fails to parse reads as empty, but says so: losing where a task came from silently
 // would be worse than a noisy log.
@@ -242,16 +238,11 @@ export type TaskPatch = Partial<
     | 'details'
     | 'status'
     | 'agent'
-    | 'sessionId'
-    | 'refineSessionId'
-    | 'proposal'
-    | 'previousDetails'
     | 'derivedFrom'
     | 'abandonReason'
     | 'source'
     | 'sourceSnapshot'
     | 'images'
-    | 'lastExit'
     | 'awaitingInput'
     | 'plan'
     | 'repos'
@@ -265,9 +256,6 @@ const SCALAR_KEYS = [
   'details',
   'status',
   'agent',
-  'sessionId',
-  'refineSessionId',
-  'previousDetails',
   'derivedFrom',
   'abandonReason'
 ] as const
@@ -277,9 +265,6 @@ const SCALAR_COLUMNS: Record<(typeof SCALAR_KEYS)[number], string> = {
   details: 'details',
   status: 'status',
   agent: 'agent',
-  sessionId: 'session_id',
-  refineSessionId: 'refine_session_id',
-  previousDetails: 'previous_details',
   derivedFrom: 'derived_from',
   abandonReason: 'abandon_reason'
 }
@@ -353,11 +338,9 @@ export class TaskStore {
     )
     return rows.map((row) => ({
       ...row,
-      proposal: parseColumn(TaskProposal, row.proposal, `proposal of task ${row.id}`),
       source: parseColumn(TaskSource, row.source, `source of task ${row.id}`),
       sourceSnapshot: parseColumn(SourceSnapshot, row.sourceSnapshot, `source snapshot of task ${row.id}`),
       images: parseColumn(TaskImages, row.images, `images of task ${row.id}`) ?? [],
-      lastExit: parseColumn(LastExit, row.lastExit, `last exit of task ${row.id}`),
       awaitingInput: row.awaitingInput !== 0,
       plan: parseColumn(TaskPlan, row.plan, `plan of task ${row.id}`),
       repos: (repos.get(row.id) ?? []).map(({ path, worktreePath, branch, startRef, start }) => ({
@@ -385,16 +368,18 @@ export class TaskStore {
     return this.many(`${SELECT} WHERE id LIKE ? LIMIT 2`, `${prefix.toLowerCase()}%`)
   }
 
-  findBySession(sessionId: string): Task | null {
-    return this.many(`${SELECT} WHERE session_id = ?`, sessionId)[0] ?? null
+  // The terminal sessions a Kando before 0.11 recorded on tasks: a run's, kept after it ended, and
+  // a refining one's while it was open.
+  terminalSessions(): { id: string; sessionIds: string[] }[] {
+    return this.db
+      .prepare('SELECT id, session_id AS sessionId, refine_session_id AS refineSessionId FROM tasks WHERE session_id IS NOT NULL OR refine_session_id IS NOT NULL')
+      .all()
+      .map((row) => TerminalRow.parse(row))
+      .map(({ id, sessionId, refineSessionId }) => ({ id, sessionIds: [sessionId, refineSessionId].filter((each) => each !== null) }))
   }
 
-  findByRefineSession(sessionId: string): Task | null {
-    return this.many(`${SELECT} WHERE refine_session_id = ?`, sessionId)[0] ?? null
-  }
-
-  refining(): Task[] {
-    return this.many(`${SELECT} WHERE refine_session_id IS NOT NULL`)
+  forgetTerminalSessions(id: string): void {
+    this.db.prepare('UPDATE tasks SET session_id = NULL, refine_session_id = NULL WHERE id = ?').run(id)
   }
 
   dependsOn(id: string): string[] {
@@ -453,10 +438,6 @@ export class TaskStore {
           values.push(value)
         }
       }
-      if (patch.proposal !== undefined) {
-        sets.push('proposal = ?')
-        values.push(patch.proposal === null ? null : JSON.stringify(patch.proposal))
-      }
       if (patch.source !== undefined) {
         sets.push('source = ?')
         values.push(patch.source === null ? null : JSON.stringify(patch.source))
@@ -468,10 +449,6 @@ export class TaskStore {
       if (patch.sourceSnapshot !== undefined) {
         sets.push('source_snapshot = ?')
         values.push(patch.sourceSnapshot === null ? null : JSON.stringify(patch.sourceSnapshot))
-      }
-      if (patch.lastExit !== undefined) {
-        sets.push('last_exit = ?')
-        values.push(patch.lastExit === null ? null : JSON.stringify(patch.lastExit))
       }
       if (patch.awaitingInput !== undefined) {
         sets.push('awaiting_input = ?')

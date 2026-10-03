@@ -193,7 +193,7 @@ export class UsageLimitService {
     try {
       if (!this.wasSent(row)) {
         if (conversation.taskId) await this.deps.resumeTask(conversation.taskId)
-        else await this.deps.conversations.continue(row.conversationId, 'chat')
+        else await this.deps.conversations.continue(row.conversationId)
         await this.deps.conversations.send(row.conversationId, CONTINUE_TEXT, [], false, false, ref)
       }
       this.settle(row, { status: 'continued', continued_at: this.now(), error: null })

@@ -48,7 +48,7 @@ function AppearanceSettings() {
       />
       <SettingsRow
         label="终端字号"
-        description="agent 终端里文字的大小，已经打开的终端会立即生效。"
+        description="终端面板里文字的大小，已经打开的终端会立即生效。"
         control={(labelId) => (
           <Stepper
             labelId={labelId}
@@ -203,8 +203,6 @@ function AgentSettings() {
   const awakeSupported = useAwakeSupported()
   const awake = useCore((s) => s.awake)
   const defaultAgent = usePreferences((s) => s.defaultAgent)
-  const openTerminal = usePreferences((s) => s.openTerminalOnRun)
-  const agentView = usePreferences((s) => s.agentView)
   const allowBypass = usePreferences((s) => s.allowBypass)
   const chatSettings = useCore((s) => s.chatSettings)
   return (
@@ -227,21 +225,6 @@ function AgentSettings() {
           )}
         />
       )}
-      <SettingsRow
-        label="会话和任务的界面"
-        description="新建、继续和移交会话，以及开始任务时用哪一种。聊天界面把 agent 的消息、工具调用和确认请求画成卡片，任务在聊天里先规划，确认计划后再动手。运行中的会话不会切换，下次继续时生效；已经开始的任务保持原来的界面。Codex 的聊天界面依赖它还在实验阶段的 app-server。"
-        control={(labelId) => (
-          <Segmented
-            labelId={labelId}
-            value={agentView}
-            onChange={(next) => setPreference('agentView', next)}
-            options={[
-              { value: 'tui', label: '终端' },
-              { value: 'chat', label: '聊天界面' }
-            ]}
-          />
-        )}
-      />
       {chatSettings && (
         <SettingsRow
           label="回合结束后建议下一步"
@@ -273,13 +256,6 @@ function AgentSettings() {
               { value: 'none', label: '不指定' }
             ]}
           />
-        )}
-      />
-      <SettingsRow
-        label="执行后切到终端"
-        description="在终端里执行的任务，点 ▷ 执行后右侧自动换成 agent 的终端。用聊天界面开始的任务总会打开聊天。"
-        control={(labelId) => (
-          <Toggle labelId={labelId} checked={openTerminal} onChange={(next) => setPreference('openTerminalOnRun', next)} />
         )}
       />
       {browser && <BrowserRows />}
@@ -392,7 +368,7 @@ const SECTIONS: readonly Section[] = [
     group: '任务',
     title: '智能体',
     description: '新建和执行任务、开始会话时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '终端', '聊天', '界面', 'tui', 'gui', '会话', '任务', '规划', '浏览器', '截图', '网页', 'chromium'],
+    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '浏览器', '截图', '网页', 'chromium'],
     Icon: SparkIcon,
     Body: AgentSettings
   },

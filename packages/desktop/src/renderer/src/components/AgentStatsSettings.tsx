@@ -78,7 +78,7 @@ const TASK_COLUMNS = [
   { label: '接受', title: '你直接接受的结果' },
   { label: '继续修改', title: '你要求继续修改的结果' },
   { label: '重做', title: '你放弃、重做的结果' },
-  { label: '异常退出', title: '终端运行里出错退出的次数' },
+  { label: '异常退出', title: '0.11 之前在终端里运行、出错退出的次数' },
   { label: '耗时中位', title: '从开始执行到交付，含你中间的时间' },
   { label: 'token 中位', title: '聊天运行用掉的 token' }
 ]
@@ -116,7 +116,7 @@ function TaskStats() {
     <>
       <ByAgent rows={stats} columns={TASK_COLUMNS} cells={(row) => <TaskCells stats={row} />} />
       <p className="settings-stats-note muted">
-        比率的分母是你判定过的运行，每一次要么被接受，要么被要求继续修改，要么被重做。判定少于 {MIN_DECIDED_RUNS} 次的不算比率。终端里运行的 agent 不报告模型和 token，归在「未知模型」。
+        比率的分母是你判定过的运行，每一次要么被接受，要么被要求继续修改，要么被重做。判定少于 {MIN_DECIDED_RUNS} 次的不算比率。0.11 之前在终端里运行的 agent 不报告模型和 token，归在「未知模型」。
       </p>
     </>
   )
@@ -165,7 +165,7 @@ function ConversationUsage() {
     <>
       <ByAgent rows={stats} columns={CONVERSATION_COLUMNS} cells={(row) => <ConversationCells stats={row} />} />
       <p className="settings-stats-note muted">
-        会话没有验收，这里只看花了多少、断了几次，不评好坏。token 含缓存读到的部分，和聊天里每个回合显示的一样。包括升级前聊天界面里的会话；终端里的会话没有回合的数据，不计入。
+        会话没有验收，这里只看花了多少、断了几次，不评好坏。token 含缓存读到的部分，和聊天里每个回合显示的一样。包括升级前聊天界面里的会话；0.11 之前终端里的会话没有回合的数据，不计入。
       </p>
     </>
   )

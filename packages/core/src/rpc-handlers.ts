@@ -62,21 +62,12 @@ export function createRpcHandlers(
     'tasks.update': (params) => service.update(params),
     'tasks.startOptions': ({ id }) => service.startOptions(id),
     'tasks.move': ({ id, status }) => service.move(id, status),
-    'tasks.run': ({ id }) => service.run(id),
-    'tasks.continue': ({ id, note }) => service.continue(id, note),
+    'tasks.continue': ({ id, note, allowBypass }) => service.continue(id, note, allowBypass),
     'tasks.redo': ({ id, reason }) => service.redo(id, reason),
-    'tasks.refine': ({ id }) => service.refine(id),
     'tasks.start': ({ id, allowBypass }) => service.start(id, allowBypass),
     'tasks.resumeChat': ({ id, allowBypass }) => service.resumeChat(id, allowBypass),
     'tasks.submit': ({ id }) => service.submit(id),
     'tasks.savePlan': ({ id, stageId, requestId }) => service.savePlan(id, stageId, requestId),
-    'tasks.event': ({ id, session, waiting }) => {
-      service.agentEvent(id, session, waiting)
-      return OK
-    },
-    'tasks.propose': ({ id, markdown }) => service.propose(id, markdown),
-    'tasks.resolveProposal': ({ id, action }) => service.resolveProposal(id, action),
-    'tasks.restoreDetails': ({ id }) => service.restoreDetails(id),
     'tasks.delete': async ({ id }) => {
       await service.delete(id)
       return OK
@@ -89,13 +80,13 @@ export function createRpcHandlers(
     'tasks.diff': ({ id, repo, file }) => service.diff(id, repo, file),
     'conversations.list': () => conversations.list(),
     'conversations.get': ({ id }) => conversations.get(id),
-    'conversations.create': ({ agent, projectPaths, mode, allowBypass, permissionMode, model, effort }) =>
-      conversations.create(agent, projectPaths, mode, allowBypass, { permissionMode, model, effort }),
+    'conversations.create': ({ agent, projectPaths, allowBypass, permissionMode, model, effort }) =>
+      conversations.create(agent, projectPaths, allowBypass, { permissionMode, model, effort }),
     'conversations.chatCatalog': ({ agent }) => conversations.chatCatalog(agent),
     'conversations.setAdditionalProjects': ({ id, projectPaths }) => conversations.setAdditionalProjects(id, projectPaths),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
-    'conversations.continue': ({ id, mode, allowBypass }) => userActed(id, () => conversations.continue(id, mode, allowBypass)),
-    'conversations.handoff': ({ id, agent, note, stopRunning, mode, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, mode, allowBypass),
+    'conversations.continue': ({ id, allowBypass }) => userActed(id, () => conversations.continue(id, allowBypass)),
+    'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, allowBypass),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
     'conversations.send': ({ id, text, images, queue, steer }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer); return OK }),
     'conversations.cancelQueued': ({ id, ref }) => { conversations.cancelQueued(id, ref); return OK },
@@ -116,7 +107,6 @@ export function createRpcHandlers(
     'conversations.chatItems': ({ id, before }) => page(conversations.chatPage(id, before)),
     'conversations.stop': ({ id }) => userActed(id, () => conversations.stop(id)),
     'conversations.delete': async ({ id }) => { await conversations.delete(id); return OK },
-    'conversations.history': ({ id, offset, length }) => conversations.history(id, offset, length),
     'conversations.messages': ({ id }) => conversations.messages(id),
     'conversations.stages': ({ id }) => conversations.stages(id),
     'conversations.branches': ({ id }) => conversations.branches(id),
@@ -127,7 +117,6 @@ export function createRpcHandlers(
     'conversations.search': ({ query }) => conversations.search(query),
     'conversations.changes': ({ id }) => conversations.changes(id),
     'conversations.diff': ({ id, project, file }) => conversations.diff(id, project, file),
-    'conversations.event': (input) => { conversations.recordEvent(input); return OK },
     // The agent's side: its MCP server is launched for one conversation and names it here. The
     // token in core.json already grants everything, so this scopes correctness, not trust.
     'browser.tabs': ({ conversationId }) => browser.tabsOf(conversationId),
@@ -219,7 +208,7 @@ export function createRpcHandlers(
       connection.attached.add(sessionId)
       try {
         const { buffer, bufferStart, endOffset, exited, io } = await sessions.request('attach', { sessionId })
-        // A chat agent's output is JSON for core, not a terminal to draw; keystrokes would reach its stdin.
+        // An agent's output is JSON for core, not a terminal to draw; keystrokes would reach its stdin.
         if (io === 'pipe') throw new Rejection('chat-session', 'this session runs in chat mode')
         const start = Math.max(bufferStart, Math.min(fromOffset ?? bufferStart, endOffset))
         return { buffer: buffer.slice(start - bufferStart), bufferStart: start, endOffset, exited }
@@ -232,15 +221,15 @@ export function createRpcHandlers(
       connection.attached.delete(sessionId)
       return OK
     },
+    // Keystrokes go to the terminal panel's shells only: anything else the daemon runs is an agent
+    // or the browser, reading JSON on its stdin.
     'sessions.write': async ({ sessionId, data }) => {
-      if (conversations.isChatSession(sessionId)) throw new Rejection('chat-session', 'this session runs in chat mode')
+      if (!terminals.owns(sessionId)) throw new Rejection('chat-session', 'this session runs in chat mode')
       await sessions.request('write', { sessionId, data })
-      service.noteInput(sessionId)
-      conversations.noteInput(sessionId)
       return OK
     },
     'sessions.resize': async ({ sessionId, cols, rows }) => {
-      if (conversations.isChatSession(sessionId)) return OK
+      if (!terminals.owns(sessionId)) return OK
       await sessions.request('resize', { sessionId, cols, rows })
       return OK
     },

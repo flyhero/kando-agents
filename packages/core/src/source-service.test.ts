@@ -101,7 +101,7 @@ describe('SourceService', () => {
     store = new TaskStore(path.join(dir, 'kando.db'))
     attachments = new AttachmentStore(dir)
     projects = new ProjectRegistry(path.join(dir, 'kando.db'))
-    tasks = new TaskService(store, projects, noDaemon, dir, () => {}, () => ({ command: 'x', args: [] }), attachments)
+    tasks = new TaskService(store, projects, noDaemon, dir, () => {}, attachments)
     demo = demoProvider()
     config = new SourceConfigStore(path.join(dir, 'sources.json'))
     credentials = new CredentialStore(path.join(dir, 'credentials.json'))

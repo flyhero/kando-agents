@@ -1,5 +1,5 @@
 import type { AgentKind } from '@kando/protocol'
-import { claudeEditDenials, claudeHookArgs, claudeReadRules, codexNotifyArgs, GIT_READ_TOOLS, type AgentCommand, type McpServer } from './agent-command'
+import { claudeEditDenials, claudeReadRules, GIT_READ_TOOLS, type AgentCommand, type McpServer } from './agent-command'
 import { browserToolName, SHOW_PREVIEW_TOOL } from '@kando/protocol'
 import type { ChatPreferences } from './chat-driver'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
@@ -28,8 +28,8 @@ export function handoffPromptPath(text: string): string | null {
   return trimmed.slice(HANDOFF_PREFIX.length, -HANDOFF_SUFFIX.length)
 }
 
-// A chat-mode agent speaks JSON lines over stdio: no hooks (the stream carries every message),
-// and no prompt in argv (messages, the handoff prompt included, go to stdin).
+// The agent speaks JSON lines over stdio: the stream carries every message, and none goes in argv
+// (messages, the handoff prompt included, go to stdin).
 export function chatCommand(
   agent: AgentKind,
   providerSessionId: string | null,
@@ -82,36 +82,10 @@ export function chatCommand(
     ] }
   }
   // app-server takes the thread, sandbox and extra roots over the protocol instead; Kando's MCP
-  // server goes in as a config override, as the TUI takes it.
+  // server goes in as a config override.
   const { mcp } = launch
   return { command: 'codex', args: [
     'app-server',
     ...(mcp ? ['-c', `mcp_servers.kando.command=${JSON.stringify(mcp.command)}`, '-c', `mcp_servers.kando.args=${JSON.stringify(mcp.args)}`, ...HIDDEN_CODEX_BROWSERS] : [])
-  ] }
-}
-
-export function conversationCommand(
-  agent: AgentKind,
-  providerSessionId: string | null,
-  resume: boolean,
-  callbackCommand: readonly string[],
-  handoffPath: string | null,
-  extraProjects: readonly string[] = []
-): AgentCommand {
-  const prompt = handoffPath ? handoffPrompt(handoffPath) : null
-  if (agent === 'claude') {
-    return { command: 'claude', args: [
-      ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
-      ...extraProjects.flatMap((project) => ['--add-dir', project]),
-      ...claudeHookArgs(callbackCommand, ['UserPromptSubmit', 'Stop', 'StopFailure']),
-      ...(handoffPath ? ['--allowedTools', `Read(/${handoffPath})`] : []),
-      ...(prompt ? ['--', prompt] : [])
-    ] }
-  }
-  return { command: 'codex', args: [
-    ...codexNotifyArgs(callbackCommand),
-    ...extraProjects.flatMap((project) => ['--add-dir', project]),
-    ...(resume && providerSessionId ? ['resume', providerSessionId] : []),
-    ...(prompt ? ['--', prompt] : [])
   ] }
 }

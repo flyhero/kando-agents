@@ -32,12 +32,9 @@ function folderName(folder: string): string {
   return folder.split(/[\\/]/).filter(Boolean).at(-1) ?? folder
 }
 
-// Where the switch leaves the agent: a chat one hears of it with the next message, a terminal one
-// only from the user.
-function switchedNote(conversation: Conversation, branch: string): string {
-  return conversation.mode === 'chat'
-    ? `已切到 ${branch}，下一条消息会告诉 agent。`
-    : `已切到 ${branch}。终端里的 agent 不会自动知道，继续时记得告诉它。`
+// The agent hears of the switch with the next message.
+function switchedNote(branch: string): string {
+  return `已切到 ${branch}，下一条消息会告诉 agent。`
 }
 
 function SwitchList({ option, onPick }: { option: ProjectBranches; onPick: (ref: string) => void }) {
@@ -147,7 +144,7 @@ function ProjectActions({ conversation, head, option, onChanged }: {
     setBusy(false)
     if (done) {
       setOpen(null)
-      onChanged(switchedNote(conversation, branch))
+      onChanged(switchedNote(branch))
     }
   }
   const commit = async (message: string) => {

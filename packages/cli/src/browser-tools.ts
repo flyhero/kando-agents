@@ -15,7 +15,7 @@ import {
   type BrowserToolKind,
   type RpcConnection
 } from '@kando/protocol'
-import { attachmentPath } from './task-images'
+import { attachmentPath } from './attachment-path'
 
 // What a browser tool gives the model: text, and for a screenshot the picture itself.
 export type ToolOutcome = { text: string; isError?: boolean; image?: { data: string; mimeType: string } }

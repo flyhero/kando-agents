@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { AttachmentId } from './attachments'
 
-// tui: the agent's own interface in a terminal · chat: Kando renders its structured events
+// How a conversation stage ran its agent. chat: Kando renders its structured events · tui: the
+// agent's own interface in a terminal, which Kando offered before 0.11; older stages keep it.
 export const CONVERSATION_MODES = ['tui', 'chat'] as const
 export const ConversationMode = z.enum(CONVERSATION_MODES)
 export type ConversationMode = z.infer<typeof ConversationMode>

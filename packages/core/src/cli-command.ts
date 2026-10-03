@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 
-// How core tells another process to run the Kando CLI: agents run it as their event callbacks
-// and as the refine MCP server. From source it goes through the workspace's tsx; packaged, the
+// How core tells another process to run the Kando CLI: agents run it as Kando's MCP server.
+// From source it goes through the workspace's tsx; packaged, the
 // launcher names the bundled cli.mjs, run by the Electron binary as plain Node. The env wrapper
 // states the flag outright because an agent's environment lacks it (POSIX only, like the dmg).
 export function cliCommand(...args: string[]): string[] {
