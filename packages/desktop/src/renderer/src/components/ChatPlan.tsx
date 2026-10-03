@@ -7,7 +7,7 @@ import { useChatSurface } from './chat-surface'
 import { ChatMarkdown } from './ChatMarkdown'
 import { useResponder } from './ChatRequestCards'
 import { SchedulePicker } from './SchedulePicker'
-import { useCore, usePlanModesSupported, useSchedulesSupported } from '../core-store'
+import { perform, useCore, usePlanModesSupported, useSchedulesSupported } from '../core-store'
 import { setPreference, usePreferences, type Preferences } from '../preferences'
 import { ContextMenu, type MenuPoint } from './ContextMenu'
 import { CheckIcon, ChevronDownIcon } from './icons'
@@ -39,7 +39,8 @@ const RESOLUTION: Record<NonNullable<PlanItem['resolution']>, string> = {
   allowed: '按计划执行，逐项确认',
   allowedForSession: '按计划执行，自动接受编辑',
   denied: '继续规划',
-  cancelled: '已取消'
+  // Stopped before it was answered, or the agent ended first: either way nothing was carried out.
+  cancelled: '没有执行'
 }
 
 // The permission modes a plan can be carried out in, in the order the menu offers them.
@@ -132,15 +133,17 @@ export function ChatPlanLine({ item }: { item: PlanItem }) {
 // In the composer's place while the plan waits: the plan itself, clipped until opened, then the
 // answers as numbered rows like any approval's. Carry it out, in the permission mode the execute
 // button picks, or send it back with a note; where the chat may only plan, keep it for later
-// instead. An older core carries a plan out only asking about edits or accepting them.
-type PlanChoice = 'run' | 'allow' | 'allowForSession' | 'save' | 'revise'
+// instead. An older core carries a plan out only asking about edits or accepting them. Or stop:
+// the turn ends with nothing carried out and nothing replanned, and the next word is the user's.
+type PlanChoice = 'run' | 'allow' | 'allowForSession' | 'save' | 'revise' | 'stop'
 const CHOICE_LABEL: Record<Exclude<PlanChoice, 'revise'>, string> = {
   run: '按计划执行',
   allow: '按计划执行，改文件、跑命令前逐项确认',
   allowForSession: '按计划执行，文件改动自动接受',
-  save: '先保存计划，等依赖的任务完成后再执行'
+  save: '先保存计划，等依赖的任务完成后再执行',
+  stop: '不执行，先停下'
 }
-const SUBMIT_LABEL: Record<PlanChoice, string> = { run: '执行', allow: '执行', allowForSession: '执行', save: '保存计划', revise: '继续规划' }
+const SUBMIT_LABEL: Record<PlanChoice, string> = { run: '执行', allow: '执行', allowForSession: '执行', save: '保存计划', revise: '继续规划', stop: '停下' }
 const PREVIEW_LINES = 12
 
 export function ChatPlanCard({ conversationId, item, modes }: { conversationId: string; item: PlanItem; modes: readonly string[] }) {
@@ -155,7 +158,7 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   const picked = usePreferences((s) => s.planRunMode)
   const runMode: RunMode = runModes.includes(picked) ? picked : runModes.includes('auto') ? 'auto' : 'acceptEdits'
   const modesSupported = usePlanModesSupported() && runModes.length > 0
-  const choices: PlanChoice[] = savePlan ? ['save', 'revise'] : modesSupported ? ['run', 'revise'] : ['allow', 'allowForSession', 'revise']
+  const choices: PlanChoice[] = savePlan ? ['save', 'revise', 'stop'] : modesSupported ? ['run', 'revise', 'stop'] : ['allow', 'allowForSession', 'revise', 'stop']
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
   const noteInput = useRef<HTMLInputElement>(null)
   const long = (item.detail ?? '').split('\n').length > PREVIEW_LINES
@@ -170,9 +173,17 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   useEffect(() => {
     if (commented) setChoice('revise')
   }, [commented, quotes.length])
+  // Ends the turn: what waits is turned down on the way, so the plan reads as not carried out.
+  const stop = async () => {
+    setSaving(true)
+    await perform((rpc) => rpc.call('conversations.interrupt', { id: conversationId }))
+    setSaving(false)
+  }
   const submit = async () => {
     if (busy || saving) return
-    if (choice === 'save') {
+    if (choice === 'stop') {
+      await stop()
+    } else if (choice === 'save') {
       if (!savePlan) return
       setSaving(true)
       await savePlan(item)
@@ -193,7 +204,10 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return
-    if (event.key === 'Enter') {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (!busy && !saving) void stop()
+    } else if (event.key === 'Enter') {
       event.preventDefault()
       void submit()
     } else if (/^[1-9]$/.test(event.key) && !(event.target instanceof HTMLInputElement)) {
@@ -261,7 +275,7 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
         ))}
       </div>
       <div className="chat-approve-footer">
-        <span className="chat-approve-hint">数字键选择 · Enter 提交</span>
+        <span className="chat-approve-hint">数字键选择 · Enter 提交 · Esc 停下</span>
         {choice === 'run'
           ? <RunModeButton modes={runModes} mode={runMode} disabled={busy || saving} onRun={() => void submit()} />
           : (
