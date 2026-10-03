@@ -102,8 +102,7 @@ export const Task = z.object({
   images: z.array(TaskImage).default([]),
   // The agent has finished its turn and waits for the user.
   awaitingInput: z.boolean().default(false),
-  // The chat the task runs in, made when it starts. null before then, and for a task run in a
-  // terminal by a Kando older than 0.11: continuing that one starts its chat.
+  // The chat the task runs in, made when it starts; null before then.
   conversationId: z.string().nullable().default(null),
   plan: TaskPlan.nullable().default(null),
   createdAt: z.number(),
@@ -234,7 +233,7 @@ export function checkSavePlan(task: Task): SavePlanBlocker | null {
 export type ContinueBlocker = 'not-done' | 'missing-repo' | 'missing-agent' | 'blocked'
 
 // Continuing picks the finished work up again in its own worktree: under review, to change what
-// the user found wrong; once accepted, to reopen it. A chat task does so with its next message.
+// the user found wrong; once accepted, to reopen it. It does so with the next message of its chat.
 export function checkContinue(task: Task, dependencies: readonly Pick<Task, 'status'>[]): ContinueBlocker | null {
   if (!isFinished(task.status)) {
     return 'not-done'

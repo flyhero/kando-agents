@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ConversationService, type ConversationEvent } from './conversation-service'
 import { ConversationStore } from './conversation-store'
@@ -60,20 +59,6 @@ describe('ConversationService', () => {
   // The handoff file the agent of this session was told to read first.
   const handoffFile = (sessionId: string) =>
     readFileSync(/移交文件 (\S+?)，/.exec(JSON.stringify(daemon.written(sessionId)))?.[1] ?? '', 'utf8')
-
-  // A Claude stage as a Kando before 0.11 ran it, in a terminal, with the agent it left running.
-  function legacyStage(sessionId: string | null = null) {
-    const conversation = store.create('claude', root, [root])
-    const { id } = store.startStage(conversation.id, 'claude', randomUUID(), 0)
-    const db = new DatabaseSync(path.join(root, 'kando.db'))
-    db.prepare(`UPDATE conversation_stages SET mode = 'tui' WHERE id = ?`).run(id)
-    db.close()
-    if (sessionId) {
-      store.attachStage(id, sessionId)
-      store.update(conversation.id, { sessionId })
-    }
-    return { conversation, stage: store.stage(id)! }
-  }
 
   beforeEach(() => {
     root = mkdtempSync(path.join(os.tmpdir(), 'kando-conversation-'))
@@ -255,8 +240,6 @@ describe('ConversationService', () => {
     await service.send(created.id, 'Hello')
     await settle()
     const directory = path.join(root, 'sessions', created.id)
-    // What a terminal stage of a Kando before 0.11 printed.
-    writeFileSync(path.join(directory, 'terminal.log'), 'old output')
     await service.delete(created.id)
     expect(daemon.killed).toEqual([{ sessionId: created.sessionId, force: false }])
     expect(existsSync(created.workspacePath)).toBe(true)
@@ -300,38 +283,6 @@ describe('ConversationService', () => {
     service.setPromptSuggestions(false)
     expect(service.get(created.id).chat).toEqual({ turn: 'idle' })
     expect(daemon.writes.map((write) => write.frame)).toContainEqual(expect.objectContaining({ request: { subtype: 'set_prompt_suggestions_paused', paused: true } }))
-  })
-
-  it('continues a stage a Kando before 0.11 ran in a terminal in chat, on the same Claude session', async () => {
-    const { conversation, stage } = legacyStage()
-    say(conversation.id, 'user', 'Hello')
-    store.endStage(stage.id, 0)
-    await service.continue(conversation.id)
-    expect(daemon.spawns[0]?.args).toEqual(expect.arrayContaining(['--resume', stage.providerSessionId]))
-    await service.send(conversation.id, 'Next step')
-    await settle()
-    expect(service.messages(conversation.id).map((message) => message.text)).toEqual(['Hello', 'Next step', 'echo: Next step'])
-    expect(service.stages(conversation.id).map((each) => each.mode)).toEqual(['tui', 'chat'])
-    // The terminal stage has nothing for the chat to show.
-    expect(service.chatPage(conversation.id).items.filter((item) => item.kind === 'user')).toHaveLength(1)
-  })
-
-  it('stops an agent a Kando before 0.11 left running in a terminal, so nothing works on unseen', async () => {
-    const spawn = async () => (await daemon.request('spawn', { command: 'claude', args: [], cwd: root, env: {}, cols: 100, rows: 30 })).sessionId
-    const running = await spawn()
-    const exited = await spawn()
-    const left = legacyStage(running).conversation
-    const ended = legacyStage(exited).conversation
-    // Core is down when the second one exits.
-    daemon.deliver = () => {}
-    daemon.exit(exited, 0)
-
-    service = serve()
-    await service.reconcile((await daemon.request('list', {})).sessions)
-    expect(daemon.killed).toEqual([{ sessionId: running, force: false }])
-    expect(service.get(left.id)).toMatchObject({ sessionId: null, lastExit: { code: null } })
-    expect(service.stages(left.id)[0]?.endedAt).not.toBeNull()
-    expect(service.get(ended.id)).toMatchObject({ sessionId: null, lastExit: { code: 0 } })
   })
 
   it('stops a chat agent only once it has exited, forcing it when it will not go', async () => {

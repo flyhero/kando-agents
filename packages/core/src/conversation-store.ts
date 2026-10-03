@@ -14,7 +14,7 @@ const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_
   FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
-  ended_at AS endedAt, exit_code AS exitCode, mode, plan_only AS planOnly FROM conversation_stages`
+  ended_at AS endedAt, exit_code AS exitCode, plan_only AS planOnly FROM conversation_stages`
 const MESSAGE_SELECT = `SELECT sequence, conversation_id AS conversationId, stage_id AS stageId,
   role, agent, text, event_key AS eventKey, complete, created_at AS createdAt FROM conversation_messages`
 
@@ -172,7 +172,7 @@ export class ConversationStore {
 
   // The agent's newest chat stage in any conversation.
   latestChatStage(agent: AgentKind): ConversationStage | null {
-    const row = this.db.prepare(`${STAGE_SELECT} WHERE agent = ? AND mode = 'chat' ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(agent)
+    const row = this.db.prepare(`${STAGE_SELECT} WHERE agent = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(agent)
     return row ? stage(row) : null
   }
 
@@ -183,8 +183,8 @@ export class ConversationStore {
 
   startStage(conversationId: string, agent: AgentKind, providerSessionId: string | null, receivedSequence: number, id = randomUUID(), planOnly = false): ConversationStage {
     this.db.prepare(`INSERT INTO conversation_stages
-      (id, conversation_id, agent, provider_session_id, received_sequence, started_at, mode, plan_only)
-      VALUES (?, ?, ?, ?, ?, ?, 'chat', ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), Number(planOnly))
+      (id, conversation_id, agent, provider_session_id, received_sequence, started_at, plan_only)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, agent, providerSessionId, receivedSequence, this.now(), Number(planOnly))
     return this.stage(id)!
   }
 

@@ -1,5 +1,5 @@
 import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isBrowserTool, isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationMessage, type ConversationStage } from '@kando/protocol'
+import { isBrowserTool, isPlanApproval, isPreviewTool, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
 import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
 import { ChatBrowserCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
@@ -56,11 +56,8 @@ function timeOfDay(ms: number): string {
 
 // A task's chat says where each stage ran: only planning beside the projects, or in its worktrees.
 function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean }) {
-  const where = stage.mode !== 'chat' ? '终端（0.11 之前的界面），这里只有记下的消息'
-    : stage.planOnly ? '聊天界面 · 只读规划'
-    : task ? '聊天界面 · 在 worktree 里执行'
-    : '聊天界面'
-  return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)} · {where}</div>
+  const where = stage.planOnly ? ' · 只读规划' : task ? ' · 在 worktree 里执行' : ''
+  return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)}{where}</div>
 }
 
 // How long each finished thought took, by item key.
@@ -173,16 +170,6 @@ function ChatNotice({ item }: { item: NoticeItem }) {
   )
 }
 
-function TerminalMessage({ message }: { message: ConversationMessage }) {
-  if (message.role === 'user') return (
-    <>
-      <div className="chat-user">{message.text}</div>
-      <UserMessageFooter at={message.createdAt} text={message.text} />
-    </>
-  )
-  return <div className="chat-assistant"><ChatMarkdown text={message.text} /></div>
-}
-
 function Item({ conversationId, item, completedAt, blockKey }: { conversationId: string; item: ChatItem; completedAt: number | undefined; blockKey: string }) {
   const ending = useContext(Endings).get(blockKey)
   switch (item.kind) {
@@ -242,14 +229,12 @@ function TurnHead({ at }: { at: number }) {
 // The user's message a block is, if it is one: the head goes under it.
 function userAt(block: ChatBlock): number | null {
   const item = block.kind === 'entry' && block.entry.kind === 'item' ? block.entry.item : null
-  if (item?.kind === 'user') return item.at
-  if (block.kind === 'entry' && block.entry.kind === 'message' && block.entry.message.role === 'user') return block.entry.message.createdAt
-  return null
+  return item?.kind === 'user' ? item.at : null
 }
 
 // The user's own messages are what ↑ steps back through.
 function isUserEntry(entry: TimelineEntry): boolean {
-  return entry.kind === 'item' ? entry.item.kind === 'user' : entry.kind === 'message' && entry.message.role === 'user'
+  return entry.kind === 'item' && entry.item.kind === 'user'
 }
 
 type TurnItem = Extract<ChatItem, { kind: 'turn' }>
@@ -377,7 +362,6 @@ function Block({ conversationId, block, task, replies }: { conversationId: strin
   return (
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
-        : entry.kind === 'message' ? <TerminalMessage message={entry.message} />
         : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} blockKey={block.key} />}
     </div>
   )
@@ -396,7 +380,6 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const rpc = useCore((s) => s.rpc)
   const page = useChat((s) => s[id])
   const [stages, setStages] = useState<ConversationStage[]>([])
-  const [messages, setMessages] = useState<ConversationMessage[]>([])
   const list = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const [away, setAway] = useState(false)
@@ -416,15 +399,13 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     }
   }, [rpc, id])
 
-  // A new stage starts with a new session; earlier stages and their messages do not change.
+  // A new stage starts with a new session; earlier stages do not change.
   useEffect(() => {
     if (!rpc) return
     let current = true
-    Promise.all([rpc.call('conversations.stages', { id }), rpc.call('conversations.messages', { id })]).then(
-      ([nextStages, nextMessages]) => {
-        if (!current) return
-        setStages(nextStages)
-        setMessages(nextMessages)
+    rpc.call('conversations.stages', { id }).then(
+      (nextStages) => {
+        if (current) setStages(nextStages)
       },
       () => {}
     )
@@ -443,14 +424,14 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     const limited = new Set(items.flatMap((item) =>
       item.kind === 'usageLimit' ? [itemKey({ stageId: item.stageId, id: item.id.replace(/^limit:/, 'turn:') })] : []))
     const limitWords = new Set(items.flatMap((item) => (item.kind === 'usageLimit' && item.message ? [`${item.stageId}\n${item.message.trim()}`] : [])))
-    return timeline(stages, messages, items).flatMap((entry): TimelineEntry[] => {
+    return timeline(stages, items).flatMap((entry): TimelineEntry[] => {
       if (entry.kind !== 'item') return [entry]
       const { item } = entry
       if (plans.has(itemKey(item))) return []
       if (item.kind === 'assistant' && limitWords.has(`${item.stageId}\n${item.text.trim()}`)) return []
       return item.kind === 'turn' && limited.has(itemKey(item)) ? [{ kind: 'item', item: { ...item, error: null } }] : [entry]
     })
-  }, [stages, messages, items])
+  }, [stages, items])
   const foldTurns = usePreferences((s) => s.foldTurns)
   const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
   const replies = useMemo(() => {
@@ -493,7 +474,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const sent = useMemo(() => blocks.flatMap((block) => {
     if (block.kind !== 'entry' || !isUserEntry(block.entry)) return []
     const { entry } = block
-    return [{ key: block.key, text: entry.kind === 'item' && entry.item.kind === 'user' ? entry.item.text : entry.kind === 'message' ? entry.message.text : '' }]
+    return [{ key: block.key, text: entry.kind === 'item' && entry.item.kind === 'user' ? entry.item.text : '' }]
   }), [blocks])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),

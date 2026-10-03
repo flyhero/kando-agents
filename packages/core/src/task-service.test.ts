@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import type { Task } from '@kando/protocol'
@@ -15,7 +14,6 @@ import { gifBytes, pngBytes } from './image-fixtures'
 import { ProjectRegistry } from './project-registry'
 import { TaskService, type TaskEvent } from './task-service'
 import { TaskStore } from './task-store'
-import { prepareWorkspace } from './workspace'
 
 // A message to a Claude chat agent: its text, after any images as blocks of their own.
 const UserMessage = z.object({
@@ -69,7 +67,7 @@ describe('TaskService', () => {
       else if (event.event === 'exit') target.handleExit(event.sessionId, event.exitCode)
       else target.handleStderr(event.sessionId, event.data)
     }
-    service = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), (event) => events.push(event), attachments, conversations, runs)
+    service = new TaskService(store, projects, path.join(dir, 'worktrees'), (event) => events.push(event), attachments, conversations, runs)
   })
 
   afterEach(() => {
@@ -110,6 +108,12 @@ describe('TaskService', () => {
   async function handIn(taskId: string): Promise<Task> {
     await settle()
     return service.submit(taskId)
+  }
+
+  // A message to a task's chat, as the chat view sends one: the task readies its agent first.
+  async function message(taskId: string, text: string): Promise<void> {
+    const task = await service.resumeChat(taskId)
+    await conversations.send(task.conversationId ?? '', text)
   }
 
   it('creates pending tasks and keeps them pending while details are written', () => {
@@ -177,29 +181,29 @@ describe('TaskService', () => {
   })
 
   describe('run records', () => {
-    const verdicts = (taskId: string) => runs.forTask(taskId).map(({ kind, view, endedBy, exitCode, outcome }) => ({ kind, view, endedBy, exitCode, outcome }))
+    const verdicts = (taskId: string) => runs.forTask(taskId).map(({ kind, endedBy, outcome }) => ({ kind, endedBy, outcome }))
 
     it('keeps each run, how it ended, and the user accepting the result', async () => {
       const task = readyTask('Accept me', [initRepo('app')])
       expect(runs.forTask(task.id)).toEqual([])
       await service.start(task.id)
-      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'run', view: 'chat', agent: 'claude', endedAt: null, outcome: null }])
+      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'run', agent: 'claude', endedAt: null, outcome: null }])
       await handIn(task.id)
       service.move(task.id, 'done')
-      expect(runs.forTask(task.id)).toMatchObject([{ endedBy: 'submit', exitCode: null, outcome: 'accepted' }])
+      expect(runs.forTask(task.id)).toMatchObject([{ endedBy: 'submit', outcome: 'accepted' }])
     })
 
-    it('marks a run sent back by continuing, and the last one given up by a redo', async () => {
+    it('marks a run sent back by a message, and the last one given up by a redo', async () => {
       const task = readyTask('Redo me', [initRepo('app')])
       await service.start(task.id)
       await handIn(task.id)
-      await service.continue(task.id, 'again')
+      await message(task.id, 'again')
       await handIn(task.id)
       service.redo(task.id, 'wrong approach')
       await settle()
       expect(verdicts(task.id)).toEqual([
-        { kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'continued' },
-        { kind: 'continue', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'redone' }
+        { kind: 'run', endedBy: 'submit', outcome: 'continued' },
+        { kind: 'continue', endedBy: 'submit', outcome: 'redone' }
       ])
     })
 
@@ -208,11 +212,11 @@ describe('TaskService', () => {
       await service.start(task.id)
       await handIn(task.id)
       service.move(task.id, 'done')
-      await service.continue(task.id)
+      await service.resumeChat(task.id)
       service.move(task.id, 'done')
       expect(verdicts(task.id)).toEqual([
-        { kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, outcome: 'accepted' },
-        { kind: 'continue', view: 'chat', endedBy: 'closed', exitCode: null, outcome: 'closed' }
+        { kind: 'run', endedBy: 'submit', outcome: 'accepted' },
+        { kind: 'continue', endedBy: 'closed', outcome: 'closed' }
       ])
     })
   })
@@ -269,8 +273,8 @@ describe('TaskService', () => {
     git(repo, 'worktree', 'remove', worktree)
     service.forgetWorktree(task.id, worktree)
     expect(service.get(task.id).repos[0]).toMatchObject({ worktreePath: null, branch: run.repos[0]!.branch })
-    const continued = await service.continue(task.id)
-    expect(continued.repos[0]?.worktreePath).toBe(worktree)
+    const resumed = await service.resumeChat(task.id)
+    expect(resumed.repos[0]?.worktreePath).toBe(worktree)
     expect(git(worktree, 'log', '-1', '--format=%s')).toBe('work')
   })
 
@@ -385,7 +389,7 @@ describe('TaskService', () => {
     expect((await service.changes(task.id)).map((repo) => repo.files.length)).toEqual([1, 1])
   })
 
-  it('rejects project edits while a start or a continue is under way', async () => {
+  it('rejects project edits while a start or a resume is under way', async () => {
     const api = initRepo('api')
     const web = initRepo('web')
     const task = readyTask('Starting', [api, web])
@@ -393,9 +397,9 @@ describe('TaskService', () => {
     expect(() => service.update({ id: task.id, repos: [web, api] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
     await starting
     await handIn(task.id)
-    const continuing = service.continue(task.id)
+    const resuming = service.resumeChat(task.id)
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'run-in-progress' }))
-    await continuing
+    await resuming
   })
 
   it('rejects changes to an abandoned task through the service', () => {
@@ -417,6 +421,68 @@ describe('TaskService', () => {
     const task = readyTask('Locked', [initRepo('api')])
     await service.start(task.id)
     expect(() => service.update({ id: task.id, repos: [] })).toThrow(expect.objectContaining({ reason: 'task-running' }))
+  })
+
+  it('changes its primary project only until its chat starts, and a redo starts afresh in that order', async () => {
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const task = readyTask('Primary', [api, web])
+    const updated = service.update({ id: task.id, repos: [web, api] })
+    expect(updated.repos.map((repo) => repo.path)).toEqual([web, api])
+    const reopened = new TaskStore(path.join(dir, 'kando.db'))
+    try {
+      expect(reopened.get(task.id)?.repos).toEqual(updated.repos)
+    } finally {
+      reopened.close()
+    }
+
+    const running = await service.start(task.id)
+    const [primary, additional] = running.repos.map((repo) => repo.worktreePath ?? '')
+    expect(daemon.spawns[0]?.cwd).toBe(realpathSync(primary ?? ''))
+    const args = daemon.spawns[0]?.args ?? []
+    expect(args[args.indexOf('--add-dir') + 1]).toBe(realpathSync(additional ?? ''))
+    writeFileSync(path.join(primary ?? '', 'draft.txt'), 'keep me')
+    // Its chat holds on to the primary from here on.
+    await handIn(task.id)
+    expect(() => service.update({ id: task.id, repos: [api, web] })).toThrow(expect.objectContaining({ reason: 'primary-fixed' }))
+
+    const redo = service.redo(task.id, undefined)
+    await settle()
+    expect(redo.repos.map((repo) => repo.path)).toEqual([web, api])
+    const redone = await service.start(redo.id)
+    const redonePrimary = redone.repos[0]?.worktreePath ?? ''
+    expect(daemon.spawns.at(-1)?.cwd).toBe(realpathSync(redonePrimary))
+    expect(redonePrimary).not.toBe(primary)
+    expect(existsSync(path.join(redonePrimary, 'draft.txt'))).toBe(false)
+    expect(readFileSync(path.join(primary ?? '', 'draft.txt'), 'utf8')).toBe('keep me')
+  })
+
+  it('lets its chat drop an additional project, leaving that worktree on disk', async () => {
+    const api = initRepo('api')
+    const web = initRepo('web')
+    const running = await service.start(readyTask('Drop one', [api, web]).id)
+    await handIn(running.id)
+    expect(service.update({ id: running.id, repos: [api] }).repos).toEqual([running.repos[0]])
+    await service.resumeChat(running.id)
+    expect(daemon.spawns).toHaveLength(2)
+    expect(daemon.spawns.at(-1)?.args).not.toContain('--add-dir')
+    expect(existsSync(running.repos[1]?.worktreePath ?? '')).toBe(true)
+  })
+
+  it('reserves existing same-name worktrees when its chat takes another project', async () => {
+    for (const name of ['first', 'second', 'third']) mkdirSync(path.join(dir, name))
+    const first = initRepo('first/app')
+    const second = initRepo('second/app')
+    const third = initRepo('third/app')
+    const running = await service.start(readyTask('Same names', [first, second]).id)
+    await handIn(running.id)
+    // The new project comes before one whose worktree already took the next free name.
+    service.update({ id: running.id, repos: [first, third, second] })
+    const resumed = await service.resumeChat(running.id)
+    expect([resumed.repos[0], resumed.repos[2]]).toEqual(running.repos)
+    expect(new Set(resumed.repos.map((repo) => repo.worktreePath)).size).toBe(3)
+    expect(git(resumed.repos[1]?.worktreePath ?? '', 'rev-parse', '--git-common-dir')).toBe(git(third, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    expect(conversations.get(resumed.conversationId ?? '').projectPaths).toEqual(resumed.repos.map((repo) => realpathSync(repo.worktreePath ?? '')))
   })
 
   it('redoes a done task as a fresh pending one and moves its dependents over', async () => {
@@ -669,7 +735,7 @@ describe('TaskService', () => {
     service.submit(task.id)
     const [run] = runs.forTask(task.id)
     // Input counts cached tokens too, as the chat's own turn usage does; the model is the stage's.
-    expect(run).toMatchObject({ kind: 'run', view: 'chat', endedBy: 'submit', exitCode: null, model: 'sonnet', inputTokens: 300, outputTokens: 40, totalTokens: 340, workMs: 60 })
+    expect(run).toMatchObject({ kind: 'run', endedBy: 'submit', model: 'sonnet', inputTokens: 300, outputTokens: 40, totalTokens: 340, workMs: 60 })
 
     await service.resumeChat(task.id)
     expect(runs.forTask(task.id).map(({ kind, outcome }) => [kind, outcome])).toEqual([['run', 'continued'], ['continue', null]])
@@ -684,8 +750,6 @@ describe('TaskService', () => {
     expect(service.get(task.id).awaitingInput).toBe(true)
     daemon.exit(sessionOf(task.id), 0)
     await settle()
-    // Core reconnecting to the daemon leaves it be: its agent was never a terminal one.
-    await service.endTerminalRuns((await daemon.request('list', {})).sessions)
     expect(service.get(task.id)).toMatchObject({ status: 'running', awaitingInput: true })
 
     const resumed = await service.resumeChat(task.id)
@@ -741,8 +805,8 @@ describe('TaskService', () => {
     const started = await service.start(task.id)
     await settle()
     service.submit(task.id)
-    const continued = await service.continue(task.id, 'rename the button')
-    expect(continued.status).toBe('running')
+    await message(task.id, 'rename the button')
+    expect(service.get(task.id).status).toBe('running')
     expect(told(task.id)).toContain('rename the button')
     await settle()
     service.submit(task.id)
@@ -752,167 +816,5 @@ describe('TaskService', () => {
     await service.delete(task.id)
     expect(() => conversations.get(started.conversationId ?? '')).toThrow(expect.objectContaining({ reason: 'conversation-not-found' }))
     expect(existsSync(started.repos[0]?.worktreePath ?? '')).toBe(true)
-  })
-
-  it('continues a chat task in its own session, with the note as the next message', async () => {
-    const task = readyTask('Chat me', [initRepo('app')])
-    const started = await service.start(task.id)
-    await handIn(task.id)
-    service.move(task.id, 'done')
-    // Its agent went meanwhile, as it does when the machine restarts.
-    daemon.exit(sessionOf(task.id), 0)
-    await settle()
-
-    const continued = await service.continue(task.id, 'rename the button')
-    expect(continued).toMatchObject({ status: 'running', conversationId: started.conversationId })
-    expect(daemon.spawns).toHaveLength(2)
-    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--resume']))
-    // The agent has the work in its session already: only the note goes to it.
-    expect(told(task.id)).toBe('rename the button')
-  })
-
-  describe('a task a Kando before 0.11 ran in a terminal', () => {
-    // Its worktrees laid out, handed in for review, and no chat.
-    async function ranInTerminal(task: Task): Promise<Task> {
-      const workspace = await prepareWorkspace(task, [], path.join(dir, 'worktrees'))
-      return store.update(task.id, { repos: workspace.repos, status: 'review' })
-    }
-
-    it('goes on in a chat of its own on its worktrees, told where the work stands and what to change', async () => {
-      const image = await attachments.put(pngBytes(40, 30))
-      const task = await service.createTask({ title: 'Retry', details: 'x', repos: [initRepo('app')], agent: 'claude', images: [{ id: image.id, name: '登录页' }] })
-      const ran = await ranInTerminal(task)
-      await expect(service.start(task.id)).rejects.toMatchObject({ reason: 'not-pending' })
-      const offline = new TaskService(store, projects, daemon, path.join(dir, 'worktrees'), () => {}, attachments)
-      await expect(offline.continue(task.id)).rejects.toMatchObject({ reason: 'chat-unavailable' })
-
-      const continued = await service.continue(task.id, '登录后没有跳回原页面')
-      expect(continued).toMatchObject({ status: 'running', repos: ran.repos })
-      expect(conversations.get(continued.conversationId ?? '').taskId).toBe(task.id)
-      // A session of its own, working in the worktree rather than only planning.
-      expect(daemon.spawns).toHaveLength(1)
-      expect(daemon.spawns[0]).toMatchObject({ command: 'claude', cwd: realpathSync(ran.repos[0]?.worktreePath ?? '') })
-      const args = daemon.spawns[0]?.args ?? []
-      expect(args).toContain('--session-id')
-      expect(args).not.toContain('--resume')
-      expect(args).not.toContain('--disallowedTools')
-      expect(args[args.indexOf('--allowedTools') + 1]).toBe(`Read(/${path.join(dir, image.id)})`)
-      const [first] = daemon.written(sessionOf(task.id)).filter((frame) => userText(frame).length > 0)
-      expect(JSON.stringify(first)).toContain('"type":"image"')
-      const prompt = userText(first).join('')
-      expect(prompt).toContain('这个任务之前已经执行过一次')
-      expect(prompt).toContain('验收时发现要改的地方：\n登录后没有跳回原页面')
-      expect(prompt).toContain('然后按这些意见修改')
-      expect(prompt).not.toContain('等我告诉你接下来要改什么')
-      expect(runs.forTask(task.id)).toMatchObject([{ kind: 'continue', view: 'chat', endedAt: null }])
-      // From here on it is a chat task, handed in when the user says so.
-      expect((await handIn(task.id)).status).toBe('review')
-    })
-
-    it('takes a new primary project before its chat starts, reusing worktrees, branches and edits', async () => {
-      const api = initRepo('api')
-      const web = initRepo('web')
-      const task = readyTask('Primary', [api, web])
-      const original = (await ranInTerminal(task)).repos
-      writeFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'keep me')
-      const updated = service.update({ id: task.id, repos: [web, api] })
-      expect(updated.repos).toEqual([original[1], original[0]])
-      const reopened = new TaskStore(path.join(dir, 'kando.db'))
-      try {
-        expect(reopened.get(task.id)?.repos).toEqual(updated.repos)
-      } finally {
-        reopened.close()
-      }
-      const continued = await service.continue(task.id)
-      expect(continued.repos).toEqual(updated.repos)
-      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(original[1]!.worktreePath!))
-      const args = daemon.spawns[0]?.args ?? []
-      expect(args[args.indexOf('--add-dir') + 1]).toBe(realpathSync(original[0]!.worktreePath!))
-      expect(told(task.id)).toContain('等我告诉你接下来要改什么')
-      expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
-      // Its chat holds on to the primary from here on.
-      await handIn(task.id)
-      expect(() => service.update({ id: task.id, repos: [api, web] })).toThrow(expect.objectContaining({ reason: 'primary-fixed' }))
-
-      const redo = service.redo(task.id, undefined)
-      await settle()
-      expect(redo.repos.map((repo) => repo.path)).toEqual([web, api])
-      const redone = await service.start(redo.id)
-      expect(daemon.spawns.at(-1)?.cwd).toBe(realpathSync(redone.repos[0]!.worktreePath!))
-      expect(redone.repos[0]?.worktreePath).not.toBe(original[1]?.worktreePath)
-      expect(existsSync(path.join(redone.repos[0]!.worktreePath!, 'draft.txt'))).toBe(false)
-      expect(readFileSync(path.join(original[1]!.worktreePath!, 'draft.txt'), 'utf8')).toBe('keep me')
-    })
-
-    it('promotes the next project when the primary is removed without deleting its worktree', async () => {
-      const api = initRepo('api')
-      const web = initRepo('web')
-      const ran = await ranInTerminal(readyTask('Remove primary', [api, web]))
-      const updated = service.update({ id: ran.id, repos: [web] })
-      expect(updated.repos).toEqual([ran.repos[1]])
-      await service.continue(ran.id)
-      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(ran.repos[1]!.worktreePath!))
-      expect(existsSync(ran.repos[0]!.worktreePath!)).toBe(true)
-    })
-
-    it('reserves existing same-name worktrees when adding a new primary', async () => {
-      for (const name of ['first', 'second', 'third']) mkdirSync(path.join(dir, name))
-      const first = initRepo('first/app')
-      const second = initRepo('second/app')
-      const third = initRepo('third/app')
-      const ran = await ranInTerminal(readyTask('Same names', [first, second]))
-      service.update({ id: ran.id, repos: [third, second, first] })
-      const continued = await service.continue(ran.id)
-      expect(continued.repos.slice(1)).toEqual([ran.repos[1], ran.repos[0]])
-      expect(new Set(continued.repos.map((repo) => repo.worktreePath)).size).toBe(3)
-      expect(git(continued.repos[0]!.worktreePath!, 'rev-parse', '--git-common-dir')).toBe(git(third, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-      expect(daemon.spawns[0]?.cwd).toBe(realpathSync(continued.repos[0]!.worktreePath!))
-    })
-
-    it('ends the terminal agents it left open, forgets them, and hands in the tasks they ran', async () => {
-      const terminal = async () => (await daemon.request('spawn', { command: 'claude', args: [], cwd: dir, env: {}, cols: 80, rows: 24 })).sessionId
-      // Still running in a terminal: its run counted, its agent waiting on the user.
-      const orphan = readyTask('Orphan', [dir])
-      runs.transition(orphan, store.update(orphan.id, { status: 'running', awaitingInput: true }), () => null)
-      const refining = readyTask('Refining', [dir])
-      const exited = readyTask('Exited', [dir])
-      store.update(exited.id, { status: 'review' })
-      const gone = readyTask('Gone', [dir])
-      store.update(gone.id, { status: 'done' })
-      const chat = readyTask('Chat', [initRepo('app')])
-      await service.start(chat.id)
-
-      const live = await terminal()
-      const planning = await terminal()
-      const ended = await terminal()
-      daemon.exit(ended, 0)
-      const database = new DatabaseSync(path.join(dir, 'kando.db'))
-      try {
-        const record = (column: 'session_id' | 'refine_session_id', taskId: string, sessionId: string) =>
-          database.prepare(`UPDATE tasks SET ${column} = ? WHERE id = ?`).run(sessionId, taskId)
-        record('session_id', orphan.id, live)
-        record('refine_session_id', refining.id, planning)
-        record('session_id', exited.id, ended)
-        record('session_id', gone.id, 'pty-gone')
-      } finally {
-        database.close()
-      }
-      expect(store.terminalSessions()).toHaveLength(4)
-
-      const { sessions } = await daemon.request('list', {})
-      await service.endTerminalRuns(sessions)
-      // Only the agents still up are ended; the chat's own is none of them.
-      expect(daemon.killed.map((each) => each.sessionId).sort()).toEqual([live, planning].sort())
-      expect(store.terminalSessions()).toEqual([])
-      const statuses = Object.fromEntries([orphan, refining, exited, gone, chat].map((task) => [task.title, service.get(task.id).status]))
-      expect(statuses).toEqual({ Orphan: 'review', Refining: 'pending', Exited: 'review', Gone: 'done', Chat: 'running' })
-      expect(service.get(orphan.id).awaitingInput).toBe(false)
-      // How its agent ended is no longer known.
-      expect(runs.forTask(orphan.id)).toMatchObject([{ kind: 'run', view: 'terminal', endedBy: 'exit', exitCode: null }])
-
-      // Forgotten, they are not ended again.
-      await service.endTerminalRuns((await daemon.request('list', {})).sessions)
-      expect(daemon.killed).toHaveLength(2)
-    })
   })
 })

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { isCompaction } from './chat-notices'
 import { diffCounts, isSubagent } from './chat-tools'
-import { type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationMessage, type ConversationStage, browserToolKind, isPlanApproval, isPreviewTool } from '@kando/protocol'
+import { type ChatDiff, type ChatItem, type ChatQuestion, type ChatTodo, type ConversationStage, browserToolKind, isPlanApproval, isPreviewTool } from '@kando/protocol'
 
 // A conversation's chat items as this window holds them, in the order core first saw them;
 // `before` pages further back, null when nothing older is left.
@@ -93,32 +93,21 @@ export function dropChat(conversationId: string): void {
 export type TimelineEntry =
   | { kind: 'stage'; stage: ConversationStage }
   | { kind: 'item'; item: ChatItem }
-  // A message a TUI stage's hooks recorded: all there is of that stage outside its terminal.
-  | { kind: 'message'; message: ConversationMessage }
 
-// The conversation stage by stage: chat stages as their items, TUI stages as their messages.
-export function timeline(
-  stages: readonly ConversationStage[],
-  messages: readonly ConversationMessage[],
-  items: readonly ChatItem[]
-): TimelineEntry[] {
+// The conversation stage by stage, each as its items.
+export function timeline(stages: readonly ConversationStage[], items: readonly ChatItem[]): TimelineEntry[] {
   const entries: TimelineEntry[] = []
   const known = new Set(stages.map((stage) => stage.id))
   // A stage's state item feeds the composer; it is not something that happened.
   const flow = items.filter((item) => item.kind !== 'state')
   let previous: ConversationStage | null = null
   for (const stage of stages) {
-    // An idle chat agent goes and the next message starts it again: no divider for that, only
-    // where the agent, the view or a task's planning-only turn changes.
-    const restarted = previous?.mode === 'chat' && stage.mode === 'chat' && previous.agent === stage.agent &&
-      Boolean(previous.planOnly) === Boolean(stage.planOnly)
+    // An idle agent goes and the next message starts it again: no divider for that, only where the
+    // agent or a task's planning-only turn changes.
+    const restarted = previous !== null && previous.agent === stage.agent && Boolean(previous.planOnly) === Boolean(stage.planOnly)
     if (!restarted) entries.push({ kind: 'stage', stage })
     previous = stage
-    if (stage.mode === 'chat') {
-      flow.filter((item) => item.stageId === stage.id).forEach((item) => entries.push({ kind: 'item', item }))
-    } else {
-      messages.filter((message) => message.stageId === stage.id).forEach((message) => entries.push({ kind: 'message', message }))
-    }
+    flow.filter((item) => item.stageId === stage.id).forEach((item) => entries.push({ kind: 'item', item }))
   }
   // A stage that began after the list was read.
   flow.filter((item) => !known.has(item.stageId)).forEach((item) => entries.push({ kind: 'item', item }))
@@ -166,7 +155,7 @@ export function thoughtDurations(items: readonly ChatItem[]): Map<string, number
 }
 
 export function entryKey(entry: TimelineEntry): string {
-  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : entry.kind === 'item' ? `item:${itemKey(entry.item)}` : `message:${entry.message.sequence}`
+  return entry.kind === 'stage' ? `stage:${entry.stage.id}` : `item:${itemKey(entry.item)}`
 }
 
 // Only a completed turn's last reply is its copyable answer. Its completion time comes from the
@@ -235,9 +224,7 @@ function toolsOf(block: ChatBlock): ToolItem[] {
 function startOf(block: ChatBlock): number | null {
   const tools = toolsOf(block)
   if (tools.length > 0) return Math.min(...tools.map((tool) => tool.at))
-  if (block.kind !== 'entry') return null
-  if (block.entry.kind === 'item') return block.entry.item.at
-  return block.entry.kind === 'message' ? block.entry.message.createdAt : null
+  return block.kind === 'entry' && block.entry.kind === 'item' ? block.entry.item.at : null
 }
 
 function turnFiles(blocks: readonly ChatBlock[]): TurnFile[] {

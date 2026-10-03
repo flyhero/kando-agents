@@ -161,7 +161,7 @@ export class ConversationService {
   runUsage(id: string, from: number, to: number): RunMeasure | null {
     const conversation = this.store.get(id)
     if (!conversation) return null
-    const stages = this.chatStages(id).filter((stage) => stage.startedAt <= to && (stage.endedAt === null || stage.endedAt >= from))
+    const stages = this.store.stages(id).filter((stage) => stage.startedAt <= to && (stage.endedAt === null || stage.endedAt >= from))
     const sum = { input: 0, output: 0, total: 0, work: 0, split: false, lumped: false, counted: false, timed: false }
     let state: ChatItem | undefined
     for (const stage of stages) {
@@ -509,7 +509,7 @@ export class ConversationService {
 
   private chooseForNextStart(conversation: Conversation, option: ChatOption, value: string): void {
     const { id, agent } = conversation
-    const stage = this.chatStages(id).at(-1)
+    const stage = this.store.stages(id).at(-1)
     const state = stage?.agent === agent
       ? this.chats.items(this.chatStage(conversation, stage)).findLast((item) => item.kind === 'state')
       : undefined
@@ -596,7 +596,7 @@ export class ConversationService {
   // Whether a message with this ref went to the agent in a chat stage still open at `since` or later.
   sentRef(id: string, ref: string, since: number): boolean {
     const conversation = this.get(id)
-    return this.chatStages(id)
+    return this.store.stages(id)
       .filter((stage) => stage.endedAt === null || stage.endedAt >= since)
       .some((stage) => this.chats.items(this.chatStage(conversation, stage)).some((item) => item.id === `u:${ref}`))
   }
@@ -610,7 +610,7 @@ export class ConversationService {
   stageChatItems(id: string, stageId: string): ChatItem[] {
     const conversation = this.store.get(id)
     const stage = conversation ? this.store.stages(id).find((each) => each.id === stageId) : undefined
-    return conversation && stage?.mode === 'chat' ? this.chats.items(this.chatStage(conversation, stage)) : []
+    return conversation && stage ? this.chats.items(this.chatStage(conversation, stage)) : []
   }
 
   // Who ran a chat stage, for what, and on which model as its state item last said; null once gone.
@@ -624,7 +624,7 @@ export class ConversationService {
 
   // Every chat stage of every conversation, task chats included, oldest first.
   chatStageRefs(): ChatStageRef[] {
-    return this.store.list().flatMap((conversation) => this.chatStages(conversation.id)
+    return this.store.list().flatMap((conversation) => this.store.stages(conversation.id)
       .map((stage) => ({ conversationId: conversation.id, taskId: conversation.taskId ?? null, stageId: stage.id, agent: stage.agent, ended: stage.endedAt !== null })))
   }
 
@@ -694,7 +694,7 @@ export class ConversationService {
   // The newest chat stages' items, oldest first; `before` pages further back.
   chatPage(id: string, before?: string): { items: ChatItem[]; before: string | null } {
     const conversation = this.get(id)
-    const stages = this.chatStages(id)
+    const stages = this.store.stages(id)
     const until = before === undefined ? stages.length : stages.findIndex((stage) => stage.id === before)
     if (until < 0) throw new Rejection('stage-not-found', `no chat stage ${before}`)
     const pages: ChatItem[][] = []
@@ -707,11 +707,6 @@ export class ConversationService {
       count += items.length
     }
     return { items: pages.flat(), before: index > 0 ? stages[index]!.id : null }
-  }
-
-  // Stages a Kando before 0.11 ran in a terminal hold only the messages their hooks recorded.
-  private chatStages(id: string): ConversationStage[] {
-    return this.store.stages(id).filter((stage) => stage.mode === 'chat')
   }
 
   async stop(id: string): Promise<Conversation> {
@@ -761,8 +756,6 @@ export class ConversationService {
     const current = this.get(id)
     if (current.sessionId) await this.stop(id)
     const directory = path.join(this.sessionsRoot, id)
-    // What a terminal stage of a Kando before 0.11 printed.
-    await rm(path.join(directory, 'terminal.log'), { force: true })
     await rm(path.join(directory, 'handoffs'), { recursive: true, force: true })
     await rm(path.join(directory, 'stages'), { recursive: true, force: true })
     // The folder goes too, unless it still holds the workspace Kando made, which stays.
@@ -823,8 +816,7 @@ export class ConversationService {
   }
 
   // Every session the daemon still knows is drained before it counts as ended, so output from
-  // while core was down is kept; only one the daemon never heard of ended unseen. An agent a Kando
-  // before 0.11 left in a terminal is ended: nothing shows it any more.
+  // while core was down is kept; only one the daemon never heard of ended unseen.
   async reconcile(sessions: readonly SessionInfo[]): Promise<void> {
     const known = new Map(sessions.map((session) => [session.sessionId, session]))
     for (const conversation of this.store.list()) {
@@ -832,18 +824,14 @@ export class ConversationService {
       const info = known.get(conversation.sessionId)
       try {
         const stage = this.store.activeStage(conversation.id)
-        if (!info) {
+        if (!info || !stage) {
           if (stage) this.store.endStage(stage.id, null)
           this.changed(this.store.update(conversation.id, { sessionId: null }))
-        } else if (stage?.mode === 'chat') {
+        } else {
           await this.chats.open(this.chatStage(conversation, stage), info.sessionId, this.store.chatOffset(stage.id), false)
           // A question left open across a restart has no browser navigation waiting on it now.
           if (!info.exited) this.chats.cancelAsks(conversation.id)
           if (info.exited) this.handleExit(info.sessionId, info.exitCode ?? -1)
-        } else if (info.exited) {
-          this.handleExit(info.sessionId, info.exitCode ?? -1)
-        } else {
-          await this.stopAgent(info.sessionId)
         }
       } catch (error) {
         console.error(`[kando-core] recovering conversation ${conversation.id} failed`, error)

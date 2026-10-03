@@ -169,7 +169,29 @@ export const MIGRATIONS = [
      PRIMARY KEY (stage_id, item_id)
    );
    CREATE INDEX chat_turns_agent ON chat_turns(agent, model);
-   CREATE TABLE chat_turn_stages (stage_id TEXT PRIMARY KEY, counted_at INTEGER NOT NULL);`
+   CREATE TABLE chat_turn_stages (stage_id TEXT PRIMARY KEY, counted_at INTEGER NOT NULL);`,
+  // 0.11 dropped the terminal view, and what it left goes: tasks run in a terminal and their runs
+  // (their worktrees stay on disk, for the worktree page to clean), each conversation's terminal
+  // stages and the messages they recorded, and a conversation with no other stage left.
+  `DELETE FROM tasks WHERE session_id IS NOT NULL
+     AND id NOT IN (SELECT task_id FROM conversations WHERE task_id IS NOT NULL);
+   DELETE FROM agent_runs WHERE view = 'terminal';
+   DELETE FROM conversations WHERE id IN (SELECT conversation_id FROM conversation_stages WHERE mode = 'tui')
+     AND id NOT IN (SELECT conversation_id FROM conversation_stages WHERE mode = 'chat');
+   UPDATE conversations SET session_id = NULL
+     WHERE session_id IN (SELECT session_id FROM conversation_stages WHERE mode = 'tui');
+   DELETE FROM conversation_stages WHERE mode = 'tui';
+   DROP INDEX tasks_session;
+   DROP INDEX tasks_refine_session;
+   ALTER TABLE tasks DROP COLUMN session_id;
+   ALTER TABLE tasks DROP COLUMN refine_session_id;
+   ALTER TABLE tasks DROP COLUMN proposal;
+   ALTER TABLE tasks DROP COLUMN previous_details;
+   ALTER TABLE tasks DROP COLUMN last_exit;
+   ALTER TABLE conversations DROP COLUMN output_offset;
+   ALTER TABLE conversation_stages DROP COLUMN mode;
+   ALTER TABLE agent_runs DROP COLUMN view;
+   ALTER TABLE agent_runs DROP COLUMN exit_code;`
 ]
 
 
@@ -196,8 +218,6 @@ const TaskRow = Task.omit({
   plan: z.string().nullable()
 })
 const TaskImages = z.array(TaskImage)
-// A Kando before 0.11 ran agents in terminals and kept their sessions on the task.
-const TerminalRow = z.object({ id: z.string(), sessionId: z.string().nullable(), refineSessionId: z.string().nullable() })
 
 // A column that fails to parse reads as empty, but says so: losing where a task came from silently
 // would be worse than a noisy log.
@@ -366,20 +386,6 @@ export class TaskStore {
       return []
     }
     return this.many(`${SELECT} WHERE id LIKE ? LIMIT 2`, `${prefix.toLowerCase()}%`)
-  }
-
-  // The terminal sessions a Kando before 0.11 recorded on tasks: a run's, kept after it ended, and
-  // a refining one's while it was open.
-  terminalSessions(): { id: string; sessionIds: string[] }[] {
-    return this.db
-      .prepare('SELECT id, session_id AS sessionId, refine_session_id AS refineSessionId FROM tasks WHERE session_id IS NOT NULL OR refine_session_id IS NOT NULL')
-      .all()
-      .map((row) => TerminalRow.parse(row))
-      .map(({ id, sessionId, refineSessionId }) => ({ id, sessionIds: [sessionId, refineSessionId].filter((each) => each !== null) }))
-  }
-
-  forgetTerminalSessions(id: string): void {
-    this.db.prepare('UPDATE tasks SET session_id = NULL, refine_session_id = NULL WHERE id = ?').run(id)
   }
 
   dependsOn(id: string): string[] {

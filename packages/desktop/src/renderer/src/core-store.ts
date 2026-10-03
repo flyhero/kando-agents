@@ -148,15 +148,12 @@ export const useCore = create<CoreState>()(() => ({
 }))
 
 // A started task opens on its chat until it is closed: that is where the work happens. One under
-// review opens with the inspector showing what the agent changed; one a Kando before 0.11 ran in a
-// terminal has no chat, but opens there too for its changes.
+// review opens with the inspector showing what the agent changed.
 export function selectTask(id: string | null): void {
   useCore.setState((s) => {
     const task = id ? s.tasks[id] : undefined
     const review = task?.status === 'review'
-    const chat = task?.conversationId
-      ? task.status !== 'done' && task.status !== 'abandoned'
-      : review && task.repos.some((repo) => repo.worktreePath !== null)
+    const chat = task?.conversationId && task.status !== 'done' && task.status !== 'abandoned'
     return {
       selectedId: id,
       section: 'tasks',

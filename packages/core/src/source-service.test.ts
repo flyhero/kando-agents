@@ -76,7 +76,6 @@ function demoProvider(): Demo {
 }
 
 // Nothing here runs an agent, so nothing reaches the daemon.
-const noDaemon = { request: () => Promise.reject(new Error('no daemon in this test')), onEvent: () => () => {} }
 
 describe('SourceService', () => {
   let dir: string
@@ -101,7 +100,7 @@ describe('SourceService', () => {
     store = new TaskStore(path.join(dir, 'kando.db'))
     attachments = new AttachmentStore(dir)
     projects = new ProjectRegistry(path.join(dir, 'kando.db'))
-    tasks = new TaskService(store, projects, noDaemon, dir, () => {}, attachments)
+    tasks = new TaskService(store, projects, dir, () => {}, attachments)
     demo = demoProvider()
     config = new SourceConfigStore(path.join(dir, 'sources.json'))
     credentials = new CredentialStore(path.join(dir, 'credentials.json'))

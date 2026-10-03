@@ -86,9 +86,6 @@ export const rpcMethods = {
   // What each of the task's repos could start from, read from git on every call.
   'tasks.startOptions': { params: TaskRef, result: z.array(RepoStartOptions) },
   'tasks.move': { params: TaskRef.extend({ status: TaskStatus }), result: Task },
-  // Picks a finished task up again in its own worktree, the note (what the user found wrong under
-  // review) its next message. A task run in a terminal before 0.11 has no chat yet: this starts one.
-  'tasks.continue': { params: TaskRef.extend({ note: z.string().trim().max(2000).optional(), allowBypass: AllowBypass }), result: Task },
   // Abandons a done task and returns the new pending task that takes over from it.
   'tasks.redo': { params: TaskRef.extend({ reason: z.string().trim().max(500).optional() }), result: Task },
   // A task runs in its chat. start plans first, then carries the plan out in the task's worktree,

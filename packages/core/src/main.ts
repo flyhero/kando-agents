@@ -116,7 +116,6 @@ const browser = new BrowserService(
 const service = new TaskService(
   store,
   projects,
-  daemon,
   paths.worktrees,
   (event) => {
     if (event.type === 'changed') {
@@ -195,7 +194,6 @@ daemon.onConnect(() => {
   daemon
     .request('list', {})
     .then(async ({ sessions }) => {
-      await service.endTerminalRuns(sessions)
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
       await browser.reconcile(sessions)

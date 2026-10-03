@@ -62,7 +62,6 @@ export function createRpcHandlers(
     'tasks.update': (params) => service.update(params),
     'tasks.startOptions': ({ id }) => service.startOptions(id),
     'tasks.move': ({ id, status }) => service.move(id, status),
-    'tasks.continue': ({ id, note, allowBypass }) => service.continue(id, note, allowBypass),
     'tasks.redo': ({ id, reason }) => service.redo(id, reason),
     'tasks.start': ({ id, allowBypass }) => service.start(id, allowBypass),
     'tasks.resumeChat': ({ id, allowBypass }) => service.resumeChat(id, allowBypass),

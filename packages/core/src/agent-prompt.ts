@@ -192,36 +192,6 @@ export function agentPrompt(
   return sections.filter((section) => section !== null).join('\n\n')
 }
 
-// Continuing a task run in a terminal starts its chat on the old worktree: the agent only knows
-// what the code and its history tell it, so it catches up first and then waits for the new ask.
-export function continuePrompt(
-  task: Pick<Task, 'title' | 'details' | 'repos' | 'source' | 'sourceSnapshot'>,
-  workspace: Workspace,
-  dependencies: readonly Pick<Task, 'id' | 'title' | 'repos'>[],
-  images: PromptImages = NO_IMAGES,
-  note: string | null = null
-): string {
-  const branches = task.repos.flatMap((repo) => (repo.branch ? [repo.branch] : []))
-  const sections = [
-    [
-      '这个任务之前已经执行过一次，现在继续做。',
-      branches.length
-        ? `上次的改动在各项目对应的分支 ${branches.join('、')} 上，可以在对应项目目录用 git log / git diff 查看。`
-        : '上次的改动就在当前目录里。'
-    ].join(''),
-    taskPrompt(task),
-    imageSection(images.attached),
-    sourceSection(task, images),
-    workspaceSection(workspace),
-    dependencySection(workspace, dependencies),
-    note ? `验收时发现要改的地方：\n${note}` : null,
-    note
-      ? '请先用几句话说明上次做到了哪里、打算怎么改上面这些问题，然后按这些意见修改。'
-      : '请先用几句话总结上次已经完成了什么、还有什么没做完，然后等我告诉你接下来要改什么，不要自己开始改。'
-  ]
-  return sections.filter((section) => section !== null).join('\n\n')
-}
-
 // A task's chat opens with what running it would be told, and asks for a plan first: the chat shows
 // it for the user to approve before any code changes. A plan kept while the task waited on its
 // dependencies comes along, to be checked against the code as it now is.

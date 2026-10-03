@@ -1,6 +1,5 @@
 import { useCallback, useState, type ReactElement } from 'react'
 import {
-  checkContinue,
   checkMove,
   checkStart,
   checkSubmit,
@@ -107,12 +106,6 @@ function showChatFor(taskId: string): void {
   }
 }
 
-// Where the agent's work shows: the task's chat, or, for a task a Kando before 0.11 ran in a
-// terminal, the changes its run left in the worktrees.
-function hasWorkView(task: Task): boolean {
-  return task.conversationId !== null || task.repos.some((repo) => repo.worktreePath !== null)
-}
-
 function bypassOption(bypassable: boolean): { allowBypass?: boolean } {
   return bypassable ? { allowBypass: usePreferences.getState().allowBypass } : {}
 }
@@ -145,18 +138,6 @@ function useChatTurn(task: Task) {
   })
 }
 
-// A chat task goes on by a message in its chat; this starts the chat of one run in a terminal.
-async function continueTask(taskId: string, bypassable: boolean, note?: string): Promise<boolean> {
-  if (!quotaAllows(taskId)) return false
-  const started = await perform((rpc) => rpc.call('tasks.continue', { id: taskId, note, ...bypassOption(bypassable) }))
-  if (started) {
-    showChatFor(taskId)
-  }
-  return started !== null
-}
-
-const continueLabel = (task: Task) => (task.status === 'review' ? '继续修改' : '继续执行')
-
 // Deleting stops a live agent, so it asks first. Worktrees stay on disk either way.
 async function deleteTask(task: Task): Promise<void> {
   if (window.confirm(`删除任务「${task.title}」？${task.status === 'running' ? '正在运行的 agent 会被停止，' : ''}已有的 worktree 会保留。`)) {
@@ -170,79 +151,6 @@ function copyTaskId(taskId: string): void {
 
 function unfinished(dependencies: readonly Task[]): Task[] {
   return dependencies.filter((dependency) => dependency.status !== 'done')
-}
-
-// For a task run in a terminal, which has no chat to go on in: continuing asks for an optional
-// note (under review, what the user found wrong) and starts its chat with it. Under review
-// accepting is the main action, so continuing steps back from the run colour.
-function ContinueButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
-  const bypassable = useChatOptionsSupported()
-  const blocker = checkContinue(task, dependencies)
-  const [open, setOpen] = useState(false)
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
-  const close = useCallback(() => setOpen(false), [])
-  const label = continueLabel(task)
-  const className = task.status === 'review' ? '' : 'run-button'
-  if (blocker) {
-    return (
-      <LaunchButton
-        label={label}
-        className={className}
-        Icon={PlayIcon}
-        reason={blockerText(blocker, unfinished(dependencies))}
-        launch={async () => {}}
-      />
-    )
-  }
-  const submit = async () => {
-    setBusy(true)
-    const started = await continueTask(task.id, bypassable, note.trim() || undefined)
-    setBusy(false)
-    if (started) {
-      setNote('')
-      close()
-    }
-  }
-  return (
-    <span className="menu-anchor">
-      <button
-        type="button"
-        className={`tool-button launch-button ${className}`}
-        aria-label={label}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        data-tooltip={`${label}：在原来的 worktree 和分支上开始聊天`}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <PlayIcon />
-      </button>
-      {open && (
-        <Popover label={label} onClose={close}>
-          <div className="note-form">
-            <p className="note-form-title">{label}</p>
-            <p className="menu-note">这个任务是在终端里执行的，没有聊天。继续会在原来的 worktree 和分支上开始聊天，agent 能看到上次的改动。</p>
-            <textarea
-              className="input note-form-input"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={task.status === 'review' ? '验收时发现哪里要改？（可选，会告诉继续执行的 agent）' : '这次要改什么？（可选，会告诉继续执行的 agent）'}
-              maxLength={2000}
-              rows={3}
-            />
-            <div className="note-form-actions">
-              <button type="button" className="button ghost" onClick={close}>
-                取消
-              </button>
-              <button type="button" className="button primary" disabled={busy} onClick={() => void submit()}>
-                {label}
-              </button>
-            </div>
-          </div>
-        </Popover>
-      )}
-    </span>
-  )
 }
 
 // Redoing gives up this attempt, so it asks first, and takes the reason along to the next one.
@@ -470,11 +378,10 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
           )
         )
       })}
-      {/* A chat task goes on by a message in its chat. */}
-      {isFinished(task.status) && !task.conversationId && <ContinueButton task={task} dependencies={dependencies} />}
+      {/* A finished task goes on by a message in its chat. */}
       {isFinished(task.status) && <RedoButton task={task} />}
-      {worktree && <InspectorToggle view={view} />}
-      {hasWorkView(task) && <ViewToggle view={view} />}
+      {task.conversationId && worktree && <InspectorToggle view={view} />}
+      {task.conversationId && <ViewToggle view={view} />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />
       <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectTask(null)}>
@@ -501,7 +408,6 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
   const bypassable = useChatOptionsSupported()
   const turn = useChatTurn(task)
   const startBlocker = task.status === 'pending' ? checkStart(task, dependencies) : null
-  const continueBlocker = isFinished(task.status) ? checkContinue(task, dependencies) : null
   const clean = useWorktreeCleaning(task)
   const actions: ReactElement[] = []
   if (task.status === 'pending' && startBlocker !== 'planning') {
@@ -525,12 +431,7 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
       )
     }
   }
-  if (isFinished(task.status) && !task.conversationId) {
-    actions.push(
-      <MenuItem key="continue" label={continueLabel(task)} hint={hint(continueBlocker)} disabled={continueBlocker !== null} onSelect={pick(() => void continueTask(task.id, bypassable))} />
-    )
-  }
-  if (hasWorkView(task)) {
+  if (task.conversationId) {
     actions.push(
       <MenuItem
         key="work"

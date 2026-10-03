@@ -6,14 +6,12 @@ const run = (fields: Partial<AgentRun>): AgentRun => ({
   id: `run-${++next}`,
   taskId: 'task',
   kind: 'run',
-  view: 'terminal',
   agent: 'claude',
   model: null,
   effort: null,
   startedAt: 0,
   endedAt: 60_000,
-  endedBy: 'exit',
-  exitCode: 0,
+  endedBy: 'submit',
   inputTokens: null,
   outputTokens: null,
   totalTokens: null,
@@ -28,9 +26,9 @@ describe('summarizeRuns', () => {
     const [stats] = summarizeRuns([
       run({ outcome: 'accepted', endedAt: 10_000 }),
       run({ outcome: 'accepted', endedAt: 30_000 }),
-      run({ outcome: 'continued', exitCode: 1, endedAt: 20_000 }),
-      run({ outcome: 'redone', exitCode: null, endedAt: 40_000 }),
-      run({ outcome: 'closed' }),
+      run({ outcome: 'continued', endedAt: 20_000 }),
+      run({ outcome: 'redone', endedAt: 40_000 }),
+      run({ outcome: 'closed', endedBy: 'closed' }),
       run({ outcome: null }),
       // Still running: neither a run that ended nor one to judge.
       run({ endedAt: null, endedBy: null })
@@ -43,26 +41,24 @@ describe('summarizeRuns', () => {
       accepted: 2,
       continued: 1,
       redone: 1,
-      endedTerminal: 6,
-      abnormalExits: 1,
       medianDurationMs: 35_000,
       medianTokens: null
     })
   })
 
-  it('keeps each model apart, known models first, and takes tokens from chat runs', () => {
+  it('keeps each model apart, known models first, and takes the median of the tokens reported', () => {
     const stats = summarizeRuns([
       run({ agent: 'codex' }),
-      run({ view: 'chat', model: 'opus', endedBy: 'submit', exitCode: null, totalTokens: 900 }),
-      run({ view: 'chat', model: 'sonnet', endedBy: 'submit', exitCode: null, totalTokens: 100 }),
-      run({ view: 'chat', model: 'sonnet', endedBy: 'submit', exitCode: null, totalTokens: 300 }),
+      run({ model: 'opus', totalTokens: 900 }),
+      run({ model: 'sonnet', totalTokens: 100 }),
+      run({ model: 'sonnet', totalTokens: 300 }),
       run({})
     ])
-    expect(stats.map((each) => [each.agent, each.model, each.runs, each.endedTerminal, each.medianTokens])).toEqual([
-      ['claude', 'sonnet', 2, 0, 200],
-      ['claude', 'opus', 1, 0, 900],
-      ['claude', null, 1, 1, null],
-      ['codex', null, 1, 1, null]
+    expect(stats.map((each) => [each.agent, each.model, each.runs, each.medianTokens])).toEqual([
+      ['claude', 'sonnet', 2, 200],
+      ['claude', 'opus', 1, 900],
+      ['claude', null, 1, null],
+      ['codex', null, 1, null]
     ])
   })
 })

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { ChatItem, ConversationMessage, ConversationStage } from '@kando/protocol'
+import type { ChatItem, ConversationStage } from '@kando/protocol'
 import {
   appendText,
   chatBlocks,
@@ -20,12 +20,9 @@ import {
 
 const text = (id: string, value: string, stageId = 'chat-stage', revision = 1): ChatItem =>
   ({ id, stageId, revision, at: 0, kind: 'assistant', text: value, streaming: false }) as const
-const stage = (id: string, mode: 'tui' | 'chat', startedAt: number): ConversationStage => ({
+const stage = (id: string, startedAt: number): ConversationStage => ({
   id, conversationId: 'c', agent: 'claude', providerSessionId: null, sessionId: null, receivedSequence: 0,
-  startedAt, endedAt: null, exitCode: null, mode
-})
-const message = (sequence: number, stageId: string, value: string): ConversationMessage => ({
-  sequence, conversationId: 'c', stageId, role: 'user', agent: 'claude', text: value, eventKey: `k${sequence}`, complete: true, createdAt: 0
+  startedAt, endedAt: null, exitCode: null
 })
 
 describe('chat items', () => {
@@ -68,21 +65,20 @@ describe('pathShortener', () => {
 })
 
 describe('timeline', () => {
-  it('lays chat stages out as items and terminal stages as their recorded messages', () => {
-    const stages = [stage('tui-1', 'tui', 1), stage('chat-stage', 'chat', 2)]
-    const entries = timeline(stages, [message(1, 'tui-1', 'hello')], [text('a', 'reply'), text('late', 'next stage', 'unknown-stage')])
-    expect(entries.map((entry) => (entry.kind === 'stage' ? `stage:${entry.stage.mode}` : entry.kind === 'item' ? `item:${entry.item.id}` : `message:${entry.message.text}`)))
-      .toEqual(['stage:tui', 'message:hello', 'stage:chat', 'item:a', 'item:late'])
+  it('lays each stage out as its items, and one that began after the list was read last', () => {
+    const entries = timeline([stage('chat-stage', 1)], [text('a', 'reply'), text('late', 'next stage', 'unknown-stage')])
+    expect(entries.map((entry) => (entry.kind === 'stage' ? `stage:${entry.stage.id}` : `item:${entry.item.id}`)))
+      .toEqual(['stage:chat-stage', 'item:a', 'item:late'])
   })
 
-  it('marks no divider where the same agent started again in chat mode', () => {
-    const restarted = [stage('chat-stage', 'chat', 1), stage('again', 'chat', 2), { ...stage('codex', 'chat', 3), agent: 'codex' as const }]
-    expect(timeline(restarted, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['chat-stage', 'codex'])
+  it('marks no divider where the same agent started again', () => {
+    const restarted = [stage('chat-stage', 1), stage('again', 2), { ...stage('codex', 3), agent: 'codex' as const }]
+    expect(timeline(restarted, []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['chat-stage', 'codex'])
   })
 
   it('marks one where a task stops only planning and starts its work', () => {
-    const task = [{ ...stage('plan', 'chat', 1), planOnly: true }, { ...stage('again', 'chat', 2), planOnly: true }, { ...stage('work', 'chat', 3), planOnly: false }]
-    expect(timeline(task, [], []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['plan', 'work'])
+    const task = [{ ...stage('plan', 1), planOnly: true }, { ...stage('again', 2), planOnly: true }, { ...stage('work', 3), planOnly: false }]
+    expect(timeline(task, []).map((entry) => entry.kind === 'stage' && entry.stage.id)).toEqual(['plan', 'work'])
   })
 })
 

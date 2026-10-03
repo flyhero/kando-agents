@@ -1,6 +1,5 @@
 import {
   checkChatResume,
-  checkContinue,
   checkChangePrimary,
   checkDependencies,
   checkEditProjects,
@@ -29,12 +28,10 @@ import {
   type TaskSource,
   type TaskStatus
 } from '@kando/protocol'
-import type { SessionInfo } from '@kando/protocol/node'
-import { chatPlanPrompt, chatStartPrompt, continuePrompt, type PromptImages } from './agent-prompt'
+import { chatPlanPrompt, chatStartPrompt, type PromptImages } from './agent-prompt'
 import type { AgentRunStore } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
 import type { ConversationService } from './conversation-service'
-import type { SessionHost } from './daemon-client'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
@@ -52,8 +49,6 @@ export class TaskService {
   constructor(
     private readonly store: TaskStore,
     private readonly projects: ProjectRegistry,
-    // Only to end the terminal agents a Kando before 0.11 left running (see endTerminalRuns).
-    private readonly sessions: SessionHost,
     private readonly worktreesRoot: string,
     private readonly emit: (event: TaskEvent) => void,
     private readonly attachments: AttachmentStore,
@@ -289,40 +284,6 @@ export class TaskService {
     return this.changed(this.save(task.id, { status }))
   }
 
-  // Picks a finished task up again on its own worktree and branch: for "nearly right, change this".
-  // The note goes to the agent as the next message of the task's chat.
-  async continue(id: string, note?: string, allowBypass?: boolean): Promise<Task> {
-    const chats = this.requireChats()
-    const task = this.get(id)
-    const dependencies = this.dependenciesOf(task)
-    const blocker = checkContinue(task, dependencies)
-    if (blocker) {
-      throw new Rejection(blocker)
-    }
-    if (task.conversationId) {
-      const resumed = await this.resumeChat(id, allowBypass)
-      if (note) await chats.send(task.conversationId, note)
-      return resumed
-    }
-    const { agent } = task
-    if (!agent) {
-      throw new Rejection('invalid-task')
-    }
-    // Run in a terminal before 0.11, so it has no chat yet: one starts on the worktrees that run
-    // left (laid out again if the user removed them), told where the work stands.
-    return this.launchChat(task, async () => {
-      const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
-      this.store.update(task.id, { repos: workspace.repos })
-      const images = await this.images(task)
-      const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.readable, allowBypass
-      })
-      this.save(task.id, { status: 'running', awaitingInput: false })
-      await chats.send(conversation.id, continuePrompt(task, workspace, dependencies, images.prompt, note || null), this.chatImageIds(task, images.prompt))
-      return this.changed(this.get(task.id))
-    })
-  }
-
   // For "wrong approach, start over": the done task is abandoned, keeping its worktree,
   // and a new pending task takes its place, starting from a clean branch. Returns it.
   redo(id: string, reason: string | undefined): Task {
@@ -517,22 +478,6 @@ export class TaskService {
         this.changed(updated)
       }
     })
-  }
-
-  // A Kando before 0.11 ran task agents in terminals. One still open there would go on working in
-  // a worktree nobody sees any more, so it is ended; a task left running had only that agent, so
-  // it goes for review as it would have once the agent exited.
-  async endTerminalRuns(sessions: readonly SessionInfo[]): Promise<void> {
-    const live = new Set(sessions.filter((session) => !session.exited).map((session) => session.sessionId))
-    for (const { id, sessionIds } of this.store.terminalSessions()) {
-      for (const sessionId of sessionIds.filter((each) => live.has(each))) {
-        await this.sessions.request('kill', { sessionId }).catch(() => {})
-      }
-      this.store.forgetTerminalSessions(id)
-    }
-    this.store.list('running')
-      .filter((task) => !task.conversationId)
-      .forEach((task) => this.changed(this.save(task.id, { status: 'review', awaitingInput: false })))
   }
 
   // The task's images as files on this machine: for the prompt, and for what the agent may read.

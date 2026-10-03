@@ -1,12 +1,6 @@
 import { z } from 'zod'
 import { AttachmentId } from './attachments'
 
-// How a conversation stage ran its agent. chat: Kando renders its structured events · tui: the
-// agent's own interface in a terminal, which Kando offered before 0.11; older stages keep it.
-export const CONVERSATION_MODES = ['tui', 'chat'] as const
-export const ConversationMode = z.enum(CONVERSATION_MODES)
-export type ConversationMode = z.infer<typeof ConversationMode>
-
 // idle: the agent waits for a message · running: a turn is under way · awaiting: the turn waits
 // on the user to approve or answer something
 export const ChatTurnActivity = z.enum(['idle', 'running', 'awaiting'])

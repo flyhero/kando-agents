@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ChatTurnActivity, ConversationMode } from './chat'
+import { ChatTurnActivity } from './chat'
 import { AgentKind } from './task'
 
 export const Conversation = z.object({
@@ -46,9 +46,6 @@ export const ConversationStage = z.object({
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   exitCode: z.number().nullable(),
-  // tui for a stage run in a terminal by a Kando older than 0.11, of which only the messages its
-  // hooks recorded are left.
-  mode: ConversationMode.catch('tui').optional(),
   // A stage that may only plan (see Conversation.planOnly).
   planOnly: z.boolean().optional()
 })

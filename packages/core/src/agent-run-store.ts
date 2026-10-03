@@ -6,9 +6,8 @@ import { median } from './median'
 
 // run: the first time an agent worked on the task · continue: picked up again in the same worktree
 export const RunKind = z.enum(['run', 'continue'])
-// exit: the terminal session ended · submit: the chat task was handed in · closed: marked done
-// while the agent still worked
-export const RunEnd = z.enum(['exit', 'submit', 'closed'])
+// submit: the task was handed in · closed: marked done while the agent still worked
+export const RunEnd = z.enum(['submit', 'closed'])
 // accepted: the user took the result · continued: they sent it back to change · redone: they gave
 // up on it and started over · closed: marked done mid-run, which says nothing about the result
 export const RunOutcome = z.enum(['accepted', 'continued', 'redone', 'closed'])
@@ -18,16 +17,13 @@ export const AgentRun = z.object({
   id: z.string(),
   taskId: z.string(),
   kind: RunKind,
-  view: z.enum(['terminal', 'chat']),
   agent: AgentKind,
-  // What a chat run reported; a terminal run's CLI is never told, so these stay null there.
+  // What the run's agent reported.
   model: z.string().nullable(),
   effort: z.string().nullable(),
   startedAt: z.number(),
   endedAt: z.number().nullable(),
   endedBy: RunEnd.nullable().catch(null),
-  // null: not a terminal exit, or one nobody saw (the daemon had restarted).
-  exitCode: z.number().nullable(),
   inputTokens: z.number().nullable(),
   outputTokens: z.number().nullable(),
   totalTokens: z.number().nullable(),
@@ -38,16 +34,16 @@ export const AgentRun = z.object({
 })
 export type AgentRun = z.infer<typeof AgentRun>
 
-// What a chat run's turns add up to, read off its conversation when it ends.
+// What a run's turns add up to, read off its conversation when it ends.
 export type RunMeasure = Pick<AgentRun, 'model' | 'effort' | 'inputTokens' | 'outputTokens' | 'totalTokens' | 'workMs'>
 
-const SELECT = `SELECT id, task_id AS taskId, kind, view, agent, model, effort, started_at AS startedAt,
-  ended_at AS endedAt, ended_by AS endedBy, exit_code AS exitCode, input_tokens AS inputTokens,
+const SELECT = `SELECT id, task_id AS taskId, kind, agent, model, effort, started_at AS startedAt,
+  ended_at AS endedAt, ended_by AS endedBy, input_tokens AS inputTokens,
   output_tokens AS outputTokens, total_tokens AS totalTokens, work_ms AS workMs, outcome,
   outcome_at AS outcomeAt FROM agent_runs`
 
 // Rows live in `agent_runs`, which TaskStore's migrations create. A run is read off how the task's
-// status moves, so terminal and chat tasks, and whichever client moved them, are counted alike.
+// status moves, so whichever client moved it, it is counted alike.
 export class AgentRunStore {
   private readonly db: DatabaseSync
 
@@ -75,7 +71,7 @@ export class AgentRunStore {
     return this.db.prepare(`${SELECT} WHERE task_id = ? ORDER BY started_at, rowid`).all(taskId).map((row) => AgentRun.parse(row))
   }
 
-  // `measure` is asked only when a chat run ends, for what its turns up to then add up to.
+  // `measure` is asked when a run ends, for what its turns up to then add up to.
   transition(before: Task, after: Task, measure: (run: AgentRun, endedAt: number) => RunMeasure | null): void {
     const from = before.status
     const to = after.status
@@ -90,13 +86,11 @@ export class AgentRunStore {
     if (from === 'running') {
       const run = this.open(after.id)
       if (!run) return
-      // A terminal run of a Kando before 0.11 ended by its agent exiting, how is no longer known.
-      const endedBy = to === 'review' ? (after.conversationId ? 'submit' : 'exit') : 'closed'
-      const measured = run.view === 'chat' ? measure(run, at) : null
+      const endedBy = to === 'review' ? 'submit' : 'closed'
+      const measured = measure(run, at)
       this.update(run.id, {
         ended_at: at,
         ended_by: endedBy,
-        exit_code: null,
         ...(measured ? columns(measured) : {}),
         ...(endedBy === 'closed' ? { outcome: 'closed', outcome_at: at } : {})
       })
@@ -109,8 +103,8 @@ export class AgentRunStore {
 
   private start(task: Task, agent: AgentKind, kind: z.infer<typeof RunKind>, at: number): void {
     this.db
-      .prepare('INSERT INTO agent_runs (id, task_id, kind, view, agent, started_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(randomUUID(), task.id, kind, task.conversationId ? 'chat' : 'terminal', agent, at)
+      .prepare('INSERT INTO agent_runs (id, task_id, kind, agent, started_at) VALUES (?, ?, ?, ?, ?)')
+      .run(randomUUID(), task.id, kind, agent, at)
   }
 
   private open(taskId: string): AgentRun | null {
@@ -146,7 +140,6 @@ export function summarizeRuns(runs: readonly AgentRun[]): AgentStats[] {
   }
   const stats = [...groups.values()].map(({ agent, model, runs: group }): AgentStats => {
     const count = (outcome: RunOutcome) => group.filter((run) => run.outcome === outcome).length
-    const terminal = group.filter((run) => run.view === 'terminal')
     return {
       agent,
       model,
@@ -155,8 +148,6 @@ export function summarizeRuns(runs: readonly AgentRun[]): AgentStats[] {
       accepted: count('accepted'),
       continued: count('continued'),
       redone: count('redone'),
-      endedTerminal: terminal.length,
-      abnormalExits: terminal.filter((run) => run.exitCode !== null && run.exitCode !== 0).length,
       medianDurationMs: median(group.flatMap((run) => (run.endedAt === null ? [] : [run.endedAt - run.startedAt]))),
       medianTokens: median(group.flatMap((run) => (run.totalTokens === null ? [] : [run.totalTokens])))
     }

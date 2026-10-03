@@ -11,7 +11,7 @@ const AwakeBackendStatus = z.object({
   supported: z.boolean(),
   problem: z.string().nullable()
 })
-// pty: a terminal, for TUIs and shells · pipe: plain stdio, for agents that speak JSON lines
+// pty: a terminal, for the terminal panel's shells · pipe: plain stdio, for agents that speak JSON lines
 export const SessionIo = z.enum(['pty', 'pipe'])
 export type SessionIo = z.infer<typeof SessionIo>
 const SessionInfo = z.object({
