@@ -1,6 +1,5 @@
 import type { AgentKind, Task } from '@kando/protocol'
-import { useCore } from './core-store'
-import { installedAgents } from './installed-agents'
+import { currentInstalledAgents } from './installed-agents'
 import { usePreferences } from './preferences'
 
 // By default a new task takes the agent the latest task picked, which is usually right. An agent
@@ -11,7 +10,7 @@ export function defaultAgent(tasks: Record<string, Task>): AgentKind | null {
   if (preferred === 'none') {
     return null
   }
-  const installed = installedAgents(useCore.getState().environment)
+  const installed = currentInstalledAgents()
   const wanted =
     preferred !== 'recent'
       ? preferred

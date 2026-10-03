@@ -1,6 +1,6 @@
 import { quotaVerdict, usageLevel, type AgentKind, type ChatModel, type QuotaVerdict } from '@kando/protocol'
 import { useCore } from '../core-store'
-import { installedAgents, otherInstalledAgent } from '../installed-agents'
+import { currentInstalledAgents, otherInstalledAgent } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { usePreferences, type Preferences } from '../preferences'
 import { formatClock, resetText, useNow, windowLabel } from '../usage-format'
@@ -65,7 +65,7 @@ export function confirmQuota(agent: AgentKind, model?: string | null): boolean {
     return true
   }
   const reset = resetText(verdict.window, now)
-  const other = otherInstalledAgent(agent, installedAgents(useCore.getState().environment))
+  const other = otherInstalledAgent(agent, currentInstalledAgents())
   const otherVerdict = other ? verdictOf(other, now) : null
   const display = usePreferences.getState().usageDisplay
   const suggestion =

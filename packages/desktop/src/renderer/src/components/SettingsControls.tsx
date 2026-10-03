@@ -54,19 +54,24 @@ export function Segmented<T extends string>({
 export function Toggle({
   labelId,
   checked,
-  onChange
+  onChange,
+  disabled = false,
+  title
 }: {
   labelId: string
   checked: boolean
   onChange: (checked: boolean) => void
+  disabled?: boolean
+  title?: string
 }) {
   return (
-    <label className="switch">
+    <label className="switch" title={title}>
       <input
         type="checkbox"
         role="switch"
         aria-labelledby={labelId}
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="switch-track" aria-hidden="true" />

@@ -1,3 +1,4 @@
+import { AgentKind } from '@kando/protocol'
 import { z } from 'zod'
 import { create } from 'zustand'
 
@@ -24,6 +25,9 @@ const Preferences = z.object({
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.
   defaultAgent: z.enum(['recent', 'claude', 'codex', 'none']).catch('recent'),
+  // Agents the user turned off: found here, but not offered for new tasks and conversations.
+  // Every agent found is on until turned off.
+  disabledAgents: z.array(AgentKind).catch([]),
   // On, the browser panel appears with the agent's first tab; off, the page's card in the chat
   // offers to open it and the browser works in the background.
   openBrowserOnTab: z.boolean().catch(false),

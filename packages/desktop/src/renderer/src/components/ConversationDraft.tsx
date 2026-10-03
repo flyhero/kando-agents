@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
 import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
-import { installedAgents, useInstalledAgents } from '../installed-agents'
+import { currentInstalledAgents, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { kandoEntries } from '../chat-commands'
 import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
@@ -27,7 +27,7 @@ export function ConversationDraft() {
   // when that leaves it for each start to pick.
   const [agent, setAgent] = useState<AgentKind | null>(() => {
     const latest = Object.values(conversations).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.agent
-    return latest && installedAgents(useCore.getState().environment).includes(latest) ? latest : defaultAgent(tasks)
+    return latest && currentInstalledAgents().includes(latest) ? latest : defaultAgent(tasks)
   })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [text, setText] = useState('')

@@ -7,6 +7,7 @@ import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { UNATTENDED_LABEL } from '../schedules'
 import { useInstalledAgents } from '../installed-agents'
+import { InstalledAgentsSettings } from './InstalledAgentsSettings'
 import { AGENT_LABEL } from '../labels'
 import { canNotify } from '../desktop-bridge'
 import {
@@ -228,6 +229,7 @@ function AgentSettings() {
   const installed = useInstalledAgents()
   return (
     <>
+      <InstalledAgentsSettings />
       {awakeSupported && awake && (
         <SettingsRow
           label="保持电脑唤醒"
@@ -410,8 +412,8 @@ const SECTIONS: readonly Section[] = [
     id: 'agents',
     group: '任务',
     title: '智能体',
-    description: '新建和执行任务、开始会话时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
+    description: '这台电脑上检测到的 agent，以及新建和执行任务、开始会话时它们的默认行为。',
+    keywords: ['agent', '默认', '已安装', '检测', '启用', '禁用', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
     Icon: SparkIcon,
     Body: AgentSettings
   },
