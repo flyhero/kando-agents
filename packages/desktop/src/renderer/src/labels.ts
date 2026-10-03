@@ -149,9 +149,26 @@ export function reasonText(reason: string, fallback: string): string {
   return REASON_TEXT[reason] ?? fallback
 }
 
+function clock(date: Date): string {
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
 // "9月25日 09:28": this app's timestamps are recent enough that the year is noise.
 export function dayAndTime(ms: number): string {
   const date = new Date(ms)
-  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${clock(date)}`
+}
+
+// A day and time in a chat, with the year once it is not this one: a conversation can go on for
+// longer than the rest of the app's timestamps.
+export function chatDayAndTime(ms: number, now = Date.now()): string {
+  const year = new Date(ms).getFullYear()
+  return year === new Date(now).getFullYear() ? dayAndTime(ms) : `${year}年${dayAndTime(ms)}`
+}
+
+// A chat message's time: the time alone today, and the day too before that, so a conversation
+// picked up again days later still says when each message was.
+export function messageTime(ms: number, now = Date.now()): string {
+  const date = new Date(ms)
+  return date.toDateString() === new Date(now).toDateString() ? clock(date) : chatDayAndTime(ms, now)
 }

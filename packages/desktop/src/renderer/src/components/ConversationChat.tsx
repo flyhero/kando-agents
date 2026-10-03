@@ -8,7 +8,7 @@ import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
 import { formatTokens, isSubagent, thoughtFor, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
-import { AGENT_LABEL, dayAndTime } from '../labels'
+import { AGENT_LABEL, chatDayAndTime, dayAndTime, messageTime } from '../labels'
 import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
@@ -50,14 +50,14 @@ function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   return `${why}失败${took}${item.error ? `：${readableNotice(item.error)}` : ''}`
 }
 
-function timeOfDay(ms: number): string {
-  return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+function MessageTime({ at }: { at: number }) {
+  return <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={dayAndTime(at)}>{messageTime(at)}</time>
 }
 
 // A task's chat says where each stage ran: only planning beside the projects, or in its worktrees.
 function StageDivider({ stage, task }: { stage: ConversationStage; task: boolean }) {
   const where = stage.planOnly ? ' · 只读规划' : task ? ' · 在 worktree 里执行' : ''
-  return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {dayAndTime(stage.startedAt)}{where}</div>
+  return <div className="chat-stage">{AGENT_LABEL[stage.agent]} · {chatDayAndTime(stage.startedAt)}{where}</div>
 }
 
 // How long each finished thought took, by item key.
@@ -121,7 +121,7 @@ type UserItem = Extract<ChatItem, { kind: 'user' }>
 function UserMessageFooter({ at, text }: { at: number; text: string }) {
   return (
     <div className="chat-user-footer">
-      <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={dayAndTime(at)}>{timeOfDay(at)}</time>
+      <MessageTime at={at} />
       {text && <CopyButton text={text} label="复制消息" />}
     </div>
   )
@@ -182,7 +182,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
           {completedAt !== undefined && item.text && (
             <div className="chat-message-actions">
               <CopyButton text={item.text} label="复制回复" />
-              <time className="chat-message-time" dateTime={new Date(completedAt).toISOString()} title={dayAndTime(completedAt)}>{timeOfDay(completedAt)}</time>
+              <MessageTime at={completedAt} />
               {ending && <span className="chat-turn chat-turn-inline" data-state={ending.state}>{turnText(ending)}</span>}
             </div>
           )}
@@ -221,7 +221,7 @@ function TurnHead({ at }: { at: number }) {
       <span className="chat-turn-head-icon" aria-hidden="true"><AgentIcon agent={agent} /></span>
       <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
       {model && <span className="chat-turn-head-model" title={model}>{model}</span>}
-      <time className="chat-message-time" dateTime={new Date(at).toISOString()} title={dayAndTime(at)}>{timeOfDay(at)}</time>
+      <MessageTime at={at} />
     </div>
   )
 }
@@ -343,7 +343,7 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
       </div>
       <div className="chat-message-actions chat-turn-actions">
         {reply && <CopyButton text={reply.text} label="复制回复" />}
-        {reply && <time className="chat-message-time" dateTime={new Date(turn.at).toISOString()} title={dayAndTime(turn.at)}>{timeOfDay(turn.at)}</time>}
+        {reply && <MessageTime at={turn.at} />}
         <span className="chat-turn-summary-static" data-state={turn.state}>{turnText(turn)}</span>
       </div>
     </div>
