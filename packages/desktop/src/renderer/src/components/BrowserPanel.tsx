@@ -125,7 +125,7 @@ export function BrowserPanel() {
         {status.state === 'not-installed' && (
           <>
             <p>浏览器还没安装。第一次使用要下载 Chromium，约 150MB。</p>
-            <button type="button" className="button" onClick={() => setSettingsOpen(true, 'agents')}>去设置安装</button>
+            <button type="button" className="button" onClick={() => setSettingsOpen(true, 'browser')}>去设置安装</button>
           </>
         )}
         {status.state === 'installing' && <p><Spinner label="正在下载" /> 正在下载 Chromium{status.percent !== undefined ? ` ${status.percent}%` : ''}…</p>}

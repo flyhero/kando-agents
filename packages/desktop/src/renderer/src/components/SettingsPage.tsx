@@ -10,6 +10,7 @@ import {
   ContrastIcon,
   FolderIcon,
   GaugeIcon,
+  GlobeIcon,
   InboxIcon,
   InfoIcon,
   SearchIcon,
@@ -199,7 +200,6 @@ function BrowserRows() {
 }
 
 function AgentSettings() {
-  const browser = useBrowserSupported()
   const awakeSupported = useAwakeSupported()
   const awake = useCore((s) => s.awake)
   const defaultAgent = usePreferences((s) => s.defaultAgent)
@@ -258,7 +258,6 @@ function AgentSettings() {
           />
         )}
       />
-      {browser && <BrowserRows />}
     </>
   )
 }
@@ -368,7 +367,7 @@ const SECTIONS: readonly Section[] = [
     group: '任务',
     title: '智能体',
     description: '新建和执行任务、开始会话时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '浏览器', '截图', '网页', 'chromium'],
+    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划'],
     Icon: SparkIcon,
     Body: AgentSettings
   },
@@ -401,6 +400,17 @@ const SECTIONS: readonly Section[] = [
   }
 ]
 
+// The browser Kando hosts for chat agents, where core offers one; it follows the task sources.
+const BROWSER_SECTION: Section = {
+  id: 'browser',
+  group: '集成',
+  title: '浏览器',
+  description: '聊天里的 agent 用 Kando 托管的 Chromium 看页面：安装状态，以及 agent 打开页面时要不要自动显示浏览器面板。',
+  keywords: ['浏览器', 'chromium', '网页', '截图', '安装', '面板', '集成'],
+  Icon: GlobeIcon,
+  Body: BrowserRows
+}
+
 // One section per task source, from what its provider declares; they sit before 关于.
 function sourceSections(sources: readonly SourceDescriptor[]): Section[] {
   return sources.map((source) => ({
@@ -421,10 +431,11 @@ function matches(section: Section, needle: string): boolean {
 // Laid out like Orca's settings: sections on the left, one section at a time on the right.
 export function SettingsPage() {
   const sources = useCore((s) => s.sources)
+  const browser = useBrowserSupported()
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
-    return [...SECTIONS.filter((section) => section.id !== 'about'), ...sourceSections(sources ?? []), ...about]
-  }, [sources])
+    return [...SECTIONS.filter((section) => section.id !== 'about'), ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...about]
+  }, [sources, browser])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()

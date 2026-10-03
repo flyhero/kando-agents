@@ -4,6 +4,10 @@
 
 ## 未发布
 
+### 改进
+
+- 内置浏览器的设置（安装状态，以及 agent 打开页面时是否自动显示浏览器）从 设置 → 智能体 挪到了 设置 → 集成 → 浏览器。浏览器面板里的「去设置安装」也直接打开这里。
+
 ### 破坏性改动
 
 - 去掉了命令行客户端：`pnpm kando add / ls / show / edit / move / run / continue / redo / rm / source …` 都没有了，任务、会话和任务来源都在桌面端里操作。`packages/cli` 也删掉了，agent 用的 MCP 服务（预览和浏览器工具）挪进了 core，由 core 启动 agent 时自动配置；打包的 App 里对应的文件从 `cli.mjs` 换成了 `mcp.mjs`。
