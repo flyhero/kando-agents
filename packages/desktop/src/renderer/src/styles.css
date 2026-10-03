@@ -4094,6 +4094,10 @@ body.side-panel-resizing * {
 .chat-view[data-font='serif'] {
   --font: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Songti SC', 'Noto Serif CJK SC', 'SimSun', serif;
 }
+/* A family the user picked from those installed; what it lacks falls back to the system font. */
+.chat-view[data-font='custom'] {
+  --font: var(--chat-font-custom), -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
 
 .chat-view[data-font-size='10'] { --chat-font-size: 10px; }
 .chat-view[data-font-size='11'] { --chat-font-size: 11px; }
@@ -6085,6 +6089,16 @@ body.side-panel-resizing * {
 }
 .agent-list-refresh { margin-left: auto; }
 .agent-list-refresh svg { width: 14px; height: 14px; }
+
+/* Settings › 聊天字体: the presets, then the installed family picked, each listed in itself. */
+.font-picker-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.font-picker-button { max-width: 220px; gap: 4px; }
+.font-picker-button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-picker-button svg { flex-shrink: 0; width: 12px; height: 12px; }
+.font-picker { display: grid; gap: 4px; width: 300px; }
+.font-picker-list { max-height: 240px; overflow-y: auto; }
+.font-picker-list .menu-item-title { font-size: 14px; }
+.font-picker-note { margin: 4px 8px; color: var(--text-3); font-size: 12px; }
 .agent-list-note { margin: 4px 0 0; }
 .agent-row { justify-content: flex-start; }
 .agent-row .settings-row-text { flex: 1; min-width: 0; }

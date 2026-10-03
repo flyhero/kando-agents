@@ -8,6 +8,7 @@ import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { UNATTENDED_LABEL } from '../schedules'
 import { useInstalledAgents } from '../installed-agents'
 import { InstalledAgentsSettings } from './InstalledAgentsSettings'
+import { ChatFontPicker } from './ChatFontPicker'
 import { AGENT_LABEL } from '../labels'
 import { canNotify } from '../desktop-bridge'
 import {
@@ -36,7 +37,6 @@ function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
   const terminalFontSize = usePreferences((s) => s.terminalFontSize)
   const chatFontSize = usePreferences((s) => s.chatFontSize)
-  const chatFont = usePreferences((s) => s.chatFont)
   const chatWidth = usePreferences((s) => s.chatWidth)
   const foldTurns = usePreferences((s) => s.foldTurns)
   return (
@@ -87,19 +87,8 @@ function AppearanceSettings() {
       />
       <SettingsRow
         label="聊天字体"
-        description="聊天消息和过程信息用的字体。系统跟随 macOS / Windows 的界面字体；Geist 是随 Kando 打包的无衬线体，中文仍回落到系统字体；衬线只改正文，代码不变。"
-        control={(labelId) => (
-          <Segmented
-            labelId={labelId}
-            value={chatFont}
-            onChange={(next) => setPreference('chatFont', next)}
-            options={[
-              { value: 'system', label: '系统' },
-              { value: 'geist', label: 'Geist' },
-              { value: 'serif', label: '衬线' }
-            ]}
-          />
-        )}
+        description="聊天消息和过程信息用的字体。系统跟随 macOS / Windows 的界面字体；Geist 是随 Kando 打包的无衬线体，中文仍回落到系统字体；衬线只改正文，代码不变；其他可以从这台电脑装的字体里挑，它没有的字仍回落到系统字体。"
+        control={(labelId) => <ChatFontPicker labelId={labelId} />}
       />
       <SettingsRow
         label="聊天页宽度"

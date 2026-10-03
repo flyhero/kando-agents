@@ -24,6 +24,7 @@ import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChatPreviewCard } from './ChatPreviewCard'
 import { ChatQuotePicker } from './ChatQuotePicker'
+import { cssFontFamily } from '../system-fonts'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -402,6 +403,15 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const width = usePreferences((s) => s.chatWidth)
   const fontSize = usePreferences((s) => s.chatFontSize)
   const font = usePreferences((s) => s.chatFont)
+  const fontFamily = usePreferences((s) => s.chatFontFamily)
+  // A family picked from those installed goes in as a token, which the stylesheet puts first.
+  const view = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const element = view.current
+    if (!element) return
+    if (font === 'custom' && fontFamily) element.style.setProperty('--chat-font-custom', cssFontFamily(fontFamily))
+    else element.style.removeProperty('--chat-font-custom')
+  }, [font, fontFamily])
   const own = useMemo(() => conversationSurface(conversation, onHandoff ?? null), [conversation, onHandoff])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
@@ -627,7 +637,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
     <JumpToEntry.Provider value={jumpTo}>
-    <div className="chat-view" data-width={width} data-font-size={fontSize} data-font={font}>
+    <div className="chat-view" ref={view} data-width={width} data-font-size={fontSize} data-font={font === 'custom' && !fontFamily ? 'system' : font}>
       <div
         className="chat-list"
         ref={list}
