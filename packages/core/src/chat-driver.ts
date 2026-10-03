@@ -1,4 +1,4 @@
-import type { ChatDecision, ChatImage, ChatOption, ChatTurnActivity } from '@kando/protocol'
+import type { ChatDecision, ChatImage, ChatOption, ChatPermissionMode, ChatTurnActivity } from '@kando/protocol'
 import type { AttachmentFile } from './attachment-store'
 import type { ChatItems } from './chat-items'
 import type { UsageReport } from './usage-source'
@@ -40,7 +40,7 @@ export type ChatImageFile = ChatImage & AttachmentFile
 export type ChatOutgoing = { wire: unknown; logged: unknown }
 
 // saved: a plan kept for later rather than carried out. Core's own answer, never a client's.
-export type ChatAnswer = { decision: ChatDecision; message?: string; answers?: Record<string, string[]>; saved?: boolean }
+export type ChatAnswer = { decision: ChatDecision; mode?: ChatPermissionMode; message?: string; answers?: Record<string, string[]>; saved?: boolean }
 
 // Where and how a chat stage's agent works; the driver speaks for Kando within these bounds.
 export type ChatStageOptions = {

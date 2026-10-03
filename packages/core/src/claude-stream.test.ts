@@ -205,6 +205,26 @@ describe('ClaudeStream state', () => {
     expect(modes).toEqual([null, 'ask', 'plan', 'acceptEdits'])
   })
 
+  it('carries a plan out in the mode asked for, where the stage offers it, and says which', () => {
+    const asks = records.findIndex((record) => record.dir === 'in' && JSON.stringify(record.frame).includes('"subtype":"can_use_tool","tool_name":"ExitPlanMode"'))
+    const requestId = JSON.parse(JSON.stringify(records[asks])).frame.request_id
+    // Not started to allow bypass, the stage refuses it; nor does planning carry a plan out.
+    const plain = replay(records.slice(0, asks + 1))
+    expect(() => plain.respond(requestId, { decision: 'allow', mode: 'bypass' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    expect(() => plain.respond(requestId, { decision: 'allow', mode: 'plan' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    const driver = replay(records.slice(0, asks + 1), { ...OPTIONS, allowBypass: true })
+    // The model it ran then has no auto mode.
+    expect(() => driver.respond(requestId, { decision: 'allow', mode: 'auto' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    const [answer] = driver.respond(requestId, { decision: 'allowForSession', mode: 'bypass' })
+    expect(answer).toMatchObject({ response: { response: { behavior: 'allow', updatedPermissions: [{ type: 'setMode', mode: 'bypassPermissions', destination: 'session' }] } } })
+    driver.apply({ dir: 'out', at: 1, frame: answer })
+    expect(ofKind(driver.items.list(), 'approval').at(-1)).toMatchObject({ resolution: 'allowedForSession', mode: 'bypass' })
+  })
+
+  it('records the mode a recorded plan was carried out in', () => {
+    expect(ofKind(replay(records).items.list(), 'approval').find((item) => item.tool === 'ExitPlanMode')).toMatchObject({ resolution: 'allowedForSession', mode: 'acceptEdits' })
+  })
+
   it('knows the model before the first turn reports it', () => {
     const init = records.findIndex((record) => record.dir === 'in' && JSON.stringify(record.frame).includes('"subtype":"init"'))
     const before = records.slice(0, init)

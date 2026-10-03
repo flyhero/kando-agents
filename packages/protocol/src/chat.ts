@@ -143,7 +143,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     toolItemId: z.string().nullable().default(null),
     // What the agent accepts as an answer here; deny is always among them.
     decisions: z.array(ChatDecision.catch('deny')),
-    resolution: z.enum(['allowed', 'allowedForSession', 'denied', 'cancelled']).catch('cancelled').nullable()
+    resolution: z.enum(['allowed', 'allowedForSession', 'denied', 'cancelled']).catch('cancelled').nullable(),
+    // A plan carried out: the permission mode it was carried out in. Older cores leave it out.
+    mode: ChatPermissionMode.nullable().catch(null).optional()
   }),
   Base.extend({
     kind: z.literal('question'),

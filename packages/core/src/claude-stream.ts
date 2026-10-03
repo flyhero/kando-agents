@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { browserToolKind, CONTEXT_COMPACTED, takeImageMarkers, toolImagePath, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, ChatPermissionMode, CONTEXT_COMPACTED, takeImageMarkers, toolImagePath, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { offeredCommand } from './agent-commands'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
@@ -647,14 +647,15 @@ export class ClaudeStream implements ChatDriver {
       model: current?.value ?? this.reportedModel,
       effort: this.effort,
       permissionMode: this.permissionMode,
-      permissionModes: this.options.planOnly ? ['plan'] : [
-        'ask',
-        'acceptEdits',
-        'plan',
-        ...(current?.supportsAutoMode ? ['auto'] : []),
-        ...(this.options.allowBypass ? ['bypass'] : [])
-      ]
+      permissionModes: this.offeredModes()
     })
+  }
+
+  // The permission modes this stage offers, by Kando's names: auto where the model has it, bypass
+  // where the stage was started to allow it, and only planning in a stage that may only plan.
+  private offeredModes(): string[] {
+    if (this.options.planOnly) return ['plan']
+    return ['ask', 'acceptEdits', 'plan', ...(this.currentModel()?.supportsAutoMode ? ['auto'] : []), ...(this.options.allowBypass ? ['bypass'] : [])]
   }
 
   // The catalog row for the model the CLI says it runs, by alias or by the id an alias resolves to.
@@ -685,7 +686,12 @@ export class ClaudeStream implements ChatDriver {
       }
       // Its checkout stays read-only however the plan is answered.
       if (this.options.planOnly) throw new Rejection('plan-only', 'this stage may only plan')
-      const mode = answer.decision === 'allowForSession' ? 'acceptEdits' : 'default'
+      // Carried out in the mode asked for, one the stage offers; without one, as the decision says.
+      if (answer.mode && (answer.mode === 'plan' || !this.offeredModes().includes(answer.mode))) {
+        throw new Rejection('chat-option-invalid', `this stage offers no permission mode ${answer.mode} to carry out a plan in`)
+      }
+      const mode = answer.mode ? CLAUDE_MODE_NAMES[answer.mode] : answer.decision === 'allowForSession' ? 'acceptEdits' : 'default'
+      if (!mode) throw new Rejection('chat-option-invalid', `Claude has no permission mode ${answer.mode}`)
       return { behavior: 'allow', updatedInput: pending.input, updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }] }
     }
     switch (answer.decision) {
@@ -1166,7 +1172,10 @@ export class ClaudeStream implements ChatDriver {
       this.resolve(requestId, chosen ? 'answered' : 'cancelled', chosen, at)
     } else if (answered.data.behavior === 'allow' && pending?.tool === 'ExitPlanMode') {
       const setsMode = z.array(z.looseObject({ mode: z.string().optional() })).catch([]).parse(answered.data.updatedPermissions ?? [])
-      this.resolve(requestId, setsMode.some((update) => update.mode === 'acceptEdits') ? 'allowedForSession' : 'allowed', null, at)
+      const named = setsMode.find((update) => update.mode)?.mode
+      const mode = ChatPermissionMode.safeParse(named ? PERMISSION_MODES[named] ?? named : 'ask')
+      // Older clients read only the resolution: anything freer than asking reads as going ahead.
+      this.resolve(requestId, mode.success && mode.data !== 'ask' ? 'allowedForSession' : 'allowed', null, at, mode.success ? mode.data : null)
     } else if (answered.data.behavior === 'allow') {
       this.resolve(requestId, answered.data.updatedPermissions?.length ? 'allowedForSession' : 'allowed', null, at)
     } else if (answered.data.interrupt) {
@@ -1183,7 +1192,8 @@ export class ClaudeStream implements ChatDriver {
     requestId: string,
     resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled' | 'answered',
     answers: Record<string, string[]> | null,
-    at: number
+    at: number,
+    mode: ChatPermissionMode | null = null
   ): void {
     const pending = this.pending.get(requestId)
     if (!pending) return
@@ -1192,7 +1202,7 @@ export class ClaudeStream implements ChatDriver {
     if (item?.kind === 'question') {
       this.items.put({ ...item, answers, resolution: resolution === 'answered' ? 'answered' : 'cancelled' }, at)
     } else if (item?.kind === 'approval') {
-      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution }, at)
+      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution, ...(mode ? { mode } : {}) }, at)
     }
   }
 
