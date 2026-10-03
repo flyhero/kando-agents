@@ -19,9 +19,10 @@ function SchedulePlanButton({ conversationId }: { conversationId: string }) {
   const close = useCallback(() => setOpen(false), [])
   return (
     <span className="menu-anchor chat-plan-schedule">
-      <button type="button" className="link-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>预约批准…</button>
+      <button type="button" className="link-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>预约批准</button>
       {open && (
         <SchedulePicker
+          floating
           title="预约批准这个计划"
           note="到点后批准计划并开始执行，文件改动自动接受。agent 不能停下来等你确认。"
           onSchedule={async (notBefore) => (await createSchedule({ kind: 'conversation', conversationId, text: '' }, notBefore)) !== null}

@@ -5273,6 +5273,8 @@ body.side-panel-resizing * {
    in the small type of an aside rather than the title's. */
 .chat-plan .chat-request-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
 .chat-plan-schedule { margin-left: auto; }
+/* Its panel opens from the bold title row, but reads as any panel. */
+.chat-plan-schedule > .menu { font-weight: 400; }
 .chat-plan .chat-request-title > .link-button,
 .chat-plan-schedule > .link-button { margin-left: 0; font-size: var(--chat-font-small); font-weight: 400; }
 .chat-plan-aside { margin-left: 8px; color: var(--text-3); font-weight: 400; font-size: var(--chat-font-small); }
