@@ -5400,13 +5400,12 @@ body.side-panel-resizing * {
 .chat-queued:hover { background: var(--fill); }
 .chat-queued-index { flex: none; width: 18px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .chat-queued-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-queued-actions { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
-/* Send now, edit, drop: icons, named on hover. */
+/* Send now, edit, drop: always in view, so what can be done with a waiting message needs no hunting;
+   icons, named on hover. */
+.chat-queued-actions { flex: none; display: flex; gap: 2px; }
 .chat-queued-action { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--text-muted); cursor: pointer; }
 .chat-queued-action:hover, .chat-queued-action:focus-visible { background: var(--fill-2); color: var(--text); }
 .chat-queued-action svg { width: 14px; height: 14px; }
-.chat-queued:hover .chat-queued-actions,
-.chat-queued:focus-within .chat-queued-actions { opacity: 1; }
 .chat-queue .link-button { margin-left: 0; }
 /* Beside the send button while the agent works: the message goes in now rather than waiting. */
 .chat-steer-button { height: 24px; padding: 0 8px; font-size: 12px; }
