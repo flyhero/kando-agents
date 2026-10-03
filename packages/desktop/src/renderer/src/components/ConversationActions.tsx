@@ -3,6 +3,7 @@ import { openConversationDraft, perform, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
+import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
 
 // A new conversation opens as a page its first message starts.
 export function newConversation(): void {
@@ -46,10 +47,12 @@ export function ConversationContextMenu({ conversation, at, onClose, onRename, o
     onClose()
     action()
   }
+  // Offered only while another agent is installed to take the work.
+  const other = otherInstalledAgent(conversation.agent, useInstalledAgents())
   return (
     <ContextMenu at={at} label={`会话「${conversation.title}」的操作`} onClose={onClose}>
       {conversation.sessionId && <MenuItem label="停止会话" onSelect={pick(() => void stopConversation(conversation.id))} />}
-      <MenuItem label="移交给其他智能体…" onSelect={pick(onHandoff)} />
+      {other && <MenuItem label="移交给其他智能体…" onSelect={pick(onHandoff)} />}
       <div className="menu-separator" role="separator" />
       <MenuItem label="重命名" onSelect={pick(onRename)} />
       <div className="menu-separator" role="separator" />

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentKind, Conversation } from '@kando/protocol'
-import { dismissError, perform, useCore } from '../core-store'
+import type { Conversation } from '@kando/protocol'
+import { dismissError, perform, setSettingsOpen, useCore } from '../core-store'
+import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { AgentQuotaHint, confirmQuota } from './AgentQuota'
 import { startOptions } from './ConversationActions'
@@ -13,14 +14,24 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   // An idle agent has nothing to lose, so core lets it go without asking.
   const mustConfirm = conversation.sessionId !== null && conversation.chat?.turn !== 'idle'
   const error = useCore((s) => s.error)
-  const target: AgentKind = conversation.agent === 'claude' ? 'codex' : 'claude'
+  // Another agent that is installed here; none, and there is nowhere to hand off to.
+  const target = otherInstalledAgent(conversation.agent, useInstalledAgents())
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
-    if (busy || (mustConfirm && !confirmed) || !confirmQuota(target)) return
+    if (!target || busy || (mustConfirm && !confirmed) || !confirmQuota(target)) return
     setBusy(true)
     const result = await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions() }))
     setBusy(false)
     if (result) onClose()
+  }
+  if (!target) {
+    return <dialog ref={dialog} className="modal" onCancel={(event) => { event.preventDefault(); onClose() }}>
+      <div className="modal-body">
+        <header className="modal-header"><h2>没有可以移交的 agent</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={onClose}>×</button></header>
+        <p className="muted">这台电脑上只找到了 {AGENT_LABEL[conversation.agent]}。装好另一个 agent 后，在 设置 → 环境 里重新检查，就可以移交了。</p>
+        <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>关闭</button><button type="button" className="button primary" onClick={() => { onClose(); setSettingsOpen(true, 'environment') }}>打开环境检查</button></footer>
+      </div>
+    </dialog>
   }
   return <dialog ref={dialog} className="modal" onCancel={(event) => { event.preventDefault(); onClose() }}>
     <div className="modal-body">

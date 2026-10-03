@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { AGENT_KINDS, AgentKind, type TaskImage } from '@kando/protocol'
+import { AgentKind, type TaskImage } from '@kando/protocol'
 import { dismissError, perform, selectTask, setNewTaskOpen, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
+import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { PRIMARY_KEY_LABEL, hasPrimaryModifier } from '../shortcut-keys'
 import { AgentQuotaHint } from './AgentQuota'
@@ -29,6 +30,7 @@ export function NewTaskDialog() {
   const [title, setTitle] = useState('')
   const [repos, setRepos] = useState<string[]>([])
   const [agent, setAgent] = useState<AgentKind | null>(() => defaultAgent(tasks))
+  const installed = useInstalledAgents()
   const [dependsOn, setDependsOn] = useState<string[]>([])
   const [details, setDetails] = useState('')
   const [images, setImages] = useState<TaskImage[]>([])
@@ -188,7 +190,7 @@ export function NewTaskDialog() {
             }}
           >
             <option value="">以后再选</option>
-            {AGENT_KINDS.map((kind) => (
+            {installed.map((kind) => (
               <option key={kind} value={kind}>
                 {AGENT_LABEL[kind]}
               </option>

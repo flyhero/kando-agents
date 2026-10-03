@@ -5,6 +5,8 @@ import packageJson from '../../../../package.json'
 import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
+import { useInstalledAgents } from '../installed-agents'
+import { AGENT_LABEL } from '../labels'
 import { canNotify } from '../desktop-bridge'
 import {
   ArrowLeftIcon,
@@ -220,6 +222,7 @@ function AgentSettings() {
   const defaultAgent = usePreferences((s) => s.defaultAgent)
   const allowBypass = usePreferences((s) => s.allowBypass)
   const chatSettings = useCore((s) => s.chatSettings)
+  const installed = useInstalledAgents()
   return (
     <>
       {awakeSupported && awake && (
@@ -266,8 +269,7 @@ function AgentSettings() {
             onChange={(next) => setPreference('defaultAgent', next)}
             options={[
               { value: 'recent', label: '最近用过的' },
-              { value: 'claude', label: 'Claude Code' },
-              { value: 'codex', label: 'Codex' },
+              ...installed.map((kind) => ({ value: kind, label: AGENT_LABEL[kind] })),
               { value: 'none', label: '不指定' }
             ]}
           />
@@ -430,7 +432,7 @@ const ENVIRONMENT_SECTION: Section = {
   id: 'environment',
   group: '其他',
   title: '环境',
-  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。装好或登录后点「重新检查」。',
+  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。新建任务和新会话只会列出装了的 agent。装好或登录后点「重新检查」。',
   keywords: ['环境', '检查', '安装', '登录', 'git', 'claude', 'codex', '版本', 'path', '找不到', '未安装'],
   Icon: PulseIcon,
   Body: EnvironmentSettings

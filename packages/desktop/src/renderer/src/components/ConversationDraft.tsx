@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AGENT_KINDS, ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
+import { ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
 import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
+import { installedAgents, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
 import { usePreferences } from '../preferences'
@@ -18,10 +19,13 @@ import { ProjectPicker } from './ProjectPicker'
 export function ConversationDraft() {
   const tasks = useCore((s) => s.tasks)
   const conversations = useCore((s) => s.conversations)
-  // The agent the latest conversation ended with, else a new task's default; unset when that
-  // leaves it for each start to pick.
-  const [agent, setAgent] = useState<AgentKind | null>(() =>
-    Object.values(conversations).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.agent ?? defaultAgent(tasks))
+  const installed = useInstalledAgents()
+  // The agent the latest conversation ended with, if it is here, else a new task's default; unset
+  // when that leaves it for each start to pick.
+  const [agent, setAgent] = useState<AgentKind | null>(() => {
+    const latest = Object.values(conversations).sort((a, b) => b.updatedAt - a.updatedAt)[0]?.agent
+    return latest && installedAgents(useCore.getState().environment).includes(latest) ? latest : defaultAgent(tasks)
+  })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -101,7 +105,7 @@ export function ConversationDraft() {
             <div className="chat-draft-start">
               <h2 className="chat-draft-title">用哪个 agent 开始</h2>
               <div className="chat-draft-agents" role="radiogroup" aria-label="agent">
-                {AGENT_KINDS.map((kind) => (
+                {installed.map((kind) => (
                   <button
                     key={kind}
                     type="button"

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { AGENT_KINDS, quotaVerdict, type ChatItem, type Conversation } from '@kando/protocol'
+import { quotaVerdict, type ChatItem, type Conversation } from '@kando/protocol'
+import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
 import { perform, useCore, useUsageLimitSupported } from '../core-store'
 import { AGENT_LABEL } from '../labels'
 import { formatClock, useNow } from '../usage-format'
@@ -41,7 +42,7 @@ export function ChatUsageLimitCard({ conversation, item }: { conversation: Conve
   const [busy, setBusy] = useState(false)
   // What the user just ticked, shown until core's word on it comes back with the item.
   const [wanted, setWanted] = useState<boolean | null>(null)
-  const other = AGENT_KINDS.find((kind) => kind !== conversation.agent)
+  const other = otherInstalledAgent(conversation.agent, useInstalledAgents())
   const otherUsage = useCore((s) => (other ? s.usage?.[other] : undefined))
   if (!supported) return null
   const otherState = quotaVerdict(otherUsage, now).state
