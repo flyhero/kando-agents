@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
 import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { installedAgents, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
+import { kandoEntries } from '../chat-commands'
 import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
 import { usePreferences } from '../preferences'
 import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
+import { useChatCommandMenu } from './ChatCommandMenu'
 import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBar'
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
@@ -44,6 +46,10 @@ export function ConversationDraft() {
   const fontSize = usePreferences((s) => s.chatFontSize)
   const font = usePreferences((s) => s.chatFont)
   const canSend = agent !== null && !busy && attached.uploading === 0 && (text.trim() !== '' || attached.images.length > 0)
+  // Only the user's own commands: the agent has not started to say what it takes.
+  const chatCommands = useCore((s) => s.chatCommands)
+  const commandEntries = useMemo(() => kandoEntries(chatCommands, projectPaths), [chatCommands, projectPaths])
+  const commandMenu = useChatCommandMenu({ text, entries: commandEntries, agentLabel: agent ? AGENT_LABEL[agent] : '', setText, sendCommand: () => {} })
 
   useEffect(() => {
     if (!agent || !rpc || !optionsSupported || agent in catalogs) return
@@ -80,6 +86,11 @@ export function ConversationDraft() {
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
   const send = async () => {
+    const expanded = commandMenu.expand(text)
+    if (expanded !== null) {
+      setText(expanded)
+      return
+    }
     if (!canSend) return
     setBusy(true)
     const created = await create()
@@ -135,11 +146,13 @@ export function ConversationDraft() {
               onDragOver={imagesSupported ? attached.handlers.onDragOver : undefined}
               onDrop={imagesSupported ? attached.handlers.onDrop : undefined}
             >
+              {commandMenu.menu}
               {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
               <textarea
                 className="chat-input"
                 rows={3}
                 value={text}
+                {...commandMenu.inputProps}
                 autoFocus
                 readOnly={busy}
                 aria-label="第一条消息"
@@ -147,7 +160,7 @@ export function ConversationDraft() {
                 onChange={(event) => setText(event.target.value)}
                 onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
                 onKeyDown={(event) => {
-                  if (!sendsMessage(event)) return
+                  if (commandMenu.onKeyDown(event) || !sendsMessage(event)) return
                   event.preventDefault()
                   void send()
                 }}

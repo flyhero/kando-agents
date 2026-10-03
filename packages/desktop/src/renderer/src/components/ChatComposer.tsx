@@ -1,9 +1,11 @@
-import { useCallback, useState, type KeyboardEvent } from 'react'
+import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
-import { perform, useChatImagesSupported, useChatOptionsSupported, useSchedulesSupported } from '../core-store'
+import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useSchedulesSupported } from '../core-store'
+import { agentEntries, kandoEntries } from '../chat-commands'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
+import { useChatCommandMenu } from './ChatCommandMenu'
 import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
@@ -180,23 +182,42 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const queueable = optionsSupported && working
   const stopped = !running
   const starting = stopped && busy
-  const canSend = (idle || queueable || stopped) && !busy && !surface.sendBlocker && attached.uploading === 0 && (text.trim() !== '' || attached.images.length > 0)
+  const canTake = (idle || queueable || stopped) && !busy && !surface.sendBlocker && attached.uploading === 0
+  const canSend = canTake && (text.trim() !== '' || attached.images.length > 0)
   // What the agent guesses comes next, as Claude Code shows it: grey in the empty input, Tab or →
   // takes it, typing anything else puts it away for good.
   const [dismissed, setDismissed] = useState<string | null>(null)
   const offered = idle ? conversation.chat?.suggestion ?? null : null
   const suggestion = offered && offered !== dismissed && text === '' && attached.images.length === 0 && !surface.sendBlocker ? offered : null
   const canSteer = queueable && steerable && canSend
+  const chatCommands = useCore((s) => s.chatCommands)
+  const commandEntries = useMemo(
+    () => [...kandoEntries(chatCommands, conversation.projectPaths), ...agentEntries(state?.commands ?? [])],
+    [chatCommands, conversation.projectPaths, state?.commands]
+  )
+  const commandMenu = useChatCommandMenu({
+    text,
+    entries: commandEntries,
+    agentLabel: AGENT_LABEL[conversation.agent],
+    setText,
+    sendCommand: (command) => void send(false, command)
+  })
   // steer: into the running turn now; otherwise a message while the agent works waits its turn.
-  const send = async (steer = false) => {
-    if (!canSend || (steer && !canSteer)) return
+  // The user's own command expands into the input to be read over, rather than going.
+  const send = async (steer = false, message = text) => {
+    const expanded = commandMenu.expand(message)
+    if (expanded !== null) {
+      setText(expanded)
+      return
+    }
+    if (!canTake || (message.trim() === '' && attached.images.length === 0) || (steer && !canSteer)) return
     setBusy(true)
     const images = attached.images
     // Getting ready resolves once the agent can take it; if that fails, the text stays to try again.
     const ready = await surface.prepareSend(stopped)
     const sent = ready && await perform((rpc) => rpc.call('conversations.send', {
       id,
-      text: text.trim(),
+      text: message.trim(),
       ...(images.length ? { images: images.map((image) => image.id) } : {}),
       ...(queueable ? (steer ? { steer: true } : { queue: true }) : {})
     }))
@@ -236,15 +257,17 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
       onDragOver={imagesSupported ? attached.handlers.onDragOver : undefined}
       onDrop={imagesSupported ? attached.handlers.onDrop : undefined}
     >
+      {commandMenu.menu}
       {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
       <textarea
         className="chat-input"
         rows={3}
         value={text}
         aria-label="给 agent 的消息"
+        {...commandMenu.inputProps}
         readOnly={starting}
         placeholder={
-          surface.sendBlocker ?? suggestion ?? (idle || stopped ? '给 agent 发消息，Enter 发送，Shift+Enter 换行'
+          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}`
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
             : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断')
         }
@@ -254,6 +277,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         }}
         onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
         onKeyDown={(event) => {
+          if (commandMenu.onKeyDown(event)) return
           if (suggestion && takesSuggestion(event)) {
             event.preventDefault()
             setText(suggestion)
