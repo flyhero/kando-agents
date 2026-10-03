@@ -175,7 +175,6 @@ export function NewTaskDialog() {
             projects={repos.map((repoPath) => ({ path: repoPath, worktreePath: null }))}
             onChange={setRepos}
           />
-          <span className="muted">高亮的主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</span>
         </div>
 
         <label className="modal-field">

@@ -117,7 +117,6 @@ function TaskDetailBody({ task }: { task: Task }) {
                 primaryLocked={checkChangePrimary(task) !== null}
                 onChange={(repos) => void updateTask(task.id, { repos })}
               />
-              <p className="muted">高亮的主项目是默认工作目录，其他项目也可访问；每个仓库使用独立 worktree。</p>
             </dd>
             <TaskStarts task={task} />
             <dt>依赖</dt>
