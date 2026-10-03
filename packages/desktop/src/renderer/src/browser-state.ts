@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { isBrowserTool, type BrowserTab } from '@kando/protocol'
-import { useCore } from './core-store'
+import { perform, showBrowserPanel, useCore } from './core-store'
 import { usePreferences } from './preferences'
 
 // Browser tabs as core reports them while a view watches: a conversation's under its id, the
@@ -87,6 +87,28 @@ export function focusBrowserConversation(conversationId: string): void {
 
 export function focusBrowserTab(tabId: string): void {
   focus({ tabId })
+}
+
+// A file URL for an absolute path, each part escaped so a # or a space stays part of the name.
+export function fileUrl(path: string): string {
+  return `file://${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
+// Opens a file the agent wrote as a tab of its conversation, with the panel up on it: the page then
+// runs as a page of its own, full size, and the agent's browser tools see it too. A tab already
+// showing it is reloaded instead, so a page opened again is the file as it stands now. Core lets a
+// connection open tabs only while it watches them, which the panel does once it is up; asking here
+// as well spares waiting for it, and answers with the tabs there are.
+export async function openFileInBrowser(path: string, conversationId: string): Promise<void> {
+  showBrowserPanel(null)
+  const url = fileUrl(path)
+  const tab = await perform(async (rpc) => {
+    const open = (await rpc.call('browser.watchAll', {})).find((each) => each.conversationId === conversationId && each.url === url)
+    return open
+      ? rpc.call('browser.userNavigate', { tabId: open.id, to: { history: 'reload' } })
+      : rpc.call('browser.newTab', { conversationId, url })
+  })
+  if (tab) focusBrowserTab(tab.id)
 }
 
 // Follows every tab while the browser panel is up.

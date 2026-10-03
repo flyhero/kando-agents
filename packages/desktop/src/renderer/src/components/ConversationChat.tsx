@@ -191,7 +191,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'reasoning':
       return <Reasoning item={item} />
     case 'tool':
-      return isPreviewTool(item.name) ? <ChatPreviewCard item={item} /> : isBrowserTool(item.name) ? <ChatBrowserCard item={item} /> : <ChatToolCard item={item} />
+      return isPreviewTool(item.name) ? <ChatPreviewCard conversationId={conversationId} item={item} /> : isBrowserTool(item.name) ? <ChatBrowserCard item={item} /> : <ChatToolCard item={item} />
     case 'approval':
       return isPlanApproval(item) ? <ChatPlanLine item={item} /> : <ChatRequestLine item={item} />
     case 'question':

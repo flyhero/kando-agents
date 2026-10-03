@@ -5621,9 +5621,10 @@ body.side-panel-resizing * {
    tall enough to read and draggable taller. */
 .chat-preview { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
 .chat-preview-head { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
-.chat-preview-title { color: var(--text); font-weight: 500; }
+/* A narrow card (the browser panel beside it) shortens the title and path, never the actions. */
+.chat-preview-title { flex: none; max-width: 50%; overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .chat-preview-path { min-width: 0; overflow: hidden; color: var(--text-3); font-family: var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.chat-preview-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.chat-preview-actions { display: flex; flex: none; align-items: center; gap: 4px; margin-left: auto; white-space: nowrap; }
 .chat-preview-actions .tool-button { width: 24px; height: 24px; }
 .chat-preview-actions .tool-button svg { width: 14px; height: 14px; }
 .chat-preview-frame { display: block; width: 100%; height: 480px; min-height: 160px; border: 0; background: var(--bg); resize: vertical; overflow: auto; }

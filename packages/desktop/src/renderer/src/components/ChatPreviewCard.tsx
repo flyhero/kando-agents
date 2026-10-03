@@ -1,5 +1,7 @@
 import { useContext, useState } from 'react'
 import { isPreviewImage, type ChatItem } from '@kando/protocol'
+import { openFileInBrowser } from '../browser-state'
+import { useBrowserSupported } from '../core-store'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { previewUrl } from '../file-links'
 import { LocalImageViewer } from './ChatMarkdown'
@@ -42,8 +44,9 @@ function PreviewImage({ path, src, label }: { path: string; src: string; label: 
 // page of its own, with no way to the app around it or to the network (main's kando-preview
 // protocol sets the policy), following the app's light or dark scheme; a picture is an image. It
 // reads the file as it stands now, so a later edit shows on refresh.
-export function ChatPreviewCard({ item }: { item: ToolItem }) {
+export function ChatPreviewCard({ conversationId, item }: { conversationId: string; item: ToolItem }) {
   const { path, title } = previewArgs(item)
+  const browsable = useBrowserSupported() && !isPreviewImage(path)
   const shorten = useContext(ChatPaths)
   const [generation, setGeneration] = useState(0)
   const refused = item.status === 'failed' || item.status === 'denied'
@@ -55,6 +58,9 @@ export function ChatPreviewCard({ item }: { item: ToolItem }) {
         {title && <span className="chat-preview-path" title={path}>{shorten(path)}</span>}
         <span className="chat-preview-actions">
           <button type="button" className="tool-button" aria-label="重新加载" data-tooltip="重新加载" data-tooltip-side="top-end" onClick={() => setGeneration((n) => n + 1)}><RefreshIcon /></button>
+          {browsable && !refused && (
+            <button type="button" className="link-button" data-tooltip="在内置浏览器里打开，全尺寸，agent 也能看到这个标签页" data-tooltip-side="top-end" onClick={() => void openFileInBrowser(path, conversationId)}>在浏览器中打开</button>
+          )}
           {canRevealFile() && (
             <button type="button" className="link-button" onClick={() => void revealFile([path])}>显示文件</button>
           )}

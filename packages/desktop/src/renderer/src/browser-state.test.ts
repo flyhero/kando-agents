@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserTab } from '@kando/protocol'
-import { ALL_TABS, firstBrowserCall, receiveAllBrowserTabs, receiveBrowserTabs, selectAfter, useBrowserTabs, USER_TABS } from './browser-state'
+import { ALL_TABS, fileUrl, firstBrowserCall, receiveAllBrowserTabs, receiveBrowserTabs, selectAfter, useBrowserTabs, USER_TABS } from './browser-state'
 
 const tab = (id: string, active = false): BrowserTab => ({ id, conversationId: 'c', url: 'http://localhost/', title: '', loading: false, active, userDriving: false, agentActing: false, createdAt: 1 })
 
@@ -30,5 +30,12 @@ describe('firstBrowserCall', () => {
   it('names the first browser call still running, and nothing for finished history', () => {
     expect(firstBrowserCall([{ kind: 'tool', name: 'mcp__kando__browser_navigate', status: 'done', stageId: 's', id: 't:1' }])).toBeNull()
     expect(firstBrowserCall([{ kind: 'tool', name: 'Bash', status: 'running', stageId: 's', id: 't:1' }, { kind: 'tool', name: 'kando.browser_click', status: 'running', stageId: 's', id: 't:2' }])).toBe('s/t:2')
+  })
+})
+
+describe('fileUrl', () => {
+  it('names a local file the way the browser opens it, keeping a # or a space part of the name', () => {
+    expect(fileUrl('/tmp/demo/index.html')).toBe('file:///tmp/demo/index.html')
+    expect(fileUrl('/Users/me/My Site/#1.html')).toBe('file:///Users/me/My%20Site/%231.html')
   })
 })
