@@ -18,7 +18,7 @@ function SchedulePlanButton({ conversationId }: { conversationId: string }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   return (
-    <span className="menu-anchor">
+    <span className="menu-anchor chat-plan-schedule">
       <button type="button" className="link-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>预约批准…</button>
       {open && (
         <SchedulePicker
