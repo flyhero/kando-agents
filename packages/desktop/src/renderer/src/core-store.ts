@@ -443,6 +443,11 @@ export function useFindFileSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('find-file') ?? false)
 }
 
+// Whether core can search the projects for the composer's @ menu (projects.searchFiles).
+export function useFileMentionsSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('file-mentions') ?? false)
+}
+
 // Whether core keeps conversations pinned to the top of the list.
 export function useConversationPinSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-pin') ?? false)

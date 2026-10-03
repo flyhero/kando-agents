@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
-import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useSchedulesSupported } from '../core-store'
+import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
+import { useChatMentionMenu } from './ChatMentionMenu'
 import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
@@ -168,6 +169,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const imagesSupported = useChatImagesSupported()
   const optionsSupported = useChatOptionsSupported()
   const schedulesSupported = useSchedulesSupported()
+  const mentionsSupported = useFileMentionsSupported()
   const attached = useComposerImages()
   const running = conversation.sessionId !== null
   // An older core reports only the first waiting message, without a ref to act on it by.
@@ -202,6 +204,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     setText,
     sendCommand: (command) => void send(false, command)
   })
+  const mentionMenu = useChatMentionMenu({ text, setText, roots: conversation.projectPaths, cwd: conversation.workspacePath, agent: conversation.agent })
   // steer: into the running turn now; otherwise a message while the agent works waits its turn.
   // The user's own command expands into the input to be read over, rather than going.
   const send = async (steer = false, message = text) => {
@@ -258,6 +261,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
       onDrop={imagesSupported ? attached.handlers.onDrop : undefined}
     >
       {commandMenu.menu}
+      {mentionMenu.menu}
       {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
       <textarea
         className="chat-input"
@@ -265,9 +269,10 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         value={text}
         aria-label="给 agent 的消息"
         {...commandMenu.inputProps}
+        {...mentionMenu.inputProps}
         readOnly={starting}
         placeholder={
-          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}`
+          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
             : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断')
         }
@@ -277,7 +282,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         }}
         onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
         onKeyDown={(event) => {
-          if (commandMenu.onKeyDown(event)) return
+          if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event)) return
           if (suggestion && takesSuggestion(event)) {
             event.preventDefault()
             setText(suggestion)

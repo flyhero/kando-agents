@@ -11,6 +11,7 @@ import { startOptions } from './ConversationActions'
 import { sendsMessage } from './ChatComposer'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
+import { useChatMentionMenu } from './ChatMentionMenu'
 import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBar'
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
@@ -50,6 +51,8 @@ export function ConversationDraft() {
   const chatCommands = useCore((s) => s.chatCommands)
   const commandEntries = useMemo(() => kandoEntries(chatCommands, projectPaths), [chatCommands, projectPaths])
   const commandMenu = useChatCommandMenu({ text, entries: commandEntries, agentLabel: agent ? AGENT_LABEL[agent] : '', setText, sendCommand: () => {} })
+  // The agent will work in the first project picked.
+  const mentionMenu = useChatMentionMenu({ text, setText, roots: projectPaths, cwd: projectPaths[0] ?? null, agent })
 
   useEffect(() => {
     if (!agent || !rpc || !optionsSupported || agent in catalogs) return
@@ -147,12 +150,14 @@ export function ConversationDraft() {
               onDrop={imagesSupported ? attached.handlers.onDrop : undefined}
             >
               {commandMenu.menu}
+              {mentionMenu.menu}
               {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
               <textarea
                 className="chat-input"
                 rows={3}
                 value={text}
                 {...commandMenu.inputProps}
+                {...mentionMenu.inputProps}
                 autoFocus
                 readOnly={busy}
                 aria-label="第一条消息"
@@ -160,7 +165,7 @@ export function ConversationDraft() {
                 onChange={(event) => setText(event.target.value)}
                 onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
                 onKeyDown={(event) => {
-                  if (commandMenu.onKeyDown(event) || !sendsMessage(event)) return
+                  if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event) || !sendsMessage(event)) return
                   event.preventDefault()
                   void send()
                 }}
