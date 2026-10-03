@@ -468,3 +468,12 @@ export function ClockIcon() {
     </svg>
   )
 }
+
+// A quotation mark: for quoting a passage into the next message.
+export function QuoteIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M4 14.5c2.6-.6 3.6-2.4 3.6-5V6H4v4h3.6M12 14.5c2.6-.6 3.6-2.4 3.6-5V6H12v4h3.6" />
+    </svg>
+  )
+}

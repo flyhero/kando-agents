@@ -1,10 +1,11 @@
-import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
 import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
 import { ChatBrowserCard, ChatShotCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
 import { ChatDisclosureScope, setOpened, useDisclosure } from '../chat-disclosure'
 import { isCompaction, noticeSummary, readableNotice } from '../chat-notices'
+import { parseQuotes, withoutQuoteMarkers } from '../chat-quotes'
 import { formatTokens, isSubagent, thoughtFor, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
@@ -22,6 +23,7 @@ import { ChatWorking, type WorkingPhase } from './ChatWorking'
 import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChatPreviewCard } from './ChatPreviewCard'
+import { ChatQuotePicker } from './ChatQuotePicker'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -118,11 +120,32 @@ function ChatSkeleton() {
 
 type UserItem = Extract<ChatItem, { kind: 'user' }>
 
+// Scrolls the chat to an entry and marks it a moment: for a quote, back to the passage it took.
+const JumpToEntry = createContext<(key: string) => void>(() => {})
+
 function UserMessageFooter({ at, text }: { at: number; text: string }) {
   return (
     <div className="chat-user-footer">
       <MessageTime at={at} />
-      {text && <CopyButton text={text} label="复制消息" />}
+      {text && <CopyButton text={withoutQuoteMarkers(text)} label="复制消息" />}
+    </div>
+  )
+}
+
+// The passages a message quotes, over what it says: each opens the reply it came from, where that
+// is still in the chat.
+function UserQuotes({ quotes }: { quotes: ReturnType<typeof parseQuotes>['quotes'] }) {
+  const jump = useContext(JumpToEntry)
+  return (
+    <div className="chat-user-quotes">
+      {quotes.map((quote, index) => (
+        <div key={index} className="chat-user-quote">
+          <button type="button" className="chat-user-quote-text" disabled={!quote.source} title={quote.source ? '跳到引用的原文' : undefined} onClick={() => quote.source && jump(quote.source)}>
+            {quote.text}
+          </button>
+          {quote.note && <div className="chat-user-quote-note">{quote.note}</div>}
+        </div>
+      ))}
     </div>
   )
 }
@@ -130,13 +153,15 @@ function UserMessageFooter({ at, text }: { at: number; text: string }) {
 // A long message the user sent, such as a task's first prompt, shows its start until opened.
 function UserMessage({ item }: { item: UserItem }) {
   const [open, setOpen] = useDisclosure(`message:${itemKey(item)}`)
-  const long = item.text.split('\n').length > 12 || item.text.length > 1200
+  const { quotes, body } = parseQuotes(item.text)
+  const long = body.split('\n').length > 12 || body.length > 1200
   return (
     <>
       <div className="chat-user" data-clipped={(long && !open) || undefined} data-steer={item.steer || undefined}>
         {item.steer && <span className="chat-user-steer" title="回合进行中插入的消息">追加指令</span>}
         <ChatImageStrip images={item.images} />
-        {item.text}
+        {quotes.length > 0 && <UserQuotes quotes={quotes} />}
+        {body}
       </div>
       {long && (
         <div className="chat-user-more">
@@ -476,7 +501,9 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const sent = useMemo(() => blocks.flatMap((block) => {
     if (block.kind !== 'entry' || !isUserEntry(block.entry)) return []
     const { entry } = block
-    return [{ key: block.key, text: entry.kind === 'item' && entry.item.kind === 'user' ? entry.item.text : '' }]
+    if (entry.kind !== 'item' || entry.item.kind !== 'user') return [{ key: block.key, text: '' }]
+    const { quotes, body } = parseQuotes(entry.item.text)
+    return [{ key: block.key, text: `${quotes.length ? `（引用 ${quotes.length} 段）` : ''}${body}` }]
   }), [blocks])
   const tools = useMemo(
     () => new Map(items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : []))),
@@ -541,6 +568,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   }
 
   // Brings one of the user's messages into view, and marks it for a moment so the eye finds it.
+  const jumpTo = useCallback((key: string) => jump(key), [])
   const jump = (key: string) => {
     const element = list.current
     const target = element?.querySelector<HTMLElement>(`[data-entry-key="${CSS.escape(key)}"]`)
@@ -598,6 +626,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     <ChatDisclosureScope.Provider value={id}>
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
+    <JumpToEntry.Provider value={jumpTo}>
     <div className="chat-view" data-width={width} data-font-size={fontSize} data-font={font}>
       <div
         className="chat-list"
@@ -644,7 +673,9 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
         )}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} sent={sent} onJump={jump} />
+      <ChatQuotePicker conversationId={id} list={list} />
     </div>
+    </JumpToEntry.Provider>
     </TodoHistory.Provider>
     </Folds.Provider>
     </ChatDisclosureScope.Provider>

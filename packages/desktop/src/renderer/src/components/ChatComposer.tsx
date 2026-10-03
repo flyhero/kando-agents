@@ -2,13 +2,14 @@ import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
 import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
+import { composeMessage, parseQuotes, removeQuote, setQuoteNote, setQuotes, useQuotes, type ChatQuote } from '../chat-quotes'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
+import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, QuoteIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
 import { createSchedule } from '../schedules'
 
@@ -36,6 +37,46 @@ export function mergeImages(first: readonly ChatImage[], second: readonly ChatIm
 }
 
 type StateItem = Extract<ChatItem, { kind: 'state' }>
+
+// A waiting message as its row reads it: what the user wrote, and how many passages it quotes.
+function queuedText(text: string): string {
+  const { quotes, body } = parseQuotes(text)
+  const quoted = quotes.length ? `（引用 ${quotes.length} 段）` : ''
+  return `${quoted}${body}` || '（只有图片）'
+}
+
+// The passages quoted into the next message, above the input: each with a line for what the
+// user says about it, and a way to drop it. Enter in that line goes on to the message.
+function QuoteCards({ conversationId, quotes, onDone }: { conversationId: string; quotes: readonly ChatQuote[]; onDone: () => void }) {
+  return (
+    <ul className="chat-quotes" aria-label="引用的段落">
+      {quotes.map((quote) => (
+        <li key={quote.id} className="chat-quote-card">
+          <span className="chat-quote-icon" aria-hidden="true"><QuoteIcon /></span>
+          <div className="chat-quote-body">
+            <p className="chat-quote-text" title={quote.text}>{quote.text}</p>
+            <input
+              className="chat-quote-note"
+              value={quote.note}
+              placeholder="对这段说点什么（可不填）"
+              aria-label="对这段引用的说明"
+              onChange={(event) => setQuoteNote(conversationId, quote.id, event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  event.preventDefault()
+                  onDone()
+                }
+              }}
+            />
+          </div>
+          <button type="button" className="chat-quote-remove" aria-label="移除这段引用" data-tooltip="移除" data-tooltip-side="top-end" onClick={() => removeQuote(conversationId, quote.id)}>
+            <CloseIcon />
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 // Sends what the input holds later, unattended: once its time comes and the agent has quota again.
 // An empty input schedules carrying out the plan the chat has.
@@ -94,7 +135,7 @@ function QueuedRow({ entry, index, steerable, onEdit, onRelease, onNow, onCancel
   return (
     <>
       {index >= 0 && <span className="chat-queued-index">{index + 1}.</span>}
-      <span className="chat-queued-text" title={entry.text}>{entry.text || '（只有图片）'}</span>
+      <span className="chat-queued-text" title={entry.text}>{queuedText(entry.text)}</span>
       {entry.images.length > 0 && <span className="chat-queued-images">{entry.images.length} 张图片</span>}
       <span className="chat-queued-actions">
         {entry.held && index > 0 && (
@@ -138,7 +179,7 @@ function QueuedList({ queue, held, steerable, ...actions }: {
       <div className="chat-queue-head">
         <button type="button" className="chat-queue-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span className="chat-queue-label">{held ? `${queue.length} 条没发出` : `${queue.length} 条排队`}</span>
-          {!open && first && <span className="chat-queue-next">下一条：<span>{first.text || '（只有图片）'}</span></span>}
+          {!open && first && <span className="chat-queue-next">下一条：<span>{queuedText(first.text)}</span></span>}
           <span className="chat-tool-chevron" aria-hidden="true"><ChevronDownIcon /></span>
         </button>
         {held && first && <button type="button" className="link-button" onClick={() => actions.onRelease(first.ref)}>继续发送第 1 条</button>}
@@ -166,6 +207,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const surface = useChatSurface()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const quotes = useQuotes(id)
   const imagesSupported = useChatImagesSupported()
   const optionsSupported = useChatOptionsSupported()
   const schedulesSupported = useSchedulesSupported()
@@ -185,12 +227,12 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const stopped = !running
   const starting = stopped && busy
   const canTake = (idle || queueable || stopped) && !busy && !surface.sendBlocker && attached.uploading === 0
-  const canSend = canTake && (text.trim() !== '' || attached.images.length > 0)
+  const canSend = canTake && (text.trim() !== '' || attached.images.length > 0 || quotes.length > 0)
   // What the agent guesses comes next, as Claude Code shows it: grey in the empty input, Tab or →
   // takes it, typing anything else puts it away for good.
   const [dismissed, setDismissed] = useState<string | null>(null)
   const offered = idle ? conversation.chat?.suggestion ?? null : null
-  const suggestion = offered && offered !== dismissed && text === '' && attached.images.length === 0 && !surface.sendBlocker ? offered : null
+  const suggestion = offered && offered !== dismissed && text === '' && attached.images.length === 0 && quotes.length === 0 && !surface.sendBlocker ? offered : null
   const canSteer = queueable && steerable && canSend
   const chatCommands = useCore((s) => s.chatCommands)
   const commandEntries = useMemo(
@@ -213,14 +255,17 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
       setText(expanded)
       return
     }
-    if (!canTake || (message.trim() === '' && attached.images.length === 0) || (steer && !canSteer)) return
+    // Quotes go before what the user wrote; a command must open its message, so it goes alone.
+    const quoting = quotes.length > 0 && !message.trim().startsWith('/')
+    const composed = quoting ? composeMessage(quotes, message) : message.trim()
+    if (!canTake || (composed === '' && attached.images.length === 0) || (steer && !canSteer)) return
     setBusy(true)
     const images = attached.images
     // Getting ready resolves once the agent can take it; if that fails, the text stays to try again.
     const ready = await surface.prepareSend(stopped)
     const sent = ready && await perform((rpc) => rpc.call('conversations.send', {
       id,
-      text: message.trim(),
+      text: composed,
       ...(images.length ? { images: images.map((image) => image.id) } : {}),
       ...(queueable ? (steer ? { steer: true } : { queue: true }) : {})
     }))
@@ -228,6 +273,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     if (sent) {
       setText('')
       attached.setImages([])
+      if (quoting) setQuotes(id, [])
     }
   }
   const cancelQueued = (ref: string) => perform((rpc) => rpc.call('conversations.cancelQueued', { id, ...(ref ? { ref } : {}) }))
@@ -235,7 +281,9 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const sendQueuedNow = (ref: string) => void perform((rpc) => rpc.call('conversations.sendQueued', { id, ...(ref ? { ref } : {}), now: true }))
   const editQueued = async (entry: ChatQueued) => {
     if (await cancelQueued(entry.ref)) {
-      setText((current) => [entry.text, current].filter((part) => part.trim()).join('\n\n'))
+      const parsed = parseQuotes(entry.text)
+      if (parsed.quotes.length) setQuotes(id, [...parsed.quotes, ...quotes])
+      setText((current) => [parsed.body, current].filter((part) => part.trim()).join('\n\n'))
       attached.setImages((current) => mergeImages(entry.images, current))
     }
   }
@@ -262,6 +310,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     >
       {commandMenu.menu}
       {mentionMenu.menu}
+      {quotes.length > 0 && <QuoteCards conversationId={id} quotes={quotes} onDone={() => mentionMenu.inputProps.ref.current?.focus()} />}
       {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
       <textarea
         className="chat-input"
@@ -310,9 +359,12 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         {schedulesSupported && (
           <ScheduleSendButton
             conversationId={id}
-            text={text}
+            text={composeMessage(quotes, text)}
             disabledReason={attached.images.length > 0 ? '预约的消息不能带图片' : surface.sendBlocker ?? null}
-            onScheduled={() => setText('')}
+            onScheduled={() => {
+              setText('')
+              setQuotes(id, [])
+            }}
           />
         )}
         {canSteer && (
