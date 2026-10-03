@@ -180,6 +180,24 @@ describe('TaskService', () => {
     expect(service.move(task.id, 'done').status).toBe('done')
   })
 
+  it('carries a task out unattended in the mode given, without planning first, but only once it can run', async () => {
+    const repo = initRepo('app')
+    const first = service.create({ title: 'Schema' })
+    service.update({ id: first.id, repos: [repo], agent: 'claude' })
+    const task = service.create({ title: 'Add dark mode' })
+    service.update({ id: task.id, details: 'Use CSS tokens', repos: [repo], agent: 'claude', dependsOn: [first.id] })
+    expect(service.scheduleBlocker(task.id)).toBe('dependencies-unfinished')
+    await expect(service.start(task.id, undefined, 'acceptEdits')).rejects.toMatchObject({ reason: 'dependencies-unfinished' })
+    service.update({ id: task.id, dependsOn: [] })
+    expect(service.scheduleBlocker(task.id)).toBeNull()
+
+    const running = await service.start(task.id, undefined, 'bypass')
+    expect(running.status).toBe('running')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'bypassPermissions']))
+    expect(told(task.id)).toContain('无人值守')
+    expect(told(task.id)).not.toContain('我确认之后再开始修改代码')
+  })
+
   describe('run records', () => {
     const verdicts = (taskId: string) => runs.forTask(taskId).map(({ kind, endedBy, outcome }) => ({ kind, endedBy, outcome }))
 

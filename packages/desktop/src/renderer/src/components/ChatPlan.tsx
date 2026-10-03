@@ -1,8 +1,30 @@
-import { useState, useRef, type KeyboardEvent } from 'react'
+import { useCallback, useState, useRef, type KeyboardEvent } from 'react'
 import { itemKey, type PlanItem } from '../chat-state'
 import { useChatSurface } from './chat-surface'
 import { ChatMarkdown } from './ChatMarkdown'
 import { useResponder } from './ChatRequestCards'
+import { SchedulePicker } from './SchedulePicker'
+import { useSchedulesSupported } from '../core-store'
+import { createSchedule } from '../schedules'
+
+// Approving later, once the quota is back: an empty scheduled message approves the plan waiting.
+function SchedulePlanButton({ conversationId }: { conversationId: string }) {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  return (
+    <span className="menu-anchor">
+      <button type="button" className="link-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>预约批准…</button>
+      {open && (
+        <SchedulePicker
+          title="预约批准这个计划"
+          note="到点后批准计划并开始执行，文件改动自动接受。agent 不能停下来等你确认。"
+          onSchedule={async (notBefore) => (await createSchedule({ kind: 'conversation', conversationId, text: '' }, notBefore)) !== null}
+          onClose={close}
+        />
+      )}
+    </span>
+  )
+}
 
 // A plan Claude proposes from plan mode reads beside the conversation, in the inspector; the
 // list and the dock only point to it, and the dock takes the answer.
@@ -48,6 +70,7 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const { savePlan } = surface
+  const schedulable = useSchedulesSupported() && !savePlan
   const choices: PlanChoice[] = savePlan ? ['save', 'revise'] : ['allow', 'allowForSession', 'revise']
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
   const noteInput = useRef<HTMLInputElement>(null)
@@ -93,6 +116,7 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
       <div className="chat-request-title">
         计划等你确认
         <button type="button" className="link-button" onClick={() => surface.showPlan(itemKey(item))}>在检查器里看完整计划</button>
+        {schedulable && <SchedulePlanButton conversationId={conversationId} />}
       </div>
       {savePlan && <p className="chat-request-detail muted">依赖的任务还没完成：现在只能保存计划，等它们完成后开始执行时再按计划做。</p>}
       {item.detail && (

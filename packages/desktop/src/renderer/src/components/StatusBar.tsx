@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { setAwakeMode, setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useAwakeSupported, useBrowserSupported, useCore, useWorktreesSupported, type ConnectionState } from '../core-store'
+import { setAwakeMode, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useAwakeSupported, useBrowserSupported, useCore, useSchedulesSupported, useWorktreesSupported, type ConnectionState } from '../core-store'
 import { ALL_TABS, useBrowserTabs } from '../browser-state'
 import { formatBytes, worktreeRows, worktreeSummary } from '../worktree-groups'
 import { useWorktrees } from '../worktree-store'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { BranchIcon, CheckIcon, CoffeeIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
+import { BranchIcon, CheckIcon, ClockIcon, CoffeeIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
 import { UsageBar } from './UsageBar'
+import { openRuns } from '../schedules'
 import { Popover } from './Popover'
 
 const CONNECTION_LABEL: Record<ConnectionState, string> = {
@@ -96,14 +97,18 @@ function TerminalButton() {
   )
 }
 
-const AWAKE_LABEL = { on: '始终', auto: 'Agent 工作时', off: '关闭' } as const
+const AWAKE_LABEL = { on: '始终', auto: 'Agent 工作或有预约时', off: '关闭' } as const
 
 function AwakeButton() {
   const supported = useAwakeSupported()
   const status = useCore((s) => s.awake)
   const [open, setOpen] = useState(false)
   if (!supported || !status) return null
-  const detail = status.problem ?? (status.active ? `正在保持唤醒 · ${status.workingAgents} 个 agent 工作中` : `保持唤醒：${AWAKE_LABEL[status.mode]}`)
+  const reasons = [
+    status.workingAgents > 0 && `${status.workingAgents} 个 agent 工作中`,
+    (status.scheduledRuns ?? 0) > 0 && `${status.scheduledRuns} 个预约等着运行`
+  ].filter(Boolean).join('，')
+  const detail = status.problem ?? (status.active ? `正在保持唤醒${reasons ? ` · ${reasons}` : ''}` : `保持唤醒：${AWAKE_LABEL[status.mode]}`)
   return (
     <span className="menu-anchor statusbar-awake-anchor">
       <button
@@ -161,12 +166,38 @@ function WorktreeButton() {
   )
 }
 
+// What is scheduled to start later, and whether any of it failed: the way to the page that manages
+// them. Shown while there is anything to show there.
+function ScheduleButton() {
+  const supported = useSchedulesSupported()
+  const runs = useCore((s) => s.schedules)
+  const open = useCore((s) => s.schedulesOpen)
+  if (!supported || (runs.length === 0 && !open)) return null
+  const waiting = openRuns(runs).length
+  const failed = runs.filter((run) => run.status === 'failed').length
+  return (
+    <button
+      type="button"
+      className="tool-button statusbar-schedules"
+      aria-pressed={open}
+      data-tooltip="管理预约的任务和会话"
+      data-tooltip-side="top-end"
+      onClick={() => setSchedulesOpen(!open)}
+    >
+      <ClockIcon />
+      <span>{waiting > 0 ? `${waiting} 个预约` : '预约'}</span>
+      {failed > 0 && <span className="statusbar-schedules-failed">· {failed} 个没能开始</span>}
+    </button>
+  )
+}
+
 export function StatusBar() {
   return (
     <footer className="statusbar">
       <SettingsButton />
       <ConnectionStatus />
       <UsageBar />
+      <ScheduleButton />
       <WorktreeButton />
       <BrowserButton />
       <TerminalButton />

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, isKandoRequest } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
@@ -18,6 +18,7 @@ import type { McpServer } from './agent-command'
 import { chatCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
+import { SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
 import { commitAndPush } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
@@ -48,6 +49,8 @@ export type TaskChatLaunch = {
   // Files the agent may read without asking, such as the task's images.
   readable?: readonly string[]
   allowBypass?: boolean
+  // What a new stage starts in instead of planning first: a scheduled run's unattended mode.
+  permissionMode?: string
 }
 
 // What a stage's start takes beyond the agent: see TaskChatLaunch; moved says the agent works
@@ -345,7 +348,7 @@ export class ConversationService {
     if (conversation.title !== task.title) this.store.update(id, { title: task.title })
     if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
     // A stage of its own plans first; one going on keeps the mode it was left in.
-    if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: 'plan' })
+    if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: launch.permissionMode ?? 'plan' })
     return this.start(id, task.agent, '', false, {
       fresh: launch.session === 'new',
       moved,
@@ -601,6 +604,39 @@ export class ConversationService {
   }
 
   // Whether a message with this ref went to the agent in a chat stage still open at `since` or later.
+  // Goes on for a scheduled run, with nobody there to answer: a plan waiting for approval is
+  // approved, or the agent is readied in the unattended mode (`ready` starts it: a task's chat goes
+  // through its task) and told to go ahead. A turn still running has the message wait behind it.
+  async runScheduled(id: string, text: string, mode: UnattendedMode, ready: () => Promise<unknown>, ref: string): Promise<void> {
+    const conversation = this.get(id)
+    const plan = this.waitingPlan(conversation)
+    if (plan) {
+      await this.chats.respond(id, plan.requestId, { decision: 'allowForSession' })
+      // Edits are what approving lets through; bypass only where the stage was started allowing it.
+      if (mode === 'bypass') await this.chats.setOption(id, 'permissionMode', mode).catch(() => {})
+      if (text) await this.send(id, `${UNATTENDED_NOTE}\n\n${text}`, [], true, false, ref)
+      return
+    }
+    const live = this.chats.activity(id) !== null
+    const switched = live && await this.chats.setOption(id, 'permissionMode', mode).then(() => true, () => false)
+    // A stage started without bypass allowed cannot switch to it: an idle one starts again, allowing it.
+    if (live && !switched && mode === 'bypass' && this.chats.idle(id) && !conversation.planOnly) await this.stop(id)
+    if (this.chats.activity(id) === null) {
+      this.store.setChatOptions(id, { permissionMode: mode, ...(mode === 'bypass' ? { allowBypass: true } : {}) })
+      await ready()
+    }
+    await this.send(id, `${UNATTENDED_NOTE}\n\n${text || SCHEDULED_GO_TEXT}`, [], !this.chats.idle(id), false, ref)
+  }
+
+  // The plan the live stage waits on the user to approve, if any.
+  private waitingPlan(conversation: Conversation): { requestId: string } | null {
+    const stage = this.chats.activity(conversation.id) === null ? null : this.store.activeStage(conversation.id)
+    if (!stage) return null
+    const item = this.chats.items(this.chatStage(conversation, stage))
+      .findLast((each) => each.kind === 'approval' && isPlanApproval(each) && each.resolution === null)
+    return item?.kind === 'approval' ? { requestId: item.requestId } : null
+  }
+
   sentRef(id: string, ref: string, since: number): boolean {
     const conversation = this.get(id)
     return this.store.stages(id)

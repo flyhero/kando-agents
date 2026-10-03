@@ -1,11 +1,13 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useCallback, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
-import { perform, useChatImagesSupported, useChatOptionsSupported } from '../core-store'
+import { perform, useChatImagesSupported, useChatOptionsSupported, useSchedulesSupported } from '../core-store'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { ChatOptionsBar } from './ChatOptionsBar'
-import { ChevronDownIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
+import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
+import { SchedulePicker } from './SchedulePicker'
+import { createSchedule } from '../schedules'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -31,6 +33,47 @@ export function mergeImages(first: readonly ChatImage[], second: readonly ChatIm
 }
 
 type StateItem = Extract<ChatItem, { kind: 'state' }>
+
+// Sends what the input holds later, unattended: once its time comes and the agent has quota again.
+// An empty input schedules carrying out the plan the chat has.
+function ScheduleSendButton({ conversationId, text, disabledReason, onScheduled }: {
+  conversationId: string
+  text: string
+  disabledReason: string | null
+  onScheduled: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  return (
+    <span className="menu-anchor chat-schedule-anchor">
+      <button
+        type="button"
+        className="tool-button chat-schedule-button"
+        aria-label="预约发送"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={disabledReason !== null}
+        data-tooltip={disabledReason ?? (text ? '预约发送：额度恢复后或到点再发' : '预约：额度恢复后或到点按计划开始实现')}
+        data-tooltip-side="top-end"
+        onClick={() => setOpen(!open)}
+      >
+        <ClockIcon />
+      </button>
+      {open && (
+        <SchedulePicker
+          title={text ? '预约发送这条消息' : '预约按计划开始实现'}
+          note={text ? '到点后发出输入框里的这条消息，并告诉 agent 没人在场，不要停下来等确认。' : '输入框是空的：到点后让 agent 按已经定下的计划开始实现，不停下来等确认。'}
+          onSchedule={async (notBefore) => {
+            const run = await createSchedule({ kind: 'conversation', conversationId, text: text.trim() }, notBefore)
+            if (run) onScheduled()
+            return run !== null
+          }}
+          onClose={close}
+        />
+      )}
+    </span>
+  )
+}
 
 // The messages waiting above the input, in the order they will go: one per turn as each ends. A
 // failed turn holds them; the first is released from the header, any of them from its row. Each
@@ -122,6 +165,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const [busy, setBusy] = useState(false)
   const imagesSupported = useChatImagesSupported()
   const optionsSupported = useChatOptionsSupported()
+  const schedulesSupported = useSchedulesSupported()
   const attached = useComposerImages()
   const running = conversation.sessionId !== null
   // An older core reports only the first waiting message, without a ref to act on it by.
@@ -233,6 +277,14 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
           <span className="chat-suggestion-hint" aria-hidden="true">
             <kbd>Tab</kbd> 填入建议
           </span>
+        )}
+        {schedulesSupported && (
+          <ScheduleSendButton
+            conversationId={id}
+            text={text}
+            disabledReason={attached.images.length > 0 ? '预约的消息不能带图片' : surface.sendBlocker ?? null}
+            onScheduled={() => setText('')}
+          />
         )}
         {canSteer && (
           <button type="button" className="button ghost chat-steer-button" data-tooltip-side="top-end" data-tooltip="不等回合结束，现在就交给 agent（⌘Enter）" onClick={() => void send(true)}>

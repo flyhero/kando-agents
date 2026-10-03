@@ -1,10 +1,11 @@
 import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { PROTOCOL_VERSION, type SourceDescriptor } from '@kando/protocol'
+import { PROTOCOL_VERSION, UNATTENDED_MODES, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
 import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
+import { UNATTENDED_LABEL } from '../schedules'
 import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { canNotify } from '../desktop-bridge'
@@ -228,7 +229,7 @@ function AgentSettings() {
       {awakeSupported && awake && (
         <SettingsRow
           label="保持电脑唤醒"
-          description="「Agent 工作时」只在至少一个 agent 正在执行时阻止系统睡眠；agent 等待输入时允许睡眠。关闭 Kando 窗口不影响正在运行的 agent。"
+          description="「Agent 工作时」只在至少一个 agent 正在执行、或还有预约等着运行时阻止系统睡眠；agent 等待输入时允许睡眠。合上笔记本仍会睡眠。关闭 Kando 窗口不影响正在运行的 agent。"
           control={(labelId) => (
             <Segmented
               labelId={labelId}
@@ -236,7 +237,7 @@ function AgentSettings() {
               onChange={(mode) => void setAwakeMode(mode)}
               options={[
                 { value: 'on', label: '始终' },
-                { value: 'auto', label: 'Agent 工作时' },
+                { value: 'auto', label: 'Agent 工作或有预约时' },
                 { value: 'off', label: '关闭' }
               ]}
             />
@@ -249,6 +250,20 @@ function AgentSettings() {
           description="Claude Code 在聊天界面里每轮回复完，预测你接下来可能要说的话，灰字显示在输入框里，按 Tab 或 → 填入，直接打字就忽略。生成建议要再发一次简短请求，复用对话缓存，花费很少，但会计入用量。关掉立即生效；打开后，已经在跑的 Claude 会话要等下次启动才有建议。Codex 没有这个功能。"
           control={(labelId) => (
             <Toggle labelId={labelId} checked={chatSettings.promptSuggestions} onChange={(next) => void setChatSettings({ promptSuggestions: next })} />
+          )}
+        />
+      )}
+      {chatSettings?.unattendedMode && (
+        <SettingsRow
+          label="预约运行的权限"
+          description="预约的任务和会话到点时没人在场，以这个模式开始，不先规划、不等确认。「自动接受编辑」：改文件不再问，运行命令等其他操作仍会问，没人回答就停在那里，第二天再处理。「全部放行」：什么都不问，Codex 也不受沙箱限制，只在你信任这些任务时用。"
+          control={(labelId) => (
+            <Segmented
+              labelId={labelId}
+              value={chatSettings.unattendedMode ?? 'acceptEdits'}
+              onChange={(unattendedMode) => void setChatSettings({ unattendedMode })}
+              options={UNATTENDED_MODES.map((value) => ({ value, label: UNATTENDED_LABEL[value] }))}
+            />
           )}
         />
       )}
@@ -394,7 +409,7 @@ const SECTIONS: readonly Section[] = [
     group: '任务',
     title: '智能体',
     description: '新建和执行任务、开始会话时 agent 的默认行为。',
-    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划'],
+    keywords: ['agent', '默认', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
     Icon: SparkIcon,
     Body: AgentSettings
   },

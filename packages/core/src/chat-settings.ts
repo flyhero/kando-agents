@@ -1,14 +1,18 @@
 import { z } from 'zod'
-import type { ChatSettings } from '@kando/protocol'
+import { UnattendedMode, type ChatSettings } from '@kando/protocol'
 import { readJsonIfExists, writePrivateJson } from './private-file'
 
-// On, as in Claude Code itself. Each field falls back on its own, so one bad value resets nothing else.
-const DEFAULTS: ChatSettings = { promptSuggestions: true }
-const Saved = z.object({ promptSuggestions: z.boolean().catch(DEFAULTS.promptSuggestions) }).catch(DEFAULTS)
+// Suggestions on, as in Claude Code itself; scheduled runs let edits through but still ask for
+// anything else. Each field falls back on its own, so one bad value resets nothing else.
+const DEFAULTS = { promptSuggestions: true, unattendedMode: 'acceptEdits' } satisfies Required<ChatSettings>
+const Saved = z.object({
+  promptSuggestions: z.boolean().catch(DEFAULTS.promptSuggestions),
+  unattendedMode: UnattendedMode.catch(DEFAULTS.unattendedMode)
+}).catch(DEFAULTS)
 
 // Machine-level, like keeping the computer awake: every window and every chat goes by the same.
 export class ChatSettingsStore {
-  private settings: ChatSettings = DEFAULTS
+  private settings: Required<ChatSettings> = DEFAULTS
 
   constructor(
     private readonly file: string,
@@ -16,7 +20,7 @@ export class ChatSettingsStore {
   ) {}
 
   // A file it cannot read leaves the defaults rather than keeping core from starting.
-  async load(): Promise<ChatSettings> {
+  async load(): Promise<Required<ChatSettings>> {
     let saved: unknown
     try {
       saved = await readJsonIfExists(this.file)
@@ -27,12 +31,15 @@ export class ChatSettingsStore {
     return this.settings
   }
 
-  current(): ChatSettings {
+  current(): Required<ChatSettings> {
     return this.settings
   }
 
-  async update(patch: Partial<ChatSettings>): Promise<ChatSettings> {
-    const next = { ...this.settings, ...patch }
+  async update(patch: Partial<ChatSettings>): Promise<Required<ChatSettings>> {
+    const next: Required<ChatSettings> = {
+      promptSuggestions: patch.promptSuggestions ?? this.settings.promptSuggestions,
+      unattendedMode: patch.unattendedMode ?? this.settings.unattendedMode
+    }
     await writePrivateJson(this.file, { version: 1, ...next })
     this.settings = next
     this.changed(next)

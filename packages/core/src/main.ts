@@ -22,6 +22,7 @@ import { TaskService } from './task-service'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 import { UsageLimitService } from './usage-limit-service'
+import { ScheduleService } from './schedule-service'
 import { UsageService } from './usage-service'
 import { kandoChatMcpServer } from './kando-mcp-server'
 import { SourceConfigStore } from './source-config'
@@ -59,7 +60,7 @@ const turns = new ChatTurnStore(paths.database, {
 const attachments = new AttachmentStore(paths.attachments)
 let server: RpcServer | null = null
 let awake: ComputerAwakeService | null = null
-const refreshAwake = () => awake?.refresh(conversations.workingCount())
+const refreshAwake = () => awake?.refresh(conversations.workingCount(), schedules.openCount())
 
 const notifyChatItems = (conversationId: string, items: ChatItem[]) =>
   [...(server?.connections ?? [])].filter((c) => c.watching.has(conversationId)).forEach((c) => c.notify('conversations.chatItems', { conversationId, items }))
@@ -77,6 +78,7 @@ const conversations = new ConversationService(
       refreshAwake()
     } else if (event.type === 'deleted') {
       server?.broadcast('conversations.deleted', { id: event.id })
+      schedules.conversationDeleted(event.id)
       void browser.closeForConversation(event.id)
     }
     else if (event.type === 'chatItems') {
@@ -122,9 +124,11 @@ const service = new TaskService(
     if (event.type === 'changed') {
       server?.broadcast('tasks.changed', { task: event.task })
       limits.taskChanged(event.task)
+      schedules.taskChanged(event.task)
       refreshAwake()
     } else {
       server?.broadcast('tasks.deleted', { id: event.id })
+      schedules.taskDeleted(event.id)
       sources.tasksChanged()
     }
   },
@@ -155,6 +159,22 @@ const limits = new UsageLimitService(paths.database, {
   taskStatus: (id) => store.get(id)?.status ?? null,
   usage,
   emit: notifyChatItems
+})
+
+const schedules = new ScheduleService(paths.database, {
+  tasks: {
+    get: (id) => store.get(id),
+    scheduleBlocker: (id) => service.scheduleBlocker(id),
+    start: (id, allowBypass, unattended) => service.start(id, allowBypass, unattended),
+    resumeChat: (id, allowBypass) => service.resumeChat(id, allowBypass)
+  },
+  conversations,
+  usage,
+  mode: () => chatSettings.current().unattendedMode,
+  emit: (runs) => {
+    server?.broadcast('schedules.changed', { runs })
+    refreshAwake()
+  }
 })
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
@@ -200,6 +220,7 @@ daemon.onConnect(() => {
       await browser.reconcile(sessions)
       // What came due while core or the daemon was away goes now, not at the next tick.
       await limits.tick()
+      await schedules.tick()
     })
     .catch((error) => console.error('[kando-core] reconcile failed', error))
 })
@@ -218,7 +239,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment, schedules)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
@@ -226,6 +247,8 @@ await awake.start()
 refreshAwake()
 usage.start()
 limits.start()
+schedules.start()
+refreshAwake()
 // Stages that ended before turns were kept, counted once in the background.
 void turns.catchUp().catch((error: unknown) => console.error('[kando-core] counting earlier chat turns failed:', error))
 sources.start()
@@ -241,6 +264,7 @@ async function shutdown(): Promise<void> {
   shuttingDown = true
   usage.stop()
   limits.stop()
+  schedules.stop()
   sources.stop()
   awake?.stop()
   daemon.stop()

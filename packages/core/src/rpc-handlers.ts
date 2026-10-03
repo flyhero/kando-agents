@@ -21,6 +21,7 @@ import type { WorktreeService } from './worktree-service'
 import type { ComputerAwakeService } from './computer-awake-service'
 import type { ChatSettingsStore } from './chat-settings'
 import type { EnvironmentService } from './environment-check'
+import type { ScheduleService } from './schedule-service'
 
 const OK = { ok: true } as const
 
@@ -41,7 +42,8 @@ export function createRpcHandlers(
   runs: AgentRunStore,
   turns: ChatTurnStore,
   chatSettings: ChatSettingsStore,
-  environment: EnvironmentService
+  environment: EnvironmentService,
+  schedules: ScheduleService
 ): RpcHandlers {
   // A page of chat items as clients see them: a usage limit with what core means to do about it.
   const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
@@ -253,6 +255,13 @@ export function createRpcHandlers(
     'usage.refresh': () => usage.refresh(),
     'agents.stats': () => runs.stats(),
     'agents.conversationStats': () => turns.stats(),
+    'schedules.list': () => schedules.list(),
+    'schedules.create': ({ target, notBefore }) => schedules.create(target, notBefore),
+    'schedules.update': ({ id, notBefore, text }) => schedules.update(id, { notBefore, text }),
+    'schedules.reorder': ({ ids }) => { schedules.reorder(ids); return OK },
+    'schedules.cancel': ({ id }) => schedules.cancel(id),
+    'schedules.runNow': ({ id }) => schedules.runNow(id),
+    'schedules.clear': () => { schedules.clear(); return OK },
     'sources.list': () => sources.list(),
     'sources.saveSettings': (params) => sources.saveSettings(params),
     'sources.login': ({ provider, instance, flowId }, connection) => ({

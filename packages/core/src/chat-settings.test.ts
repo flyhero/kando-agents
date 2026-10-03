@@ -18,21 +18,25 @@ describe('ChatSettingsStore', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  it('suggests the next message unless the user turned it off, and keeps that', async () => {
+  it('suggests the next message and lets scheduled runs edit, unless the user changed that, and keeps it', async () => {
     const store = new ChatSettingsStore(file, (settings) => changes.push(settings))
-    expect(await store.load()).toEqual({ promptSuggestions: true })
+    expect(await store.load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
 
     await store.update({ promptSuggestions: false })
-    expect(changes).toEqual([{ promptSuggestions: false }])
+    await store.update({ unattendedMode: 'bypass' })
+    expect(changes).toEqual([
+      { promptSuggestions: false, unattendedMode: 'acceptEdits' },
+      { promptSuggestions: false, unattendedMode: 'bypass' }
+    ])
 
     const reopened = new ChatSettingsStore(file, () => {})
-    expect(await reopened.load()).toEqual({ promptSuggestions: false })
+    expect(await reopened.load()).toEqual({ promptSuggestions: false, unattendedMode: 'bypass' })
   })
 
   it('falls back to the default for a file it cannot read', async () => {
-    writeFileSync(file, '{"promptSuggestions": "nope"}')
-    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true })
+    writeFileSync(file, '{"promptSuggestions": "nope", "unattendedMode": "yolo"}')
+    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
     writeFileSync(file, 'not json')
-    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true })
+    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
   })
 })

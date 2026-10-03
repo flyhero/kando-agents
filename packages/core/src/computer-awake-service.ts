@@ -5,13 +5,15 @@ import type { AwakeConfigStore } from './awake-config'
 const RENEW_MS = 30_000
 const LEASE_MS = 90_000
 
-export function shouldKeepComputerAwake(mode: ComputerAwakeMode, workingAgents: number): boolean {
-  return mode === 'on' || (mode === 'auto' && workingAgents > 0)
+// A scheduled run still waiting counts as work: a computer asleep at its time cannot start it.
+export function shouldKeepComputerAwake(mode: ComputerAwakeMode, workingAgents: number, scheduledRuns = 0): boolean {
+  return mode === 'on' || (mode === 'auto' && workingAgents + scheduledRuns > 0)
 }
 
 export class ComputerAwakeService {
   private mode: ComputerAwakeMode = 'off'
   private workingAgents = 0
+  private scheduledRuns = 0
   private backend = { active: false, supported: true, problem: null as string | null }
   private timer: NodeJS.Timeout | null = null
 
@@ -29,7 +31,7 @@ export class ComputerAwakeService {
   }
 
   status(): ComputerAwakeStatus {
-    return { mode: this.mode, workingAgents: this.workingAgents, ...this.backend }
+    return { mode: this.mode, workingAgents: this.workingAgents, scheduledRuns: this.scheduledRuns, ...this.backend }
   }
 
   async setMode(mode: ComputerAwakeMode): Promise<ComputerAwakeStatus> {
@@ -39,9 +41,10 @@ export class ComputerAwakeService {
     return this.status()
   }
 
-  refresh(workingAgents: number): void {
-    if (workingAgents === this.workingAgents) return
+  refresh(workingAgents: number, scheduledRuns = this.scheduledRuns): void {
+    if (workingAgents === this.workingAgents && scheduledRuns === this.scheduledRuns) return
     this.workingAgents = workingAgents
+    this.scheduledRuns = scheduledRuns
     void this.sync()
   }
 
@@ -56,7 +59,7 @@ export class ComputerAwakeService {
   }
 
   private wanted(): boolean {
-    return shouldKeepComputerAwake(this.mode, this.workingAgents)
+    return shouldKeepComputerAwake(this.mode, this.workingAgents, this.scheduledRuns)
   }
 
   private async sync(): Promise<void> {

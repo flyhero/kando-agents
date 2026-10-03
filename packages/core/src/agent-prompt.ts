@@ -192,23 +192,33 @@ export function agentPrompt(
   return sections.filter((section) => section !== null).join('\n\n')
 }
 
+// What a scheduled message says when the user left it empty: go on with the plan the chat has.
+export const SCHEDULED_GO_TEXT = '按上面定下的计划开始实现。'
+
+// What a scheduled run is told first: it starts with nobody there to answer.
+export const UNATTENDED_NOTE = '这是我预约的无人值守运行，现在没有人能回答你：不要停下来等我确认，直接做下去；做完后运行相关的检查和测试，总结做了什么、还有什么没做。遇到必须由我决定的问题，写清楚问题和你的建议后停下。'
+
 // A task's chat opens with what running it would be told, and asks for a plan first: the chat shows
 // it for the user to approve before any code changes. A plan kept while the task waited on its
-// dependencies comes along, to be checked against the code as it now is.
+// dependencies comes along, to be checked against the code as it now is. A scheduled run goes
+// ahead without asking.
 export function chatStartPrompt(
   task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
   workspace: Workspace,
   dependencies: readonly Pick<Task, 'id' | 'title' | 'repos'>[],
   predecessor: Predecessor | null = null,
   images: PromptImages = NO_IMAGES,
-  plan: Pick<TaskPlan, 'markdown'> | null = null
+  plan: Pick<TaskPlan, 'markdown'> | null = null,
+  unattended = false
 ): string {
   const sections = [
     agentPrompt(task, workspace, dependencies, predecessor, images),
     plan
       ? `依赖的任务完成之前，我们已经定下了下面的计划。先对照现在的代码核对一遍，需要调整的地方说明原因：\n<saved-plan>\n${plan.markdown.trim()}\n</saved-plan>`
       : null,
-    '请先阅读相关代码，有不清楚的地方先问我，然后给出实现计划；我确认之后再开始修改代码。'
+    unattended
+      ? `先阅读相关代码，${plan ? '按上面的计划' : '按任务要求'}实现。${UNATTENDED_NOTE}`
+      : '请先阅读相关代码，有不清楚的地方先问我，然后给出实现计划；我确认之后再开始修改代码。'
   ]
   return sections.filter((section) => section !== null).join('\n\n')
 }

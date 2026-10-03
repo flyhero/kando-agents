@@ -133,7 +133,14 @@ const REASON_TEXT: Record<string, string> = {
   abandoned: '已废弃的任务不能继续',
   'task-conversation': '这条会话属于一个任务，请从任务那里继续',
   'managed-workspace': '没选项目的会话在 Kando 的临时目录里运行，不能再添加项目',
-  'chat-unavailable': '这个 core 不支持聊天界面'
+  'chat-unavailable': '这个 core 不支持聊天界面',
+  'dependencies-unfinished': '依赖的任务还没完成：预约只能执行现在就能开始的任务',
+  'already-scheduled': '这个任务已经预约了',
+  'schedule-settled': '这条预约已经不在等待了',
+  'schedule-busy': '这条预约正在开始',
+  'schedule-not-found': '找不到这条预约',
+  'schedule-no-text': '只有会话的预约带消息',
+  'task-started': '任务已经开始了'
 }
 
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.

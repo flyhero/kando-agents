@@ -4986,6 +4986,12 @@ body.side-panel-resizing * {
 .chat-suggestion-hint { margin-left: auto; color: var(--text-3); font-size: 12px; white-space: nowrap; }
 .chat-suggestion-hint kbd { padding: 0 4px; border: 1px solid var(--border-2); border-radius: var(--radius-xs); font-family: var(--mono); font-size: 11px; }
 .chat-suggestion-hint ~ .chat-input-button { margin-left: 8px; }
+/* Scheduling sits with sending at the far end, a step apart from it. */
+.chat-options > .chat-schedule-anchor { margin-left: auto; margin-right: 6px; }
+.chat-suggestion-hint ~ .chat-schedule-anchor,
+.chat-schedule-anchor ~ .chat-input-button { margin-left: 8px; }
+.chat-suggestion-hint ~ .chat-schedule-anchor ~ .chat-input-button { margin-left: 0; }
+.chat-schedule-button svg { width: 15px; height: 15px; }
 .chat-input-button svg { width: 16px; height: 16px; }
 .chat-input-button:disabled { background: transparent; color: var(--text-muted); cursor: default; }
 .chat-input-button[data-stop] { background: var(--text); color: var(--surface); }
@@ -5595,6 +5601,14 @@ body.side-panel-resizing * {
 .statusbar .statusbar-browser + .statusbar-terminal { margin-left: 0; }
 .statusbar-worktrees[aria-pressed='true'] { background: var(--surface-muted); color: var(--text); }
 .statusbar-worktrees-cleanable { color: var(--warning); }
+/* What is scheduled to start later: first of the right-hand group when it is there. */
+.statusbar .statusbar-schedules { display: inline-flex; align-items: center; gap: 4px; width: auto; height: 24px; margin-left: auto; padding: 0 6px; }
+.statusbar .statusbar-schedules svg { width: 14px; height: 14px; }
+.statusbar .statusbar-schedules + .statusbar-worktrees,
+.statusbar .statusbar-schedules + .statusbar-browser,
+.statusbar .statusbar-schedules + .statusbar-terminal { margin-left: 0; }
+.statusbar-schedules[aria-pressed='true'] { background: var(--surface-muted); color: var(--text); }
+.statusbar-schedules-failed { color: var(--warning); }
 .worktrees-page { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 24px 32px; container: worktrees / inline-size; }
 .worktrees-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
 .worktrees-heading { flex: 1; min-width: 0; }
@@ -5628,6 +5642,29 @@ body.side-panel-resizing * {
 .worktree-size { font-size: 12px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .worktree-actions { display: flex; align-items: center; gap: 2px; }
 .worktree-actions .worktree-open { padding: 2px 8px; font-size: 12px; }
+
+/* The page of scheduled runs, on the worktrees page's layout: order, what each does, where it stands. */
+.schedule-row { display: grid; grid-template-columns: 20px minmax(0, 2fr) minmax(0, 1.2fr) 152px; gap: 12px; align-items: center; padding: 8px 12px; font-size: 13px; }
+.schedule-row + .schedule-row { border-top: 1px solid var(--border); }
+.schedule-index { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.schedule-main { display: flex; flex-direction: column; min-width: 0; }
+.schedule-title { min-width: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.schedule-title:hover { text-decoration: underline; }
+.schedule-meta { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.schedule-state { min-width: 0; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schedule-state[data-warn] { color: var(--warning); }
+.schedule-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.schedule-warning { color: var(--warning); }
+@container worktrees (max-width: 680px) {
+  .schedule-row { grid-template-columns: 20px minmax(0, 1fr) auto; }
+  .schedule-row[data-status] .schedule-actions { display: none; }
+  .schedule-state { grid-column: 2 / span 2; grid-row: 2; }
+}
+.schedule-picker .segmented { align-self: flex-start; }
+/* Inside a sentence: no gap before it. */
+.link-button.settings-link { margin-left: 0; }
+/* A task already scheduled: its clock stays lit. */
+.tool-button.task-scheduled { background: var(--surface-muted); color: var(--accent); }
 
 /* Switching a conversation's branch, or starting one, inside its branch popover. */
 .branch-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }

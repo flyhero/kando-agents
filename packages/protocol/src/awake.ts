@@ -8,6 +8,8 @@ export const ComputerAwakeStatus = z.object({
   mode: ComputerAwakeMode,
   active: z.boolean(),
   workingAgents: z.number().int().nonnegative(),
+  // Scheduled runs still waiting, which keep it awake as working agents do. Older cores leave it out.
+  scheduledRuns: z.number().int().nonnegative().optional(),
   supported: z.boolean(),
   problem: z.string().nullable()
 })

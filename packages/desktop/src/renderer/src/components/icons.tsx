@@ -459,3 +459,12 @@ export function BellIcon() {
     </svg>
   )
 }
+
+export function ClockIcon() {
+  return (
+    <svg {...stroked}>
+      <circle cx="10" cy="10" r="6.5" />
+      <path d="M10 6.5V10l2.5 1.5" />
+    </svg>
+  )
+}

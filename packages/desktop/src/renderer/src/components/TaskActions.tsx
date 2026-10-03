@@ -1,6 +1,7 @@
 import { useCallback, useState, type ReactElement } from 'react'
 import {
   checkMove,
+  checkScheduleTask,
   checkStart,
   checkSubmit,
   isFinished,
@@ -10,15 +11,17 @@ import {
   type Task,
   type TaskStatus
 } from '@kando/protocol'
-import { perform, selectTask, setInspectorOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useWorktreesSupported, type TaskView } from '../core-store'
+import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWorktreesSupported, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
-import { ChatIcon, CheckIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
+import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
 import { Popover } from './Popover'
 import { cleanWithConfirm } from './WorktreeManager'
+import { SchedulePicker } from './SchedulePicker'
+import { createSchedule, openRunForTask, scheduleState } from '../schedules'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
   if (blocker === 'blocked' && waitingOn.length > 0) {
@@ -235,6 +238,54 @@ function StartButton({ task, dependencies }: { task: Task; dependencies: readonl
   )
 }
 
+// Carrying the task out later, unattended: once its time comes and its agent has quota again.
+// Once scheduled, the button says when and leads to the page of scheduled runs.
+function ScheduleButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
+  const supported = useSchedulesSupported()
+  const scheduled = useCore((s) => openRunForTask(s.schedules, task.id))
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  if (!supported) return null
+  if (scheduled) {
+    const state = scheduleState(scheduled, Date.now())
+    return (
+      <button type="button" className="tool-button task-scheduled" aria-pressed="true" aria-label={`已预约：${state}`} data-tooltip={`已预约：${state}`} onClick={() => setSchedulesOpen(true)}>
+        <ClockIcon />
+      </button>
+    )
+  }
+  const blocker = checkScheduleTask(task, dependencies)
+  const reason = blocker && blockerText(blocker === 'dependencies-unfinished' ? 'blocked' : blocker, unfinished(dependencies))
+  return (
+    <span className="menu-anchor">
+      <button
+        type="button"
+        className="tool-button"
+        aria-label="预约执行"
+        aria-disabled={reason !== null}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-tooltip={reason ? `还不能预约：${reason}` : '预约执行：额度恢复后或到点自动开始'}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ClockIcon />
+      </button>
+      {open && (reason ? (
+        <Popover label="还不能预约" onClose={close}>
+          <p className="menu-note">还不能预约：{reason}</p>
+        </Popover>
+      ) : (
+        <SchedulePicker
+          title="预约执行"
+          note={task.plan ? '到点后按保存的计划直接实现，不先规划、不等确认。' : '到点后按任务详情直接实现，不先规划、不等确认。'}
+          onSchedule={async (notBefore) => (await createSchedule({ kind: 'task', taskId: task.id }, notBefore)) !== null}
+          onClose={close}
+        />
+      ))}
+    </span>
+  )
+}
+
 function SubmitButton({ task }: { task: Task }) {
   const blocker = checkSubmit(task, useChatTurn(task))
   return (
@@ -362,6 +413,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
         onChange={(agent) => void updateTask(task.id, { agent })}
       />
       {task.status === 'pending' && <StartButton task={task} dependencies={dependencies} />}
+      {task.status === 'pending' && <ScheduleButton task={task} dependencies={dependencies} />}
       {task.status === 'running' && <SubmitButton task={task} />}
       {manualMoves(task.status).map((status) => {
         const action = moveAction(task.status, status)

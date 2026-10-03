@@ -72,7 +72,11 @@ export function confirmQuota(agent: AgentKind, model?: string | null): boolean {
     other && otherVerdict && (otherVerdict.state === 'ok' || otherVerdict.state === 'tight')
       ? `\n${AGENT_LABEL[other]} 还有额度${otherVerdict.window ? `（${quotaText(otherVerdict, display, now)}）` : ''}，可以先换成它。`
       : ''
+  // Waiting for the reset is a choice too, where core can start things later.
+  const later = useCore.getState().rpc?.features.includes('schedules')
+    ? '\n也可以取消，点旁边的时钟按钮预约，额度恢复后自动开始。'
+    : ''
   return window.confirm(
-    `${AGENT_LABEL[agent]} 已用完${spaced(windowLabel(verdict.window))}额度${reset ? `，${reset}` : ''}。${suggestion}\n\n仍要用 ${AGENT_LABEL[agent]} 启动吗？`
+    `${AGENT_LABEL[agent]} 已用完${spaced(windowLabel(verdict.window))}额度${reset ? `，${reset}` : ''}。${suggestion}${later}\n\n仍要用 ${AGENT_LABEL[agent]} 启动吗？`
   )
 }

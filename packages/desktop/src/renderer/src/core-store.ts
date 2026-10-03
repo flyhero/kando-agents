@@ -18,7 +18,8 @@ import {
   type Conversation,
   type ComputerAwakeStatus,
   type ChatSettings,
-  type Environment
+  type Environment,
+  type ScheduledRun
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
 import { activeInboxes, inboxKey } from './source-inboxes'
@@ -88,6 +89,10 @@ type CoreState = {
   inboxTab: string | null
   // So does the page of worktrees, over whatever else was shown there.
   worktreesOpen: boolean
+  // And the page of scheduled runs.
+  schedulesOpen: boolean
+  // What is scheduled to start later, open ones first in the order they go; empty from a core without.
+  schedules: ScheduledRun[]
   error: string | null
   // null until core answers usage.list; an older core without it leaves it null.
   usage: Partial<Record<AgentKind, AgentUsage>> | null
@@ -136,6 +141,8 @@ export const useCore = create<CoreState>()(() => ({
   inboxOpen: false,
   inboxTab: null,
   worktreesOpen: false,
+  schedulesOpen: false,
+  schedules: [],
   error: null,
   usage: null,
   sources: null,
@@ -163,6 +170,7 @@ export function selectTask(id: string | null): void {
       section: 'tasks',
       inboxOpen: false,
       worktreesOpen: false,
+      schedulesOpen: false,
       view: chat ? 'chat' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
@@ -305,7 +313,7 @@ export function setBrowserMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, conversationDraft: false, unseen }
   })
 }
 
@@ -317,7 +325,7 @@ function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: 
 }
 
 export function openConversationDraft(): void {
-  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, conversationDraft: true })
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, conversationDraft: true })
 }
 
 export function closeConversationDraft(): void {
@@ -332,7 +340,8 @@ export function openInbox(): void {
     inboxTab: activeInboxes(s.sources, s.inboxes).find((entry) => entry.inbox.problem)?.key ?? s.inboxTab,
     selectedId: null,
     settingsOpen: false,
-    worktreesOpen: false
+    worktreesOpen: false,
+    schedulesOpen: false
   }))
 }
 
@@ -353,7 +362,11 @@ export function setSettingsOpen(open: boolean, section: string | null = null): v
 }
 
 export function setWorktreesOpen(open: boolean): void {
-  useCore.setState({ worktreesOpen: open, settingsOpen: false })
+  useCore.setState({ worktreesOpen: open, schedulesOpen: false, settingsOpen: false })
+}
+
+export function setSchedulesOpen(open: boolean): void {
+  useCore.setState({ schedulesOpen: open, worktreesOpen: false, settingsOpen: false })
 }
 
 function byAgent(usage: AgentUsage[]): Partial<Record<AgentKind, AgentUsage>> {
@@ -472,6 +485,11 @@ export function useTerminalCommandsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('terminal-commands') ?? false)
 }
 
+// Whether core starts tasks and conversations later on their own (schedules.*).
+export function useSchedulesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('schedules') ?? false)
+}
+
 export function useTaskStartSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-start') ?? false)
 }
@@ -572,6 +590,7 @@ export function startCoreConnection(): void {
           })
         )
         rpc.on('terminalCommands.changed', ({ commands }) => useCore.setState({ terminalCommands: commands }))
+        rpc.on('schedules.changed', ({ runs }) => useCore.setState({ schedules: runs }))
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
         )
@@ -591,6 +610,7 @@ export function startCoreConnection(): void {
         if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
         if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
+        if (rpc.features.includes('schedules')) void rpc.call('schedules.list', {}).then((schedules) => useCore.setState({ schedules })).catch(() => {})
         if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
           rpc,

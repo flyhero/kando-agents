@@ -193,7 +193,16 @@ export const MIGRATIONS = [
    ALTER TABLE agent_runs DROP COLUMN view;
    ALTER TABLE agent_runs DROP COLUMN exit_code;`,
   // When the user pinned a conversation to the top of the list.
-  `ALTER TABLE conversations ADD COLUMN pinned_at INTEGER;`
+  `ALTER TABLE conversations ADD COLUMN pinned_at INTEGER;`,
+  // Runs the user scheduled for later (ScheduleService). No foreign keys: a run outlives its target,
+  // to say what became of it. check_at: when to look at the agent's quota again.
+  `CREATE TABLE scheduled_runs (
+     id TEXT PRIMARY KEY, target TEXT NOT NULL, title TEXT NOT NULL, agent TEXT NOT NULL,
+     not_before INTEGER, check_at INTEGER, resets_at INTEGER, position REAL NOT NULL,
+     status TEXT NOT NULL, conversation_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, error TEXT,
+     created_at INTEGER NOT NULL, settled_at INTEGER, updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX scheduled_runs_status ON scheduled_runs(status, position);`
 ]
 
 

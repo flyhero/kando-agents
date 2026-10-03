@@ -7,6 +7,7 @@ import {
   checkMove,
   checkRedo,
   checkSavePlan,
+  checkScheduleTask,
   checkStart,
   checkSubmit,
   imageLabel,
@@ -26,7 +27,9 @@ import {
   type TaskImage,
   type TaskRepo,
   type TaskSource,
-  type TaskStatus
+  type ScheduleTaskBlocker,
+  type TaskStatus,
+  type UnattendedMode
 } from '@kando/protocol'
 import { chatPlanPrompt, chatStartPrompt, type PromptImages } from './agent-prompt'
 import type { AgentRunStore } from './agent-run-store'
@@ -318,11 +321,12 @@ export class TaskService {
   // A task started in the chat view plans first. Once everything it builds on is done, it does so in
   // its worktree and carries the plan out there; before that, only read-only in its projects,
   // keeping the plan for when it can run. Resolves once the first message is on its way.
-  async start(id: string, allowBypass?: boolean): Promise<Task> {
+  // unattended: a scheduled run, which carries the task out in that mode without planning first.
+  async start(id: string, allowBypass?: boolean, unattended?: UnattendedMode): Promise<Task> {
     const chats = this.requireChats()
     const task = this.get(id)
     const dependencies = this.dependenciesOf(task)
-    const blocker = checkStart(task, dependencies)
+    const blocker = unattended ? checkScheduleTask(task, dependencies) : checkStart(task, dependencies)
     if (blocker) {
       throw new Rejection(blocker)
     }
@@ -346,15 +350,22 @@ export class TaskService {
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.readable, allowBypass
+        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.readable,
+        allowBypass: unattended === 'bypass' || allowBypass, permissionMode: unattended
       })
       // The planning agent stopped for the new stage, so nothing reads there any more.
       await removePlanningCheckouts(task.id, this.worktreesRoot)
       this.save(task.id, { status: 'running', awaitingInput: false })
-      const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan)
+      const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan, unattended !== undefined)
       await chats.send(conversation.id, prompt, imageIds)
       return this.changed(this.get(task.id))
     })
+  }
+
+  // Whether the task could be carried out unattended as it stands (see checkScheduleTask).
+  scheduleBlocker(id: string): ScheduleTaskBlocker | null {
+    const task = this.get(id)
+    return checkScheduleTask(task, this.dependenciesOf(task))
   }
 
   // Readies a chat task's agent before a message goes to it: planning goes on read-only, work goes on

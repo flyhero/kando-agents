@@ -12,11 +12,12 @@ afterEach(() => {
 })
 
 describe('computer awake policy', () => {
-  it('keeps awake always, only while working, or never', () => {
+  it('keeps awake always, only while working or a scheduled run waits, or never', () => {
     expect(shouldKeepComputerAwake('on', 0)).toBe(true)
     expect(shouldKeepComputerAwake('auto', 0)).toBe(false)
     expect(shouldKeepComputerAwake('auto', 2)).toBe(true)
-    expect(shouldKeepComputerAwake('off', 2)).toBe(false)
+    expect(shouldKeepComputerAwake('auto', 0, 1)).toBe(true)
+    expect(shouldKeepComputerAwake('off', 2, 1)).toBe(false)
   })
 
   it('defaults to off and persists the machine setting', async () => {

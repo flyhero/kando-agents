@@ -6,9 +6,16 @@ import { AttachmentId } from './attachments'
 export const ChatTurnActivity = z.enum(['idle', 'running', 'awaiting'])
 export type ChatTurnActivity = z.infer<typeof ChatTurnActivity>
 
+// The permission mode a scheduled run starts in, with nobody there to answer: edits go through
+// (other calls may still ask), or nothing is asked and nothing sandboxed.
+export const UNATTENDED_MODES = ['acceptEdits', 'bypass'] as const
+export const UnattendedMode = z.enum(UNATTENDED_MODES)
+export type UnattendedMode = z.infer<typeof UnattendedMode>
+
 // How chats run on this machine, whichever window asks; core keeps them.
 // promptSuggestions: after each turn the agent predicts the user's next message (Claude Code only).
-export const ChatSettings = z.object({ promptSuggestions: z.boolean() })
+// unattendedMode: see UnattendedMode; older cores leave it out.
+export const ChatSettings = z.object({ promptSuggestions: z.boolean(), unattendedMode: UnattendedMode.optional() })
 export type ChatSettings = z.infer<typeof ChatSettings>
 
 // interrupted: the user stopped the turn while the call ran.

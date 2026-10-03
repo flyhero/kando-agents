@@ -12,6 +12,7 @@ import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 import { Environment } from './environment'
+import { ScheduledRun, ScheduledTarget } from './schedule'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 9
@@ -44,7 +45,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // conversation-stats: core keeps each chat turn and reports what each agent's cost (agents.conversationStats).
 // prompt-suggestions: core keeps the chat settings (system.chatSettings) and reports a chat's suggested next message.
 // environment: core checks for git and the agent CLIs on its path (system.environment).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -322,6 +323,20 @@ export const rpcMethods = {
   'usage.refresh': { params: z.object({}), result: z.array(AgentUsage) },
   'agents.stats': { params: z.object({}), result: z.array(AgentStats) },
   'agents.conversationStats': { params: z.object({}), result: z.array(ConversationStats) },
+  // Runs that start on their own once their time comes and their agent has quota again, one per
+  // agent at a time, in list order: the open ones, then the recently settled. reorder takes the
+  // open ones' ids in their new order; clear drops the settled ones from the list.
+  'schedules.list': { params: z.object({}), result: z.array(ScheduledRun) },
+  'schedules.create': { params: z.object({ target: ScheduledTarget, notBefore: z.number().nullable() }), result: ScheduledRun },
+  'schedules.update': {
+    params: z.object({ id: z.string().uuid(), notBefore: z.number().nullable().optional(), text: z.string().trim().max(100000).optional() }),
+    result: ScheduledRun
+  },
+  'schedules.reorder': { params: z.object({ ids: z.array(z.string().uuid()).max(500) }), result: Ok },
+  'schedules.cancel': { params: z.object({ id: z.string().uuid() }), result: ScheduledRun },
+  // Starts it now, without waiting for its time or its agent's quota.
+  'schedules.runNow': { params: z.object({ id: z.string().uuid() }), result: ScheduledRun },
+  'schedules.clear': { params: z.object({}), result: Ok },
   'sources.list': { params: z.object({}), result: z.array(SourceDescriptor) },
   // Non-secret settings only; changing one marked bindsCredential signs the instance out.
   'sources.saveSettings': {
@@ -351,6 +366,8 @@ export const rpcMethods = {
 export const rpcNotifications = {
   'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
   'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
+  // The whole list (schedules.list) whenever a run in it changes.
+  'schedules.changed': z.object({ runs: z.array(ScheduledRun) }),
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.

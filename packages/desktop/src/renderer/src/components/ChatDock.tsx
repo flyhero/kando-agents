@@ -1,4 +1,6 @@
 import { useContext, useState } from 'react'
+import { setSchedulesOpen, useCore } from '../core-store'
+import { cancelSchedule, openRunsForConversation, scheduleState } from '../schedules'
 import { isPlanApproval, type ChatItem, type Conversation } from '@kando/protocol'
 import { itemKey } from '../chat-state'
 import { toolLabel } from '../chat-tools'
@@ -10,7 +12,7 @@ import { ChatProjects } from './ChatProjects'
 import { ChatApprovalCard, ChatQuestionCard, type RequestItem } from './ChatRequestCards'
 import { ChatPaths } from './ChatToolCard'
 import { ChatTodosChip } from './ChatTodos'
-import { ArrowUpIcon } from './icons'
+import { ArrowUpIcon, ClockIcon, CloseIcon } from './icons'
 import { changeLineTotals, useChangedFiles } from './Inspector'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -86,6 +88,29 @@ function PendingRequests({ conversation, pending, tools }: { conversation: Conve
   )
 }
 
+// What is scheduled to go on in this chat later, above the composer, each to manage or cancel.
+function ChatSchedules({ conversationId }: { conversationId: string }) {
+  const runs = openRunsForConversation(useCore((s) => s.schedules), conversationId)
+  if (runs.length === 0) return null
+  const now = Date.now()
+  return (
+    <>
+      {runs.map((run) => (
+        <div key={run.id} className="chat-queue chat-queue-one chat-queued chat-scheduled">
+          <span className="chat-queue-label">预约 · {scheduleState(run, now)}：</span>
+          <span className="chat-queued-text" title={run.target.kind === 'conversation' ? run.target.text : undefined}>
+            {run.target.kind === 'conversation' && run.target.text ? run.target.text : '批准计划或按计划开始实现'}
+          </span>
+          <span className="chat-queued-actions">
+            <button type="button" className="chat-queued-action" aria-label="管理预约" data-tooltip="管理预约" data-tooltip-side="top-end" onClick={() => setSchedulesOpen(true)}><ClockIcon /></button>
+            <button type="button" className="chat-queued-action" aria-label="取消预约" data-tooltip="取消预约" data-tooltip-side="top-end" onClick={() => void cancelSchedule(run.id)}><CloseIcon /></button>
+          </span>
+        </div>
+      ))}
+    </>
+  )
+}
+
 // Everything that waits on the user sits here, above the composer, so it cannot scroll out of view.
 export function ChatDock({ conversation, state, pending, tools, finishedCalls, onPrevious, sent, onJump }: {
   conversation: Conversation
@@ -113,6 +138,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
           <ArrowUpIcon />
         </button>
       </div>
+      <ChatSchedules conversationId={conversation.id} />
       {waiting && <PendingRequests conversation={conversation} pending={pending} tools={tools} />}
       {/* The composer stays mounted while a request takes its place, so a draft is not lost. */}
       <div className="chat-dock-composer" hidden={waiting}>

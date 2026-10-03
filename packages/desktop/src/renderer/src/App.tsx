@@ -15,6 +15,7 @@ import { StatusBar } from './components/StatusBar'
 import { hasPrimaryModifier } from './shortcut-keys'
 import { UtilityPanelDock } from './components/UtilityPanelDock'
 import { WorktreeManager } from './components/WorktreeManager'
+import { SchedulesView } from './components/SchedulesView'
 
 export function App() {
   const selectedId = useCore((s) => s.selectedId)
@@ -26,6 +27,7 @@ export function App() {
   const newTaskOpen = useCore((s) => s.newTaskOpen)
   const settingsOpen = useCore((s) => s.settingsOpen)
   const worktreesOpen = useCore((s) => s.worktreesOpen)
+  const schedulesOpen = useCore((s) => s.schedulesOpen)
   const inboxOpen = useCore((s) => s.inboxOpen)
   const loginOpen = useCore((s) => s.login !== null)
   const terminalPanelOpen = useCore((s) => s.terminalPanelOpen)
@@ -104,6 +106,8 @@ export function App() {
             </div>
             {worktreesOpen ? (
               <WorktreeManager />
+            ) : schedulesOpen ? (
+              <SchedulesView />
             ) : section === 'conversations' ? (
               selectedConversationId ? <ConversationView key={selectedConversationId} id={selectedConversationId} /> :
                 conversationDraft ? <ConversationDraft /> :
