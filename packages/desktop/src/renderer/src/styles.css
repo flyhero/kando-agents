@@ -4973,6 +4973,13 @@ body.side-panel-resizing * {
 .chat-ask-free:focus { box-shadow: 0 0 0 2px var(--focus); }
 .chat-request-actions .button.primary,
 .chat-approve-footer .button.primary { min-width: 88px; }
+/* Carrying a plan out: the button runs it in the mode it names, the arrow picks another. */
+.plan-run { display: inline-flex; align-items: stretch; gap: 1px; }
+.chat-approve-footer .button.primary.plan-run-main { min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.chat-approve-footer .button.primary.plan-run-arrow { min-width: 0; width: 32px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.plan-run-arrow svg { width: 14px; height: 14px; }
+.plan-run-mode { align-items: center; }
+.plan-run-mode-text { display: grid; flex: 1; min-width: 0; gap: 2px; text-align: left; }
 
 .chat-input-card {
   position: relative;

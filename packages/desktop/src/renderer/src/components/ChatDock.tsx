@@ -55,7 +55,7 @@ function RequestTabLabel({ item }: { item: RequestItem }) {
 
 // The requests waiting on the user, in the composer's place: one at a time, behind a tab each when
 // there are several, so the newest cannot push the rest out of reach.
-function PendingRequests({ conversation, pending, tools }: { conversation: Conversation; pending: readonly RequestItem[]; tools: ReadonlyMap<string, ToolItem> }) {
+function PendingRequests({ conversation, pending, tools, modes }: { conversation: Conversation; pending: readonly RequestItem[]; tools: ReadonlyMap<string, ToolItem>; modes: readonly string[] }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const shown = pending.find((item) => itemKey(item) === activeKey) ?? pending[0]
   if (!shown) return null
@@ -82,7 +82,7 @@ function PendingRequests({ conversation, pending, tools }: { conversation: Conve
       {shown.kind === 'question'
         ? <ChatQuestionCard key={itemKey(shown)} conversationId={conversation.id} item={shown} />
         : isPlanApproval(shown)
-          ? <ChatPlanCard key={itemKey(shown)} conversationId={conversation.id} item={shown} />
+          ? <ChatPlanCard key={itemKey(shown)} conversationId={conversation.id} item={shown} modes={modes} />
           : <ChatApprovalCard key={itemKey(shown)} conversationId={conversation.id} item={shown} tool={shown.toolItemId ? tools.get(shown.toolItemId) : undefined} />}
     </div>
   )
@@ -137,7 +137,7 @@ export function ChatDock({ conversation, state, pending, tools, finishedCalls, o
         </button>
       </div>
       <ChatSchedules conversationId={conversation.id} />
-      {waiting && <PendingRequests conversation={conversation} pending={pending} tools={tools} />}
+      {waiting && <PendingRequests conversation={conversation} pending={pending} tools={tools} modes={state?.permissionModes ?? []} />}
       {/* The composer stays mounted while a request takes its place, so a draft is not lost. */}
       <div className="chat-dock-composer" hidden={waiting}>
         <ChatComposer conversation={conversation} state={state} />

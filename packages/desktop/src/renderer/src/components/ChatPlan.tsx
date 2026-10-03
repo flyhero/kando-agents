@@ -7,7 +7,10 @@ import { useChatSurface } from './chat-surface'
 import { ChatMarkdown } from './ChatMarkdown'
 import { useResponder } from './ChatRequestCards'
 import { SchedulePicker } from './SchedulePicker'
-import { useCore, useSchedulesSupported } from '../core-store'
+import { useCore, usePlanModesSupported, useSchedulesSupported } from '../core-store'
+import { setPreference, usePreferences, type Preferences } from '../preferences'
+import { ContextMenu, type MenuPoint } from './ContextMenu'
+import { CheckIcon, ChevronDownIcon } from './icons'
 import { createSchedule } from '../schedules'
 
 // Approving later, once the quota is back: an empty scheduled message approves the plan waiting.
@@ -39,8 +42,80 @@ const RESOLUTION: Record<NonNullable<PlanItem['resolution']>, string> = {
   cancelled: '已取消'
 }
 
+// The permission modes a plan can be carried out in, in the order the menu offers them.
+type RunMode = Preferences['planRunMode']
+const RUN_MODES: readonly RunMode[] = ['auto', 'acceptEdits', 'ask', 'bypass']
+const RUN_MODE: Record<RunMode, { label: string; hint: string }> = {
+  auto: { label: '自动模式', hint: '安全的操作直接执行，有风险的才问你' },
+  acceptEdits: { label: '自动接受编辑', hint: '改文件不问，跑命令前问' },
+  ask: { label: '逐项确认', hint: '改文件、跑命令前都问' },
+  bypass: { label: '全部放行', hint: '什么都不问，只在你信任这次任务时用' }
+}
+
+function isRunMode(mode: string): mode is RunMode {
+  return RUN_MODES.some((each) => each === mode)
+}
+
 function status(plan: PlanItem): string {
-  return plan.resolution === null ? '等你确认' : RESOLUTION[plan.resolution]
+  if (plan.resolution === null) return '等你确认'
+  if ((plan.resolution === 'allowed' || plan.resolution === 'allowedForSession') && plan.mode && isRunMode(plan.mode)) {
+    return `按计划执行，${RUN_MODE[plan.mode].label}`
+  }
+  return RESOLUTION[plan.resolution]
+}
+
+// The execute button's mode: the one picked last, where the stage offers it; otherwise auto, then
+// accepting edits. The arrow beside it opens the others the stage offers.
+function RunModeButton({ modes, mode, disabled, onRun }: { modes: readonly RunMode[]; mode: RunMode; disabled: boolean; onRun: () => void }) {
+  const arrow = useRef<HTMLButtonElement>(null)
+  const [at, setAt] = useState<MenuPoint | null>(null)
+  const close = useCallback(() => setAt(null), [])
+  return (
+    <span className="plan-run">
+      <button type="button" className="button primary plan-run-main" disabled={disabled} onClick={onRun}>
+        执行 · {RUN_MODE[mode].label}<kbd>↵</kbd>
+      </button>
+      <button
+        ref={arrow}
+        type="button"
+        className="button primary plan-run-arrow"
+        aria-label="选择执行时的权限"
+        aria-haspopup="menu"
+        aria-expanded={at !== null}
+        disabled={disabled}
+        onClick={() => {
+          const box = arrow.current?.getBoundingClientRect()
+          if (at || !box) return close()
+          setAt({ x: box.right, y: box.top })
+        }}
+      >
+        <ChevronDownIcon />
+      </button>
+      {at && (
+        <ContextMenu at={at} align="end" above trigger={arrow.current} label="执行时的权限" onClose={close}>
+          {modes.map((each) => (
+            <button
+              key={each}
+              type="button"
+              role="menuitemradio"
+              aria-checked={each === mode}
+              className="menu-item plan-run-mode"
+              onClick={() => {
+                setPreference('planRunMode', each)
+                close()
+              }}
+            >
+              <span className="plan-run-mode-text">
+                <span className="menu-item-title">{RUN_MODE[each].label}</span>
+                <span className="menu-item-path">{RUN_MODE[each].hint}</span>
+              </span>
+              {each === mode && <span className="menu-check"><CheckIcon /></span>}
+            </button>
+          ))}
+        </ContextMenu>
+      )}
+    </span>
+  )
 }
 
 export function ChatPlanLine({ item }: { item: PlanItem }) {
@@ -55,18 +130,20 @@ export function ChatPlanLine({ item }: { item: PlanItem }) {
 }
 
 // In the composer's place while the plan waits: the plan itself, clipped until opened, then the
-// answers as numbered rows like any approval's. Carry it out with edits asked about or accepted,
-// or send it back with a note; where the chat may only plan, keep it for later instead.
-type PlanChoice = 'allow' | 'allowForSession' | 'save' | 'revise'
+// answers as numbered rows like any approval's. Carry it out, in the permission mode the execute
+// button picks, or send it back with a note; where the chat may only plan, keep it for later
+// instead. An older core carries a plan out only asking about edits or accepting them.
+type PlanChoice = 'run' | 'allow' | 'allowForSession' | 'save' | 'revise'
 const CHOICE_LABEL: Record<Exclude<PlanChoice, 'revise'>, string> = {
+  run: '按计划执行',
   allow: '按计划执行，改文件、跑命令前逐项确认',
   allowForSession: '按计划执行，文件改动自动接受',
   save: '先保存计划，等依赖的任务完成后再执行'
 }
-const SUBMIT_LABEL: Record<PlanChoice, string> = { allow: '执行', allowForSession: '执行', save: '保存计划', revise: '继续规划' }
+const SUBMIT_LABEL: Record<PlanChoice, string> = { run: '执行', allow: '执行', allowForSession: '执行', save: '保存计划', revise: '继续规划' }
 const PREVIEW_LINES = 12
 
-export function ChatPlanCard({ conversationId, item }: { conversationId: string; item: PlanItem }) {
+export function ChatPlanCard({ conversationId, item, modes }: { conversationId: string; item: PlanItem; modes: readonly string[] }) {
   const surface = useChatSurface()
   const { busy, respond } = useResponder(conversationId, item.requestId)
   const [note, setNote] = useState('')
@@ -74,7 +151,11 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
   const [open, setOpen] = useState(false)
   const { savePlan } = surface
   const schedulable = useSchedulesSupported() && !savePlan
-  const choices: PlanChoice[] = savePlan ? ['save', 'revise'] : ['allow', 'allowForSession', 'revise']
+  const runModes = RUN_MODES.filter((mode) => modes.includes(mode))
+  const picked = usePreferences((s) => s.planRunMode)
+  const runMode: RunMode = runModes.includes(picked) ? picked : runModes.includes('auto') ? 'auto' : 'acceptEdits'
+  const modesSupported = usePlanModesSupported() && runModes.length > 0
+  const choices: PlanChoice[] = savePlan ? ['save', 'revise'] : modesSupported ? ['run', 'revise'] : ['allow', 'allowForSession', 'revise']
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
   const noteInput = useRef<HTMLInputElement>(null)
   const long = (item.detail ?? '').split('\n').length > PREVIEW_LINES
@@ -99,6 +180,9 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
     } else if (choice === 'revise') {
       const message = commented ? composeFeedback(quotes, note) : note.trim()
       if (await respond('deny', message ? { message } : {}) && commented) setQuotes(conversationId, [])
+    } else if (choice === 'run') {
+      // The decision too, for what reads only that: asking is allow, anything freer goes ahead.
+      await respond(runMode === 'ask' ? 'allow' : 'allowForSession', { mode: runMode })
     } else {
       await respond(choice)
     }
@@ -178,9 +262,13 @@ export function ChatPlanCard({ conversationId, item }: { conversationId: string;
       </div>
       <div className="chat-approve-footer">
         <span className="chat-approve-hint">数字键选择 · Enter 提交</span>
-        <button type="button" className="button primary" disabled={busy || saving} onClick={() => void submit()}>
-          {SUBMIT_LABEL[choice]}<kbd>↵</kbd>
-        </button>
+        {choice === 'run'
+          ? <RunModeButton modes={runModes} mode={runMode} disabled={busy || saving} onRun={() => void submit()} />
+          : (
+            <button type="button" className="button primary" disabled={busy || saving} onClick={() => void submit()}>
+              {SUBMIT_LABEL[choice]}<kbd>↵</kbd>
+            </button>
+          )}
       </div>
     </div>
   )

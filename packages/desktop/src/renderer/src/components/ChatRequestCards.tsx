@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { isHostApproval, type ChatDecision, type ChatItem, type ChatQuestion } from '@kando/protocol'
+import { isHostApproval, type ChatDecision, type ChatItem, type ChatPermissionMode, type ChatQuestion } from '@kando/protocol'
 import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
 import { commandKeyword, isCommandTool, toolLabel } from '../chat-tools'
@@ -27,7 +27,7 @@ const RESOLUTION_TEXT: Record<NonNullable<ApprovalItem['resolution']>, string> =
 export function useResponder(conversationId: string, requestId: string) {
   const [busy, setBusy] = useState(false)
   // Whether the answer went through.
-  const respond = async (decision: ChatDecision, extra: { message?: string; answers?: Record<string, string[]> } = {}): Promise<boolean> => {
+  const respond = async (decision: ChatDecision, extra: { mode?: ChatPermissionMode; message?: string; answers?: Record<string, string[]> } = {}): Promise<boolean> => {
     if (busy) return false
     setBusy(true)
     const done = await perform((rpc) => rpc.call('conversations.respond', { id: conversationId, requestId, decision, ...extra }))
