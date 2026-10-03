@@ -1,7 +1,8 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { extname, isAbsolute, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, shell, type OpenDialogOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protocol, shell, type OpenDialogOptions } from 'electron'
+import { z } from 'zod'
 import { readCoreEndpoint } from '@kando/protocol/node'
 import { ensureBackend } from './backend'
 
@@ -133,6 +134,35 @@ ipcMain.handle('kando:reveal-file', async (_event, candidates: unknown) => {
     return path
   }
   return null
+})
+
+// What the renderer says and where a click leads; the target is handed back as it came.
+const Notice = z.object({ title: z.string().max(200), body: z.string().max(1000), target: z.unknown() })
+
+// A system notification from the renderer, which decides what is worth one; clicking it brings
+// the window up and tells the renderer where to go. Main only relays: what is said is the
+// renderer's, so an older or newer renderer changes nothing here.
+ipcMain.handle('kando:notify', (event, notice: unknown) => {
+  const parsed = Notice.safeParse(notice)
+  if (!Notification.isSupported() || !parsed.success) return false
+  const { title, body, target } = parsed.data
+  const notification = new Notification({ title, body })
+  notification.on('click', () => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0]
+    if (!win) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.send('kando:notification-click', target)
+  })
+  notification.show()
+  return true
+})
+
+// How many things wait on the user, on the dock icon (macOS) or launcher (Linux). Windows shows
+// no count without an overlay icon, which this does not draw.
+ipcMain.handle('kando:set-badge', (_event, count: unknown) => {
+  if (typeof count === 'number' && Number.isInteger(count) && count >= 0) app.setBadgeCount(count)
 })
 
 // Packaged, a second launch would race the first for daemon and core; hand it to the open window.

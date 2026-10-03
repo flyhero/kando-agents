@@ -5,8 +5,10 @@ import packageJson from '../../../../package.json'
 import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
+import { canNotify } from '../desktop-bridge'
 import {
   ArrowLeftIcon,
+  BellIcon,
   ContrastIcon,
   FolderIcon,
   GaugeIcon,
@@ -117,6 +119,17 @@ function AppearanceSettings() {
         )}
       />
     </>
+  )
+}
+
+function NotificationSettings() {
+  const notifications = usePreferences((s) => s.notifications)
+  return (
+    <SettingsRow
+      label="系统通知"
+      description="窗口不在前台时，agent 等你允许或回答、这一轮做完、异常退出，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话和任务有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
+      control={(labelId) => <Toggle labelId={labelId} checked={notifications} onChange={(next) => setPreference('notifications', next)} />}
+    />
   )
 }
 
@@ -365,6 +378,16 @@ const SECTIONS: readonly Section[] = [
     Body: UsageSettings
   },
   {
+    // In Electron only: a plain browser has no dock icon and nothing to click back to.
+    id: 'notifications',
+    group: '界面',
+    title: '通知',
+    description: 'agent 需要你的时候，怎么告诉你。',
+    keywords: ['通知', '提醒', '角标', 'dock', '前台', '等待', '确认', '做完', '异常退出'],
+    Icon: BellIcon,
+    Body: NotificationSettings
+  },
+  {
     id: 'agents',
     group: '任务',
     title: '智能体',
@@ -448,7 +471,7 @@ export function SettingsPage() {
   const environment = useCore((s) => s.environment !== null)
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
-    const own = SECTIONS.filter((section) => section.id !== 'about')
+    const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify()))
     return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...about]
   }, [sources, browser, environment])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')

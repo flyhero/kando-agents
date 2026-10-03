@@ -19,6 +19,8 @@ const Preferences = z.object({
   // Off, a finished turn's work stays in view rather than behind how long it worked.
   foldTurns: z.boolean().catch(true),
   showUsage: z.boolean().catch(true),
+  // Off, nothing is said when the window is not in front; the dock count stays.
+  notifications: z.boolean().catch(true),
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.
   defaultAgent: z.enum(['recent', 'claude', 'codex', 'none']).catch('recent'),

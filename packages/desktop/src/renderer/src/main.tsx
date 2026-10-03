@@ -9,6 +9,7 @@ import { App } from './App'
 import { startAppearance } from './appearance'
 import { startCoreConnection } from './core-store'
 import { applyTitleBar } from './desktop-bridge'
+import { startNotifications } from './notifications'
 import { startUnsavedEditRetries } from './unsaved-edits'
 import { startWorktreeUpdates } from './worktree-store'
 
@@ -18,6 +19,7 @@ startAppearance()
 applyTitleBar()
 startUnsavedEditRetries()
 startWorktreeUpdates()
+startNotifications()
 
 const root = document.getElementById('root')
 if (!root) {

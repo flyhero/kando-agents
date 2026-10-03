@@ -1,3 +1,6 @@
+import { z } from 'zod'
+import type { Notice } from './attention'
+
 // What the Electron preload exposes; absent when the UI runs in a plain browser.
 declare global {
   interface Window {
@@ -9,6 +12,9 @@ declare global {
       setTheme(theme: string): Promise<unknown>
       // Absent from a main older than the renderer.
       revealFile?(candidates: string[]): Promise<unknown>
+      notify?(notice: unknown): Promise<unknown>
+      setBadge?(count: number): Promise<unknown>
+      onNotificationClick?(listener: (target: unknown) => void): () => void
     }
   }
 }
@@ -46,6 +52,31 @@ export function canRevealFile(): boolean {
 export async function revealFile(candidates: readonly string[]): Promise<string | null> {
   const shown = await window.kando?.revealFile?.([...candidates])
   return typeof shown === 'string' ? shown : null
+}
+
+// Whether main can show notifications and count on the dock icon: in Electron, and one new enough.
+export function canNotify(): boolean {
+  return window.kando?.notify !== undefined && window.kando.setBadge !== undefined && window.kando.onNotificationClick !== undefined
+}
+
+export function notify(notice: Notice): void {
+  void window.kando?.notify?.(notice).catch(() => {})
+}
+
+export function setBadge(count: number): void {
+  void window.kando?.setBadge?.(count).catch(() => {})
+}
+
+const Target = z.object({ kind: z.enum(['task', 'conversation']), id: z.string() })
+
+// Main hands back the target the renderer gave it; only a well-formed one is acted on.
+export function onNotificationClick(listener: (target: Notice['target']) => void): () => void {
+  return (
+    window.kando?.onNotificationClick?.((target) => {
+      const parsed = Target.safeParse(target)
+      if (parsed.success) listener(parsed.data)
+    }) ?? (() => {})
+  )
 }
 
 // Without the bridge (plain browser) the page still themes itself via data-theme.

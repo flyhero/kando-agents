@@ -450,3 +450,12 @@ export function PulseIcon() {
     </svg>
   )
 }
+
+export function BellIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 1.5h-13z" />
+      <path d="M8.3 16.5a1.8 1.8 0 0 0 3.4 0" />
+    </svg>
+  )
+}

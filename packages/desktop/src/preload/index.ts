@@ -10,5 +10,12 @@ contextBridge.exposeInMainWorld('kando', {
   getCoreEndpoint: (): Promise<unknown> => ipcRenderer.invoke('kando:core-endpoint'),
   pickFolder: (defaultPath?: string): Promise<unknown> => ipcRenderer.invoke('kando:pick-folder', defaultPath),
   setTheme: (theme: string): Promise<unknown> => ipcRenderer.invoke('kando:set-theme', theme),
-  revealFile: (candidates: string[]): Promise<unknown> => ipcRenderer.invoke('kando:reveal-file', candidates)
+  revealFile: (candidates: string[]): Promise<unknown> => ipcRenderer.invoke('kando:reveal-file', candidates),
+  notify: (notice: unknown): Promise<unknown> => ipcRenderer.invoke('kando:notify', notice),
+  setBadge: (count: number): Promise<unknown> => ipcRenderer.invoke('kando:set-badge', count),
+  onNotificationClick: (listener: (target: unknown) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, target: unknown) => listener(target)
+    ipcRenderer.on('kando:notification-click', handler)
+    return () => ipcRenderer.removeListener('kando:notification-click', handler)
+  }
 })
