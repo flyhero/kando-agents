@@ -4,7 +4,7 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 
 任务与会话并行的多 agent 管理工具。任务适合**记下标题 → 完善详情 → 交给 Claude Code / Codex 在独立 worktree 中执行**；会话适合持续聊天及在两个 agent 之间移交。
 
-当前版本 0.12.0（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 0.12.1（开发者预览版：从源码运行，macOS 也可自行打包成 dmg，见[打包与安装](#打包与安装)），各版本的变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
 未执行 pending ──开始──▶ 执行中 running ──提交──▶ 待验收 review ──接受──▶ 已完成 done
@@ -142,7 +142,7 @@ Claude Code 以 `claude -p --input-format stream-json --output-format stream-jso
 - **上下文**：输入框右下角的圆环显示上下文窗口用了多少，超过 60% 变黄，超过 85% 变红。
 - **通知**：窗口不在前台时，agent 等你允许或回答、这一轮做完、异常退出，都发一条系统通知，点它回到那条会话或任务（任务的聊天用任务的标题）。Dock 图标上的数字是等你处理的会话和任务有几个：agent 在等你、你没看到的做完的回合、任务里等你回复的 agent，一个任务的聊天只算一次（macOS 和 Linux；Windows 没有角标）。设置 → 通知 可以关掉通知，角标不受影响。macOS 第一次会问要不要允许 Kando 通知。
 - **记录**：每个聊天阶段把收发的每一帧写进 `sessions/<id>/stages/<阶段 id>.jsonl`，聊天界面就是从它重建的。用户消息和最终回复也记进会话消息，标题、搜索和移交都靠它们。流式增量不落盘：Codex 被中断的回合里只流式显示过的半截回复，重新打开后就没有了。
-- **和 agent 自己的终端界面的区别**：没有 agent 自己的斜杠命令和快捷键。Claude Code 在 `-p` 模式下不会弹出「是否信任这个目录」的确认，请只在你信任的项目里用 Kando。Codex 的 app-server 还在实验阶段，版本太旧、没有 app-server 时会明确提示。
+- **和 agent 自己的终端界面的区别**：没有 agent 自己的快捷键；斜杠命令在输入框里输入 / 选用（Codex 只有 /compact、/review 和技能）。Claude Code 在 `-p` 模式下不会弹出「是否信任这个目录」的确认，请只在你信任的项目里用 Kando。Codex 的 app-server 还在实验阶段，版本太旧、没有 app-server 时会明确提示。
 - **需要新的 daemon**：聊天界面依赖 daemon 的新方法。如果运行中的 daemon 是更早的版本，新建会话会提示重启它（`pnpm dev:daemon`）；重启 daemon 会结束它正在托管的 agent 和终端。
 - **提交并推送**：会话空闲时，点标题旁的分支，在项目下选择「Commit & Push」，确认提交信息后即可提交这个仓库的全部改动并推送当前分支；没有 upstream 时自动使用 origin。多项目会话分别操作每个仓库。
 
@@ -221,4 +221,4 @@ pnpm dist:mac     # 打包 macOS 应用，见上面的「打包与安装」
 - **验收**：按项目配置的测试命令在 worktree 里跑，结果放进检查器；合并分支
 - **SSH / WSL 执行宿主**：给 git、PTY 操作加上 `hostId`
 - **Windows**：`claude` / `codex` 的 `.cmd` shim 需要单独解析（聊天界面遇到时会明确报错）
-- **聊天界面的补充**：图片、斜杠命令
+- **聊天界面的补充**：图片
