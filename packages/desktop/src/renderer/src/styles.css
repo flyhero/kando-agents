@@ -4154,6 +4154,7 @@ body.side-panel-resizing * {
    the settings choose, while the list still scrolls from edge to edge. No frame of its own: it
    lies on the page as the content, and the composer's own box sets it apart from the messages. */
 .chat-view {
+  position: relative;
   --chat-width: 800px;
   --chat-font-size: 14px;
   /* Two steps only, base and small: in-between sizes read as drift. */
@@ -4487,6 +4488,31 @@ body.side-panel-resizing * {
   .chat-tool-icon[data-status='running'][data-kind] svg path:last-of-type { animation: none; }
 }
 
+.chat-relay-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.chat-relay-message {
+  position: absolute;
+  margin: 0;
+  max-width: none;
+  transform-origin: top left;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 100vmax var(--fill);
+}
+.chat-relay-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-relay-layer { display: none; }
+}
 .chat-tool-count { color: var(--text-3); }
 .chat-tool-title {
   flex: 1;

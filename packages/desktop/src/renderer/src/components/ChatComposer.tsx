@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
+import { useCallback, useContext, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
 import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useScheduleImagesSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
@@ -13,6 +13,7 @@ import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
 import { createSchedule } from '../schedules'
+import { ChatMessageRelay } from './chat-message-relay'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -198,6 +199,7 @@ function QueuedList({ queue, held, steerable, ...actions }: {
 export function ChatComposer({ conversation, state }: { conversation: Conversation; state: StateItem | null }) {
   const { id } = conversation
   const surface = useChatSurface()
+  const beginRelay = useContext(ChatMessageRelay)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const quotes = useQuotes(id)
@@ -257,6 +259,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     const images = attached.images
     // Getting ready resolves once the agent can take it; if that fails, the text stays to try again.
     const ready = await surface.prepareSend(stopped)
+    const relay = ready && (!queueable || steer) ? beginRelay(composed, images.map((image) => image.id), mentionMenu.inputProps.ref.current) : null
     const sent = ready && await perform((rpc) => rpc.call('conversations.send', {
       id,
       text: composed,
@@ -265,10 +268,11 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     }))
     setBusy(false)
     if (sent) {
+      relay?.accept()
       setText('')
       attached.setImages([])
       if (quoting) setQuotes(id, [])
-    }
+    } else relay?.cancel()
   }
   const cancelQueued = (ref: string) => perform((rpc) => rpc.call('conversations.cancelQueued', { id, ...(ref ? { ref } : {}) }))
   const releaseQueued = (ref: string) => void perform((rpc) => rpc.call('conversations.sendQueued', { id, ...(ref ? { ref } : {}) }))

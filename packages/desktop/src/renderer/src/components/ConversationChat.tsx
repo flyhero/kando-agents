@@ -24,6 +24,7 @@ import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChatPreviewCard } from './ChatPreviewCard'
 import { ChatQuotePicker } from './ChatQuotePicker'
+import { ChatMessageRelay, useMessageRelay } from './chat-message-relay'
 import { cssFontFamily } from '../system-fonts'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
@@ -242,10 +243,10 @@ const ChatAgent = createContext<{ agent: Conversation['agent']; model: string | 
 
 // Opens the agent's turn under the user's message: its icon and name, the model it runs, and when
 // the message it answers came in.
-function TurnHead({ at }: { at: number }) {
+function TurnHead({ at, messageKey }: { at: number; messageKey: string }) {
   const { agent, model } = useContext(ChatAgent)
   return (
-    <div className="chat-turn-head">
+    <div className="chat-turn-head" data-relay-for={messageKey}>
       <span className="chat-turn-head-icon" aria-hidden="true"><AgentIcon agent={agent} /></span>
       <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
       {model && <span className="chat-turn-head-model" title={model}>{model}</span>}
@@ -625,6 +626,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   )
   // A turn runs from the message that set it going.
   const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
+  const beginRelay = useMessageRelay(view, list, items, id)
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatAgent.Provider value={agentInfo}>
@@ -637,6 +639,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     <Folds.Provider value={folds}>
     <TodoHistory.Provider value={todoHistory}>
     <JumpToEntry.Provider value={jumpTo}>
+    <ChatMessageRelay.Provider value={beginRelay}>
     <div className="chat-view" ref={view} data-width={width} data-font-size={fontSize} data-font={font === 'custom' && !fontFamily ? 'system' : font}>
       <div
         className="chat-list"
@@ -655,7 +658,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
           const answers = previous ? userAt(previous) : null
           return (
             <Fragment key={block.key}>
-              {answers !== null && userAt(block) === null && <div className="chat-entry"><TurnHead at={answers} /></div>}
+              {answers !== null && userAt(block) === null && <div className="chat-entry"><TurnHead at={answers} messageKey={previous?.key ?? ''} /></div>}
               <Block conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} />
             </Fragment>
           )
@@ -685,6 +688,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} sent={sent} onJump={jump} />
       <ChatQuotePicker conversationId={id} list={list} />
     </div>
+    </ChatMessageRelay.Provider>
     </JumpToEntry.Provider>
     </TodoHistory.Provider>
     </Folds.Provider>
