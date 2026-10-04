@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
 import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useScheduleImagesSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
-import { composeMessage, parseQuotes, setQuotes, useQuotes } from '../chat-quotes'
+import { composeMessage, parseQuotes, setQuotes, useQuotes, type ChatQuote } from '../chat-quotes'
 import { QuoteCards } from './ChatQuoteCards'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
@@ -48,17 +48,24 @@ function queuedText(text: string): string {
 
 // Sends what the input holds later, unattended: once its time comes and the agent has quota again.
 // An empty input schedules carrying out the plan the chat has.
-function ScheduleSendButton({ conversationId, text, images, disabledReason, onScheduled }: {
+function ScheduleSendButton({ conversationId, text, quotes, images, disabledReason, onScheduled }: {
   conversationId: string
+  // What the input holds, which the picker starts from and lets the user change there.
   text: string
+  quotes: readonly ChatQuote[]
   // The pictures in the input, by their names in core's attachment store, which keeps them.
   images: readonly string[]
   disabledReason: string | null
   onScheduled: () => void
 }) {
-  const message = text !== '' || images.length > 0
   const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState('')
   const close = useCallback(() => setOpen(false), [])
+  const toggle = () => {
+    if (!open) setDraft(text)
+    setOpen(!open)
+  }
+  const extras = [images.length ? `${images.length} 张图片` : null, quotes.length ? `${quotes.length} 段引用` : null].filter(Boolean)
   return (
     <span className="menu-anchor chat-schedule-anchor">
       <button
@@ -68,23 +75,38 @@ function ScheduleSendButton({ conversationId, text, images, disabledReason, onSc
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={disabledReason !== null}
-        data-tooltip={disabledReason ?? (message ? '预约发送：额度恢复后或到点再发' : '预约：额度恢复后或到点按计划开始实现')}
+        data-tooltip={disabledReason ?? '预约发送：额度恢复后或到点再发'}
         data-tooltip-side="top-end"
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
       >
         <ClockIcon />
       </button>
       {open && (
         <SchedulePicker
-          title={message ? '预约发送这条消息' : '预约按计划开始实现'}
-          note={message ? `到点后发出这条消息${images.length ? `和 ${images.length} 张图片` : ''}，agent 不会停下来等你确认。` : '到点后让 agent 按定下的计划开始实现。'}
+          title="预约发送"
           onSchedule={async (notBefore) => {
-            const run = await createSchedule({ kind: 'conversation', conversationId, text: text.trim(), ...(images.length ? { images: [...images] } : {}) }, notBefore)
+            const message = composeMessage(quotes, draft)
+            const run = await createSchedule({ kind: 'conversation', conversationId, text: message.trim(), ...(images.length ? { images: [...images] } : {}) }, notBefore)
             if (run) onScheduled()
             return run !== null
           }}
           onClose={close}
-        />
+        >
+          {/* The message itself, written or changed here; empty, the agent carries out the plan. */}
+          <textarea
+            className="input schedule-message"
+            rows={3}
+            value={draft}
+            aria-label="到点后发给 agent 的指令"
+            placeholder="到点后发给 agent 的指令；留空就按定下的计划开始实现"
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          {extras.length > 0 && (
+            <div className="schedule-extras">
+              {extras.map((extra) => <span key={extra} className="schedule-extra">附 {extra}</span>)}
+            </div>
+          )}
+        </SchedulePicker>
       )}
     </span>
   )
@@ -331,7 +353,8 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         {schedulesSupported && (
           <ScheduleSendButton
             conversationId={id}
-            text={composeMessage(quotes, text)}
+            text={text}
+            quotes={quotes}
             images={attached.images.map((image) => image.id)}
             disabledReason={
               attached.uploading > 0 ? '图片还在上传'

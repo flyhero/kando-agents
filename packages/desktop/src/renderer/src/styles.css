@@ -5282,6 +5282,11 @@ body.side-panel-resizing * {
 /* The plan card's title row: what waits, where the plan is, and at its far end, approving later
    in the small type of an aside rather than the title's. */
 .chat-plan .chat-request-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
+/* The schedule picker's message, written there, and what goes along with it. */
+.schedule-message { width: 100%; min-height: 64px; max-height: 160px; padding: 8px 10px; resize: none; field-sizing: content; font: inherit; font-size: 13px; line-height: 1.5; }
+.schedule-extras { display: flex; flex-wrap: wrap; gap: 6px; }
+.schedule-extra { padding: 0 8px; border-radius: 999px; background: var(--fill-2); color: var(--text-muted); font-size: 11px; line-height: 18px; }
+
 /* The schedule picker's one line on how a run goes, and the icon that says the rest. */
 .schedule-picker-mode { display: flex; align-items: center; gap: 4px; }
 .schedule-picker-mode .settings-link { margin-left: 0; }
