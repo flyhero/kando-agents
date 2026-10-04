@@ -13,13 +13,16 @@ function openTarget(run: ScheduledRun): void {
     selectTask(target.taskId)
     return
   }
+  // A routine's run has a conversation only once it has started.
+  const conversationId = target.kind === 'routine' ? run.conversationId : target.conversationId
+  if (!conversationId) return
   const { conversations, tasks } = useCore.getState()
-  const owner = Object.values(tasks).find((task) => task.conversationId === target.conversationId)
+  const owner = Object.values(tasks).find((task) => task.conversationId === conversationId)
   if (owner) {
     selectTask(owner.id)
     showView('chat')
-  } else if (conversations[target.conversationId]) {
-    selectConversation(target.conversationId)
+  } else if (conversations[conversationId]) {
+    selectConversation(conversationId)
   }
 }
 

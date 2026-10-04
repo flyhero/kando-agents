@@ -21,6 +21,14 @@ describe('ScheduledRunList', () => {
     const unknown = { ...run, id: '00000000-0000-4000-8000-000000000002', target: { kind: 'telepathy', conversationId: 'x' } }
     expect(ScheduledRunList.parse([run, unknown]).map((each) => each.id)).toEqual([run.id])
   })
+
+  it("reads a routine's run, with an outcome it does not know as none", () => {
+    const routineRun = {
+      ...run, id: '00000000-0000-4000-8000-000000000003', target: { kind: 'routine', routineId: '00000000-0000-4000-8000-000000000009' },
+      routineId: '00000000-0000-4000-8000-000000000009', dueAt: 5, finishedAt: 9, outcome: 'ascended', seenAt: null
+    }
+    expect(ScheduledRunList.parse([routineRun])).toEqual([expect.objectContaining({ id: routineRun.id, dueAt: 5, finishedAt: 9, outcome: null, seenAt: null })])
+  })
 })
 
 describe('limitOf', () => {

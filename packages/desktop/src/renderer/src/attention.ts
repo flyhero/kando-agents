@@ -40,7 +40,7 @@ function chatReasons(conversation: Conversation | undefined): ActionableReason[]
 export function actionableItems(s: Pick<Snapshot, 'tasks' | 'conversations'> & { schedules?: readonly ScheduledRun[] }, includeTaskSummaries = true): ActionableItem[] {
   const items: ActionableItem[] = []
   const automaticResumes = new Set((s.schedules ?? []).flatMap((run) =>
-    isScheduleOpen(run) && limitOf(run.target) && run.target.kind !== 'task' ? [run.target.conversationId] : []
+    (run.target.kind === 'conversation' || run.target.kind === 'resume') && isScheduleOpen(run) && limitOf(run.target) ? [run.target.conversationId] : []
   ))
   const owned = new Set<string>()
   const byTask = new Map<string, Conversation>()

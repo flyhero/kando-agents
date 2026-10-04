@@ -3,6 +3,7 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import {
   limitOf,
   quotaVerdict,
+  routineRunTitle,
   ScheduledRun,
   ScheduledTarget,
   type AgentKind,
@@ -10,6 +11,8 @@ import {
   type Conversation,
   type LimitRef,
   type RequestedTarget,
+  type Routine,
+  type RoutineOutcome,
   type ScheduleTaskBlocker,
   type Task,
   type UnattendedMode
@@ -36,14 +39,16 @@ const KEEP_SETTLED = 50
 // A resume that went out this recently and hit the limit again: the quota reading that let it go
 // was wrong, so the next waits a while rather than trying every minute.
 const RELIMIT_MS = 2 * 60_000
-// Refusals that another try would only meet again.
-const TRANSIENT = new Set(['chat-busy', 'conversation-running'])
+// Refusals that another try may get past: the agent is busy, or the daemon is not back yet.
+const TRANSIENT = new Set(['chat-busy', 'conversation-running', 'daemon-unavailable'])
 
 const SELECT = `SELECT id, target, title, agent, not_before AS notBefore, check_at AS checkAt, resets_at AS resetsAt,
   position, status, conversation_id AS conversationId, attempts, error, created_at AS createdAt, settled_at AS settledAt,
   routine_id AS routineId, due_at AS dueAt, finished_at AS finishedAt, outcome, seen_at AS seenAt
   FROM scheduled_runs`
 const OPEN = "status IN ('waiting', 'starting')"
+// A routine run the user has yet to look at: its turn ended, or it never got to start.
+const UNREAD = "seen_at IS NULL AND (finished_at IS NOT NULL OR status = 'failed')"
 
 type Row = ScheduledRun & { checkAt: number | null; position: number }
 // A run as the usage-limit card reads it: with when core looks at it next.
@@ -63,8 +68,13 @@ function publicRun({ checkAt: _checkAt, position: _position, ...run }: Row): Sch
   return run
 }
 
-function conversationOf(target: ScheduledTarget): string | null {
-  return target.kind === 'task' ? null : target.conversationId
+// The conversation a run goes on in: named by its target, or, for a routine's run, the one it
+// opened, once it has.
+function conversationOf(run: Pick<ScheduledRun, 'target' | 'conversationId'>): string | null {
+  const { target } = run
+  if (target.kind === 'task') return null
+  if (target.kind === 'routine') return run.conversationId
+  return target.conversationId
 }
 
 export type ScheduleDeps = {
@@ -74,13 +84,22 @@ export type ScheduleDeps = {
     start(id: string, allowBypass: boolean | undefined, unattended: UnattendedMode): Promise<Task>
     resumeChat(id: string, allowBypass?: boolean): Promise<Task>
   }
-  conversations: Pick<ConversationService, 'get' | 'continue' | 'send' | 'runScheduled' | 'sentRef'>
+  conversations: Pick<ConversationService, 'get' | 'create' | 'continue' | 'send' | 'runScheduled' | 'sentRef'>
   usage: { list(): AgentUsage[]; refresh(): Promise<AgentUsage[]> }
   // The mode runs start in, as the user last set it.
   mode: () => UnattendedMode
   emit: (runs: ScheduledRun[]) => void
   // A run that answers a usage limit changed: the card for that limit says so (UsageLimitResumes).
   limitChanged: (conversationId: string, limit: LimitRef) => void
+  // The routines (RoutineService): what comes due is made into runs at the start of every pass,
+  // a run reads its routine when it starts, an 'auto' routine is given an agent, and the
+  // routines hear of every change to one of their runs.
+  routines: {
+    pass(): Promise<void>
+    get(id: string): Routine | null
+    pickAgent(routine: Routine): AgentKind
+    runChanged(run: ScheduledRun): void
+  }
 }
 
 // Starts what is to start later once its time has come and its agent has quota again: a task the
@@ -120,11 +139,12 @@ export class ScheduleService {
     this.db.close()
   }
 
-  // The open runs in the order they go, then the latest settled.
+  // The open runs in the order they go, then the latest settled. A routine's runs, once settled,
+  // are its history (RoutineService), not the list's: an hourly routine would fill it alone.
   list(): ScheduledRun[] {
     const now = this.now()
     const open = this.rows(`WHERE ${OPEN} ORDER BY position`)
-    const settled = this.rows(`WHERE NOT ${OPEN} AND settled_at > ? ORDER BY settled_at DESC LIMIT ?`, now - KEEP_SETTLED_MS, KEEP_SETTLED * 4)
+    const settled = this.rows(`WHERE NOT ${OPEN} AND routine_id IS NULL AND settled_at > ? ORDER BY settled_at DESC LIMIT ?`, now - KEEP_SETTLED_MS, KEEP_SETTLED * 4)
       .filter((run) => run.target.kind !== 'resume' || (run.settledAt ?? 0) > now - KEEP_SETTLED_RESUME_MS)
       .slice(0, KEEP_SETTLED)
     return [...open, ...settled].map(publicRun)
@@ -240,8 +260,97 @@ export class ScheduleService {
   }
 
   clear(): void {
-    this.db.prepare(`DELETE FROM scheduled_runs WHERE NOT ${OPEN}`).run()
+    this.db.prepare(`DELETE FROM scheduled_runs WHERE NOT ${OPEN} AND routine_id IS NULL`).run()
     this.announce()
+  }
+
+  // --- A routine's runs. The routine decides when one is due; these keep its runs.
+
+  // The run for one occurrence of a routine, with the agent it spends; null when that occurrence
+  // already has its run, so a routine moved on late, or twice, cannot start twice.
+  insertRoutineRun(routine: Routine, dueAt: number, agent: AgentKind): ScheduledRun | null {
+    return this.insertForRoutine(routine, dueAt, agent, 'waiting', null)
+  }
+
+  // An occurrence a routine let pass, and why, so the history says so.
+  recordSkippedRun(routine: Routine, dueAt: number, reason: string, agent: AgentKind): ScheduledRun | null {
+    return this.insertForRoutine(routine, dueAt, agent, 'cancelled', reason)
+  }
+
+  // Whether a run of the routine still has to start, or has started and not ended: the next
+  // occurrence waits for it. One waiting on the user (awaiting) has ended as far as this goes.
+  hasBlockingRun(routineId: string): boolean {
+    const found = this.db.prepare(`SELECT COUNT(*) AS count FROM scheduled_runs WHERE routine_id = ?
+      AND (${OPEN} OR (status = 'started' AND finished_at IS NULL))`).get(routineId)
+    return Number(found?.count ?? 0) > 0
+  }
+
+  // Started runs of routines whose outcome is not settled: not ended, or ended on a question.
+  unfinishedRoutineRuns(): ScheduledRun[] {
+    return this.rows("WHERE routine_id IS NOT NULL AND status = 'started' AND (finished_at IS NULL OR outcome = 'awaiting')").map(publicRun)
+  }
+
+  // A routine's runs, newest first; `before` pages further back by created_at.
+  runsFor(routineId: string, before: number | null, limit: number): ScheduledRun[] {
+    return this.rows('WHERE routine_id = ? AND created_at < ? ORDER BY created_at DESC, rowid DESC LIMIT ?', routineId, before ?? Number.MAX_SAFE_INTEGER, limit).map(publicRun)
+  }
+
+  lastRunFor(routineId: string): ScheduledRun | null {
+    return this.runsFor(routineId, null, 1)[0] ?? null
+  }
+
+  // Runs the user has yet to look at: ended, or never started.
+  unreadCount(routineId: string): number {
+    const found = this.db.prepare(`SELECT COUNT(*) AS count FROM scheduled_runs WHERE routine_id = ? AND ${UNREAD}`).get(routineId)
+    return Number(found?.count ?? 0)
+  }
+
+  // How a routine run's turn ended. Only a run not yet settled, or settled on a question, takes
+  // it: a turn replayed from the log changes nothing, and an answered question's outcome is the
+  // user's to look at again.
+  markFinished(id: string, outcome: RoutineOutcome, at: number, error: string | null = null): boolean {
+    const changed = this.db.prepare(`UPDATE scheduled_runs
+      SET finished_at = ?, outcome = ?, error = COALESCE(?, error), seen_at = CASE WHEN outcome = 'awaiting' AND ? <> 'awaiting' THEN NULL ELSE seen_at END, updated_at = ?
+      WHERE id = ? AND routine_id IS NOT NULL AND status = 'started' AND (finished_at IS NULL OR outcome = 'awaiting')`)
+      .run(at, outcome, error, outcome, this.now(), id).changes === 1
+    if (changed) this.deps.routines.runChanged(publicRun(this.found(id)))
+    return changed
+  }
+
+  markSeen(id: string): boolean {
+    const changed = this.db.prepare(`UPDATE scheduled_runs SET seen_at = ?, updated_at = ? WHERE id = ? AND ${UNREAD}`).run(this.now(), this.now(), id).changes === 1
+    if (changed) this.deps.routines.runChanged(publicRun(this.found(id)))
+    return changed
+  }
+
+  markAllSeen(routineId: string): boolean {
+    return this.db.prepare(`UPDATE scheduled_runs SET seen_at = ?, updated_at = ? WHERE routine_id = ? AND ${UNREAD}`).run(this.now(), this.now(), routineId).changes > 0
+  }
+
+  // The routine's runs still waiting go; one starting finds the routine gone or paused itself.
+  cancelRoutineRuns(routineId: string, reason: string): void {
+    this.cancelFor((run) => run.target.kind === 'routine' && run.target.routineId === routineId, reason)
+  }
+
+  // A deleted routine takes its history with it; a run still open settles on its own.
+  deleteRoutineRuns(routineId: string): void {
+    this.db.prepare(`DELETE FROM scheduled_runs WHERE routine_id = ? AND NOT ${OPEN}`).run(routineId)
+  }
+
+  private insertForRoutine(routine: Routine, dueAt: number, agent: AgentKind, status: 'waiting' | 'cancelled', error: string | null): ScheduledRun | null {
+    const id = randomUUID()
+    const at = this.now()
+    const target: ScheduledTarget = { kind: 'routine', routineId: routine.id }
+    const inserted = this.db.prepare(`INSERT OR IGNORE INTO scheduled_runs
+      (id, target, title, agent, not_before, position, status, error, settled_at, routine_id, due_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, JSON.stringify(target), routine.title, agent, this.lastPosition() + 1, status, error, status === 'waiting' ? null : at, routine.id, dueAt, at, at)
+      .changes === 1
+    if (!inserted) return null
+    if (status === 'waiting') this.announce()
+    const run = publicRun(this.found(id))
+    this.deps.routines.runChanged(run)
+    return run
   }
 
   // The runs still to go on in a conversation, in order.
@@ -283,7 +392,7 @@ export class ScheduleService {
   }
 
   conversationDeleted(id: string): void {
-    this.cancelFor((run) => conversationOf(run.target) === id, 'conversation-not-found')
+    this.cancelFor((run) => conversationOf(run) === id, 'conversation-not-found')
   }
 
   // Tries what is due. One pass at a time: a slow start must not be raced by the next tick. One
@@ -303,6 +412,8 @@ export class ScheduleService {
   }
 
   private async pass(): Promise<void> {
+    // Routines first: what came due is a run by the time runs are looked at.
+    await this.deps.routines.pass()
     const now = this.now()
     const due = this.rows("WHERE status = 'waiting' AND (not_before IS NULL OR not_before <= ?) AND (check_at IS NULL OR check_at <= ?) ORDER BY position", now, now)
     if (due.length === 0) return
@@ -313,7 +424,7 @@ export class ScheduleService {
     for (const run of due) {
       const agent = this.agentOf(run)
       if (agent === null) {
-        this.settle(run, { status: 'cancelled', error: run.target.kind === 'task' ? 'task-not-found' : 'conversation-not-found', settled_at: this.now() })
+        this.settle(run, { status: 'cancelled', error: this.goneReason(run), settled_at: this.now() })
         this.limitChanged(run)
         continue
       }
@@ -330,9 +441,18 @@ export class ScheduleService {
         continue
       }
       held.add(agent)
-      if (agent !== run.agent) this.settle(run, { agent })
-      if (this.claim(run)) await this.attempt(run)
+      // The row, not this copy, carries the agent chosen now: the start reads it back.
+      const current = agent === run.agent ? run : (this.settle(run, { agent }), this.found(run.id))
+      if (this.claim(current)) await this.attempt(current)
     }
+  }
+
+  // Why a run has nothing left to spend an agent on.
+  private goneReason(run: Row): string {
+    const { target } = run
+    if (target.kind === 'task') return 'task-not-found'
+    if (target.kind === 'routine') return this.deps.routines.get(target.routineId) ? 'conversation-not-found' : 'routine-not-found'
+    return 'conversation-not-found'
   }
 
   // Returns why the start did not go through, or null once it did.
@@ -365,6 +485,7 @@ export class ScheduleService {
       const task = await this.deps.tasks.start(target.taskId, bypass, mode)
       return task.conversationId
     }
+    if (target.kind === 'routine') return this.fireRoutine(run, target.routineId, mode, bypass)
     const conversation = this.deps.conversations.get(target.conversationId)
     const { taskId } = conversation
     if (target.kind === 'resume') {
@@ -383,6 +504,26 @@ export class ScheduleService {
     return conversation.id
   }
 
+  // A routine's run opens a conversation under the run's own id, so a start tried again (after
+  // the agent failed to launch, or core stopped between making it and sending) finds and keeps
+  // the one it made rather than opening another. The routine is read now: edited meanwhile, it
+  // is carried out as it reads; gone or paused, the run fails and the history says so.
+  private async fireRoutine(run: Row, routineId: string, mode: UnattendedMode, bypass: true | undefined): Promise<string> {
+    const routine = this.deps.routines.get(routineId)
+    if (!routine) throw new Rejection('routine-not-found')
+    if (!routine.enabled) throw new Rejection('routine-paused')
+    const { target } = routine
+    const existing = this.conversation(run.id)
+    if (!existing) {
+      await this.deps.conversations.create(run.agent, target.projectPaths, bypass,
+        { permissionMode: mode, model: target.model, effort: target.effort }, { id: routine.id, title: routineRunTitle(routine.title, this.now()) }, run.id)
+    }
+    if (run.conversationId !== run.id) this.settle(run, { conversation_id: run.id })
+    const ready = () => this.deps.conversations.continue(run.id, bypass)
+    await this.deps.conversations.runScheduled(run.id, target.text, target.images ?? [], mode, ready, scheduleRef(run))
+    return run.id
+  }
+
   // Where a run core was starting when it stopped went on, or undefined when it did not.
   private startedIn(run: Row): string | null | undefined {
     const { target } = run
@@ -390,16 +531,17 @@ export class ScheduleService {
       const task = this.deps.tasks.get(target.taskId)
       return task && task.status !== 'pending' ? task.conversationId : undefined
     }
+    const conversationId = target.kind === 'routine' ? run.id : target.conversationId
     try {
       // A resume from before resumes were scheduled runs went out under its old name.
       const refs = target.kind === 'resume' ? [scheduleRef(run), `usage-limit:${run.id}`] : [scheduleRef(run)]
-      return refs.some((ref) => this.deps.conversations.sentRef(target.conversationId, ref, run.createdAt)) ? target.conversationId : undefined
+      return refs.some((ref) => this.deps.conversations.sentRef(conversationId, ref, run.createdAt)) ? conversationId : undefined
     } catch {
       return undefined
     }
   }
 
-  private describe(target: ScheduledTarget): { title: string; agent: AgentKind } {
+  private describe(target: Exclude<ScheduledTarget, { kind: 'routine' }>): { title: string; agent: AgentKind } {
     if (target.kind === 'task') {
       const task = this.deps.tasks.get(target.taskId)
       if (!task) throw new Rejection('task-not-found')
@@ -427,10 +569,18 @@ export class ScheduleService {
     return Number(last?.position ?? 0)
   }
 
-  // Whose quota the run spends now: a conversation may have been handed to the other agent.
+  // Whose quota the run spends now: a conversation may have been handed to the other agent. A
+  // routine run that has opened its conversation is that agent's for good; before that, an
+  // 'auto' routine is given whichever has quota now, each pass anew.
   private agentOf(run: Row): AgentKind | null {
     const { target } = run
     if (target.kind === 'task') return this.deps.tasks.get(target.taskId)?.agent ?? null
+    if (target.kind === 'routine') {
+      if (run.conversationId) return this.conversation(run.conversationId)?.agent ?? null
+      const routine = this.deps.routines.get(target.routineId)
+      if (!routine) return null
+      return routine.target.agent === 'auto' ? this.deps.routines.pickAgent(routine) : routine.target.agent
+    }
     return this.conversation(target.conversationId)?.agent ?? null
   }
 
@@ -492,6 +642,8 @@ export class ScheduleService {
       .prepare(`UPDATE scheduled_runs SET ${keys.map((key) => `${key} = ?`).join(', ')}, updated_at = ? WHERE id = ?`)
       .run(...keys.map((key) => values[key] ?? null), this.now(), run.id)
     if (announce) this.announce()
+    const changed = this.found(run.id)
+    if (changed.routineId) this.deps.routines.runChanged(publicRun(changed))
   }
 
   private announce(): void {
@@ -499,9 +651,9 @@ export class ScheduleService {
   }
 
   // The card for the limit a run answers, if it answers one, hears of the change.
-  private limitChanged(run: Pick<ScheduledRun, 'target'>): void {
+  private limitChanged(run: Pick<ScheduledRun, 'target' | 'conversationId'>): void {
     const limit = limitOf(run.target)
-    const conversationId = conversationOf(run.target)
+    const conversationId = conversationOf(run)
     if (limit && conversationId) this.deps.limitChanged(conversationId, limit)
   }
 

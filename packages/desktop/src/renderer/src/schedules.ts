@@ -101,6 +101,7 @@ export function openRunsForConversation(runs: readonly ScheduledRun[], conversat
 export function runAction(run: Pick<ScheduledRun, 'target'>): string {
   const { target } = run
   if (target.kind === 'task') return '执行任务'
+  if (target.kind === 'routine') return '新开会话执行指令'
   if (target.kind === 'resume') return '额度恢复后从中断处继续'
   const pictures = target.images?.length ? `${target.images.length} 张图片` : ''
   if (target.text) return `${target.resumes ? '从中断处继续，并发送：' : '发送：'}${target.text}${pictures ? `（附 ${pictures}）` : ''}`
@@ -108,7 +109,7 @@ export function runAction(run: Pick<ScheduledRun, 'target'>): string {
   return target.resumes ? '从中断处继续' : '批准计划或按计划开始实现'
 }
 
-export const TARGET_LABEL: Record<ScheduledRun['target']['kind'], string> = { task: '任务', conversation: '会话', resume: '续跑' }
+export const TARGET_LABEL: Record<ScheduledRun['target']['kind'], string> = { task: '任务', conversation: '会话', resume: '续跑', routine: '定时任务' }
 
 // The runs that failed since the last list: told of, as nobody may have been there to see.
 export function scheduleNoticesBetween(prev: readonly ScheduledRun[], next: readonly ScheduledRun[]): Notice[] {
@@ -116,6 +117,8 @@ export function scheduleNoticesBetween(prev: readonly ScheduledRun[], next: read
   return next.flatMap((run) => {
     const was = before.get(run.id)
     if (run.status !== 'failed' || was === undefined || was === 'failed') return []
+    // A routine's runs are told of through the routine (routineNoticesBetween).
+    if (run.target.kind === 'routine') return []
     const target = run.target.kind === 'task'
       ? { kind: 'task' as const, id: run.target.taskId }
       : { kind: 'conversation' as const, id: run.target.conversationId }

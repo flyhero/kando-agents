@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Task, type AgentUsage, type ChatItem, type ScheduledRun, type ScheduleTaskBlocker, type UnattendedMode } from '@kando/protocol'
+import { Task, type AgentKind, type AgentUsage, type ChatItem, type Routine, type ScheduledRun, type ScheduleTaskBlocker, type UnattendedMode } from '@kando/protocol'
 import { CONTINUE_TEXT, SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { AttachmentStore } from './attachment-store'
 import { pngBytes } from './image-fixtures'
@@ -44,6 +44,11 @@ describe('ScheduleService', () => {
 
   let limits: UsageLimitResumes
   let emitted: ChatItem[]
+  // The one routine the fake routine service knows, the agent it picks for 'auto', and the runs
+  // it heard of.
+  let routine: Routine | null
+  let picked: AgentKind
+  let heard: ScheduledRun[]
 
   function serve(): void {
     conversations = new ConversationService(store, daemon, path.join(root, 'sessions'),
@@ -72,7 +77,13 @@ describe('ScheduleService', () => {
       usage: { list: () => usage, refresh: async () => usage },
       mode: () => mode,
       emit: (runs) => { announced = runs },
-      limitChanged: (conversationId, limit) => limits.announce(conversationId, limit)
+      limitChanged: (conversationId, limit) => limits.announce(conversationId, limit),
+      routines: {
+        pass: async () => {},
+        get: (id) => (routine?.id === id ? routine : null),
+        pickAgent: () => picked,
+        runChanged: (changed) => { heard.push(changed) }
+      }
     }, () => clock)
     limits = new UsageLimitResumes(schedules, conversations, { list: () => usage }, (_conversationId, items) => emitted.push(...items), () => clock)
   }
@@ -142,6 +153,9 @@ describe('ScheduleService', () => {
     blocker = null
     startFails = null
     starts = []
+    routine = null
+    picked = 'claude'
+    heard = []
     serve()
   })
 
@@ -506,6 +520,130 @@ describe('ScheduleService', () => {
       expect(again?.notBefore).toBe(clock + 15 * 60_000)
       await due()
       expect(continues(conversation.id)).toHaveLength(1)
+    })
+  })
+
+  describe("a routine's runs", () => {
+    const ROUTINE_ID = '00000000-0000-4000-8000-000000000101'
+    function daily(patch: Partial<Routine['target']> = {}, enabled = true): Routine {
+      return {
+        id: ROUTINE_ID, title: '日报', enabled, schedule: { kind: 'daily', time: '09:00' },
+        target: { kind: 'new', agent: 'claude', projectPaths: [], text: '写今天的日报', ...patch },
+        nextRunAt: null, lastFiredAt: null, unread: 0, lastRun: null, createdAt: 0, updatedAt: 0
+      }
+    }
+    const rows = () => new DatabaseSync(database).prepare('SELECT id, status, conversation_id AS conversationId, routine_id AS routineId, due_at AS dueAt, finished_at AS finishedAt, outcome, seen_at AS seenAt, error FROM scheduled_runs ORDER BY created_at').all()
+
+    it('opens a conversation under its own id, named for the routine, and sends the instruction unattended', async () => {
+      routine = daily()
+      const made = schedules.insertRoutineRun(routine, clock - 60_000, 'claude')!
+      expect(made).toMatchObject({ target: { kind: 'routine', routineId: ROUTINE_ID }, routineId: ROUTINE_ID, dueAt: clock - 60_000, title: '日报', status: 'waiting' })
+      await due()
+      const conversation = conversations.get(made.id)
+      expect(conversation).toMatchObject({ id: made.id, routineId: ROUTINE_ID, titleLocked: true, agent: 'claude' })
+      expect(conversation.title.startsWith('日报 · ')).toBe(true)
+      expect(userTexts(made.id)).toEqual([`${UNATTENDED_NOTE}\n\n写今天的日报`])
+      expect(rows()).toEqual([expect.objectContaining({ id: made.id, status: 'started', conversationId: made.id, finishedAt: null })])
+      expect(heard.map((each) => each.status)).toContain('started')
+      // The list keeps the run while it is open only; once started it is the routine's history.
+      expect(schedules.list()).toEqual([])
+    })
+
+    it('makes one run per occurrence, however often the routine comes round to it', () => {
+      routine = daily()
+      const first = schedules.insertRoutineRun(routine, 1000, 'claude')
+      expect(first).not.toBeNull()
+      expect(schedules.insertRoutineRun(routine, 1000, 'claude')).toBeNull()
+      expect(schedules.recordSkippedRun(routine, 1000, 'previous-running', 'claude')).toBeNull()
+      expect(schedules.insertRoutineRun(routine, 2000, 'claude')).not.toBeNull()
+      expect(rows()).toHaveLength(2)
+    })
+
+    it('keeps the conversation it already made when a start is tried again', async () => {
+      routine = daily()
+      const made = schedules.insertRoutineRun(routine, clock - 60_000, 'claude')!
+      // Core stopped after opening the conversation, before sending: the run was still starting.
+      await conversations.create('claude', [], undefined, {}, { id: ROUTINE_ID, title: '日报 · 早' }, made.id)
+      new DatabaseSync(database).prepare("UPDATE scheduled_runs SET status = 'starting', conversation_id = ? WHERE id = ?").run(made.id, made.id)
+      schedules.stop()
+      serve()
+      schedules.start()
+      expect(rows()[0]).toMatchObject({ status: 'waiting', conversationId: made.id })
+      await due()
+      expect(rows()[0]).toMatchObject({ status: 'started', conversationId: made.id })
+      expect(store.list().map((each) => each.id)).toEqual([made.id])
+      expect(userTexts(made.id)).toEqual([`${UNATTENDED_NOTE}\n\n写今天的日报`])
+    })
+
+    it('blocks the next occurrence while a run is open or at work, skipped records notwithstanding', async () => {
+      routine = daily()
+      const made = schedules.insertRoutineRun(routine, 1000, 'claude')!
+      expect(schedules.hasBlockingRun(ROUTINE_ID)).toBe(true)
+      await due()
+      expect(schedules.hasBlockingRun(ROUTINE_ID)).toBe(true)
+      schedules.recordSkippedRun(routine, 2000, 'previous-running', 'claude')
+      expect(schedules.hasBlockingRun(ROUTINE_ID)).toBe(true)
+      expect(schedules.markFinished(made.id, 'awaiting', clock)).toBe(true)
+      expect(schedules.hasBlockingRun(ROUTINE_ID)).toBe(false)
+      expect(schedules.unfinishedRoutineRuns().map((each) => each.id)).toEqual([made.id])
+      expect(schedules.markFinished(made.id, 'completed', clock + 1)).toBe(true)
+      expect(schedules.unfinishedRoutineRuns()).toEqual([])
+    })
+
+    it('settles an outcome once, reopens a question that was answered, and counts what is unread', async () => {
+      routine = daily()
+      const made = schedules.insertRoutineRun(routine, 1000, 'claude')!
+      await due()
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(0)
+      expect(schedules.markFinished(made.id, 'awaiting', clock)).toBe(true)
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(1)
+      expect(schedules.markSeen(made.id)).toBe(true)
+      expect(schedules.markSeen(made.id)).toBe(false)
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(0)
+      // The question answered, the turn ends: that is new to look at.
+      expect(schedules.markFinished(made.id, 'completed', clock + 1)).toBe(true)
+      expect(rows()[0]).toMatchObject({ outcome: 'completed', seenAt: null })
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(1)
+      // A turn replayed from the log changes nothing more.
+      expect(schedules.markFinished(made.id, 'failed', clock + 2, 'again')).toBe(false)
+      expect(rows()[0]).toMatchObject({ outcome: 'completed', error: null })
+      expect(schedules.markAllSeen(ROUTINE_ID)).toBe(true)
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(0)
+      expect(schedules.runsFor(ROUTINE_ID, null, 10).map((each) => each.id)).toEqual([made.id])
+      expect(schedules.lastRunFor(ROUTINE_ID)?.id).toBe(made.id)
+      schedules.clear()
+      expect(rows()).toHaveLength(1)
+      schedules.deleteRoutineRuns(ROUTINE_ID)
+      expect(rows()).toHaveLength(0)
+    })
+
+    it('fails a run whose routine is gone or paused, and says which', async () => {
+      routine = daily()
+      const made = schedules.insertRoutineRun(routine, 1000, 'claude')!
+      routine = daily({}, false)
+      await due()
+      expect(rows()[0]).toMatchObject({ id: made.id, status: 'failed', error: 'routine-paused' })
+      expect(schedules.unreadCount(ROUTINE_ID)).toBe(1)
+      routine = daily()
+      const second = schedules.insertRoutineRun(routine, 2000, 'claude')!
+      routine = null
+      await due()
+      expect(rows()[1]).toMatchObject({ id: second.id, status: 'cancelled', error: 'routine-not-found' })
+      const third = schedules.insertRoutineRun(daily(), 3000, 'claude')!
+      schedules.cancelRoutineRuns(ROUTINE_ID, 'routine-paused')
+      expect(rows()[2]).toMatchObject({ id: third.id, status: 'cancelled', error: 'routine-paused' })
+    })
+
+    it("gives an 'auto' routine's run the agent with quota when it starts, and keeps it from then on", async () => {
+      routine = daily({ agent: 'auto' })
+      // Codex had the quota when the run was made; by the time it starts, Claude does.
+      const made = schedules.insertRoutineRun(routine, 1000, 'codex')!
+      picked = 'claude'
+      await due()
+      expect(rows()[0]).toMatchObject({ status: 'started', conversationId: made.id })
+      expect(conversations.get(made.id).agent).toBe('claude')
+      expect(run(made.id)).toBeUndefined()
+      expect(heard.find((each) => each.status === 'started')?.agent).toBe('claude')
     })
   })
 })

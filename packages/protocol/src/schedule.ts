@@ -23,7 +23,11 @@ const ConversationTarget = z.object({
   resumes: LimitRef.optional()
 })
 const ResumeTarget = z.object({ kind: z.literal('resume'), conversationId: z.string().uuid(), stageId: z.string(), itemId: z.string() })
-export const ScheduledTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget, ResumeTarget])
+// A routine's run: opens a conversation (whose id is the run's own) for what the routine says
+// when it starts, so a routine edited meanwhile is carried out as it reads now. Core makes
+// these; a client never asks for one.
+const RoutineRunTarget = z.object({ kind: z.literal('routine'), routineId: z.string().uuid() })
+export const ScheduledTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget, ResumeTarget, RoutineRunTarget])
 export type ScheduledTarget = z.infer<typeof ScheduledTarget>
 // What a client may schedule; core makes the resume runs itself.
 export const RequestedTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget])

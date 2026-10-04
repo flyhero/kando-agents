@@ -167,7 +167,8 @@ const schedules = new ScheduleService(paths.database, {
     server?.broadcast('schedules.changed', { runs })
     refreshAwake()
   },
-  limitChanged: (conversationId, limit) => limits.announce(conversationId, limit)
+  limitChanged: (conversationId, limit) => limits.announce(conversationId, limit),
+  routines: { pass: async () => {}, get: () => null, pickAgent: () => 'claude', runChanged: () => {} }
 })
 // Speaks for the scheduler on the usage-limit cards; built after it, called only once runs change.
 const limits = new UsageLimitResumes(schedules, conversations, usage, notifyChatItems)

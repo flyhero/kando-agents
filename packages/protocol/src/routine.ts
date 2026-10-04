@@ -136,3 +136,11 @@ export function latestOccurrenceAtOrBefore(schedule: RoutineSchedule, at: number
 export function isValidSchedule(schedule: RoutineSchedule): boolean {
   return schedule.kind === 'manual' || nextOccurrence(schedule, 0) !== null
 }
+
+const pad = (value: number) => String(value).padStart(2, '0')
+
+// What a routine's conversation is called: the routine, and when the run started, in local time.
+export function routineRunTitle(title: string, startedAt: number): string {
+  const at = new Date(startedAt)
+  return `${title} · ${at.getMonth() + 1}月${at.getDate()}日 ${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
