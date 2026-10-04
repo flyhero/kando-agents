@@ -4836,6 +4836,7 @@ body.side-panel-resizing * {
 }
 .chat-tool-row:hover:not(:disabled) { background: var(--fill); }
 .chat-tool-row:disabled { cursor: default; }
+.chat-tool-row > .chat-tool-icon { transform: translateX(1px); }
 .chat-tool-row .chat-tool-name { font-weight: 500; color: var(--text); }
 .chat-tool-summary { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-tool-row:hover .chat-tool-summary,
