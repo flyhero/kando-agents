@@ -10,6 +10,33 @@ export const ChatMessageRelay = createContext<BeginRelay>(() => NO_RELAY)
 
 type PendingRelay = RelayMessage & { accepted: boolean; origin: DOMRect }
 
+// The copy's flight from the composer to its place in the list, the crossfade to the real bubble
+// at the end of it, and the dot's run on to the agent's icon. The way is only the height of the
+// composer and the dock, so each leg takes long enough to be followed.
+const FLIGHT_MS = 760
+const HANDOVER_MS = 150
+const DOT_MS = 450
+// How far above the straight line the copy's flight bows.
+const ARC_PX = 24
+
+// How long the dot waits for somewhere to go: the agent's turn opens a beat after the message
+// lands, and the dot is the handover to it.
+const RECEIVER_WAIT_MS = 1200
+
+// Where the dot runs to: the icon of the turn that answers the message, else the spinner of the
+// working line, polled for a moment while the turn opens.
+async function receiverFor(view: HTMLElement, key: string, disposed: () => boolean): Promise<HTMLElement | null> {
+  const find = () => view.querySelector<HTMLElement>(`[data-relay-for="${CSS.escape(key)}"] .chat-turn-head-icon`)
+    ?? view.querySelector<HTMLElement>('.chat-working .chat-spinner')
+  const until = performance.now() + RECEIVER_WAIT_MS
+  let found = find()
+  while (!found && !disposed() && performance.now() < until) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    found = find()
+  }
+  return disposed() ? null : found
+}
+
 function playRelay(view: HTMLElement, list: HTMLElement, message: HTMLElement, origin: DOMRect, key: string): () => void {
   const animations: Animation[] = []
   const layer = document.createElement('div')
@@ -27,7 +54,8 @@ function playRelay(view: HTMLElement, list: HTMLElement, message: HTMLElement, o
   layer.append(ghost)
   view.append(layer)
 
-  const animate = (element: HTMLElement, frames: Keyframe[], duration: number, easing = 'cubic-bezier(.22,1,.36,1)') => {
+  // Slow out of the composer and slow into place: the way is short, so the whole of it must read.
+  const animate = (element: HTMLElement, frames: Keyframe[], duration: number, easing = 'cubic-bezier(.45,0,.2,1)') => {
     const animation = element.animate(frames, { duration, easing, fill: 'both' })
     animations.push(animation)
     return animation.finished
@@ -40,31 +68,35 @@ function playRelay(view: HTMLElement, list: HTMLElement, message: HTMLElement, o
     for (const animation of animations) animation.cancel()
     layer.remove()
     view.removeEventListener('wheel', cleanup)
-    view.removeEventListener('touchstart', cleanup)
-    view.removeEventListener('pointerdown', cleanup)
-    list.removeEventListener('keydown', cleanup)
     reduced.removeEventListener('change', cleanup)
     window.removeEventListener('resize', cleanup)
   }
+  // Only what moves the targets stops it: scrolling the list, or the window changing size. A
+  // touch on the pad or a key after Enter used to end it before it was seen.
   view.addEventListener('wheel', cleanup, { passive: true })
-  view.addEventListener('touchstart', cleanup, { passive: true })
-  view.addEventListener('pointerdown', cleanup, { passive: true })
-  list.addEventListener('keydown', cleanup)
   reduced.addEventListener('change', cleanup)
   window.addEventListener('resize', cleanup)
 
-  // The real bubble keeps its layout while its inert copy travels outside the scroll mask.
-  const reveal = message.animate([{ opacity: 0 }, { opacity: 0 }], { duration: 480, fill: 'both' })
+  // The real bubble keeps its layout while its inert copy travels outside the scroll mask, then
+  // fades in under the copy as it fades out, so the handover is a crossfade and not a cut.
+  const reveal = message.animate([{ opacity: 0 }, { opacity: 0 }], { duration: FLIGHT_MS, fill: 'both' })
   animations.push(reveal)
   void (async () => {
+    const dx = origin.left - destination.left
+    const dy = origin.top - destination.top
+    // Bowed a little past the straight line, so the copy swings up into place rather than sliding.
     await animate(ghost, [
-      { transform: `translate(${origin.left - destination.left}px, ${origin.top - destination.top}px) scale(.96)`, opacity: .3 },
+      { transform: `translate(${dx}px, ${dy}px) scale(.96)`, opacity: .7 },
+      { transform: `translate(${dx * .45}px, ${dy * .5 - ARC_PX}px) scale(.98)`, opacity: 1, offset: .55 },
       { transform: 'none', opacity: 1 }
-    ], 480)
+    ], FLIGHT_MS)
     reveal.cancel()
+    await Promise.all([
+      animate(message, [{ opacity: 0 }, { opacity: 1 }], HANDOVER_MS, 'ease-out'),
+      animate(ghost, [{ opacity: 1 }, { opacity: 0 }], HANDOVER_MS, 'ease-out')
+    ])
     ghost.remove()
-    const receiver = view.querySelector<HTMLElement>(`[data-relay-for="${CSS.escape(key)}"] .chat-turn-head-icon`)
-      ?? view.querySelector<HTMLElement>('.chat-working .chat-spinner')
+    const receiver = await receiverFor(view, key, () => disposed)
     if (!receiver) { cleanup(); return }
     const from = message.getBoundingClientRect()
     const to = receiver.getBoundingClientRect()
@@ -78,8 +110,9 @@ function playRelay(view: HTMLElement, list: HTMLElement, message: HTMLElement, o
     await animate(dot, [
       { transform: 'translate(0, 0) scale(.6)', opacity: 0 },
       { opacity: 1, offset: .15 },
+      { opacity: 1, offset: .8 },
       { transform: `translate(${to.left + to.width / 2 - from.right + 8}px, ${to.top + to.height / 2 - from.bottom + 4}px) scale(.6)`, opacity: 0 }
-    ], 320, 'cubic-bezier(.4,0,.2,1)')
+    ], DOT_MS, 'cubic-bezier(.4,0,.2,1)')
     cleanup()
   })().catch(cleanup)
   return cleanup

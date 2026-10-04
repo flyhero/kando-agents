@@ -580,10 +580,13 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     showBrowser()
   }, [browserCall, conversation.id, showBrowser])
 
+  // The working line comes and goes with the turn, below the entries: pinned to the end, the list
+  // follows it too, or the line (and the relay's dot that runs to it) sits just under the edge.
+  const turnState = conversation.chat?.turn
   useLayoutEffect(() => {
     const element = list.current
     if (element && pinned.current) element.scrollTop = element.scrollHeight
-  }, [entries])
+  }, [entries, turnState])
 
   // A request docking below makes the list shorter; one pinned to the end stays there.
   useEffect(() => {
