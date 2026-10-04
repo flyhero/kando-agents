@@ -4,6 +4,7 @@ import { ATTACHMENT_CHUNK_BYTES, AttachmentId, AttachmentInfo, Base64Chunk, Imag
 import { LoginNotice, LoginPrompt, SourceDescriptor, SourceId, SourceInbox, SourceProblem } from './source'
 import { AgentUsage } from './usage'
 import { AgentStats, ConversationStats } from './agent-stats'
+import { DashboardParams, DashboardStats } from './dashboard'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
@@ -49,7 +50,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // environment: core checks for git and the agent CLIs on its path (system.environment).
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images'] as const
+// dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -351,6 +353,7 @@ export const rpcMethods = {
   'usage.refresh': { params: z.object({}), result: z.array(AgentUsage) },
   'agents.stats': { params: z.object({}), result: z.array(AgentStats) },
   'agents.conversationStats': { params: z.object({}), result: z.array(ConversationStats) },
+  'dashboard.stats': { params: DashboardParams, result: DashboardStats },
   // Runs that start on their own once their time comes and their agent has quota again, one per
   // agent at a time, in list order: the open ones, then the recently settled. reorder takes the
   // open ones' ids in their new order; clear drops the settled ones from the list.
