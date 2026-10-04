@@ -631,4 +631,82 @@ describe('ConversationService', () => {
     expect(service.chatPage(created.id).items.find((item) => item.kind === 'user')).toMatchObject({ images: [{ id: stored.id, width: 4, height: 3 }] })
     expect(service.messages(created.id)[0]?.text).toBe('see\n\n（附了 1 张图片）')
   })
+
+  describe('forking at a message', () => {
+    const userTexts = (id: string) => service.chatPage(id).items.flatMap((item) => (item.kind === 'user' ? [item.text] : []))
+    const stageOf = (id: string) => service.stages(id).at(-1)!
+
+    async function twoTurns() {
+      const source = await service.create('claude', [])
+      await service.send(source.id, 'first')
+      await settle()
+      await service.send(source.id, 'second')
+      await settle()
+      return source
+    }
+
+    it("forks through an agent's reply: the chat to there, the session from there, the same folder", async () => {
+      const source = await twoTurns()
+      const stage = stageOf(source.id)
+      const reply = service.chatPage(source.id).items.find((item) => item.kind === 'assistant' && item.text === 'echo: first')!
+      const fork = await service.fork(source.id, stage.id, reply.id)
+      expect(fork).toMatchObject({ agent: 'claude', forkedFromId: source.id, title: `${service.get(source.id).title} · 分支`, titleLocked: true, workspacePath: source.workspacePath })
+      expect(fork.projectPaths).toEqual(source.projectPaths)
+      const spawn = daemon.spawns.at(-1)!
+      expect(spawn.cwd).toBe(source.workspacePath)
+      expect(spawn.args).toEqual(expect.arrayContaining(['--resume', stage.providerSessionId, '--resume-session-at', 'uuid-first', '--fork-session']))
+      expect(spawn.args).not.toContain('--session-id')
+      // The copied chat ends with the first turn; the second never happened here.
+      expect(userTexts(fork.id)).toEqual(['first'])
+      expect(service.chatPage(fork.id).items.filter((item) => item.kind === 'turn')).toHaveLength(1)
+      expect(store.messages(fork.id).map((message) => message.text)).toEqual(['first', 'echo: first'])
+      expect(service.stages(fork.id)).toHaveLength(2)
+      expect(service.stages(fork.id)[0]?.endedAt).not.toBeNull()
+      // The source goes on untouched.
+      expect(userTexts(source.id)).toEqual(['first', 'second'])
+      expect(service.get(source.id).sessionId).not.toBeNull()
+    })
+
+    it('forks before a user message and sends it again, for the agent to answer anew', async () => {
+      const source = await twoTurns()
+      const stage = stageOf(source.id)
+      const second = service.chatPage(source.id).items.find((item) => item.kind === 'user' && item.text === 'second')!
+      const fork = await service.fork(source.id, stage.id, second.id)
+      await settle()
+      expect(daemon.spawns.at(-1)!.args).toEqual(expect.arrayContaining(['--resume-session-at', 'uuid-first', '--fork-session']))
+      expect(userTexts(fork.id)).toEqual(['first', 'second'])
+      expect(service.chatPage(fork.id).items.filter((item) => item.kind === 'assistant').map((item) => item.text)).toEqual(['echo: first', 'echo: second'])
+      expect(store.messages(fork.id).map((message) => message.text)).toEqual(['first', 'echo: first', 'second', 'echo: second'])
+    })
+
+    it('forks before the first message afresh, with nothing to resume', async () => {
+      const source = await twoTurns()
+      const stage = stageOf(source.id)
+      const first = service.chatPage(source.id).items.find((item) => item.kind === 'user' && item.text === 'first')!
+      const fork = await service.fork(source.id, stage.id, first.id)
+      await settle()
+      const args = daemon.spawns.at(-1)!.args
+      expect(args).toContain('--session-id')
+      expect(args).not.toContain('--resume')
+      expect(userTexts(fork.id)).toEqual(['first'])
+      expect(JSON.stringify(daemon.written(service.get(fork.id).sessionId ?? ''))).not.toContain('移交文件')
+    })
+
+    it('refuses a turn still going, a message it cannot find, and a task\'s conversation', async () => {
+      const source = await service.create('claude', [])
+      const stage = stageOf(source.id)
+      daemon.reply = () => {}
+      await service.send(source.id, 'slow')
+      await settle()
+      const slow = service.chatPage(source.id).items.find((item) => item.kind === 'user' && item.text === 'slow')!
+      await expect(service.fork(source.id, stage.id, 'c:nothing:0')).rejects.toMatchObject({ reason: 'chat-item-not-found' })
+      await expect(service.fork(source.id, randomUUID(), slow.id)).rejects.toMatchObject({ reason: 'stage-not-found' })
+      // The user message itself can be forked before; nothing after it can.
+      const fork = await service.fork(source.id, stage.id, slow.id)
+      expect(userTexts(fork.id)).toEqual(['slow'])
+      const task = store.create('claude', root, [root], randomUUID(), {}, { id: 'task-1', title: 'Dark mode' })
+      await expect(service.fork(task.id, stage.id, slow.id)).rejects.toMatchObject({ reason: 'task-conversation' })
+    })
+  })
+
 })

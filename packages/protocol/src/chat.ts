@@ -167,7 +167,10 @@ export const ChatItem = z.discriminatedUnion('kind', [
     ]).nullable().optional(),
     // The turn began on its own, when a subagent working in the background reported back, not
     // from a message. Older cores leave it out.
-    resumed: z.boolean().optional()
+    resumed: z.boolean().optional(),
+    // The agent's own name for where this turn ended, which a fork of the conversation can stop
+    // at: Claude's id for the turn's last message, Codex's id for the turn. Older cores leave it out.
+    providerRef: z.string().nullable().optional()
   }),
   Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
   // The turn before it (turn:<ref> for limit:<ref>) failed because the account's usage limit was

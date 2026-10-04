@@ -6988,3 +6988,7 @@ body.side-panel-resizing * {
 .routine-template-description { white-space: normal; }
 .routine-template-when { display: inline-flex; align-items: center; gap: 4px; }
 .routine-template-when svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* Forking at a message: beside the copy button, at the row's end. */
+.fork-button svg { width: 14px; height: 14px; }
+.chat-user-footer .fork-button, .chat-message-actions .fork-button { margin-left: 2px; }

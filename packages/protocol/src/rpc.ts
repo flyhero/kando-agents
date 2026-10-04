@@ -53,9 +53,10 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork'] as const
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
+// conversation-fork: a free conversation can be forked at one of its messages into a new one (conversations.fork).
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -154,6 +155,11 @@ export const rpcMethods = {
     params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), allowBypass: AllowBypass }),
     result: Conversation
   },
+  // A new conversation with the same agent and projects, holding the chat up to a message: through
+  // the turn an agent's message belongs to, or up to (not including) a user message, which is then
+  // sent again in the new conversation for the agent to answer anew. The agent's own session is
+  // forked where it can be, so the new agent remembers what the chat shows, and no more.
+  'conversations.fork': { params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1) }), result: Conversation },
   // A message for the agent, text and/or images already uploaded (attachments.commit),
   // in the order they show. With queue, one sent while a turn runs waits its turn behind any
   // already waiting; with steer, it goes into the running turn (state.steerable says whether the

@@ -9,6 +9,7 @@ import { parseQuotes, withoutQuoteMarkers } from '../chat-quotes'
 import { formatTokens, isSubagent, thoughtFor, workedFor } from '../chat-tools'
 import { perform, useCore } from '../core-store'
 import { ChatSurfaceContext, conversationSurface, useChatSurface, type ChatSurface } from './chat-surface'
+import { forkConversation } from './ConversationActions'
 import { AGENT_LABEL, chatDayAndTime, dayAndTime, messageTime } from '../labels'
 import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
@@ -27,7 +28,7 @@ import { ChatQuotePicker } from './ChatQuotePicker'
 import { ChatMessageRelay, useMessageRelay } from './chat-message-relay'
 import { cssFontFamily } from '../system-fonts'
 import { freshKeys } from '../chat-motion'
-import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
+import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon, ForkIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 const NO_ITEMS: ChatItem[] = []
@@ -136,11 +137,26 @@ type UserItem = Extract<ChatItem, { kind: 'user' }>
 // Scrolls the chat to an entry and marks it a moment: for a quote, back to the passage it took.
 const JumpToEntry = createContext<(key: string) => void>(() => {})
 
-function UserMessageFooter({ at, text }: { at: number; text: string }) {
+// Forks the conversation at this item, where the chat's owner allows it: a new conversation that
+// holds the chat to here (through the turn for an agent's reply; before the message, sent again,
+// for the user's).
+function ForkButton({ item }: { item: ChatItem }) {
+  const surface = useChatSurface()
+  if (!surface.fork) return null
+  const label = item.kind === 'user' ? '从这条消息 fork：新会话到这里为止，再把它重新发出' : '从这里 fork：新会话到这一轮为止'
+  return (
+    <button type="button" className="copy-button fork-button" aria-label="fork" data-tooltip={label} onClick={() => surface.fork?.(item)}>
+      <ForkIcon />
+    </button>
+  )
+}
+
+function UserMessageFooter({ item }: { item: UserItem }) {
   return (
     <div className="chat-user-footer">
-      <MessageTime at={at} />
-      {text && <CopyButton text={withoutQuoteMarkers(text)} label="复制消息" />}
+      <MessageTime at={item.at} />
+      {item.text && <CopyButton text={withoutQuoteMarkers(item.text)} label="复制消息" />}
+      <ForkButton item={item} />
     </div>
   )
 }
@@ -183,7 +199,7 @@ function UserMessage({ item }: { item: UserItem }) {
           </button>
         </div>
       )}
-      <UserMessageFooter at={item.at} text={item.text} />
+      <UserMessageFooter item={item} />
     </>
   )
 }
@@ -222,6 +238,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
               <CopyButton text={item.text} label="复制回复" />
               <MessageTime at={completedAt} />
               {ending && <span className="chat-turn chat-turn-inline" data-state={ending.state}>{turnText(ending)}</span>}
+              <ForkButton item={item} />
             </div>
           )}
         </div>
@@ -386,6 +403,7 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
         {reply && <CopyButton text={reply.text} label="复制回复" />}
         {reply && <MessageTime at={turn.at} />}
         <span className="chat-turn-summary-static" data-state={turn.state}>{turnText(turn)}</span>
+        <ForkButton item={turn} />
       </div>
     </div>
   )
@@ -427,7 +445,9 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     if (font === 'custom' && fontFamily) element.style.setProperty('--chat-font-custom', cssFontFamily(fontFamily))
     else element.style.removeProperty('--chat-font-custom')
   }, [font, fontFamily])
-  const own = useMemo(() => conversationSurface(conversation, onHandoff ?? null), [conversation, onHandoff])
+  const forkSupported = useCore((s) => s.rpc?.features.includes('conversation-fork') ?? false)
+  const fork = useCallback((item: ChatItem) => void forkConversation(conversation.id, item.stageId, item.id), [conversation.id])
+  const own = useMemo(() => conversationSurface(conversation, onHandoff ?? null, forkSupported ? fork : null), [conversation, onHandoff, forkSupported, fork])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
   const page = useChat((s) => s[id])

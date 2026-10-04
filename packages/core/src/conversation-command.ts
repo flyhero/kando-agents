@@ -43,12 +43,14 @@ export function chatCommand(
     planOnly?: { dirs: readonly string[] }
     // Files the agent may read without asking, such as a task's images.
     readable?: readonly string[]
+    // Resume only through this message (its uuid), as a new session: a fork of the one resumed.
+    forkAt?: string | null
     // Kando's own tools for the agent (showing a file it wrote); none for an older setup.
     mcp?: McpServer
   } = {}
 ): AgentCommand {
   if (agent === 'claude') {
-    const { preferred = {}, planOnly, readable = [], mcp } = launch
+    const { preferred = {}, planOnly, readable = [], mcp, forkAt } = launch
     const allowBypass = (launch.allowBypass ?? false) && !planOnly
     // A remembered bypass needs the user's say-so for this start too. Asking goes by manual on
     // the command line, and is passed too, so Claude Code's own default mode cannot override it.
@@ -76,7 +78,7 @@ export function chatCommand(
       ...(wanted ? ['--permission-mode', wanted] : []),
       ...(preferred.model ? ['--model', preferred.model] : []),
       ...(preferred.effort ? ['--effort', preferred.effort] : []),
-      ...(resume && providerSessionId ? ['--resume', providerSessionId] : providerSessionId ? ['--session-id', providerSessionId] : []),
+      ...(resume && providerSessionId ? ['--resume', providerSessionId, ...(forkAt ? ['--resume-session-at', forkAt, '--fork-session'] : [])] : providerSessionId ? ['--session-id', providerSessionId] : []),
       ...extraProjects.flatMap((project) => ['--add-dir', project]),
       ...(denials.length ? ['--disallowedTools', denials.join(',')] : []),
       ...(reads.length ? ['--allowedTools', reads.join(',')] : []),

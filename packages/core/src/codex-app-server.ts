@@ -768,10 +768,13 @@ export class CodexAppServer implements ChatDriver {
     this.planning = permissionMode === PLAN_MODE
   }
 
+  // A fork takes the thread over through one turn into a new thread of its own (thread/fork with
+  // lastTurnId, inclusive); the thread forked from stays as it was.
   private openThread(): unknown {
-    const { cwd, resume } = this.options
+    const { cwd, resume, fork } = this.options
     const { approvalPolicy, sandbox } = this.mode()
     const common = { cwd, approvalPolicy, sandbox, ...(this.chosen.model ? { model: this.chosen.model } : {}) }
+    if (resume && fork) return { id: 'kando-thread', method: 'thread/fork', params: { threadId: resume, lastTurnId: fork, ...common, excludeTurns: true } }
     return resume
       ? { id: 'kando-thread', method: 'thread/resume', params: { threadId: resume, ...common, excludeTurns: true } }
       : { id: 'kando-thread', method: 'thread/start', params: common }
@@ -801,7 +804,7 @@ export class CodexAppServer implements ChatDriver {
       } else {
         this.initialized = true
       }
-    } else if (method === 'thread/start' || method === 'thread/resume') {
+    } else if (method === 'thread/start' || method === 'thread/resume' || method === 'thread/fork') {
       const thread = ThreadOpened.safeParse(frame.result)
       if (thread.success) {
         this.threadId = thread.data.thread.id
@@ -1274,7 +1277,7 @@ export class CodexAppServer implements ChatDriver {
     }
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
-    this.items.put({ id, kind: 'turn', state, error, durationMs, usage: this.turnUsage }, at)
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage: this.turnUsage, providerRef: turn?.turnId ?? null }, at)
     if (limit) this.items.usageLimit(id, limit, at)
     this.limited = null
     this.turnUsage = null

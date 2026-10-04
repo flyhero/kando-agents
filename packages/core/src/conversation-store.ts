@@ -10,7 +10,7 @@ const SELECT = `SELECT id, title, title_locked AS titleLocked, agent, workspace_
   managed_workspace AS managedWorkspace, session_id AS sessionId, created_at AS createdAt,
   updated_at AS updatedAt, ${lastEnded('exit_code')} AS lastExitCode, ${lastEnded('ended_at')} AS lastExitAt,
   (SELECT plan_only FROM conversation_stages WHERE conversation_id = conversations.id ORDER BY started_at DESC, rowid DESC LIMIT 1) AS planOnly,
-  task_id AS taskId, pinned_at AS pinnedAt, routine_id AS routineId
+  task_id AS taskId, pinned_at AS pinnedAt, routine_id AS routineId, forked_from_id AS forkedFromId
   FROM conversations`
 const STAGE_SELECT = `SELECT id, conversation_id AS conversationId, agent, provider_session_id AS providerSessionId,
   session_id AS sessionId, received_sequence AS receivedSequence, started_at AS startedAt,
@@ -86,6 +86,10 @@ export class ConversationStore {
       id, named?.title ?? '新会话', Number(named !== null), agent, workspacePath, JSON.stringify(projectPaths), JSON.stringify(projectStarts),
       Number(projectPaths.length === 0), task?.id ?? null, routine?.id ?? null, now, now)
     return this.get(id)!
+  }
+
+  setForkedFrom(id: string, sourceId: string): void {
+    this.db.prepare('UPDATE conversations SET forked_from_id = ? WHERE id = ?').run(sourceId, id)
   }
 
   // The conversations a routine opened, once the routine is gone, are the user's like any other:

@@ -338,7 +338,8 @@ export class ClaudeStream implements ChatDriver {
   private exited = false
   private sessionId: string | null
   // resumed: the turn began on its own, when a background subagent reported, not from a message.
-  private turn: { ref: string; assistant: string | null; resumed?: boolean } | null = null
+  // uuid: Claude's id for the turn's latest message, where a fork of the session can stop.
+  private turn: { ref: string; assistant: string | null; resumed?: boolean; uuid?: string } | null = null
   private turnsSeen = 0
   private resumes = 0
   // Output tokens of the running turn's messages so far, for the working line.
@@ -798,6 +799,8 @@ export class ClaudeStream implements ChatDriver {
       return
     }
     const { id: message, content, usage } = parsed.data.message
+    const uuid = Reflect.get(parsed.data, 'uuid')
+    if (this.turn && typeof uuid === 'string') this.turn.uuid = uuid
     // What the latest request sent is what the conversation now fills of the context.
     if (usage) {
       const used = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0)
@@ -1005,7 +1008,7 @@ export class ClaudeStream implements ChatDriver {
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
-    this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true } : {}) }, at)
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true } : {}), providerRef: turn?.uuid ?? null }, at)
     if (limit) this.items.usageLimit(id, limit, at)
     this.refused = null
     if (turn?.assistant) {

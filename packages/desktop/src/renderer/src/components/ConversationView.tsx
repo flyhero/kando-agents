@@ -14,6 +14,18 @@ import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon } from './icons'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { TitleEditor } from './TitleEditor'
 
+// Where a fork came from: a way back while the source is still here.
+function ForkOrigin({ id }: { id: string }) {
+  const source = useCore((state) => state.conversations[id])
+  return (
+    <span className="muted conversation-origin">
+      {source
+        ? <>从「<button type="button" className="link-button" onClick={() => selectConversation(id)}>{source.title}</button>」fork</>
+        : 'fork 自一条已删除的会话'}
+    </span>
+  )
+}
+
 export function ConversationView({ id }: { id: string }) {
   const conversation = useCore((state) => state.conversations[id])
   const [handoffOpen, setHandoffOpen] = useState(false)
@@ -61,6 +73,7 @@ export function ConversationView({ id }: { id: string }) {
         <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{primaryProjectName(conversation.projectPaths)}</span>
         <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
         <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
+        {conversation.forkedFromId && <ForkOrigin id={conversation.forkedFromId} />}
         {conversation.routineId && (
           <span className="muted conversation-origin">
             来自定时任务{routine ? `「${routine.title}」` : ''} ·

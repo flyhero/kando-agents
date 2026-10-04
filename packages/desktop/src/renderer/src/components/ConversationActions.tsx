@@ -1,5 +1,5 @@
 import type { Conversation } from '@kando/protocol'
-import { openConversationDraft, perform, useConversationPinSupported, useCore } from '../core-store'
+import { openConversationDraft, perform, selectConversation, useConversationPinSupported, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
@@ -8,6 +8,12 @@ import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
 // A new conversation opens as a page its first message starts.
 export function newConversation(): void {
   openConversationDraft()
+}
+
+// A new conversation holding this one's chat up to a message, opened once core has it.
+export async function forkConversation(id: string, stageId: string, itemId: string): Promise<void> {
+  const forked = await perform((rpc) => rpc.call('conversations.fork', { id, stageId, itemId }))
+  if (forked) selectConversation(forked.id)
 }
 
 // What a start tells core: whether this user lets it offer bypass.

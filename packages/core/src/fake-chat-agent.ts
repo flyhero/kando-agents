@@ -32,7 +32,7 @@ export function fakeChatDaemon() {
     answerInit: true,
     // What a session prints for each user message; by default a reply and a finished turn.
     reply: (sessionId: string, text: string) => {
-      fake.emit(sessionId, { type: 'assistant', message: { id: `msg-${text}`, content: [{ type: 'text', text: `echo: ${text}` }] }, parent_tool_use_id: null })
+      fake.emit(sessionId, { type: 'assistant', uuid: `uuid-${text}`, message: { id: `msg-${text}`, content: [{ type: 'text', text: `echo: ${text}` }] }, parent_tool_use_id: null })
       fake.emit(sessionId, { type: 'result', subtype: 'success', is_error: false, result: `echo: ${text}`, terminal_reason: 'completed', duration_ms: 5 })
     },
     emit(sessionId: string, frame: unknown): void {

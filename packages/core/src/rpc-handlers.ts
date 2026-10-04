@@ -114,6 +114,7 @@ export function createRpcHandlers(
     'conversations.setPinned': ({ id, pinned }) => conversations.setPinned(id, pinned),
     'conversations.continue': ({ id, allowBypass }) => userActed(id, () => conversations.continue(id, allowBypass)),
     'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, allowBypass),
+    'conversations.fork': ({ id, stageId, itemId }) => conversations.fork(id, stageId, itemId),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
     'conversations.send': ({ id, text, images, queue, steer }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer); return OK }),
     'conversations.cancelQueued': ({ id, ref }) => { conversations.cancelQueued(id, ref); return OK },

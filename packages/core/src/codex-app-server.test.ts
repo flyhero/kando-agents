@@ -98,6 +98,18 @@ describe('CodexAppServer', () => {
     expect(shown(replay(kept).items.list())).toEqual(shown(live.items.list().filter((item) => !streamedOnly(item))))
   })
 
+  it('forks the thread a stage names through a turn, into a thread of its own', () => {
+    const driver = new CodexAppServer('stage-1', { ...OPTIONS, resume: 'thread-1', fork: 'turn-2' })
+    // As the chat host does: what is due goes out and is logged before the answer comes in.
+    const send = () => { const frames = driver.due(); frames.forEach((frame) => driver.apply({ dir: 'out', at: 1, frame })); return frames }
+    send()
+    driver.apply({ dir: 'in', at: 1, frame: { id: 'kando-init', result: {} } })
+    const opened = send().find((frame) => JSON.stringify(frame).includes('"method":"thread/'))
+    expect(opened).toEqual({ id: 'kando-thread', method: 'thread/fork', params: expect.objectContaining({ threadId: 'thread-1', lastTurnId: 'turn-2', cwd: '/work/repo', excludeTurns: true }) })
+    driver.apply({ dir: 'in', at: 2, frame: { id: 'kando-thread', result: { thread: { id: 'thread-2' } } } })
+    expect(driver.providerSessionId()).toBe('thread-2')
+  })
+
   it('resumes the thread a stage names', () => {
     const records = fixture('codex-resume.jsonl')
     const resume = '01a0e635-ad34-74f0-8ecb-2c49cb8429ad'

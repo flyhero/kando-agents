@@ -250,7 +250,9 @@ export const MIGRATIONS = [
    ALTER TABLE scheduled_runs ADD COLUMN seen_at INTEGER;
    CREATE UNIQUE INDEX scheduled_runs_occurrence ON scheduled_runs(routine_id, due_at) WHERE routine_id IS NOT NULL;
    CREATE INDEX scheduled_runs_routine ON scheduled_runs(routine_id, created_at DESC) WHERE routine_id IS NOT NULL;
-   ALTER TABLE conversations ADD COLUMN routine_id TEXT;`
+   ALTER TABLE conversations ADD COLUMN routine_id TEXT;`,
+  // The conversation a fork was made from; kept after the source is deleted, as a name only.
+  `ALTER TABLE conversations ADD COLUMN forked_from_id TEXT;`
 ]
 
 

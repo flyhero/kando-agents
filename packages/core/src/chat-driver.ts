@@ -49,6 +49,9 @@ export type ChatStageOptions = {
   extraDirs: readonly string[]
   // The provider session (Claude session, Codex thread) to continue, if any.
   resume: string | null
+  // Where to stop taking `resume` over: the providerRef of the last turn to keep. The agent then
+  // works in a session of its own from there, and the one resumed stays as it was.
+  fork?: string | null
   // Whether the user lets this conversation run with nothing asked and nothing sandboxed.
   allowBypass?: boolean
   // What the conversation last chose, for a stage that starts with it.

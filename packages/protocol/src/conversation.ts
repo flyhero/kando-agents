@@ -37,7 +37,10 @@ export const Conversation = z.object({
   pinnedAt: z.number().nullable().optional(),
   // The routine whose run opened it, which keeps it out of the list: it is reached from the
   // routine's history. Older cores leave it out.
-  routineId: z.string().uuid().nullable().optional()
+  routineId: z.string().uuid().nullable().optional(),
+  // The conversation this one was forked from, at some message of it; the source may be gone
+  // since. Older cores leave it out.
+  forkedFromId: z.string().uuid().nullable().optional()
 })
 export type Conversation= z.infer<typeof Conversation>
 

@@ -50,7 +50,8 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
         }
       : null,
     planNote: (item) => planNote(task, item),
-    handoff: null
+    handoff: null,
+    fork: null
   }
 }
 

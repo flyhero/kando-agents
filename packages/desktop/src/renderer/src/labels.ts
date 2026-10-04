@@ -143,6 +143,8 @@ const REASON_TEXT: Record<string, string> = {
   'schedule-not-found': '找不到这条预约',
   'schedule-no-text': '只有会话的预约带消息',
   'routine-not-found': '找不到这个定时任务',
+  'fork-turn-running': '这一轮还没结束，等它结束再 fork',
+  'chat-item-not-found': '找不到这条消息',
   'routine-paused': '定时任务已暂停',
   'previous-running': '上一次运行还没结束，这次跳过',
   'routine-invalid-schedule': '重复规则没有指定时间',

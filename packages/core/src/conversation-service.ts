@@ -55,7 +55,10 @@ export type TaskChatLaunch = {
 
 // What a stage's start takes beyond the agent: see TaskChatLaunch; moved says the agent works
 // somewhere else than its last stage did.
-type StageLaunch = { fresh?: boolean; moved?: boolean; planOnly?: boolean; readable?: readonly string[] }
+type StageLaunch = { fresh?: boolean; moved?: boolean; planOnly?: boolean; readable?: readonly string[]; fork?: ForkPoint }
+// The provider session another conversation's stage ran, taken over through the turn `at` names;
+// neither null means a session the agent can fork, else the fork starts afresh.
+type ForkPoint = { providerSessionId: string | null; at: string | null }
 
 // A chat page stops adding older stages once it holds this many items.
 const CHAT_PAGE_ITEMS = 1000
@@ -414,12 +417,84 @@ export class ConversationService {
     return this.start(id, agent, note, true)
   }
 
+  // A new conversation holding this one's chat up to a message, for the same agent in the same
+  // projects: through the turn an agent's message belongs to, or up to a user message, which is
+  // then sent again for the agent to answer anew. The chat logs are copied and cut, so the new
+  // conversation reads as the old one did at that point; the agent's own session is forked at
+  // the same turn where it can be, so it remembers just that much.
+  async fork(sourceId: string, stageId: string, itemId: string): Promise<Conversation> {
+    const source = this.free(sourceId)
+    const stages = this.store.stages(sourceId)
+    const index = stages.findIndex((stage) => stage.id === stageId)
+    if (index < 0) throw new Rejection('stage-not-found', `no chat stage ${stageId}`)
+    const cutStage = stages[index]!
+    const items = this.chats.items(this.chatStage(source, cutStage))
+    const position = items.findIndex((item) => item.id === itemId)
+    if (position < 0) throw new Rejection('chat-item-not-found', `no chat item ${itemId}`)
+    const picked = items[position]!
+    // What of the cut stage goes along, and where the agent's own session is cut.
+    const turnAt = (from: number) => items.slice(from).find((item): item is Extract<ChatItem, { kind: 'turn' }> => item.kind === 'turn')
+    const lastTurnBefore = (end: number) => items.slice(0, end).reverse().find((item): item is Extract<ChatItem, { kind: 'turn' }> => item.kind === 'turn')
+    let kept: ChatItem[]
+    let turn: Extract<ChatItem, { kind: 'turn' }> | undefined
+    let resend: Extract<ChatItem, { kind: 'user' }> | null = null
+    if (picked.kind === 'user') {
+      kept = items.slice(0, position)
+      turn = lastTurnBefore(position)
+      resend = picked
+    } else {
+      const closing = turnAt(position)
+      if (!closing) throw new Rejection('fork-turn-running', 'this turn has not ended yet')
+      kept = items.slice(0, items.indexOf(closing) + 1)
+      turn = closing
+    }
+    // The last turn in an earlier stage, when the cut stage has none before the point.
+    const earlier = turn ?? stages.slice(0, index).reverse().map((stage) => this.chats.items(this.chatStage(source, stage)).reverse().find((item) => item.kind === 'turn')).find(Boolean)
+    const sessionStage = turn ? cutStage : stages.slice(0, index).reverse().find((stage) => this.chats.items(this.chatStage(source, stage)).some((item) => item.kind === 'turn'))
+    // The agent whose session is forked goes on; one that has never spoken here is the source's.
+    const agent = sessionStage?.agent ?? source.agent
+    const fork: ForkPoint = { providerSessionId: sessionStage?.providerSessionId ?? null, at: earlier?.kind === 'turn' ? earlier.providerRef ?? null : null }
+    // A fork of a Claude session must run in the folder the session ran in: the same projects, or
+    // the source's own managed workspace, shared from now on (remove() leaves a workspace in place).
+    const id = randomUUID()
+    const created = this.store.create(agent, source.workspacePath, source.projectPaths, id, this.store.projectStarts(sourceId))
+    this.store.setForkedFrom(id, sourceId)
+    this.store.setChatOptions(id, this.store.chatOptions(sourceId))
+    this.store.update(id, { title: `${source.title} · 分支`, titleLocked: true })
+    // The chat so far: every earlier stage whole, the cut stage up to the point, each as a stage
+    // of the new conversation that has ended, with the messages those turns recorded.
+    for (const stage of stages.slice(0, index + 1)) {
+      const copyId = randomUUID()
+      this.store.startStage(id, stage.agent, null, 0, copyId, stage.planOnly ?? false)
+      const { records } = ChatLog.of(this.sessionsRoot, sourceId, stage.id).read()
+      const last = stage.id === cutStage.id ? kept.at(-1) : undefined
+      const cutAt = stage.id === cutStage.id ? (resend ? resend.at : last?.at ?? 0) : Infinity
+      const copied = records.filter((record) => (resend && stage.id === cutStage.id ? record.at < cutAt : record.at <= cutAt))
+      const endedAt = copied.at(-1)?.at ?? this.store.stage(copyId)!.startedAt
+      ChatLog.of(this.sessionsRoot, id, copyId).append([...copied, { dir: 'exit', at: endedAt, code: null, stderr: '' }])
+      const refs = new Set((stage.id === cutStage.id ? kept : this.chats.items(this.chatStage(source, stage)))
+        .flatMap((item) => (item.kind === 'user' && item.id.startsWith('u:') ? [item.id.slice(2)] : [])))
+      for (const message of this.store.messages(sourceId)) {
+        if (message.stageId !== stage.id) continue
+        const ref = /^chat:(.+):(user|assistant)$/.exec(message.eventKey)?.[1]
+        if (ref === undefined || !refs.has(ref)) continue
+        this.store.addMessage({ conversationId: id, stageId: copyId, role: message.role, agent: message.agent, text: message.text, eventKey: message.eventKey, complete: true })
+      }
+      this.store.endStage(copyId, null)
+    }
+    this.changed(created)
+    await this.start(id, agent, '', false, { fork })
+    if (resend) await this.send(id, resend.text, resend.images.map((image) => image.id))
+    return this.withChat(this.store.get(id)!)
+  }
+
   private async start(id: string, agent: AgentKind, note: string, handoff: boolean, launch: StageLaunch = {}): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     this.launching.add(id)
     try {
       const current = this.get(id)
       if (current.sessionId) throw new Rejection('conversation-running')
+      if (launch.fork) return await this.startFork(current, agent, launch.fork)
       const previous = launch.fresh ? null : this.store.latestStage(id, agent)
       // Kando picks a Claude session id before launch, so a run that died before its first prompt
       // left an id Claude never saved. Only a session that recorded messages can be resumed, and
@@ -447,22 +522,43 @@ export class ConversationService {
     }
   }
 
+  // The first stage of a fork: the source's session taken over through the fork point, where the
+  // agent can (Claude's session from the same folder, Codex's thread), else a fresh start. The chat
+  // it continues is already copied, so no handoff file is written.
+  private async startFork(current: Conversation, agent: AgentKind, fork: ForkPoint): Promise<Conversation> {
+    const native = fork.providerSessionId !== null && fork.at !== null
+    const providerSessionId = native ? fork.providerSessionId : agent === 'claude' ? randomUUID() : null
+    // Without a session to fork, the copied chat reaches the agent the way a handoff does.
+    let handoffPath: string | null = null
+    const messages = native ? [] : this.store.messages(current.id)
+    if (messages.length > 0) {
+      const directory = path.join(this.sessionsRoot, current.id, 'handoffs')
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      handoffPath = path.join(directory, `${randomUUID()}.md`)
+      await writeFile(handoffPath, buildHandoff(current, messages, '', agent, agent), { mode: 0o600 })
+    }
+    const stage = this.store.startStage(current.id, agent, providerSessionId, this.store.maxSequence(current.id), randomUUID(), false)
+    return this.startChat(current, stage, native, handoffPath, [], native ? fork.at : null)
+  }
+
   // Runs the stage's agent over stdio, driven by the chat host, and waits until it can take a message.
   private async startChat(
     current: Conversation,
     stage: ConversationStage,
     resume: boolean,
     handoffPath: string | null,
-    readable: readonly string[]
+    readable: readonly string[],
+    forkAt: string | null = null
   ): Promise<Conversation> {
     const { id } = current
     const { agent } = stage
-    const { options } = this.chatStage(current, stage)
+    const { options } = this.chatStage(current, stage, forkAt)
     const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, options.extraDirs, {
       preferred: options.preferred,
       allowBypass: options.allowBypass,
       planOnly: options.planOnly ? { dirs: [options.cwd, ...options.extraDirs] } : undefined,
       readable,
+      forkAt,
       ...(this.mcp ? { mcp: this.mcp(id) } : {})
     })
     let sessionId: string
@@ -477,7 +573,7 @@ export class ConversationService {
     this.store.attachStage(stage.id, sessionId)
     this.changed(this.store.update(id, { agent, sessionId }))
     try {
-      await this.chats.open(this.chatStage(current, stage), sessionId, 0, true)
+      await this.chats.open(this.chatStage(current, stage, forkAt), sessionId, 0, true)
       if (handoffPath) await this.chats.send(id, handoffPrompt(handoffPath))
     } catch (error) {
       // A stage that never started leaves nothing to resume, so it goes, log and all.
@@ -503,7 +599,9 @@ export class ConversationService {
     }
   }
 
-  private chatStage(conversation: Conversation, stage: ConversationStage): ChatStage {
+  // forkAt: only while the stage is being opened as a fork; a stage taken back later resumes the
+  // session the fork made, which the stage then holds.
+  private chatStage(conversation: Conversation, stage: ConversationStage, forkAt: string | null = null): ChatStage {
     const chosen = this.store.chatOptions(conversation.id)
     return {
       conversationId: conversation.id,
@@ -513,6 +611,7 @@ export class ConversationService {
         cwd: conversation.workspacePath,
         extraDirs: conversation.projectPaths.slice(1),
         resume: stage.providerSessionId,
+        fork: forkAt,
         // Read off the stage, so a stage taken back after a restart still only plans.
         planOnly: stage.planOnly ?? false,
         allowBypass: !stage.planOnly && (chosen.allowBypass ?? false),

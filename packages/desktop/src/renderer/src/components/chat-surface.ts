@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Conversation } from '@kando/protocol'
+import type { ChatItem, Conversation } from '@kando/protocol'
 import type { PlanItem } from '../chat-state'
 import { showBrowserPanel, showConversationChanges, showConversationPlan } from '../core-store'
 import type { BranchTarget } from './BranchStatus'
@@ -29,6 +29,9 @@ export type ChatSurface = {
   planNote(item: PlanItem): string | null
   // Opens the handoff to the other agent; null where the chat cannot be handed off (a task's).
   handoff: (() => void) | null
+  // Forks the conversation at a message into a new one; null where it cannot be (a task's, or
+  // a core without forks).
+  fork: ((item: ChatItem) => void) | null
 }
 
 export const ChatSurfaceContext = createContext<ChatSurface | null>(null)
@@ -40,7 +43,7 @@ export function useChatSurface(): ChatSurface {
 }
 
 // A free conversation: its own inspector, its projects' changes, and chat mode to continue in.
-export function conversationSurface(conversation: Conversation, handoff: (() => void) | null = null): ChatSurface {
+export function conversationSurface(conversation: Conversation, handoff: (() => void) | null = null, fork: ((item: ChatItem) => void) | null = null): ChatSurface {
   return {
     inspector: 'conversation',
     showPlan: showConversationPlan,
@@ -52,6 +55,7 @@ export function conversationSurface(conversation: Conversation, handoff: (() => 
     sendBlocker: null,
     savePlan: null,
     planNote: () => null,
-    handoff
+    handoff,
+    fork
   }
 }
