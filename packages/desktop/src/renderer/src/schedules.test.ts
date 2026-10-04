@@ -89,6 +89,9 @@ describe('runs in a conversation', () => {
   it('says what each kind does, a run that took a limit over continuing rather than starting on the plan', () => {
     expect(runAction({ target: { kind: 'resume', conversationId, ...limit } })).toBe('额度恢复后从中断处继续')
     expect(runAction({ target: { kind: 'conversation', conversationId, text: '' } })).toBe('批准计划或按计划开始实现')
+    const image = `${'a'.repeat(64)}.png`
+    expect(runAction({ target: { kind: 'conversation', conversationId, text: 'look', images: [image, image] } })).toBe('发送：look（附 2 张图片）')
+    expect(runAction({ target: { kind: 'conversation', conversationId, text: '', images: [image] } })).toBe('发送 1 张图片')
     expect(runAction({ target: { kind: 'conversation', conversationId, text: '', resumes: limit } })).toBe('从中断处继续')
     expect(runAction({ target: { kind: 'conversation', conversationId, text: '跑测试', resumes: limit } })).toBe('从中断处继续，并发送：跑测试')
   })

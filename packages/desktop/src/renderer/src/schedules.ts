@@ -102,7 +102,9 @@ export function runAction(run: Pick<ScheduledRun, 'target'>): string {
   const { target } = run
   if (target.kind === 'task') return '执行任务'
   if (target.kind === 'resume') return '额度恢复后从中断处继续'
-  if (target.text) return target.resumes ? `从中断处继续，并发送：${target.text}` : `发送：${target.text}`
+  const pictures = target.images?.length ? `${target.images.length} 张图片` : ''
+  if (target.text) return `${target.resumes ? '从中断处继续，并发送：' : '发送：'}${target.text}${pictures ? `（附 ${pictures}）` : ''}`
+  if (pictures) return `${target.resumes ? '从中断处继续，并发送' : '发送'} ${pictures}`
   return target.resumes ? '从中断处继续' : '批准计划或按计划开始实现'
 }
 

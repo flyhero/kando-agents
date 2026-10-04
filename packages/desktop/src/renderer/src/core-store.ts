@@ -460,6 +460,11 @@ export function useFindFileSupported(): boolean {
 }
 
 // Whether core can search the projects for the composer's @ menu (projects.searchFiles).
+// A core that sends a scheduled message's pictures with it.
+export function useScheduleImagesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('schedule-images') ?? false)
+}
+
 // A core that carries a plan out in any permission mode the stage offers, not only ask or edits.
 export function usePlanModesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('plan-modes') ?? false)

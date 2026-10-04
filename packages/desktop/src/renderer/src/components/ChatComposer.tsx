@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
-import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useSchedulesSupported } from '../core-store'
+import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useScheduleImagesSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
 import { composeMessage, parseQuotes, setQuotes, useQuotes } from '../chat-quotes'
 import { QuoteCards } from './ChatQuoteCards'
@@ -48,12 +48,15 @@ function queuedText(text: string): string {
 
 // Sends what the input holds later, unattended: once its time comes and the agent has quota again.
 // An empty input schedules carrying out the plan the chat has.
-function ScheduleSendButton({ conversationId, text, disabledReason, onScheduled }: {
+function ScheduleSendButton({ conversationId, text, images, disabledReason, onScheduled }: {
   conversationId: string
   text: string
+  // The pictures in the input, by their names in core's attachment store, which keeps them.
+  images: readonly string[]
   disabledReason: string | null
   onScheduled: () => void
 }) {
+  const message = text !== '' || images.length > 0
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   return (
@@ -65,7 +68,7 @@ function ScheduleSendButton({ conversationId, text, disabledReason, onScheduled 
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={disabledReason !== null}
-        data-tooltip={disabledReason ?? (text ? '预约发送：额度恢复后或到点再发' : '预约：额度恢复后或到点按计划开始实现')}
+        data-tooltip={disabledReason ?? (message ? '预约发送：额度恢复后或到点再发' : '预约：额度恢复后或到点按计划开始实现')}
         data-tooltip-side="top-end"
         onClick={() => setOpen(!open)}
       >
@@ -73,10 +76,10 @@ function ScheduleSendButton({ conversationId, text, disabledReason, onScheduled 
       </button>
       {open && (
         <SchedulePicker
-          title={text ? '预约发送这条消息' : '预约按计划开始实现'}
-          note={text ? '到点后发出这条消息，agent 不会停下来等你确认。' : '到点后让 agent 按定下的计划开始实现。'}
+          title={message ? '预约发送这条消息' : '预约按计划开始实现'}
+          note={message ? `到点后发出这条消息${images.length ? `和 ${images.length} 张图片` : ''}，agent 不会停下来等你确认。` : '到点后让 agent 按定下的计划开始实现。'}
           onSchedule={async (notBefore) => {
-            const run = await createSchedule({ kind: 'conversation', conversationId, text: text.trim() }, notBefore)
+            const run = await createSchedule({ kind: 'conversation', conversationId, text: text.trim(), ...(images.length ? { images: [...images] } : {}) }, notBefore)
             if (run) onScheduled()
             return run !== null
           }}
@@ -179,6 +182,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const imagesSupported = useChatImagesSupported()
   const optionsSupported = useChatOptionsSupported()
   const schedulesSupported = useSchedulesSupported()
+  const scheduleImagesSupported = useScheduleImagesSupported()
   const mentionsSupported = useFileMentionsSupported()
   const attached = useComposerImages()
   const running = conversation.sessionId !== null
@@ -328,10 +332,16 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
           <ScheduleSendButton
             conversationId={id}
             text={composeMessage(quotes, text)}
-            disabledReason={attached.images.length > 0 ? '预约的消息不能带图片' : surface.sendBlocker ?? null}
+            images={attached.images.map((image) => image.id)}
+            disabledReason={
+              attached.uploading > 0 ? '图片还在上传'
+                : attached.images.length > 0 && !scheduleImagesSupported ? '这个 core 还不能预约带图片的消息'
+                  : surface.sendBlocker ?? null
+            }
             onScheduled={() => {
               setText('')
               setQuotes(id, [])
+              attached.setImages([])
             }}
           />
         )}
