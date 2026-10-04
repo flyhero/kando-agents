@@ -56,6 +56,23 @@ export function toolLabel(name: string): string {
   return TOOL_LABEL[name] ?? name
 }
 
+export type ToolIconKind = 'read' | 'edit' | 'terminal' | 'search' | 'browser' | 'image' | 'agent' | 'list' | 'tool'
+
+const TOOL_ICONS: Record<string, ToolIconKind> = {
+  Read: 'read', Write: 'edit', Edit: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit', fileChange: 'edit',
+  Bash: 'terminal', commandExecution: 'terminal',
+  Grep: 'search', Glob: 'search', WebSearch: 'search', webSearch: 'search',
+  WebFetch: 'browser', [BROWSER_HOST_TOOL]: 'browser', imageView: 'image',
+  Task: 'agent', Agent: 'agent', spawnAgent: 'agent', TodoWrite: 'list', ExitPlanMode: 'list'
+}
+
+export function toolIconKind(name: string): ToolIconKind {
+  if (name === TERMINAL_RUN_TOOL || terminalToolKind(name)) return 'terminal'
+  if (browserToolKind(name) === 'screenshot' || isPreviewTool(name)) return 'image'
+  if (isBrowserTool(name)) return 'browser'
+  return TOOL_ICONS[name] ?? 'tool'
+}
+
 // What a run of calls did, in the words a person would use: counted by kind, in the order each kind
 // first came up.
 const TOOL_KIND: Record<string, { kind: string; say: (count: number) => string }> = {

@@ -5,6 +5,7 @@ import { itemKey } from '../chat-state'
 import { showTerminal } from '../core-store'
 import { diffCounts, elapsedText, runHeadline, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
+import { ChatToolIcon } from './ChatToolIcon'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
 
@@ -84,6 +85,7 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
   return (
     <div className="chat-tool" data-diff-path={path}>
       <button type="button" className="chat-tool-header" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChatToolIcon name="Edit" status={tools.find((tool) => tool.status === 'running')?.status ?? tools.find((tool) => tool.status !== 'done')?.status ?? 'done'} />
         <span className="chat-tool-name">编辑:</span>
         <FileExt path={path} />
         <span className="chat-tool-title" title={path}>{shorten(path)}<span className="chat-tool-count"> · {tools.length} 次</span></span>
@@ -120,6 +122,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
+        <ChatToolIcon name={tool.name} status={tool.status} />
         {tool.description ? (
           // What the agent said the call does; the command itself is a hover, or a click, away.
           <span className="chat-tool-description" title={tool.title}>{tool.description}</span>
@@ -151,6 +154,7 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   return (
     <div className="chat-tool-run" data-open={open || undefined}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChatToolIcon name={running?.name ?? only?.name ?? ''} status={running ? 'running' : failed > 0 ? 'failed' : 'done'} />
         <span className="chat-tool-summary" title={headline.described ? running?.title : undefined}>{headline.text}</span>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {running && !headline.described && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
@@ -184,6 +188,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
+        <ChatToolIcon name={item.name} status={item.status} />
         <span className="chat-tool-name">{toolLabel(item.name)}:</span>
         {item.diffs.length > 0 && <FileExt path={item.diffs[0]?.path ?? item.title} />}
         <span className="chat-tool-title" title={item.title}>{shorten(item.title)}</span>

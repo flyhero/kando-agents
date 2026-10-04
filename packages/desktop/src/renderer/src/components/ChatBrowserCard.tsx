@@ -10,6 +10,7 @@ import { ChatPaths, ChevronRightIcon, ToolStatus, clipped } from './chat-tool-pa
 import { previewUrl } from '../file-links'
 import { LocalImageViewer } from './ChatMarkdown'
 import { ImageViewer } from './ImageViewer'
+import { ChatToolIcon } from './ChatToolIcon'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -69,6 +70,7 @@ function ChatPageCard({ item }: { item: ToolItem }) {
   return (
     <div className="chat-tool chat-page" data-status={item.status}>
       <div className="chat-page-row">
+        <ChatToolIcon name={item.name} status={item.status} />
         <div className="chat-page-text">
           <div className="chat-page-title">{page ? (page.title || hostLine(page.url)) : label}</div>
           <div className="chat-page-sub muted">
@@ -106,6 +108,7 @@ export function ChatShotCard({ item }: { item: ToolItem }) {
   return (
     <div className="chat-tool chat-browser" data-status={item.status}>
       <button type="button" className="chat-tool-header" aria-expanded={details ? open : undefined} disabled={!details} onClick={() => setOpen(!open)}>
+        <ChatToolIcon name={item.name} status={item.status} />
         <span className="chat-tool-name">{toolLabel(item.name)}{item.title ? ':' : ''}</span>
         <span className="chat-tool-title mono" title={item.title}>{shorten(item.title)}</span>
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}

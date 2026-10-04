@@ -7,6 +7,7 @@ import { previewUrl } from '../file-links'
 import { LocalImageViewer } from './ChatMarkdown'
 import { ChatPaths } from './ChatToolCard'
 import { RefreshIcon } from './icons'
+import { ChatToolIcon } from './ChatToolIcon'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -54,6 +55,7 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
   return (
     <div className="chat-preview" data-status={item.status}>
       <div className="chat-preview-head">
+        <ChatToolIcon name={item.name} status={item.status} />
         <span className="chat-preview-title">{title ?? shorten(path)}</span>
         {title && <span className="chat-preview-path" title={path}>{shorten(path)}</span>}
         <span className="chat-preview-actions">

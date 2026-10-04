@@ -5,6 +5,7 @@ import { formatTokens, subagentBrief } from '../chat-tools'
 import { ChatMarkdown } from './ChatMarkdown'
 import { CheckIcon, ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
+import { ChatToolIcon } from './ChatToolIcon'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -23,6 +24,7 @@ function Subagent({ tool }: { tool: ToolItem }) {
   return (
     <div className="chat-subagent">
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChatToolIcon name={tool.name} status={tool.status} />
         <SubagentMark tool={tool} />
         <span className="chat-subagent-prefix">子 agent:</span>
         {brief.kind && <span className="chat-tool-name">{brief.kind}</span>}

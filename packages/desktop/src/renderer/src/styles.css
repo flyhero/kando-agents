@@ -4437,6 +4437,56 @@ body.side-panel-resizing * {
 .chat-tool-header:hover:not(:disabled) { background: var(--fill); }
 .chat-tool-header:disabled { cursor: default; }
 .chat-tool-name { font-weight: 500; white-space: nowrap; }
+.chat-tool-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.chat-tool-icon svg { width: 16px; height: 16px; overflow: visible; }
+.chat-tool-icon[data-status='running'] { color: var(--accent); }
+.chat-tool-icon[data-status='failed'],
+.chat-tool-icon[data-status='denied'] { color: var(--danger); }
+.chat-tool-icon[data-status='running'][data-kind='read'] svg path:last-of-type {
+  animation: chat-tool-read 1.6s ease-in-out infinite;
+}
+.chat-tool-icon[data-status='running'][data-kind='edit'] svg {
+  animation: chat-tool-edit 1.2s ease-in-out infinite;
+  transform-origin: 50% 75%;
+}
+.chat-tool-icon[data-status='running'][data-kind='terminal'] svg path:last-of-type {
+  animation: chat-tool-terminal 1s steps(2, jump-none) infinite;
+}
+.chat-tool-icon[data-status='running'][data-kind='search'] svg {
+  animation: chat-tool-search 1.6s ease-in-out infinite;
+}
+.chat-tool-icon[data-status='running']:is([data-kind='browser'], [data-kind='tool']) svg {
+  animation: spin 3.2s linear infinite;
+}
+.chat-tool-icon[data-status='running']:is([data-kind='image'], [data-kind='agent'], [data-kind='list']) svg {
+  animation: chat-tool-read 1.6s ease-in-out infinite;
+}
+@keyframes chat-tool-read {
+  0%, 100% { opacity: 1; transform: translateY(-1px); }
+  50% { opacity: .45; transform: translateY(1px); }
+}
+@keyframes chat-tool-edit {
+  0%, 100% { transform: translateX(-1px) rotate(-6deg); }
+  50% { transform: translateX(1px) rotate(6deg); }
+}
+@keyframes chat-tool-terminal { to { opacity: .25; } }
+@keyframes chat-tool-search {
+  0%, 100% { transform: translate(0, 0); }
+  35% { transform: translate(2px, -1px); }
+  70% { transform: translate(-1px, 1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-tool-icon[data-status='running'][data-kind] svg,
+  .chat-tool-icon[data-status='running'][data-kind] svg path:last-of-type { animation: none; }
+}
+
 .chat-tool-count { color: var(--text-3); }
 .chat-tool-title {
   flex: 1;

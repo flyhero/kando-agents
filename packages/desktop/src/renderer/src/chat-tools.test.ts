@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel, toolIconKind } from './chat-tools'
+
+describe('toolIconKind', () => {
+  it('recognizes both agents and Kando MCP aliases', () => {
+    expect(['Write', 'MultiEdit', 'fileChange'].map(toolIconKind)).toEqual(['edit', 'edit', 'edit'])
+    expect(['Bash', 'commandExecution', 'mcp__kando__terminal_run', 'kando.terminal_read'].map(toolIconKind)).toEqual(['terminal', 'terminal', 'terminal', 'terminal'])
+    expect(['Read', 'Grep', 'Glob', 'webSearch'].map(toolIconKind)).toEqual(['read', 'search', 'search', 'search'])
+    expect(['WebFetch', 'mcp__kando__browser_navigate', 'kando.browser_click'].map(toolIconKind)).toEqual(['browser', 'browser', 'browser'])
+    expect(['imageView', 'mcp__kando__browser_screenshot', 'kando.show_preview'].map(toolIconKind)).toEqual(['image', 'image', 'image'])
+  })
+
+  it('keeps unfamiliar third-party tools recognizable as tools', () => {
+    expect(toolIconKind('mcp__github__create_pull_request')).toBe('tool')
+  })
+})
 
 describe('runSummary', () => {
   it('counts a run of calls by kind, in the order each first came up', () => {
