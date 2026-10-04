@@ -97,7 +97,6 @@ export function App() {
 
   return (
     <div className="app" data-sidebar-hidden={(sidebarHidden && !settingsOpen) || undefined}>
-      {!settingsOpen && !maximizedUtility && <WindowBrand />}
       <main className="workspace" data-utility-maximized={maximizedUtility}>
         {settingsOpen ? (
           <SettingsPage />
@@ -136,6 +135,9 @@ export function App() {
           />
         )}
       </main>
+      {/* After the workspace: where drag regions overlap, the later one wins, and the sidebar and
+          pane headers under it are drag regions. */}
+      {!settingsOpen && !maximizedUtility && <WindowBrand />}
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}
       {loginOpen && <SourceLoginDialog />}
