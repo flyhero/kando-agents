@@ -5,8 +5,11 @@ import { reasonText } from '../labels'
 import { deleteRoutine, fetchRoutineRuns, isUnread, markRoutineAllSeen, nextRunText, ROUTINE_AGENT_LABEL, runOutcomeText, runRoutineNow, scheduleText, updateRoutine } from '../routines'
 import { scheduleTime } from '../schedules'
 import { useNow } from '../usage-format'
-import { ChevronRightIcon, CloseIcon, PencilIcon, PlayIcon } from './icons'
+import { ChevronRightIcon, ClockIcon, CloseIcon, PencilIcon, PlayIcon } from './icons'
+import type { ReactNode } from 'react'
 import { RoutineEditor } from './RoutineEditor'
+import { ROUTINE_TEMPLATES, type RoutineTemplate } from '../routine-templates'
+import { BookIcon, BranchIcon, ChartIcon, DocumentIcon, FileChangesIcon, FolderIcon, PulseIcon, RefreshIcon } from './icons'
 
 const PAGE = 50
 
@@ -107,22 +110,55 @@ function Row({ routine, now, onEdit }: { routine: Routine; now: number; onEdit: 
   )
 }
 
+const TEMPLATE_ICON: Record<RoutineTemplate['icon'], ReactNode> = {
+  changes: <FileChangesIcon />, refresh: <RefreshIcon />, branch: <BranchIcon />, pulse: <PulseIcon />,
+  folder: <FolderIcon />, document: <DocumentIcon />, book: <BookIcon />, chart: <ChartIcon />
+}
+
+// Common chores written out, to start a routine from: a card opens the editor filled in.
+function Templates({ onPick }: { onPick: (template: RoutineTemplate) => void }) {
+  return (
+    <section className="worktree-group" aria-label="模板">
+      <h3 className="worktree-group-title">模板<span className="muted routine-templates-hint">点一张，改成你要的样子再创建</span></h3>
+      <ul className="routine-templates">
+        {ROUTINE_TEMPLATES.map((template) => (
+          <li key={template.id}>
+            <button type="button" className="routine-template" onClick={() => onPick(template)}>
+              <span className="routine-template-icon" aria-hidden="true">{TEMPLATE_ICON[template.icon]}</span>
+              <span className="routine-template-main">
+                <span className="routine-template-title">{template.title}</span>
+                <span className="routine-template-description">{template.description}</span>
+                <span className="routine-template-when"><ClockIcon />{scheduleText(template.schedule)}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+type Editing = { routine: Routine | null; template: RoutineTemplate | null }
+
 // The routines, each with when it next runs and what its runs did: the runs' conversations are
-// opened from here and nowhere else.
+// opened from here and nowhere else. Under them, templates to start a new one from.
 export function RoutinesSection() {
   const routines = useCore((s) => s.routines)
   const now = useNow(60_000)
-  const [editing, setEditing] = useState<{ routine: Routine | null } | null>(null)
+  const [editing, setEditing] = useState<Editing | null>(null)
   return (
-    <section className="worktree-group" aria-label="规则">
-      <h3 className="worktree-group-title">
-        规则 · {routines.length}
-        <button type="button" className="link-button" onClick={() => setEditing({ routine: null })}>新建</button>
-      </h3>
-      {routines.length === 0
-        ? <p className="worktrees-empty muted">还没有定时任务。点「新建」写下要重复做的事和什么时候做。</p>
-        : <ul className="worktree-list routine-list">{routines.map((routine) => <Row key={routine.id} routine={routine} now={now} onEdit={() => setEditing({ routine })} />)}</ul>}
-      {editing && <RoutineEditor routine={editing.routine} onClose={() => setEditing(null)} />}
-    </section>
+    <>
+      <section className="worktree-group" aria-label="规则">
+        <h3 className="worktree-group-title">
+          规则 · {routines.length}
+          <button type="button" className="link-button" onClick={() => setEditing({ routine: null, template: null })}>新建</button>
+        </h3>
+        {routines.length === 0
+          ? <p className="worktrees-empty muted">还没有定时任务。点「新建」写下要重复做的事和什么时候做，或者从下面的模板开始。</p>
+          : <ul className="worktree-list routine-list">{routines.map((routine) => <Row key={routine.id} routine={routine} now={now} onEdit={() => setEditing({ routine, template: null })} />)}</ul>}
+      </section>
+      <Templates onPick={(template) => setEditing({ routine: null, template })} />
+      {editing && <RoutineEditor routine={editing.routine} template={editing.template} onClose={() => setEditing(null)} />}
+    </>
   )
 }

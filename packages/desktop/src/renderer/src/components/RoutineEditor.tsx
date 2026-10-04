@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { HOURLY_EVERY, nextOccurrence, RoutineAgent, type AgentKind, type ChatCatalog, type Routine, type RoutineFields, type RoutineSchedule } from '@kando/protocol'
+import type { RoutineTemplate } from '../routine-templates'
 import { dismissError, useChatOptionsSupported, useCore } from '../core-store'
 import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
@@ -41,8 +42,9 @@ function scheduleFrom(kind: Kind, time: string, days: readonly number[], every: 
 }
 
 // Makes a routine, or changes one: what to do, which agent in which projects, and when. Runs go
-// unattended in the mode the settings give every scheduled run.
-export function RoutineEditor({ routine, onClose }: { routine: Routine | null; onClose: () => void }) {
+// unattended in the mode the settings give every scheduled run. A new one may start from a
+// template, which fills in the title, the instruction and the schedule to change at will.
+export function RoutineEditor({ routine, template = null, onClose }: { routine: Routine | null; template?: RoutineTemplate | null; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleInput = useRef<HTMLInputElement>(null)
   const ids = useId()
@@ -52,14 +54,14 @@ export function RoutineEditor({ routine, onClose }: { routine: Routine | null; o
   const rpc = useCore((s) => s.rpc)
   const optionsSupported = useChatOptionsSupported()
   const installed = useInstalledAgents()
-  const [title, setTitle] = useState(routine?.title ?? '')
-  const [text, setText] = useState(routine?.target.text ?? '')
+  const [title, setTitle] = useState(routine?.title ?? template?.title ?? '')
+  const [text, setText] = useState(routine?.target.text ?? template?.text ?? '')
   const [agent, setAgent] = useState<RoutineAgent>(routine?.target.agent ?? installed[0] ?? 'claude')
   const [projectPaths, setProjectPaths] = useState<string[]>(routine?.target.projectPaths ?? [])
   const [model, setModel] = useState<string | null>(routine?.target.model ?? null)
   const [effort, setEffort] = useState<string | null>(routine?.target.effort ?? null)
   const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
-  const given = routine?.schedule
+  const given = routine?.schedule ?? template?.schedule
   const [kind, setKind] = useState<Kind>(given?.kind ?? 'daily')
   const [time, setTime] = useState(given && 'time' in given ? given.time : '09:00')
   const [days, setDays] = useState<number[]>(given?.kind === 'weekly' ? given.days : [1])
