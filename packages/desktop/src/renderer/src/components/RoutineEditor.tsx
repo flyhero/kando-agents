@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
-import { HOURLY_EVERY, nextOccurrence, type AgentKind, type ChatCatalog, type Routine, type RoutineAgent, type RoutineFields, type RoutineSchedule } from '@kando/protocol'
+import { HOURLY_EVERY, nextOccurrence, RoutineAgent, type AgentKind, type ChatCatalog, type Routine, type RoutineFields, type RoutineSchedule } from '@kando/protocol'
 import { dismissError, useChatOptionsSupported, useCore } from '../core-store'
 import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
@@ -9,8 +9,7 @@ import { scheduleTime, UNATTENDED_LABEL } from '../schedules'
 import { AgentQuotaHint } from './AgentQuota'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { effortLabel } from './ChatOptionsBar'
-import { ChatModelPicker } from './ChatPicker'
-import { AgentIcon, SparkIcon } from './icons'
+import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { ProjectPicker } from './ProjectPicker'
 import { SettingsLink } from './SchedulePicker'
 import { Segmented } from './SettingsControls'
@@ -145,9 +144,6 @@ export function RoutineEditor({ routine, onClose }: { routine: Routine | null; o
       }}
       onKeyDown={onKeyDown}
       onClick={onBackdrop}
-      onPaste={attached.handlers.onPaste}
-      onDragOver={attached.handlers.onDragOver}
-      onDrop={attached.handlers.onDrop}
     >
       <div className="modal-body">
         <header className="modal-header">
@@ -160,60 +156,61 @@ export function RoutineEditor({ routine, onClose }: { routine: Routine | null; o
           <input ref={titleInput} className="input modal-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="比如：每日代码审查" maxLength={200} />
         </label>
 
-        <label className="modal-field">
-          <span className="modal-label">每次运行时让 agent 做什么</span>
-          <textarea
-            className="input modal-textarea"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="像在聊天里一样写指令。到点会新开一个会话，把这段话发给 agent，无人值守地做完。"
-            rows={5}
-          />
-          <div className="routine-editor-images">
+        <div className="modal-field">
+          <span className="modal-label" id={`${ids}-prompt`}>每次运行时让 agent 做什么</span>
+          <div className="chat-input-card routine-editor-card" onDragOver={attached.handlers.onDragOver} onDrop={attached.handlers.onDrop}>
             <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />
-            <ChatAddMenu disabled={busy} onAdd={attached.add} />
-          </div>
-        </label>
-
-        <div className="modal-field">
-          <span className="modal-label" id={`${ids}-agent`}>agent</span>
-          <div className="chat-draft-agents routine-agents" role="radiogroup" aria-labelledby={`${ids}-agent`}>
-            {installed.map((kind) => (
-              <button key={kind} type="button" role="radio" aria-checked={agent === kind} className="chat-draft-agent" disabled={busy} onClick={() => setAgent(kind)}>
-                <AgentIcon agent={kind} />
-                <span>{AGENT_LABEL[kind]}</span>
-                <AgentQuotaHint agent={kind} />
-              </button>
-            ))}
-            <button type="button" role="radio" aria-checked={agent === 'auto'} className="chat-draft-agent" disabled={busy} onClick={() => setAgent('auto')}>
-              <span className="agent-mark routine-auto-mark" aria-hidden="true"><SparkIcon /></span>
-              <span>{ROUTINE_AGENT_LABEL.auto}</span>
-              <span className="muted routine-agent-note">到点时用有额度的那个</span>
-            </button>
-          </div>
-          {agent !== 'auto' && optionsSupported && catalog && (
-            <div className="routine-editor-model">
-              <ChatModelPicker
-                models={catalog.models.map((each) => ({ value: each.id, label: each.label, description: each.description }))}
-                model={modelId}
-                efforts={efforts.map((each) => ({ value: each, label: effortLabel(each) }))}
-                effort={chosenEffort}
+            <textarea
+              className="chat-input routine-editor-prompt"
+              aria-labelledby={`${ids}-prompt`}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={attached.handlers.onPaste}
+              placeholder="像在聊天里一样写指令。到点会新开一个会话，把这段话发给 agent，无人值守地做完。"
+              rows={4}
+            />
+            <div className="chat-options routine-editor-options">
+              <ChatAddMenu disabled={busy} onAdd={attached.add} />
+              <ChatPicker
+                label="agent"
+                value={agent}
+                placeholder="agent"
+                options={[
+                  ...installed.map((kind) => ({ value: kind, label: AGENT_LABEL[kind] })),
+                  { value: 'auto', label: ROUTINE_AGENT_LABEL.auto, description: '到点时用有额度的那个' }
+                ]}
                 disabled={busy}
-                onModel={(value) => {
-                  setModel(value)
-                  const picked = catalog.models.find((each) => each.id === value)
-                  if (effort && !picked?.efforts.includes(effort)) setEffort(null)
+                onChange={(value) => {
+                  const picked = RoutineAgent.safeParse(value)
+                  if (picked.success) setAgent(picked.data)
                 }}
-                onEffort={setEffort}
               />
+              {agent !== 'auto' && optionsSupported && catalog && (
+                <ChatModelPicker
+                  models={catalog.models.map((each) => ({ value: each.id, label: each.label, description: each.description }))}
+                  model={modelId}
+                  efforts={efforts.map((each) => ({ value: each, label: effortLabel(each) }))}
+                  effort={chosenEffort}
+                  disabled={busy}
+                  onModel={(value) => {
+                    setModel(value)
+                    const picked = catalog.models.find((each) => each.id === value)
+                    if (effort && !picked?.efforts.includes(effort)) setEffort(null)
+                  }}
+                  onEffort={setEffort}
+                />
+              )}
+              {agent !== 'auto' && <AgentQuotaHint agent={agent} className="routine-editor-quota" />}
+              <span className="chat-dock-spacer" />
+              <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
             </div>
+          </div>
+          {(agent === 'auto' || projectPaths.length === 0) && (
+            <span className="muted routine-editor-note">
+              {agent === 'auto' ? '到点时用有额度的那个 agent。' : ''}
+              {projectPaths.length === 0 ? '不选项目时，用 Kando 的工作目录。' : ''}
+            </span>
           )}
-        </div>
-
-        <div className="modal-field">
-          <span className="modal-label">项目</span>
-          <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
-          {projectPaths.length === 0 && <span className="muted routine-editor-note">不选项目时，用 Kando 的工作目录</span>}
         </div>
 
         <div className="modal-field">
