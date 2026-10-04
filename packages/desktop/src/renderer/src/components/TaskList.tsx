@@ -7,7 +7,7 @@ import { setPreference, TASK_GROUPS, TASK_SORTS, usePreferences, type Preference
 import { waitingOn } from '../task-waiting'
 import { saveTaskText } from '../unsaved-edits'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
-import { FilterIcon, InboxIcon, SlidersIcon } from './icons'
+import { FilterIcon, InboxIcon, ListIcon, SlidersIcon } from './icons'
 import { StatusIcon } from './StatusIcon'
 import { hasTaskAlerts, TaskAlerts } from './TaskAlerts'
 import { projectNames } from './ProjectPicker'
@@ -184,7 +184,7 @@ export function TaskList() {
   return (
     <nav className="task-list" data-collapsed={collapsed} aria-label="任务列表">
       <header className="task-list-header">
-        <SidebarCollapseButton label="任务" count={visible.length} collapsed={collapsed} controls="sidebar-tasks" onToggle={() => setCollapsed((value) => !value)} />
+        <SidebarCollapseButton icon={<ListIcon />} label="任务" count={visible.length} collapsed={collapsed} controls="sidebar-tasks" onToggle={() => setCollapsed((value) => !value)} />
         <SidebarSearchToggle
           label="搜索任务"
           query={query}

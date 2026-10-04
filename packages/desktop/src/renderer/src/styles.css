@@ -524,9 +524,11 @@ body.stacked-panel-resizing * {
   cursor: pointer;
 }
 .sidebar-section-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.sidebar-section-icon { width: 16px; height: 16px; display: grid; place-items: center; flex-shrink: 0; }
+.sidebar-section-icon svg { width: 16px; height: 16px; }
 .sidebar-collapse-icon { width: 24px; height: 24px; display: grid; place-items: center; margin-left: auto; opacity: 0; transition: opacity 0.12s; }
 .sidebar-collapse-icon svg { width: 16px; height: 16px; transition: transform 0.15s; }
-.sidebar-section-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+.sidebar-section-toggle[aria-expanded='true'] .sidebar-collapse-icon svg { transform: rotate(180deg); }
 .task-list:hover .sidebar-collapse-icon, .task-list:focus-within .sidebar-collapse-icon,
 .conversation-list:hover .sidebar-collapse-icon, .conversation-list:focus-within .sidebar-collapse-icon,
 [data-collapsed='true'] .sidebar-collapse-icon { opacity: 1; }

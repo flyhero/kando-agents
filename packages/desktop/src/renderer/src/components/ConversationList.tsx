@@ -8,7 +8,7 @@ import { ConversationContextMenu, newConversation, renameConversation } from './
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { ConversationStatus } from './ConversationStatus'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
-import { SlidersIcon } from './icons'
+import { ChatIcon, SlidersIcon } from './icons'
 import { projectName, projectNames } from './ProjectPicker'
 import { SidebarCollapseButton } from './SidebarCollapseButton'
 import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
@@ -217,7 +217,7 @@ export function ConversationList() {
   return (
     <nav className="conversation-list" data-collapsed={collapsed} aria-label="会话列表">
       <header className="task-list-header">
-        <SidebarCollapseButton label="会话" count={visible.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
+        <SidebarCollapseButton icon={<ChatIcon />} label="会话" count={visible.length} collapsed={collapsed} controls="sidebar-conversations" onToggle={() => setCollapsed((value) => !value)} />
         <SidebarSearchToggle
           label="搜索会话"
           query={query}
