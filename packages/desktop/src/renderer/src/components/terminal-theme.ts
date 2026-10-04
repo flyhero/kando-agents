@@ -1,5 +1,6 @@
 import type { ITheme } from '@xterm/xterm'
 import { isDarkTheme } from '../appearance'
+import { withAlpha } from '../css-color'
 
 type AnsiPalette = Pick<
   ITheme,
@@ -63,8 +64,15 @@ const LIGHT_ANSI: AnsiPalette = {
   brightWhite: '#8a8578'
 }
 
+// A token's colour as the page shows it. The tokens are written with light-dark(), which only
+// resolves where a colour is used, so the value is read off an element that uses it.
 function token(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  const probe = document.createElement('span')
+  probe.style.color = `var(${name})`
+  document.documentElement.append(probe)
+  const color = getComputedStyle(probe).color
+  probe.remove()
+  return color
 }
 
 // Chrome colors come from the app's CSS tokens, so the terminal reads as part of the page.
@@ -75,9 +83,9 @@ export function terminalTheme(): ITheme {
     cursor: token('--accent'),
     cursorAccent: token('--surface'),
     selectionBackground: token('--focus'),
-    scrollbarSliderBackground: `${token('--text-muted')}55`,
-    scrollbarSliderHoverBackground: `${token('--text-muted')}88`,
-    scrollbarSliderActiveBackground: `${token('--text-muted')}aa`,
+    scrollbarSliderBackground: withAlpha(token('--text-muted'), 0.33),
+    scrollbarSliderHoverBackground: withAlpha(token('--text-muted'), 0.53),
+    scrollbarSliderActiveBackground: withAlpha(token('--text-muted'), 0.67),
     ...(isDarkTheme() ? DARK_ANSI : LIGHT_ANSI)
   }
 }

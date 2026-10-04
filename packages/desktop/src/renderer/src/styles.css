@@ -1,32 +1,38 @@
-:root {
-  --bg: #f8f8f8;
-  --surface: #ffffff;
+/* Tokens. One block per palette, every colour given for light and dark at once with light-dark();
+   which half shows follows color-scheme, set further down from the system or a pinned theme. The
+   default palette is also the fallback for a name the stylesheet no longer knows. A palette
+   attribute on any element retints that element, which is how the settings draw their swatches.
+   The rules for choosing these values are in DESIGN.md. */
+:root,
+[data-palette='terracotta'] {
+  --bg: light-dark(#f8f8f8, #000000);
+  --surface: light-dark(#ffffff, #0d0d0d);
   /* Fills are translucent so they layer on any surface: a wash for hover and quiet boxes, a
      second step for pressed and selected. */
-  --surface-muted: rgb(0 0 0 / 4%);
-  --fill: rgb(0 0 0 / 3%);
-  --fill-2: rgb(0 0 0 / 6%);
-  --border: #eeeeee;
-  --border-2: #e3e3e3;
-  --text: #080808;
-  --text-muted: #666666;
-  --text-3: #999999;
-  --accent: #c2542d;
-  --accent-text: #ffffff;
-  --accent-bg: rgb(194 84 45 / 9%);
-  --info: #0072f5;
-  --danger: #b3261e;
-  --focus: #c2542d55;
-  --mark-mono: #000000;
+  --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 6%));
+  --fill: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 6%));
+  --fill-2: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
+  --border: light-dark(#eeeeee, #1a1a1a);
+  --border-2: light-dark(#e3e3e3, #202020);
+  --text: light-dark(#080808, #ffffff);
+  --text-muted: light-dark(#666666, #aaaaaa);
+  --text-3: light-dark(#999999, #6f6f6f);
+  --accent: light-dark(#c2542d, #e0754c);
+  --accent-text: light-dark(#ffffff, #1a0f0a);
+  --accent-bg: light-dark(rgb(194 84 45 / 9%), rgb(224 117 76 / 14%));
+  --info: light-dark(#0072f5, #60b1ff);
+  --danger: light-dark(#b3261e, #ef6b62);
+  --focus: light-dark(#c2542d55, #e0754c55);
+  --mark-mono: light-dark(#000000, #ffffff);
 
-  /* Code in replies, coloured by kind of token. */
-  --code-keyword: #a626a4;
-  --code-string: #50a14f;
-  --code-number: #986801;
-  --code-comment: #a0a1a7;
-  --code-title: #4078f2;
-  --code-type: #c18401;
-  --code-variable: #e45649;
+  /* Code in replies, coloured by kind of token: One Light and One Dark. */
+  --code-keyword: light-dark(#a626a4, #c678dd);
+  --code-string: light-dark(#50a14f, #98c379);
+  --code-number: light-dark(#986801, #d19a66);
+  --code-comment: light-dark(#a0a1a7, #7f848e);
+  --code-title: light-dark(#4078f2, #61afef);
+  --code-type: light-dark(#c18401, #e5c07b);
+  --code-variable: light-dark(#e45649, #e06c75);
 
   --warning: #c79a1c;
 
@@ -40,72 +46,138 @@
   --radius-sm: 6px;
   --radius-xs: 4px;
   --radius-lg: 12px;
-  --shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  /* Dark has no shadows: a transparent one reads as none. */
+  --shadow: 0 1px 2px light-dark(rgb(0 0 0 / 6%), transparent);
   --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
 
-/* Dark follows the system unless a theme is pinned in settings ([data-theme]). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #000000;
-    --surface: #0d0d0d;
-    --surface-muted: rgb(255 255 255 / 6%);
-    --fill: rgb(255 255 255 / 6%);
-    --fill-2: rgb(255 255 255 / 10%);
-    --border: #1a1a1a;
-    --border-2: #202020;
-    --text: #ffffff;
-    --text-muted: #aaaaaa;
-    --text-3: #6f6f6f;
-    --accent: #e0754c;
-    --accent-text: #1a0f0a;
-    --accent-bg: rgb(224 117 76 / 14%);
-    --info: #60b1ff;
-    --danger: #ef6b62;
-    --focus: #e0754c55;
-    --mark-mono: #ffffff;
-    --shadow: none;
-    --code-keyword: #c678dd;
-    --code-string: #98c379;
-    --code-number: #d19a66;
-    --code-comment: #7f848e;
-    --code-title: #61afef;
-    --code-type: #e5c07b;
-    --code-variable: #e06c75;
-    color-scheme: dark;
-  }
+/* Indigo, after Linear: cool near-black greys and a single indigo for action. */
+[data-palette='indigo'] {
+  --bg: light-dark(#fcfcfd, #08090a);
+  --surface: light-dark(#ffffff, #0f1011);
+  --surface-muted: light-dark(rgb(40 42 48 / 4%), rgb(247 248 248 / 6%));
+  --fill: light-dark(rgb(40 42 48 / 3%), rgb(247 248 248 / 5%));
+  --fill-2: light-dark(rgb(40 42 48 / 6%), rgb(247 248 248 / 9%));
+  --border: light-dark(#ebebee, #1c1e22);
+  --border-2: light-dark(#dfe1e4, #23252a);
+  --text: light-dark(#282a30, #f7f8f8);
+  --text-muted: light-dark(#6f6e77, #8a8f98);
+  --text-3: light-dark(#9b9ca2, #62666d);
+  --accent: light-dark(#5e6ad2, #7170ff);
+  --accent-text: light-dark(#ffffff, #ffffff);
+  --accent-bg: light-dark(rgb(94 106 210 / 10%), rgb(113 112 255 / 16%));
+  --info: light-dark(#3d7ae5, #4ea7fc);
+  --danger: light-dark(#c52828, #eb5757);
+  --focus: light-dark(#5e6ad255, #7170ff55);
+  --mark-mono: light-dark(#282a30, #f7f8f8);
+  --warning: light-dark(#b7791f, #d9a343);
+  --status-pending: #8a8f98;
+  --status-abandoned: light-dark(#b4b6bd, #62666d);
+  --status-running: light-dark(#3d7ae5, #4ea7fc);
+  --status-done: light-dark(#2d9d5c, #4cb782);
 }
 
-:root[data-theme='dark'] {
-  --bg: #000000;
-  --surface: #0d0d0d;
-  --surface-muted: rgb(255 255 255 / 6%);
-  --fill: rgb(255 255 255 / 6%);
-  --fill-2: rgb(255 255 255 / 10%);
-  --border: #1a1a1a;
-  --border-2: #202020;
-  --text: #ffffff;
-  --text-muted: #aaaaaa;
-  --text-3: #6f6f6f;
-  --accent: #e0754c;
-  --accent-text: #1a0f0a;
-  --accent-bg: rgb(224 117 76 / 14%);
-  --info: #60b1ff;
-  --danger: #ef6b62;
-  --focus: #e0754c55;
-  --mark-mono: #ffffff;
-  --shadow: none;
-  --code-keyword: #c678dd;
-  --code-string: #98c379;
-  --code-number: #d19a66;
-  --code-comment: #7f848e;
-  --code-title: #61afef;
-  --code-type: #e5c07b;
-  --code-variable: #e06c75;
-  color-scheme: dark;
+/* Nord: the arctic palette, Polar Night under Snow Storm with Frost for action. */
+[data-palette='nord'] {
+  --bg: light-dark(#eceff4, #2e3440);
+  --surface: light-dark(#f8f9fb, #3b4252);
+  --surface-muted: light-dark(rgb(46 52 64 / 5%), rgb(216 222 233 / 7%));
+  --fill: light-dark(rgb(46 52 64 / 4%), rgb(216 222 233 / 6%));
+  --fill-2: light-dark(rgb(46 52 64 / 8%), rgb(216 222 233 / 11%));
+  --border: light-dark(#d8dee9, #434c5e);
+  --border-2: light-dark(#c9d1de, #4c566a);
+  --text: light-dark(#2e3440, #eceff4);
+  --text-muted: light-dark(#4c566a, #d8dee9);
+  --text-3: #7b88a1;
+  --accent: light-dark(#5e81ac, #88c0d0);
+  --accent-text: light-dark(#eceff4, #2e3440);
+  --accent-bg: light-dark(rgb(94 129 172 / 12%), rgb(136 192 208 / 16%));
+  --info: light-dark(#5e81ac, #81a1c1);
+  --danger: #bf616a;
+  --focus: light-dark(#5e81ac55, #88c0d055);
+  --mark-mono: light-dark(#2e3440, #eceff4);
+  --code-keyword: light-dark(#5e81ac, #81a1c1);
+  --code-string: light-dark(#6f9a5a, #a3be8c);
+  --code-number: light-dark(#8f6a8a, #b48ead);
+  --code-comment: light-dark(#8a93a6, #616e88);
+  --code-title: light-dark(#3b7f93, #88c0d0);
+  --code-type: light-dark(#4e8e8c, #8fbcbb);
+  --code-variable: light-dark(#4c566a, #d8dee9);
+  --warning: light-dark(#b58a2a, #ebcb8b);
+  --status-pending: #7b88a1;
+  --status-abandoned: light-dark(#aeb7c7, #4c566a);
+  --status-running: light-dark(#5e81ac, #81a1c1);
+  --status-done: light-dark(#6f9a5a, #a3be8c);
 }
+
+/* Paper: warm cream like Notion's pages and a reader's sepia, bronze for action; dark is the
+   same paper by lamplight. */
+[data-palette='paper'] {
+  --bg: light-dark(#f4efe6, #1a1714);
+  --surface: light-dark(#fbf8f2, #231f1a);
+  --surface-muted: light-dark(rgb(60 45 20 / 5%), rgb(239 232 220 / 6%));
+  --fill: light-dark(rgb(60 45 20 / 4%), rgb(239 232 220 / 6%));
+  --fill-2: light-dark(rgb(60 45 20 / 7%), rgb(239 232 220 / 10%));
+  --border: light-dark(#e8e1d4, #2f2a24);
+  --border-2: light-dark(#ddd4c3, #3a332b);
+  --text: light-dark(#2a241d, #efe8dc);
+  --text-muted: light-dark(#6b6256, #b3a897);
+  --text-3: light-dark(#9a9082, #7d7467);
+  --accent: light-dark(#a36d1c, #d9a24f);
+  --accent-text: light-dark(#ffffff, #231a0d);
+  --accent-bg: light-dark(rgb(163 109 28 / 10%), rgb(217 162 79 / 14%));
+  --info: light-dark(#2f6fa8, #7fb0e0);
+  --danger: light-dark(#b0423a, #e07a70);
+  --focus: light-dark(#a36d1c55, #d9a24f55);
+  --mark-mono: light-dark(#2a241d, #efe8dc);
+  --warning: light-dark(#b58a2a, #d9b55a);
+  --status-pending: light-dark(#938a7a, #8f8574);
+  --status-abandoned: light-dark(#bfb5a3, #5d564c);
+  --status-running: light-dark(#2f6fa8, #7fb0e0);
+  --status-done: light-dark(#4a7f52, #8dbb88);
+}
+
+/* Catppuccin: Latte by day, Mocha by night, mauve for action; code in its own colours. */
+[data-palette='catppuccin'] {
+  --bg: light-dark(#e6e9ef, #181825);
+  --surface: light-dark(#eff1f5, #1e1e2e);
+  --surface-muted: light-dark(rgb(76 79 105 / 6%), rgb(205 214 244 / 7%));
+  --fill: light-dark(rgb(76 79 105 / 5%), rgb(205 214 244 / 6%));
+  --fill-2: light-dark(rgb(76 79 105 / 9%), rgb(205 214 244 / 10%));
+  --border: light-dark(#dce0e8, #313244);
+  --border-2: light-dark(#ccd0da, #45475a);
+  --text: light-dark(#4c4f69, #cdd6f4);
+  --text-muted: light-dark(#6c6f85, #a6adc8);
+  --text-3: light-dark(#9ca0b0, #6c7086);
+  --accent: light-dark(#8839ef, #cba6f7);
+  --accent-text: light-dark(#eff1f5, #1e1e2e);
+  --accent-bg: light-dark(rgb(136 57 239 / 10%), rgb(203 166 247 / 14%));
+  --info: light-dark(#1e66f5, #89b4fa);
+  --danger: light-dark(#d20f39, #f38ba8);
+  --focus: light-dark(#8839ef55, #cba6f755);
+  --mark-mono: light-dark(#4c4f69, #cdd6f4);
+  --code-keyword: light-dark(#8839ef, #cba6f7);
+  --code-string: light-dark(#40a02b, #a6e3a1);
+  --code-number: light-dark(#fe640b, #fab387);
+  --code-comment: light-dark(#9ca0b0, #6c7086);
+  --code-title: light-dark(#1e66f5, #89b4fa);
+  --code-type: light-dark(#df8e1d, #f9e2af);
+  --code-variable: light-dark(#e64553, #eba0ac);
+  --warning: light-dark(#df8e1d, #f9e2af);
+  --status-pending: light-dark(#8c8fa1, #7f849c);
+  --status-abandoned: light-dark(#acb0be, #45475a);
+  --status-running: light-dark(#1e66f5, #89b4fa);
+  --status-done: light-dark(#40a02b, #a6e3a1);
+}
+
+/* Dark follows the system unless a theme is pinned in settings ([data-theme]). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { color-scheme: dark; }
+}
+:root[data-theme='dark'] { color-scheme: dark; }
+
 
 * {
   box-sizing: border-box;
@@ -3220,6 +3292,52 @@ body.side-panel-resizing * {
 .stepper button:focus-visible {
   outline: 2px solid var(--focus);
 }
+
+/* The palettes, each as a card in its own colours, light side and dark side. */
+.palette-picker { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.palette-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.palette-option:hover { color: var(--text); }
+.palette-option[aria-checked='true'] { color: var(--text); font-weight: 500; }
+.palette-option:focus-visible { outline: 2px solid var(--focus); }
+.palette-swatch {
+  display: flex;
+  width: 64px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.palette-option[aria-checked='true'] .palette-swatch { box-shadow: 0 0 0 2px var(--accent); }
+/* Each half resolves the palette's light-dark() tokens its own way. */
+.palette-swatch-half { flex: 1; display: grid; place-items: center; background: var(--bg); }
+.palette-swatch-half[data-scheme='light'] { color-scheme: light; }
+.palette-swatch-half[data-scheme='dark'] { color-scheme: dark; }
+.palette-swatch-card {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 22px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.palette-swatch-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
+.palette-swatch-line { flex: 1; height: 2px; border-radius: 1px; background: var(--text-3); }
 
 .stepper {
   display: inline-flex;

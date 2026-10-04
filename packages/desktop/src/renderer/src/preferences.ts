@@ -1,6 +1,7 @@
 import { AgentKind } from '@kando/protocol'
 import { z } from 'zod'
 import { create } from 'zustand'
+import { PALETTES } from './palettes'
 
 export const CONVERSATION_GROUPS = ['none', 'project', 'agent', 'status'] as const
 export const CONVERSATION_SORTS = ['recent', 'created', 'title'] as const
@@ -11,6 +12,8 @@ export const TASK_SORTS = ['recent', 'created', 'title'] as const
 // not what a task is, so they stay on this client instead of going to core.
 const Preferences = z.object({
   theme: z.enum(['system', 'light', 'dark']).catch('system'),
+  // The set of colours the interface is drawn in; each has a light and a dark side.
+  palette: z.enum(PALETTES).catch('terracotta'),
   terminalFontSize: z.number().int().min(10).max(20).catch(12),
   chatFontSize: z.number().int().min(10).max(20).catch(14),
   // What the chat is set in: the system's font, a serif for the prose, or a family the user

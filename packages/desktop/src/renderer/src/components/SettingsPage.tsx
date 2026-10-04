@@ -32,6 +32,7 @@ import { settingsSectionOf } from './SourceInboxView'
 import { SourceSettingsSection } from './SourceSettingsSection'
 import { projectName } from './ProjectPicker'
 import { Segmented, SettingsRow, Stepper, Toggle } from './SettingsControls'
+import { PalettePicker } from './PalettePicker'
 
 function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
@@ -56,6 +57,11 @@ function AppearanceSettings() {
             ]}
           />
         )}
+      />
+      <SettingsRow
+        label="配色"
+        description="界面的整套颜色。每套都有浅色和深色两面，跟着上面的主题切换；每张色卡左边是浅色、右边是深色。"
+        control={(labelId) => <PalettePicker labelId={labelId} />}
       />
       <SettingsRow
         label="终端字号"
