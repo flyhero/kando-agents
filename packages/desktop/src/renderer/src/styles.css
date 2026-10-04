@@ -5282,6 +5282,12 @@ body.side-panel-resizing * {
 /* The plan card's title row: what waits, where the plan is, and at its far end, approving later
    in the small type of an aside rather than the title's. */
 .chat-plan .chat-request-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; }
+/* The schedule picker's one line on how a run goes, and the icon that says the rest. */
+.schedule-picker-mode { display: flex; align-items: center; gap: 4px; }
+.schedule-picker-mode .settings-link { margin-left: 0; }
+.schedule-picker-info { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: auto; color: var(--text-3); cursor: help; }
+.schedule-picker-info svg { width: 14px; height: 14px; }
+.schedule-picker-info:hover, .schedule-picker-info:focus-visible { color: var(--text-muted); }
 .chat-plan-schedule { margin-left: auto; }
 /* Its panel opens from the bold title row, but reads as any panel. */
 .chat-plan-schedule > .menu { font-weight: 400; }

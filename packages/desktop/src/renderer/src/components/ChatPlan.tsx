@@ -24,7 +24,7 @@ function SchedulePlanButton({ conversationId }: { conversationId: string }) {
         <SchedulePicker
           floating
           title="预约批准这个计划"
-          note="到点后批准计划并开始执行，文件改动自动接受。agent 不能停下来等你确认。"
+          note="到点后批准并开始执行，不会停下来等你确认。"
           onSchedule={async (notBefore) => (await createSchedule({ kind: 'conversation', conversationId, text: '' }, notBefore)) !== null}
           onClose={close}
         />

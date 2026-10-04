@@ -277,7 +277,7 @@ function ScheduleButton({ task, dependencies }: { task: Task; dependencies: read
       ) : (
         <SchedulePicker
           title="预约执行"
-          note={task.plan ? '到点后按保存的计划直接实现，不先规划、不等确认。' : '到点后按任务详情直接实现，不先规划、不等确认。'}
+          note={task.plan ? '到点后按保存的计划直接实现，不再先规划。' : '到点后按任务详情直接实现，不再先规划。'}
           onSchedule={async (notBefore) => (await createSchedule({ kind: 'task', taskId: task.id }, notBefore)) !== null}
           onClose={close}
         />

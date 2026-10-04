@@ -74,7 +74,7 @@ function ScheduleSendButton({ conversationId, text, disabledReason, onScheduled 
       {open && (
         <SchedulePicker
           title={text ? '预约发送这条消息' : '预约按计划开始实现'}
-          note={text ? '到点后发出输入框里的这条消息，并告诉 agent 没人在场，不要停下来等确认。' : '输入框是空的：到点后让 agent 按已经定下的计划开始实现，不停下来等确认。'}
+          note={text ? '到点后发出这条消息，agent 不会停下来等你确认。' : '到点后让 agent 按定下的计划开始实现。'}
           onSchedule={async (notBefore) => {
             const run = await createSchedule({ kind: 'conversation', conversationId, text: text.trim() }, notBefore)
             if (run) onScheduled()

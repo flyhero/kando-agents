@@ -3,6 +3,10 @@ import { setSettingsOpen, useCore } from '../core-store'
 import { fromLocalInput, nextNight, toLocalInput, UNATTENDED_LABEL } from '../schedules'
 import { Popover } from './Popover'
 import { Segmented } from './SettingsControls'
+import { InfoIcon } from './icons'
+
+// How every scheduled run goes, whichever way it was set to start.
+const SCHEDULE_RULES = '额度不够时会等它恢复再开始；同一个 agent 的预约一个接一个运行；电脑睡着时不会运行。'
 
 type When = 'quota' | 'time'
 
@@ -58,9 +62,18 @@ export function SchedulePicker({ title, note, initial, submitLabel = '预约', f
             onChange={(event) => setTime(event.target.value)}
           />
         )}
-        <p className="menu-note">
-          {when === 'time' ? '到点后如果额度还没恢复，会等它恢复再开始。' : '额度够用就马上开始，用完了就等它恢复。'}
-          同一个 agent 的预约一个接一个运行。以「{UNATTENDED_LABEL[mode]}」无人值守运行（<SettingsLink />）；电脑睡着时不会运行。
+        {/* How it runs, in a line; the rest of how scheduling works waits behind the icon. */}
+        <p className="menu-note schedule-picker-mode">
+          以「{UNATTENDED_LABEL[mode]}」无人值守运行 · <SettingsLink />
+          <span
+            className="schedule-picker-info"
+            tabIndex={0}
+            aria-label={SCHEDULE_RULES}
+            data-tooltip={SCHEDULE_RULES}
+            data-tooltip-side="top-end"
+          >
+            <InfoIcon />
+          </span>
         </p>
         <div className="note-form-actions">
           <button type="button" className="button ghost" onClick={onClose}>取消</button>
