@@ -619,14 +619,15 @@ export class ConversationService {
   // Goes on for a scheduled run, with nobody there to answer: a plan waiting for approval is
   // approved, or the agent is readied in the unattended mode (`ready` starts it: a task's chat goes
   // through its task) and told to go ahead. A turn still running has the message wait behind it.
-  async runScheduled(id: string, text: string, mode: UnattendedMode, ready: () => Promise<unknown>, ref: string): Promise<void> {
+  // images go with the text; a message of pictures alone is sent as it is, not as the go-ahead.
+  async runScheduled(id: string, text: string, images: readonly string[], mode: UnattendedMode, ready: () => Promise<unknown>, ref: string): Promise<void> {
     const conversation = this.get(id)
     const plan = this.waitingPlan(conversation)
     if (plan) {
       await this.chats.respond(id, plan.requestId, { decision: 'allowForSession' })
       // Edits are what approving lets through; bypass only where the stage was started allowing it.
       if (mode === 'bypass') await this.chats.setOption(id, 'permissionMode', mode).catch(() => {})
-      if (text) await this.send(id, `${UNATTENDED_NOTE}\n\n${text}`, [], true, false, ref)
+      if (text || images.length) await this.send(id, `${UNATTENDED_NOTE}\n\n${text}`.trim(), images, true, false, ref)
       return
     }
     const live = this.chats.activity(id) !== null
@@ -637,7 +638,7 @@ export class ConversationService {
       this.store.setChatOptions(id, { permissionMode: mode, ...(mode === 'bypass' ? { allowBypass: true } : {}) })
       await ready()
     }
-    await this.send(id, `${UNATTENDED_NOTE}\n\n${text || SCHEDULED_GO_TEXT}`, [], !this.chats.idle(id), false, ref)
+    await this.send(id, `${UNATTENDED_NOTE}\n\n${text || (images.length ? '' : SCHEDULED_GO_TEXT)}`.trim(), images, !this.chats.idle(id), false, ref)
   }
 
   // The plan the live stage waits on the user to approve, if any.

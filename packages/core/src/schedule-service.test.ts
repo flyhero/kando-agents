@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Task, type AgentUsage, type ChatItem, type ScheduledRun, type ScheduleTaskBlocker, type UnattendedMode } from '@kando/protocol'
 import { CONTINUE_TEXT, SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { AttachmentStore } from './attachment-store'
+import { pngBytes } from './image-fixtures'
 import { ConversationService } from './conversation-service'
 import { ConversationStore } from './conversation-store'
 import { fakeChatDaemon } from './fake-chat-agent'
@@ -178,6 +179,22 @@ describe('ScheduleService', () => {
 
     await due()
     expect(userTexts(conversation.id)).toHaveLength(1)
+  })
+
+  it('sends the pictures a message was scheduled with, and pictures alone as they are', async () => {
+    const image = (await new AttachmentStore(path.join(root, 'attachments')).put(pngBytes(4, 3))).id
+    const conversation = await conversations.create('claude', [])
+    schedules.create({ kind: 'conversation', conversationId: conversation.id, text: 'What is wrong here?', images: [image] }, null)
+    await due()
+    const pictures = () => conversations.chatPage(conversation.id).items.flatMap((item) => (item.kind === 'user' ? [item.images.map((each) => each.id)] : []))
+    expect(userTexts(conversation.id)).toEqual([`${UNATTENDED_NOTE}\n\nWhat is wrong here?`])
+    expect(pictures()).toEqual([[image]])
+
+    const alone = await conversations.create('claude', [])
+    schedules.create({ kind: 'conversation', conversationId: alone.id, text: '', images: [image] }, null)
+    await due()
+    // Not the go-ahead to carry out a plan: the pictures are the message.
+    expect(userTexts(alone.id)).toEqual([UNATTENDED_NOTE])
   })
 
   it('starts a released agent again in the unattended mode, and goes on with its plan when told nothing more', async () => {

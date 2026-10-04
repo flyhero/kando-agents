@@ -378,7 +378,7 @@ export class ScheduleService {
       : () => this.deps.conversations.continue(conversation.id, bypass)
     // A run that took a limit over continues the stopped turn, not the plan.
     const text = target.text || (target.resumes ? CONTINUE_TEXT : '')
-    await this.deps.conversations.runScheduled(conversation.id, text, mode, ready, scheduleRef(run))
+    await this.deps.conversations.runScheduled(conversation.id, text, target.images ?? [], mode, ready, scheduleRef(run))
     return conversation.id
   }
 

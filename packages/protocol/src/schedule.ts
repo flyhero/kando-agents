@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AttachmentId, MAX_CHAT_IMAGES } from './attachments'
 import { AgentKind, checkStart, startKind, type StartBlocker, type Task } from './task'
 
 // The usageLimit chat item a run answers: the one whose turn the limit stopped.
@@ -12,7 +13,15 @@ export type LimitRef = z.infer<typeof LimitRef>
 // A conversation run made where a resume waited, or hit by the limit while it waited, takes the
 // limit over (`resumes`): it continues the stopped turn instead of starting on the plan.
 const TaskTarget = z.object({ kind: z.literal('task'), taskId: z.string().min(1) })
-const ConversationTarget = z.object({ kind: z.literal('conversation'), conversationId: z.string().uuid(), text: z.string().trim().max(100000), resumes: LimitRef.optional() })
+// images: the message's pictures, by their names in core's attachment store, which keeps them;
+// older cores leave them out.
+const ConversationTarget = z.object({
+  kind: z.literal('conversation'),
+  conversationId: z.string().uuid(),
+  text: z.string().trim().max(100000),
+  images: z.array(AttachmentId).max(MAX_CHAT_IMAGES).optional(),
+  resumes: LimitRef.optional()
+})
 const ResumeTarget = z.object({ kind: z.literal('resume'), conversationId: z.string().uuid(), stageId: z.string(), itemId: z.string() })
 export const ScheduledTarget = z.discriminatedUnion('kind', [TaskTarget, ConversationTarget, ResumeTarget])
 export type ScheduledTarget = z.infer<typeof ScheduledTarget>
