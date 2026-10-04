@@ -143,6 +143,16 @@ export function InspectorIcon() {
   )
 }
 
+// A window with its left column marked off: the sidebar.
+export function SidebarIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="2.5" />
+      <path d="M8 3.5v13" />
+    </svg>
+  )
+}
+
 export function TerminalIcon() {
   return (
     <svg {...stroked}>

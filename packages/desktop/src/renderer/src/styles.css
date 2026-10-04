@@ -807,9 +807,86 @@ button.task-tag:hover {
   padding-top: var(--titlebar-height);
 }
 
-/* No traffic lights in fullscreen, so nothing to make room for. */
-[data-titlebar='inset'][data-fullscreen] :is(.sidebar, .settings-nav) {
+/* No traffic lights in fullscreen, so nothing to make room for but the app's name. */
+[data-titlebar='inset'][data-fullscreen] .settings-nav {
   padding-top: 0;
+}
+
+/* The app's name and the sidebar's switch, beside the traffic lights (or at the corner where there
+   are none). Fixed, so the switch stays put as the sidebar comes and goes; a pane that then
+   reaches the corner keeps --window-brand-end clear in its header. */
+:root {
+  --window-brand-left: 12px;
+  --window-brand-height: 44px;
+  --window-brand-end: calc(var(--window-brand-left) + 92px);
+}
+
+[data-titlebar='inset'] {
+  --window-brand-left: 92px;
+  --window-brand-height: var(--titlebar-height);
+}
+
+[data-titlebar='inset'][data-fullscreen] {
+  --window-brand-left: 16px;
+}
+
+.window-brand {
+  position: fixed;
+  top: 0;
+  left: var(--window-brand-left);
+  z-index: 3;
+  height: var(--window-brand-height);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: drag;
+}
+
+.window-brand-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+
+.window-brand-toggle {
+  display: grid;
+  place-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.window-brand-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar {
+  padding-top: var(--window-brand-height);
+}
+
+.sidebar[hidden] {
+  display: none;
+}
+
+/* With the sidebar away, a rule keeps the switch apart from the pane's title beside it. */
+.app[data-sidebar-hidden] .window-brand::after {
+  content: '';
+  width: 1px;
+  height: 16px;
+  margin-left: 4px;
+  background: var(--border-2);
+}
+
+.app[data-sidebar-hidden] .detail-header {
+  padding-left: var(--window-brand-end);
+}
+
+.app[data-sidebar-hidden] .worktrees-page {
+  padding-top: var(--window-brand-height);
+}
+
+.app[data-sidebar-hidden] .detail-empty {
+  padding-top: var(--window-brand-height);
 }
 
 [data-titlebar='inset'] .detail {

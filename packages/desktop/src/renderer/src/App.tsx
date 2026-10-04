@@ -16,6 +16,8 @@ import { hasPrimaryModifier } from './shortcut-keys'
 import { UtilityPanelDock } from './components/UtilityPanelDock'
 import { WorktreeManager } from './components/WorktreeManager'
 import { SchedulesView } from './components/SchedulesView'
+import { WindowBrand } from './components/WindowBrand'
+import { usePreferences } from './preferences'
 
 export function App() {
   const selectedId = useCore((s) => s.selectedId)
@@ -35,6 +37,7 @@ export function App() {
   const browserPanelOpen = useCore((s) => s.browserPanelOpen)
   const browserMaximized = useCore((s) => s.browserMaximized)
   const utilityPanelOrder = useCore((s) => s.utilityPanelOrder)
+  const sidebarHidden = usePreferences((s) => s.sidebarHidden)
   const maximizedUtility = browserPanelOpen && browserMaximized
     ? 'browser'
     : terminalPanelOpen && terminalMaximized
@@ -93,13 +96,14 @@ export function App() {
   }, [])
 
   return (
-    <div className="app">
+    <div className="app" data-sidebar-hidden={(sidebarHidden && !settingsOpen) || undefined}>
+      {!settingsOpen && !maximizedUtility && <WindowBrand />}
       <main className="workspace" data-utility-maximized={maximizedUtility}>
         {settingsOpen ? (
           <SettingsPage />
         ) : (
           <>
-            <div className="sidebar">
+            <div className="sidebar" hidden={sidebarHidden}>
               <EnvironmentNotice />
               <TaskList />
               <ConversationList />

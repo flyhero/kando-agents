@@ -38,6 +38,8 @@ const Preferences = z.object({
   openBrowserOnTab: z.boolean().catch(false),
   // Off, a chat stage never offers running with nothing asked and nothing sandboxed.
   allowBypass: z.boolean().catch(false),
+  // On, the sidebar is put away and the panes take the whole window.
+  sidebarHidden: z.boolean().catch(false),
   // Off, the sidebar lists only pending and running tasks.
   showAllTasks: z.boolean().catch(false),
   taskGroup: z.enum(TASK_GROUPS).catch('none'),
