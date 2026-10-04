@@ -6,26 +6,31 @@ import { ChatMarkdown } from './ChatMarkdown'
 import { CheckIcon, ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
 import { ChatToolIcon } from './ChatToolIcon'
+import { useJustFinished } from '../chat-motion'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
 const failed = (tool: ToolItem) => tool.status === 'failed' || tool.status === 'denied' || tool.status === 'interrupted'
 
-function SubagentMark({ tool }: { tool: ToolItem }) {
+// `finished` draws the tick in, for one that came back while the user watched.
+function SubagentMark({ tool, finished }: { tool: ToolItem; finished: boolean }) {
   if (tool.status === 'running') return <Spinner label="还在进行，回来后这里会有它的报告" />
   if (failed(tool)) return <span className="chat-subagent-mark" data-failed role="img" aria-label="没有完成" />
-  return <span className="chat-subagent-mark" role="img" aria-label="完成"><CheckIcon /></span>
+  return <span className="chat-subagent-mark" data-finished={finished || undefined} role="img" aria-label="完成"><CheckIcon /></span>
 }
 
 // One subagent: its kind and task, opening onto what it was told and what it reported back.
-function Subagent({ tool }: { tool: ToolItem }) {
+// `lane` sets the phase of its running light apart from its siblings', so parallel ones read as
+// parallel.
+function Subagent({ tool, lane }: { tool: ToolItem; lane: number }) {
   const [open, setOpen] = useDisclosure(`agent:${itemKey(tool)}`)
   const brief = subagentBrief(tool.input)
+  const finished = useJustFinished(tool.status === 'running')
   return (
-    <div className="chat-subagent">
+    <div className="chat-subagent" data-status={tool.status} data-finished={finished || undefined} style={{ '--chat-lane': lane }}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChatToolIcon name={tool.name} status={tool.status} />
-        <SubagentMark tool={tool} />
+        <SubagentMark tool={tool} finished={finished} />
         <span className="chat-subagent-prefix">子 agent:</span>
         {brief.kind && <span className="chat-tool-name">{brief.kind}</span>}
         <span className="chat-subagent-chip" title={tool.title}>{tool.title}</span>
@@ -72,7 +77,7 @@ export function ChatSubagents({ tools }: { tools: readonly ToolItem[] }) {
           {broken > 0 && <span className="chat-tool-status" data-status="failed"> · {broken} 个没有完成</span>}
         </div>
       )}
-      {tools.map((tool) => <Subagent key={tool.id} tool={tool} />)}
+      {tools.map((tool, index) => <Subagent key={tool.id} tool={tool} lane={index} />)}
     </div>
   )
 }

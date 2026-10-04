@@ -4,6 +4,7 @@ import { useDisclosure } from '../chat-disclosure'
 import { itemKey, todoChange } from '../chat-state'
 import { CheckIcon, ChevronRightIcon } from './icons'
 import { Popover } from './Popover'
+import { useJustFinished, useTick } from '../chat-motion'
 
 type TodosItem = Extract<ChatItem, { kind: 'todos' }>
 
@@ -25,6 +26,11 @@ const RING_LENGTH = 2 * Math.PI * RING_R
 function ProgressRing({ todos }: { todos: readonly ChatTodo[] }) {
   const finished = done(todos)
   const share = todos.length ? finished / todos.length : 0
+  const complete = todos.length > 0 && finished === todos.length
+  // Each step finished while the ring is in view gives it a beat; two names for the same motion,
+  // taken in turn, so each beat starts over.
+  const step = useTick(finished)
+  const justDone = useJustFinished(!complete)
   return (
     <svg
       className="chat-todos-ring"
@@ -33,7 +39,9 @@ function ProgressRing({ todos }: { todos: readonly ChatTodo[] }) {
       aria-valuemin={0}
       aria-valuemax={todos.length}
       aria-valuenow={finished}
-      data-done={(todos.length > 0 && finished === todos.length) || undefined}
+      data-done={complete || undefined}
+      data-finished={justDone || undefined}
+      data-beat={step === null ? undefined : step % 2 ? 'odd' : 'even'}
     >
       <circle className="chat-todos-ring-track" cx="7" cy="7" r={RING_R} />
       <circle className="chat-todos-ring-fill" cx="7" cy="7" r={RING_R} strokeDasharray={RING_LENGTH} strokeDashoffset={RING_LENGTH * (1 - share)} />

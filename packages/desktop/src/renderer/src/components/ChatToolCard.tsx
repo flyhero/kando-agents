@@ -9,6 +9,7 @@ import { ChatToolIcon } from './ChatToolIcon'
 import { ChatToolInput } from './ChatToolInput'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
+import { useJustFinished } from '../chat-motion'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -83,8 +84,9 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
   const [first] = tools
   const [open, setOpen] = useDisclosure(`edits:${first ? itemKey(first) : path}`)
   const shorten = useContext(ChatPaths)
+  const finished = useJustFinished(tools.some((tool) => tool.status === 'running'))
   return (
-    <div className="chat-tool" data-diff-path={path}>
+    <div className="chat-tool" data-diff-path={path} data-finished={finished || undefined}>
       <button type="button" className="chat-tool-header" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChatToolIcon name="Edit" status={tools.find((tool) => tool.status === 'running')?.status ?? tools.find((tool) => tool.status !== 'done')?.status ?? 'done'} />
         <span className="chat-tool-name">编辑:</span>
@@ -114,8 +116,9 @@ function ToolLine({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useDisclosure(`call:${itemKey(tool)}`)
   const shorten = useContext(ChatPaths)
   const details = Boolean(tool.input || tool.output)
+  const finished = useJustFinished(tool.status === 'running')
   return (
-    <div className="chat-tool-line" data-status={tool.status}>
+    <div className="chat-tool-line" data-status={tool.status} data-finished={finished || undefined}>
       <button
         type="button"
         className="chat-tool-row"
@@ -148,12 +151,15 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   const [only] = tools
   const [open, setOpen] = useDisclosure(`run:${only ? itemKey(only) : ''}`)
   const shorten = useContext(ChatPaths)
-  if (tools.length === 1 && only) return <ToolLine tool={only} />
   const running = tools.find((tool) => tool.status === 'running')
+  const finished = useJustFinished(Boolean(running))
+  if (tools.length === 1 && only) return <ToolLine tool={only} />
   const failed = tools.filter((tool) => tool.status === 'failed' || tool.status === 'denied').length
   const headline = runHeadline(tools)
+  // The rail beside the open list fills as the calls finish, top down.
+  const settled = tools.filter((tool) => tool.status !== 'running').length
   return (
-    <div className="chat-tool-run" data-open={open || undefined}>
+    <div className="chat-tool-run" data-open={open || undefined} data-live={Boolean(running) || finished || undefined} data-finished={finished || undefined}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChatToolIcon name={running?.name ?? only?.name ?? ''} status={running ? 'running' : failed > 0 ? 'failed' : 'done'} />
         <span className="chat-tool-summary" title={headline.described ? running?.title : undefined}>{headline.text}</span>
@@ -162,7 +168,7 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
         {running ? <ToolStatus status="running" since={running.at} /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
       </button>
       {open && (
-        <div className="chat-tool-run-lines">
+        <div className="chat-tool-run-lines" style={{ '--chat-rail': `${(settled / tools.length) * 100}%` }}>
           {tools.map((tool) => <ToolLine key={tool.id} tool={tool} />)}
         </div>
       )}
@@ -180,8 +186,9 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
   const details = Boolean(item.diffs.length || item.input || item.output)
   // A command the agent runs in a terminal of its own: the card opens the panel on it.
   const terminal = terminalToolKind(item.name) === 'run' ? TERMINAL_ID.exec(item.output ?? '')?.[1] ?? null : null
+  const finished = useJustFinished(item.status === 'running')
   return (
-    <div className="chat-tool" data-status={item.status}>
+    <div className="chat-tool" data-status={item.status} data-finished={finished || undefined}>
       <button
         type="button"
         className="chat-tool-header"

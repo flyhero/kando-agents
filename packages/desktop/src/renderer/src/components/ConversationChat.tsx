@@ -26,6 +26,7 @@ import { ChatPreviewCard } from './ChatPreviewCard'
 import { ChatQuotePicker } from './ChatQuotePicker'
 import { ChatMessageRelay, useMessageRelay } from './chat-message-relay'
 import { cssFontFamily } from '../system-fonts'
+import { freshKeys } from '../chat-motion'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -91,6 +92,12 @@ function Reasoning({ item }: { item: ReasoningItem }) {
   }, [item.streaming])
   const open = kept || streaming
   const label = item.streaming ? '思考中' : took !== undefined ? `思考了 ${thoughtFor(took)}` : '思考过程'
+  // While it streams, the thought keeps its newest line in view, as the agent writes it.
+  const text = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = text.current
+    if (item.streaming && element) element.scrollTop = element.scrollHeight
+  }, [item.text, item.streaming, open])
   return (
     <div className="chat-reasoning">
       <button
@@ -105,7 +112,11 @@ function Reasoning({ item }: { item: ReasoningItem }) {
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         <span className={item.streaming ? 'chat-sheen' : undefined}>{label}</span>
       </button>
-      {open && <div className="chat-reasoning-text">{item.text}</div>}
+      {open && (
+        <div className="chat-reasoning-body" data-streaming={item.streaming || undefined}>
+          <div ref={text} className="chat-reasoning-text">{item.text}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -242,12 +253,13 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
 const ChatAgent = createContext<{ agent: Conversation['agent']; model: string | null }>({ agent: 'claude', model: null })
 
 // Opens the agent's turn under the user's message: its icon and name, the model it runs, and when
-// the message it answers came in.
-function TurnHead({ at, messageKey }: { at: number; messageKey: string }) {
+// the message it answers came in. While that turn runs, a ring turns around the icon; one waiting
+// on the user holds it still, in the colour of the request.
+function TurnHead({ at, messageKey, live }: { at: number; messageKey: string; live: 'running' | 'awaiting' | null }) {
   const { agent, model } = useContext(ChatAgent)
   return (
     <div className="chat-turn-head" data-relay-for={messageKey}>
-      <span className="chat-turn-head-icon" aria-hidden="true"><AgentIcon agent={agent} /></span>
+      <span className="chat-turn-head-icon" data-live={live ?? undefined} aria-hidden="true"><AgentIcon agent={agent} /></span>
       <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
       {model && <span className="chat-turn-head-model" title={model}>{model}</span>}
       <MessageTime at={at} />
@@ -379,17 +391,19 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
   )
 }
 
-function Block({ conversationId, block, task, replies }: { conversationId: string; block: ChatBlock; task: boolean; replies: ReadonlyMap<string, number> }) {
-  if (block.kind === 'tools') return <div className="chat-entry"><ChatToolRun tools={block.tools} /></div>
-  if (block.kind === 'agents') return <div className="chat-entry"><ChatSubagents tools={block.tools} /></div>
-  if (block.kind === 'edits') return <div className="chat-entry"><ChatEditsCard path={block.path} tools={block.tools} /></div>
-  if (block.kind === 'changes') return <div className="chat-entry"><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div>
+// `fresh` is a block that arrived while the chat was open: it enters with a motion.
+function Block({ conversationId, block, task, replies, fresh }: { conversationId: string; block: ChatBlock; task: boolean; replies: ReadonlyMap<string, number>; fresh?: boolean }) {
+  const entering = fresh || undefined
+  if (block.kind === 'tools') return <div className="chat-entry" data-fresh={entering}><ChatToolRun tools={block.tools} /></div>
+  if (block.kind === 'agents') return <div className="chat-entry" data-fresh={entering}><ChatSubagents tools={block.tools} /></div>
+  if (block.kind === 'edits') return <div className="chat-entry" data-fresh={entering}><ChatEditsCard path={block.path} tools={block.tools} /></div>
+  if (block.kind === 'changes') return <div className="chat-entry" data-fresh={entering}><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div>
   if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} steps={block.steps} workMs={block.workMs} />
   const { entry } = block
   const merged = useContext(MergedTurns)
   if (entry.kind === 'item' && entry.item.kind === 'turn' && merged.has(block.key)) return null
   return (
-    <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key}>
+    <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key} data-fresh={entering}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
         : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} blockKey={block.key} />}
     </div>
@@ -421,6 +435,16 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const list = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const [away, setAway] = useState(false)
+  // Every block shown so far, so one that arrives while the chat is open can enter with a motion;
+  // older history loaded on request is simply there.
+  const seen = useRef<Set<string> | null>(null)
+  // Once a block has entered it stays marked: dropping the mark mid-motion would cut it short.
+  const entered = useRef(new Set<string>())
+  const olderLoaded = useRef(false)
+  useEffect(() => {
+    seen.current = null
+    entered.current = new Set()
+  }, [id])
 
   // Watching makes core send this conversation's item changes to this window until it lets go.
   useEffect(() => {
@@ -472,6 +496,12 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   }, [stages, items])
   const foldTurns = usePreferences((s) => s.foldTurns)
   const blocks = useMemo(() => chatBlocks(entries, { foldTurns }), [entries, foldTurns])
+  for (const key of freshKeys(seen.current, blocks.map((block) => block.key), olderLoaded.current)) entered.current.add(key)
+  useEffect(() => {
+    if (!page) return
+    seen.current = new Set([...(seen.current ?? []), ...blocks.map((block) => block.key)])
+    olderLoaded.current = false
+  }, [page, blocks])
   const replies = useMemo(() => {
     const found = finalReplies(entries)
     // A turn with a change card moves these actions below that card.
@@ -596,6 +626,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     const older = await perform((connection) => connection.call('conversations.chatItems', { id, before }))
     if (older) {
       pinned.current = false
+      olderLoaded.current = true
       prependChatPage(id, older)
     }
   }
@@ -627,6 +658,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   // A turn runs from the message that set it going.
   const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
   const beginRelay = useMessageRelay(view, list, items, id)
+  const lastUserKey = sent.at(-1)?.key
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatAgent.Provider value={agentInfo}>
@@ -656,10 +688,13 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
         {blocks.map((block, index) => {
           const previous = index > 0 ? blocks[index - 1] : undefined
           const answers = previous ? userAt(previous) : null
+          const entering = entered.current.has(block.key)
+          // The head under the latest message is the running turn's, while it runs.
+          const live = (turn === 'running' || turn === 'awaiting') && previous?.key === lastUserKey ? turn : null
           return (
             <Fragment key={block.key}>
-              {answers !== null && userAt(block) === null && <div className="chat-entry"><TurnHead at={answers} messageKey={previous?.key ?? ''} /></div>}
-              <Block conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} />
+              {answers !== null && userAt(block) === null && <div className="chat-entry" data-fresh={entering || undefined}><TurnHead at={answers} messageKey={previous?.key ?? ''} live={live} /></div>}
+              <Block conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} fresh={entering} />
             </Fragment>
           )
         })}

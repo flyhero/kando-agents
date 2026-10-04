@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { formatTokens, workedFor } from '../chat-tools'
 import { Spinner } from './Spinner'
+import { useTick } from '../chat-motion'
 
 // What kind of thing the agent is at, when nothing more specific is known.
 export type WorkingPhase = 'tools' | 'thinking' | 'replying' | 'waiting' | 'asking' | 'working'
@@ -27,9 +28,11 @@ export function ChatWorking({ phase, tokens, background, since }: {
   // With the turn over and only subagents out, they are the step: "2 个子 agent 后台运行中…".
   // While the turn itself runs, they are a count beside its step.
   const waiting = phase === 'waiting' && background > 0
+  // The count of tokens ticks up as the agent writes: each change lands with a small motion.
+  const tick = useTick(tokens)
   const parts = [
     workedFor(Math.max(0, now - (since ?? started))),
-    ...(tokens !== null && tokens > 0 ? [`↓ ${formatTokens(tokens)}`] : []),
+    ...(tokens !== null && tokens > 0 ? [<>↓ <span key={tick ?? 0} className="chat-working-tick">{formatTokens(tokens)}</span></>] : []),
     ...(background > 0 && !waiting ? [`${background} 个子 agent 后台运行`] : [])
   ]
   const step = waiting ? `${background} 个子 agent 后台运行中…` : `${PHASE[phase]}${phase === 'asking' ? '' : '中…'}`
