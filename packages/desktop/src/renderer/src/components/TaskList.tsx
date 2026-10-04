@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { AGENT_KINDS, shortTaskId, TASK_STATUSES, type Task } from '@kando/protocol'
-import { openInbox, selectTask, setNewTaskOpen, useCore } from '../core-store'
+import { openInbox, selectTask, setDashboardOpen, setNewTaskOpen, useCore, useDashboardSupported } from '../core-store'
 import { AGENT_LABEL, STATUS_LABEL } from '../labels'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { setPreference, TASK_GROUPS, TASK_SORTS, usePreferences, type Preferences } from '../preferences'
 import { saveTaskText } from '../unsaved-edits'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
-import { FilterIcon, InboxIcon, SlidersIcon } from './icons'
+import { ChartIcon, FilterIcon, InboxIcon, SlidersIcon } from './icons'
 import { StatusIcon } from './StatusIcon'
 import { hasTaskAlerts, TaskAlerts } from './TaskAlerts'
 import { projectNames } from './ProjectPicker'
@@ -129,6 +129,8 @@ export function TaskList() {
   const sources = useCore((s) => s.sources)
   const inboxes = useCore((s) => s.inboxes)
   const inboxOpen = useCore((s) => s.inboxOpen)
+  const dashboardOpen = useCore((s) => s.dashboardOpen)
+  const dashboardSupported = useDashboardSupported()
   const activeInboxes = Object.values(inboxes).filter((inbox) => inbox.active)
   const waitingIssues = activeInboxes.reduce((sum, inbox) => sum + inbox.items.length, 0)
   // Named after its source while there is only one, as it will be for most people.
@@ -256,6 +258,12 @@ export function TaskList() {
           ) : (
             waitingIssues > 0 && <span className="inbox-entry-count">{waitingIssues}</span>
           )}
+        </button>
+      )}
+      {!searching && dashboardSupported && (
+        <button type="button" className="inbox-entry" aria-current={dashboardOpen} onClick={() => setDashboardOpen(true)}>
+          <ChartIcon />
+          <span>看板</span>
         </button>
       )}
       {sorted.length === 0 ? (

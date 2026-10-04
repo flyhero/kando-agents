@@ -3,21 +3,8 @@ import { AGENT_KINDS, MIN_DECIDED_RUNS, type AgentKind, type AgentStats, type Co
 import { workedFor } from '../chat-tools'
 import { perform, useAgentStatsSupported, useConversationStatsSupported, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
+import { durationText, percent, tokens } from '../stat-format'
 import { AgentIcon } from './icons'
-
-const TOKENS = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 })
-
-function durationText(ms: number | null): string {
-  if (ms === null) return '—'
-  const minutes = Math.round(ms / 60_000)
-  if (minutes < 1) return '不到 1 分钟'
-  if (minutes < 60) return `${minutes} 分钟`
-  const hours = Math.floor(minutes / 60)
-  return minutes % 60 ? `${hours} 小时 ${minutes % 60} 分` : `${hours} 小时`
-}
-
-const percent = (part: number, whole: number) => `${Math.round((part / whole) * 100)}%`
-const tokens = (value: number | null) => (value === null ? '—' : TOKENS.format(value))
 
 // What core reported, fetched once on opening: the numbers move only as runs and turns end.
 function useReport<T>(supported: boolean, read: () => Promise<T[] | null>): T[] | null {

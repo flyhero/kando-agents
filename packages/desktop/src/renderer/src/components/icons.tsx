@@ -356,6 +356,15 @@ export function InboxIcon() {
   )
 }
 
+export function ChartIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M3.5 16.5h13" />
+      <path d="M5.5 13.5v-3M9 13.5v-7M12.5 13.5V9M16 13.5V4.5" />
+    </svg>
+  )
+}
+
 export function RefreshIcon() {
   return (
     <svg {...stroked}>

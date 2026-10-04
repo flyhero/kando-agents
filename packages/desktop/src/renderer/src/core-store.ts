@@ -93,6 +93,8 @@ export type CoreState = {
   worktreesOpen: boolean
   // And the page of scheduled runs.
   schedulesOpen: boolean
+  // And the dashboard of stats.
+  dashboardOpen: boolean
   // What is scheduled to start later, open ones first in the order they go; empty from a core without.
   schedules: ScheduledRun[]
   error: string | null
@@ -146,6 +148,7 @@ export const useCore = create<CoreState>()(() => ({
   inboxTab: null,
   worktreesOpen: false,
   schedulesOpen: false,
+  dashboardOpen: false,
   schedules: [],
   error: null,
   usage: null,
@@ -182,6 +185,7 @@ export function selectTask(id: string | null): void {
       inboxOpen: false,
       worktreesOpen: false,
       schedulesOpen: false,
+      dashboardOpen: false,
       view: chat ? 'chat' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
@@ -342,7 +346,7 @@ export function setBrowserMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, conversationDraft: false, unseen }
   })
 }
 
@@ -354,7 +358,7 @@ function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: 
 }
 
 export function openConversationDraft(): void {
-  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, conversationDraft: true })
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, conversationDraft: true })
 }
 
 export function closeConversationDraft(): void {
@@ -370,7 +374,8 @@ export function openInbox(): void {
     selectedId: null,
     settingsOpen: false,
     worktreesOpen: false,
-    schedulesOpen: false
+    schedulesOpen: false,
+    dashboardOpen: false
   }))
 }
 
@@ -391,11 +396,18 @@ export function setSettingsOpen(open: boolean, section: string | null = null): v
 }
 
 export function setWorktreesOpen(open: boolean): void {
-  useCore.setState({ worktreesOpen: open, schedulesOpen: false, settingsOpen: false })
+  useCore.setState({ worktreesOpen: open, schedulesOpen: false, dashboardOpen: false, settingsOpen: false })
 }
 
 export function setSchedulesOpen(open: boolean): void {
-  useCore.setState({ schedulesOpen: open, worktreesOpen: false, settingsOpen: false })
+  useCore.setState({ schedulesOpen: open, worktreesOpen: false, dashboardOpen: false, settingsOpen: false })
+}
+
+// Opened from the task list, so it takes the place of the selected task as the inbox does.
+export function setDashboardOpen(open: boolean): void {
+  useCore.setState(open
+    ? { dashboardOpen: true, section: 'tasks', selectedId: null, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, settingsOpen: false }
+    : { dashboardOpen: false })
 }
 
 function byAgent(usage: AgentUsage[]): Partial<Record<AgentKind, AgentUsage>> {
@@ -499,6 +511,10 @@ export function useAgentStatsSupported(): boolean {
 
 export function useConversationStatsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-stats') ?? false)
+}
+
+export function useDashboardSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('dashboard') ?? false)
 }
 
 export async function setChatSettings(patch: Partial<ChatSettings>): Promise<void> {
