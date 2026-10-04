@@ -4,6 +4,7 @@ import { usePlans, type PlanItem } from '../chat-state'
 import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
+import { waitingOn } from '../task-waiting'
 import { confirmQuota } from './AgentQuota'
 import { BranchStatus } from './BranchStatus'
 import type { ChatSurface } from './chat-surface'
@@ -92,7 +93,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
   return (
     <section className="detail terminal-view" aria-label={`${task.title} 的聊天`}>
       <header className="detail-header task-terminal-header">
-        <StatusIcon status={task.status} decorative />
+        <StatusIcon status={task.status} waiting={waitingOn(task, tasks)} decorative />
         <div className="header-meta">
           <span className="terminal-view-title" title={task.title}>
             {task.title}

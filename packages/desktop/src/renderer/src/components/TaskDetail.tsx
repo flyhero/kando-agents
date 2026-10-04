@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { checkChangePrimary, checkEditProjects, shortTaskId, type Task } from '@kando/protocol'
 import { selectTask, updateTask, useCore } from '../core-store'
 import { dayAndTime, STATUS_LABEL } from '../labels'
+import { waitingOn } from '../task-waiting'
 import { saveTaskText, unsavedTaskText, useTaskSaveState, type SaveState } from '../unsaved-edits'
 import { MarkdownEditor } from './MarkdownEditor'
 import { SourceLink } from './SourceLink'
@@ -91,7 +92,7 @@ function TaskDetailBody({ task }: { task: Task }) {
     <section className="detail task-detail" aria-label="任务详情" {...images.handlers}>
       <header className="detail-header">
         <span className="status-pill" data-status={task.status}>
-          <StatusIcon status={task.status} decorative />
+          <StatusIcon status={task.status} waiting={waitingOn(task, tasks)} decorative />
           {STATUS_LABEL[task.status]}
         </span>
         <TaskAlerts task={task} />

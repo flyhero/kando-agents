@@ -747,11 +747,6 @@ body.stacked-panel-resizing * {
   margin-top: 2px;
 }
 
-.task-row-waiting {
-  font-size: 12px;
-  color: var(--warning);
-}
-
 .task-tag {
   padding: 0 6px;
   border: 0;
@@ -809,9 +804,66 @@ button.task-tag:hover {
   }
 }
 
+/* A status that changes in view grows into its new shape, and a check draws itself. */
+.status-icon .status-enter {
+  transform-box: view-box;
+  transform-origin: 8px 8px;
+  animation: status-enter 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.status-icon .status-enter .check {
+  stroke-dasharray: 1;
+  animation: status-check 0.24s 0.14s ease-out both;
+}
+
+@keyframes status-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+@keyframes status-check {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Waiting on other tasks: the cut in the ring and the badge in it, at nothing otherwise. */
+.status-icon .status-blocker {
+  transform-box: view-box;
+  transform-origin: 13px 3px;
+  transform: scale(0);
+  transition: transform 0.2s ease-out;
+}
+
+.status-icon[data-blocked] .status-blocker {
+  transform: scale(1);
+}
+
+.status-icon g.status-blocker circle {
+  fill: var(--warning);
+}
+
+.status-icon g.status-blocker path {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .status-icon .spin {
+  .status-icon .spin,
+  .status-icon .status-enter,
+  .status-icon .status-enter .check {
     animation: none;
+  }
+
+  .status-icon .status-blocker {
+    transition: none;
   }
 }
 

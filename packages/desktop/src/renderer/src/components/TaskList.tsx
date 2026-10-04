@@ -4,6 +4,7 @@ import { openInbox, selectTask, setNewTaskOpen, useCore } from '../core-store'
 import { AGENT_LABEL, STATUS_LABEL } from '../labels'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { setPreference, TASK_GROUPS, TASK_SORTS, usePreferences, type Preferences } from '../preferences'
+import { waitingOn } from '../task-waiting'
 import { saveTaskText } from '../unsaved-edits'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
 import { FilterIcon, InboxIcon, SlidersIcon } from './icons'
@@ -63,17 +64,6 @@ const isOpen = (task: Task) => task.status === 'pending' || task.status === 'run
 function matches(task: Task, query: string): boolean {
   const needle = query.toLowerCase()
   return [task.title, task.source?.key ?? '', shortTaskId(task.id)].some((text) => text.toLowerCase().includes(needle))
-}
-
-// Only a pending task can be held up; the rest already ran.
-function waitingOn(task: Task, tasks: Record<string, Task>): number {
-  if (task.status !== 'pending') {
-    return 0
-  }
-  return task.dependsOn.filter((id) => {
-    const dependency = tasks[id]
-    return dependency !== undefined && dependency.status !== 'done'
-  }).length
 }
 
 // No task id: it is in the detail header and the row's right-click menu.
@@ -152,7 +142,7 @@ export function TaskList() {
       <li key={task.id}>
         {renamingId === task.id ? (
           <div className="task-row" data-renaming>
-            <StatusIcon status={task.status} />
+            <StatusIcon status={task.status} waiting={waiting} />
             <TitleEditor
               title={task.title}
               label="任务标题"
@@ -174,13 +164,12 @@ export function TaskList() {
               setMenu({ id: task.id, at: menuPoint(event) })
             }}
           >
-            <StatusIcon status={task.status} />
+            <StatusIcon status={task.status} waiting={waiting} />
             <span className="task-row-title">{task.title}</span>
             {meta && <span className="task-row-meta">{meta}</span>}
-            {(waiting > 0 || planning || hasTaskAlerts(task)) && (
+            {(planning || hasTaskAlerts(task)) && (
               <span className="task-row-tags">
                 <TaskAlerts task={task} />
-                {waiting > 0 && <span className="task-row-waiting">等待 {waiting} 个任务</span>}
                 {planning && (
                   <span className="task-tag task-tag-refining">{task.plan && !task.plan.approved ? '计划已保存' : '规划中'}</span>
                 )}

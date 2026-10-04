@@ -2,19 +2,22 @@ import { useCallback, useState, type KeyboardEvent } from 'react'
 import { createsCycle, shortTaskId, type Task } from '@kando/protocol'
 import { selectTask, useCore } from '../core-store'
 import { STATUS_LABEL } from '../labels'
+import { waitingOn } from '../task-waiting'
 import { Popover } from './Popover'
 import { StatusIcon } from './StatusIcon'
 
 function TaskChip({ task, onRemove }: { task: Task; onRemove?: () => void }) {
+  const waiting = useCore((s) => waitingOn(task, s.tasks))
+  const status = waiting > 0 ? `${STATUS_LABEL[task.status]}，等待 ${waiting} 个任务` : STATUS_LABEL[task.status]
   return (
     <span className="chip">
       <button
         type="button"
         className="chip-main"
-        title={`${STATUS_LABEL[task.status]} · 点击打开`}
+        title={`${status} · 点击打开`}
         onClick={() => selectTask(task.id)}
       >
-        <StatusIcon status={task.status} decorative />
+        <StatusIcon status={task.status} waiting={waiting} decorative />
         <span className="chip-title">{task.title}</span>
       </button>
       {onRemove && (
