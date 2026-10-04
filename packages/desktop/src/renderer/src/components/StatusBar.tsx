@@ -170,7 +170,8 @@ function WorktreeButton() {
 // them. Shown while there is anything to show there.
 function ScheduleButton() {
   const supported = useSchedulesSupported()
-  const runs = useCore((s) => s.schedules)
+  // A routine's runs are the routine's, shown on its own page.
+  const runs = useCore((s) => s.schedules).filter((run) => run.target.kind !== 'routine')
   const open = useCore((s) => s.schedulesOpen)
   if (!supported || (runs.length === 0 && !open)) return null
   const waiting = openRuns(runs).length

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Routine, ScheduledRun } from '@kando/protocol'
+import { isScheduleOpen, type Routine, type ScheduledRun } from '@kando/protocol'
 import { selectConversation, useCore } from '../core-store'
 import { reasonText } from '../labels'
 import { deleteRoutine, fetchRoutineRuns, isUnread, markRoutineAllSeen, nextRunText, ROUTINE_AGENT_LABEL, runOutcomeText, runRoutineNow, scheduleText, updateRoutine } from '../routines'
@@ -80,6 +80,7 @@ function Row({ routine, now, onEdit }: { routine: Routine; now: number; onEdit: 
           </span>
           <span className="schedule-meta">
             {scheduleText(routine.schedule)} · {ROUTINE_AGENT_LABEL[routine.target.agent]} · {nextRunText(routine, now)}
+            {routine.lastRun && isScheduleOpen(routine.lastRun) && <span> · {runOutcomeText(routine.lastRun, now)}</span>}
             {failure && <span className="routine-failure"> · 上次：{reasonText(failure, failure)}</span>}
           </span>
         </span>
@@ -113,13 +114,13 @@ export function RoutinesSection() {
   const now = useNow(60_000)
   const [editing, setEditing] = useState<{ routine: Routine | null } | null>(null)
   return (
-    <section className="worktree-group" aria-label="定时任务">
+    <section className="worktree-group" aria-label="规则">
       <h3 className="worktree-group-title">
-        定时任务 · {routines.length}
+        规则 · {routines.length}
         <button type="button" className="link-button" onClick={() => setEditing({ routine: null })}>新建</button>
       </h3>
       {routines.length === 0
-        ? <p className="worktrees-empty muted">按时间重复的任务：到点新开一个会话，无人值守地做完，结果在这里等你看。</p>
+        ? <p className="worktrees-empty muted">还没有定时任务。点「新建」写下要重复做的事和什么时候做。</p>
         : <ul className="worktree-list routine-list">{routines.map((routine) => <Row key={routine.id} routine={routine} now={now} onEdit={() => setEditing({ routine })} />)}</ul>}
       {editing && <RoutineEditor routine={editing.routine} onClose={() => setEditing(null)} />}
     </section>

@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react'
 import type { ScheduledRun } from '@kando/protocol'
-import { selectConversation, selectTask, setAwakeMode, setSchedulesOpen, showView, useCore, useRoutinesSupported } from '../core-store'
+import { selectConversation, selectTask, setAwakeMode, setSchedulesOpen, showView, useCore } from '../core-store'
 import { AGENT_LABEL } from '../labels'
-import { cancelSchedule, clearSchedules, openRuns, reorderSchedules, rescheduleRun, runAction, runScheduleNow, scheduleState, TARGET_LABEL, UNATTENDED_LABEL } from '../schedules'
+import { cancelSchedule, clearSchedules, openQueueRuns, reorderSchedules, rescheduleRun, runAction, runScheduleNow, scheduleState, TARGET_LABEL, UNATTENDED_LABEL } from '../schedules'
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, CloseIcon, PlayIcon } from './icons'
-import { RoutinesSection } from './RoutinesSection'
 import { SchedulePicker, SettingsLink } from './SchedulePicker'
 
 // A task's chat is reached through its task, which the list of free conversations does not hold.
@@ -100,12 +99,11 @@ function SettledRow({ run, now }: { run: ScheduledRun; now: number }) {
 // Every run scheduled to start later, in the order they go, then what became of the recent ones.
 export function SchedulesView() {
   const runs = useCore((s) => s.schedules)
-  const routines = useCore((s) => s.routines)
-  const routinesSupported = useRoutinesSupported()
   const mode = useCore((s) => s.chatSettings?.unattendedMode ?? 'acceptEdits')
   const awake = useCore((s) => s.awake)
-  const open = openRuns(runs)
-  const settled = runs.filter((run) => !open.includes(run))
+  // A routine's runs are the routine's to show (RoutinesView), not the queue's.
+  const open = openQueueRuns(runs)
+  const settled = runs.filter((run) => !open.includes(run) && run.target.kind !== 'routine')
   const now = Date.now()
   const move = (from: number, to: number) => {
     const ids = open.map((run) => run.id)
@@ -115,10 +113,10 @@ export function SchedulesView() {
     reorderSchedules(ids)
   }
   return (
-    <section className="worktrees-page schedules-page" aria-label="预约与定时任务">
+    <section className="worktrees-page schedules-page" aria-label="预约">
       <header className="worktrees-header">
         <div className="worktrees-heading">
-          <h2>预约与定时任务</h2>
+          <h2>预约</h2>
           <p className="muted">
             到点、而且 agent 的额度够用时自动开始；同一个 agent 的预约按下面的顺序一个接一个运行。
             你预约的以「{UNATTENDED_LABEL[mode]}」无人值守运行，<SettingsLink />；撞到额度后的续跑沿用会话原来的模式。
@@ -129,18 +127,11 @@ export function SchedulesView() {
               <button type="button" className="link-button" onClick={() => void setAwakeMode('auto')}>改为有预约时保持唤醒</button>
             </p>
           )}
-          {awake && awake.mode !== 'on' && routines.some((routine) => routine.enabled && routine.schedule.kind !== 'manual') && (
-            <p className="schedule-warning">
-              定时任务不算作「有预约时保持唤醒」里的预约：电脑睡着时到点不会运行，醒来后只补最近错过的一次。
-              <button type="button" className="link-button" onClick={() => void setAwakeMode('on')}>改为始终保持唤醒</button>
-            </p>
-          )}
         </div>
         <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => setSchedulesOpen(false)}>
           <CloseIcon />
         </button>
       </header>
-      {routinesSupported && <RoutinesSection />}
       <section className="worktree-group" aria-label="等待中">
         <h3 className="worktree-group-title">等待中 · {open.length}</h3>
         {open.length === 0

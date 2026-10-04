@@ -95,8 +95,10 @@ export type CoreState = {
   inboxTab: string | null
   // So does the page of worktrees, over whatever else was shown there.
   worktreesOpen: boolean
-  // And the page of scheduled runs and routines.
+  // And the page of scheduled runs.
   schedulesOpen: boolean
+  // And the page of routines.
+  routinesOpen: boolean
   // The routines as core keeps them, each with how many of its runs the user has yet to look at;
   // empty on a core without them.
   routines: Routine[]
@@ -159,6 +161,7 @@ export const useCore = create<CoreState>()(() => ({
   inboxTab: null,
   worktreesOpen: false,
   schedulesOpen: false,
+  routinesOpen: false,
   dashboardOpen: false,
   attentionOpen: false,
   attentionSummaryMode: null,
@@ -201,6 +204,7 @@ export function selectTask(id: string | null): void {
       inboxOpen: false,
       worktreesOpen: false,
       schedulesOpen: false,
+      routinesOpen: false,
       dashboardOpen: false,
       attentionOpen: false,
       settingsOpen: false,
@@ -364,7 +368,7 @@ export function setBrowserMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
   })
   if (id) markRoutineRunSeen(id)
 }
@@ -387,7 +391,7 @@ function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: 
 }
 
 export function openConversationDraft(): void {
-  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: true })
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: true })
 }
 
 export function closeConversationDraft(): void {
@@ -404,6 +408,7 @@ export function openInbox(): void {
     settingsOpen: false,
     worktreesOpen: false,
     schedulesOpen: false,
+    routinesOpen: false,
     dashboardOpen: false,
     attentionOpen: false
   }))
@@ -426,23 +431,27 @@ export function setSettingsOpen(open: boolean, section: string | null = null): v
 }
 
 export function setWorktreesOpen(open: boolean): void {
-  useCore.setState({ worktreesOpen: open, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
+  useCore.setState({ worktreesOpen: open, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
 }
 
 export function setSchedulesOpen(open: boolean): void {
-  useCore.setState({ schedulesOpen: open, worktreesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
+  useCore.setState({ schedulesOpen: open, routinesOpen: false, worktreesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
+}
+
+export function setRoutinesOpen(open: boolean): void {
+  useCore.setState({ routinesOpen: open, schedulesOpen: false, worktreesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
 }
 
 // Opened from the task list, so it takes the place of the selected task as the inbox does.
 export function setDashboardOpen(open: boolean): void {
   useCore.setState(open
-    ? { dashboardOpen: true, attentionOpen: false, section: 'tasks', selectedId: null, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, settingsOpen: false }
+    ? { dashboardOpen: true, attentionOpen: false, section: 'tasks', selectedId: null, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, settingsOpen: false }
     : { dashboardOpen: false })
 }
 
 export function setAttentionOpen(open: boolean): void {
   useCore.setState(open
-    ? { attentionOpen: true, section: 'tasks', selectedId: null, selectedConversationId: null, conversationDraft: false, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, settingsOpen: false }
+    ? { attentionOpen: true, section: 'tasks', selectedId: null, selectedConversationId: null, conversationDraft: false, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, settingsOpen: false }
     : { attentionOpen: false })
 }
 

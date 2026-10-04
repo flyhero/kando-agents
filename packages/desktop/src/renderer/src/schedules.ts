@@ -88,6 +88,12 @@ export function openRuns(runs: readonly ScheduledRun[]): ScheduledRun[] {
   return runs.filter(isScheduleOpen)
 }
 
+// The open runs the user scheduled themselves, as the queue shows them; a routine's open run
+// shows under its routine.
+export function openQueueRuns(runs: readonly ScheduledRun[]): ScheduledRun[] {
+  return openRuns(runs).filter((run) => run.target.kind !== 'routine')
+}
+
 export function openRunForTask(runs: readonly ScheduledRun[], taskId: string): ScheduledRun | undefined {
   return openRuns(runs).find((run) => run.target.kind === 'task' && run.target.taskId === taskId)
 }

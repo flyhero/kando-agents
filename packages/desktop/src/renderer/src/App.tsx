@@ -17,6 +17,7 @@ import { hasPrimaryModifier } from './shortcut-keys'
 import { UtilityPanelDock } from './components/UtilityPanelDock'
 import { WorktreeManager } from './components/WorktreeManager'
 import { SchedulesView } from './components/SchedulesView'
+import { RoutinesView } from './components/RoutinesView'
 import { DashboardView } from './components/DashboardView'
 import { DashboardEntry } from './components/DashboardEntry'
 import { RoutinesEntry } from './components/RoutinesEntry'
@@ -36,6 +37,7 @@ export function App() {
   const settingsOpen = useCore((s) => s.settingsOpen)
   const worktreesOpen = useCore((s) => s.worktreesOpen)
   const schedulesOpen = useCore((s) => s.schedulesOpen)
+  const routinesOpen = useCore((s) => s.routinesOpen)
   const dashboardOpen = useCore((s) => s.dashboardOpen)
   const attentionOpen = useCore((s) => s.attentionOpen)
   const inboxOpen = useCore((s) => s.inboxOpen)
@@ -124,6 +126,8 @@ export function App() {
               <WorktreeManager />
             ) : schedulesOpen ? (
               <SchedulesView />
+            ) : routinesOpen ? (
+              <RoutinesView />
             ) : dashboardOpen ? (
               <DashboardView />
             ) : section === 'conversations' ? (

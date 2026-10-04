@@ -1,5 +1,5 @@
 import { attentionCount, noticesBetween } from './attention'
-import { selectConversation, selectTask, setSchedulesOpen, useCore } from './core-store'
+import { selectConversation, selectTask, setRoutinesOpen, useCore } from './core-store'
 import { canNotify, notify, onNotificationClick, setBadge } from './desktop-bridge'
 import { usePreferences } from './preferences'
 import { routineNoticesBetween } from './routines'
@@ -35,6 +35,6 @@ export function startNotifications(): void {
   onNotificationClick((target) => {
     if (target.kind === 'task') selectTask(target.id)
     else if (target.kind === 'conversation') selectConversation(target.id)
-    else setSchedulesOpen(true)
+    else setRoutinesOpen(true)
   })
 }

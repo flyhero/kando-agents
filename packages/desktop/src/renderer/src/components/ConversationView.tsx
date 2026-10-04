@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { usePlans } from '../chat-state'
-import { markRoutineRunSeen, selectConversation, setConversationInspectorOpen, setSchedulesOpen, useCore } from '../core-store'
+import { markRoutineRunSeen, selectConversation, setConversationInspectorOpen, setRoutinesOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { primaryProjectName } from './ProjectPicker'
@@ -64,7 +64,7 @@ export function ConversationView({ id }: { id: string }) {
         {conversation.routineId && (
           <span className="muted conversation-origin">
             来自定时任务{routine ? `「${routine.title}」` : ''} ·
-            <button type="button" className="link-button" onClick={() => setSchedulesOpen(true)}>回到定时任务</button>
+            <button type="button" className="link-button" onClick={() => setRoutinesOpen(true)}>回到定时任务</button>
           </span>
         )}
       </div>
