@@ -40,7 +40,8 @@ const RELIMIT_MS = 2 * 60_000
 const TRANSIENT = new Set(['chat-busy', 'conversation-running'])
 
 const SELECT = `SELECT id, target, title, agent, not_before AS notBefore, check_at AS checkAt, resets_at AS resetsAt,
-  position, status, conversation_id AS conversationId, attempts, error, created_at AS createdAt, settled_at AS settledAt
+  position, status, conversation_id AS conversationId, attempts, error, created_at AS createdAt, settled_at AS settledAt,
+  routine_id AS routineId, due_at AS dueAt, finished_at AS finishedAt, outcome, seen_at AS seenAt
   FROM scheduled_runs`
 const OPEN = "status IN ('waiting', 'starting')"
 

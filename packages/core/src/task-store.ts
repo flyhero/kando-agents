@@ -229,7 +229,28 @@ export const MIGRATIONS = [
   `ALTER TABLE terminals ADD COLUMN conversation_id TEXT;
    ALTER TABLE terminals ADD COLUMN command TEXT;
    ALTER TABLE terminals ADD COLUMN exited INTEGER NOT NULL DEFAULT 0;
-   ALTER TABLE terminals ADD COLUMN exit_code INTEGER;`
+   ALTER TABLE terminals ADD COLUMN exit_code INTEGER;`,
+  // Routines (RoutineService) start a run on a schedule; each run is a scheduled_run with the
+  // routine's id, the occurrence it stands for (unique per routine, so a start interrupted
+  // between inserting the run and moving the routine on cannot make a second), how its turn
+  // ended and when the user looked. A conversation remembers the routine that opened it. No
+  // foreign keys, as a run outlives its target. A core from before this migration cannot read
+  // a run with a routine target: do not downgrade past it.
+  `CREATE TABLE routines (
+     id TEXT PRIMARY KEY, title TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+     schedule TEXT NOT NULL, target TEXT NOT NULL,
+     next_run_at INTEGER, last_fired_at INTEGER,
+     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+   );
+   CREATE INDEX routines_due ON routines(enabled, next_run_at);
+   ALTER TABLE scheduled_runs ADD COLUMN routine_id TEXT;
+   ALTER TABLE scheduled_runs ADD COLUMN due_at INTEGER;
+   ALTER TABLE scheduled_runs ADD COLUMN finished_at INTEGER;
+   ALTER TABLE scheduled_runs ADD COLUMN outcome TEXT;
+   ALTER TABLE scheduled_runs ADD COLUMN seen_at INTEGER;
+   CREATE UNIQUE INDEX scheduled_runs_occurrence ON scheduled_runs(routine_id, due_at) WHERE routine_id IS NOT NULL;
+   CREATE INDEX scheduled_runs_routine ON scheduled_runs(routine_id, created_at DESC) WHERE routine_id IS NOT NULL;
+   ALTER TABLE conversations ADD COLUMN routine_id TEXT;`
 ]
 
 

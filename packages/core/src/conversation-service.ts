@@ -255,11 +255,15 @@ export class ConversationService {
     return this.store.searchMessages(query).map(({ conversationId, text }) => ({ conversationId, snippet: searchSnippet(text, query) }))
   }
 
+  // routine: the routine whose run opens it, which also names it for good; id: the run's own,
+  // so a start tried again finds the conversation it already made.
   async create(
     agent: AgentKind,
     projectPaths: readonly string[],
     allowBypass?: boolean,
-    start: { permissionMode?: string; model?: string; effort?: string } = {}
+    start: { permissionMode?: string; model?: string; effort?: string } = {},
+    routine: { id: string; title: string } | null = null,
+    id: string = randomUUID()
   ): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
     const { permissionMode, model, effort } = start
@@ -275,7 +279,6 @@ export class ConversationService {
     }
     const { projects, picked } = await resolveProjects(projectPaths)
     let workspace: string
-    const id = randomUUID()
     if (projects.length === 0) {
       workspace = path.join(this.sessionsRoot, id, 'workspace')
       await mkdir(workspace, { recursive: true, mode: 0o700 })
@@ -287,7 +290,7 @@ export class ConversationService {
       const head = await folderHead(project)
       if (head) starts[project] = head
     }
-    const created = this.store.create(agent, workspace, projects, id, starts)
+    const created = this.store.create(agent, workspace, projects, id, starts, null, routine)
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (permissionMode) this.store.setChatOptions(id, { permissionMode })
     if (model || effort) this.store.setChatOptions(id, { [agent]: { model, effort } })
