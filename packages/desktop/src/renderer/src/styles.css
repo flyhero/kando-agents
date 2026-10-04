@@ -4561,10 +4561,20 @@ body.side-panel-resizing * {
 .chat-tool-row:focus-visible .chat-tool-chevron,
 .chat-tool-row[aria-expanded='true'] .chat-tool-chevron { opacity: 1; }
 [aria-expanded='true'] > .chat-tool-chevron svg { transform: rotate(90deg); }
+/* A row's icon and a reply's copy button sit inset in their hover boxes; pulled out by that inset,
+   their glyphs line up with the reply's text and the turn's head. */
+.chat-tool-run > .chat-tool-row,
+.chat-subagent > .chat-tool-row,
+.chat-entry > .chat-tool-line > .chat-tool-row {
+  margin-left: -6px;
+  width: calc(100% + 6px);
+}
+.chat-message-actions { margin-left: -6px; }
+/* The rule hangs from the middle of the run's icon. */
 .chat-tool-run-lines {
   display: flex;
   flex-direction: column;
-  margin: 2px 0 2px 9px;
+  margin: 2px 0 2px 5.5px;
   padding-left: 8px;
   border-left: 1px solid var(--border-2);
 }
