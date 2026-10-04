@@ -223,7 +223,13 @@ export const MIGRATIONS = [
      id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, prompt TEXT NOT NULL,
      project_path TEXT, created_at INTEGER NOT NULL
    );
-   CREATE UNIQUE INDEX chat_commands_name ON chat_commands(lower(name), coalesce(project_path, ''));`
+   CREATE UNIQUE INDEX chat_commands_name ON chat_commands(lower(name), coalesce(project_path, ''));`,
+  // A terminal an agent opened for a command: it stays after the command ends, with how it
+  // ended, until the user closes it.
+  `ALTER TABLE terminals ADD COLUMN conversation_id TEXT;
+   ALTER TABLE terminals ADD COLUMN command TEXT;
+   ALTER TABLE terminals ADD COLUMN exited INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE terminals ADD COLUMN exit_code INTEGER;`
 ]
 
 

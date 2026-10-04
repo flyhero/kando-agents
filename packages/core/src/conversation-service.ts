@@ -711,6 +711,13 @@ export class ConversationService {
     return new Promise((resolve, reject) => this.asks.set(requestId, { resolve, reject }))
   }
 
+  // Asks the user, in the running chat, whether a command the agent wants may run in a terminal
+  // of its own; the same card, and the same answers, as a site the browser would open.
+  askTerminal(id: string, command: string, cwd: string): Promise<ChatDecision> {
+    const requestId = this.chats.ask(id, { kind: 'terminal-run', command, cwd })
+    return new Promise((resolve, reject) => this.asks.set(requestId, { resolve, reject }))
+  }
+
   // A question of Kando's answered as cancelled (the agent went, the stage was replayed) has
   // nobody left to tell; its waiter learns so here.
   private settleAsks(items: readonly ChatItem[]): void {

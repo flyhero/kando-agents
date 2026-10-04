@@ -17,7 +17,7 @@ export type ChatRecord =
   | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[]; release?: boolean }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
   // Kando asked the user something mid-chat (the site its browser may open), and what they answered.
-  | { dir: 'ask'; at: number; requestId: string; ask: { kind: 'browser-host'; host: string; url: string } }
+  | { dir: 'ask'; at: number; requestId: string; ask: { kind: 'browser-host'; host: string; url: string } | { kind: 'terminal-run'; command: string; cwd: string } }
   | { dir: 'answer'; at: number; requestId: string; resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled'; message?: string }
 
 // A user or final assistant message for conversation_messages. The key stays the same however

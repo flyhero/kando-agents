@@ -1,11 +1,12 @@
-import { BROWSER_HOST_TOOL } from '@kando/protocol'
+import { BROWSER_HOST_TOOL, TERMINAL_RUN_TOOL } from '@kando/protocol'
 import type { ChatRecord } from './chat-driver'
 import type { ChatItems } from './chat-items'
 
 export type KandoAsk = Extract<ChatRecord, { dir: 'ask' }>['ask']
 export type KandoResolution = Extract<ChatRecord, { dir: 'answer' }>['resolution']
 
-// Questions Kando itself puts to the user mid-chat (the site its browser may open), shown as
+// Questions Kando itself puts to the user mid-chat (the site its browser may open, a command an
+// agent wants run in a terminal of its own), shown as
 // approvals beside the agent's own. Both drivers hold one, fed from the stage's records, so a
 // replayed stage shows them answered as they were.
 export class KandoRequests {
@@ -21,13 +22,14 @@ export class KandoRequests {
     const id = `a:${record.requestId}`
     if (record.dir === 'ask') {
       this.open.add(record.requestId)
+      const { ask } = record
       this.items.put({
         id,
         kind: 'approval',
         requestId: record.requestId,
-        tool: BROWSER_HOST_TOOL,
-        title: record.ask.host,
-        detail: record.ask.url,
+        tool: ask.kind === 'terminal-run' ? TERMINAL_RUN_TOOL : BROWSER_HOST_TOOL,
+        title: ask.kind === 'terminal-run' ? ask.command : ask.host,
+        detail: ask.kind === 'terminal-run' ? ask.cwd : ask.url,
         toolItemId: null,
         decisions: ['allow', 'allowForSession', 'deny'],
         resolution: null

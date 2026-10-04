@@ -1,6 +1,6 @@
 import type { AgentKind } from '@kando/protocol'
 import { claudeEditDenials, claudeReadRules, GIT_READ_TOOLS, type AgentCommand, type McpServer } from './agent-command'
-import { browserToolName, SHOW_PREVIEW_TOOL } from '@kando/protocol'
+import { browserToolName, SHOW_PREVIEW_TOOL, terminalToolName } from '@kando/protocol'
 import type { ChatPreferences } from './chat-driver'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 
@@ -63,7 +63,9 @@ export function chatCommand(
       // Showing a file the agent wrote asks nothing of the user, nor does reading the browser's
       // page; opening and acting on a page go through Claude's own confirmation. (Codex asks
       // nothing for MCP tools, so for it the site gate in core is the only check.)
-      ...(mcp ? [SHOW_PREVIEW_TOOL, ...BROWSER_READ_TOOLS].map((tool) => `mcp__kando__${tool}`) : [])
+      // Reading or stopping a terminal the conversation opened itself asks nothing either; running
+      // a command in one is the agent's to ask about, under the mode the user set.
+      ...(mcp ? [SHOW_PREVIEW_TOOL, ...BROWSER_READ_TOOLS, terminalToolName('read'), terminalToolName('stop')].map((tool) => `mcp__kando__${tool}`) : [])
     ]
     const denials = planOnly ? claudeEditDenials(planOnly.dirs) : []
     return { command: 'claude', args: [

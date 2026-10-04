@@ -7,7 +7,7 @@ import { AgentStats, ConversationStats } from './agent-stats'
 import { CommitPushResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead } from './conversation'
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
-import { Terminal, TerminalCommand, TerminalCommandFields } from './terminal'
+import { Terminal, TerminalCommand, TerminalCommandFields, TerminalOutput, TerminalRun } from './terminal'
 import { ChatCommandFields, SavedChatCommand } from './chat-commands'
 import { ProjectFileMatch } from './project-files'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
@@ -49,7 +49,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // environment: core checks for git and the agent CLIs on its path (system.environment).
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -291,6 +291,18 @@ export const rpcMethods = {
   'terminals.list': { params: z.object({}), result: z.array(Terminal) },
   'terminals.open': { params: z.object({ cwd: z.string().optional() }), result: Terminal },
   'terminals.close': { params: z.object({ id: z.string().uuid() }), result: Ok },
+  // An agent's own terminals, called by Kando's MCP server for the conversation it serves: run a
+  // command in a new tab the user sees, read the end of what it printed, stop it. A conversation
+  // reaches only the terminals it opened.
+  'terminals.run': {
+    params: z.object({ conversationId: z.string().uuid(), command: z.string().trim().min(1).max(4000), cwd: z.string().optional() }),
+    result: TerminalRun
+  },
+  'terminals.read': {
+    params: z.object({ conversationId: z.string().uuid(), id: z.string().uuid(), tail: z.number().int().min(200).max(50_000).optional() }),
+    result: TerminalOutput
+  },
+  'terminals.stop': { params: z.object({ conversationId: z.string().uuid(), id: z.string().uuid() }), result: Ok },
   // Commands kept for the terminal panel, oldest first. Saving without an id adds one.
   'terminalCommands.list': { params: z.object({}), result: z.array(TerminalCommand) },
   'terminalCommands.save': { params: TerminalCommandFields.extend({ id: z.string().uuid().optional() }), result: TerminalCommand },

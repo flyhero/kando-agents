@@ -196,7 +196,7 @@ daemon.onEvent((event) => {
   } else if (event.event === 'exit') {
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
     conversations.handleExit(sessionId, event.exitCode)
-    terminals.handleExit(sessionId)
+    terminals.handleExit(sessionId, event.exitCode)
     browser.handleExit(sessionId)
     // An agent that ended is when the numbers most likely moved.
     void usage.refresh()

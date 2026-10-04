@@ -23,6 +23,7 @@ import type { ComputerAwakeService } from './computer-awake-service'
 import type { ChatSettingsStore } from './chat-settings'
 import type { EnvironmentService } from './environment-check'
 import type { ScheduleService } from './schedule-service'
+import { AgentTerminals } from './agent-terminals'
 
 const OK = { ok: true } as const
 
@@ -47,6 +48,16 @@ export function createRpcHandlers(
   schedules: ScheduleService,
   chatCommands: ChatCommandStore
 ): RpcHandlers {
+  // An agent's own terminals: run in the conversation's folder unless it names another, and
+  // asked about in the chat where the agent asks nothing for MCP tools.
+  const agentTerminals = new AgentTerminals(
+    (id) => {
+      const conversation = conversations.get(id)
+      return { agent: conversation.agent, cwd: conversation.workspacePath }
+    },
+    (id, cwd, command) => terminals.run(id, cwd, command),
+    (id, command, cwd) => conversations.askTerminal(id, command, cwd)
+  )
   // A page of chat items as clients see them: a usage limit with what core means to do about it.
   const page = (result: { items: ChatItem[]; before: string | null }) => ({ ...result, items: limits.decorate(result.items) })
   // The user going on with a conversation themselves: core no longer continues it after a limit.
@@ -205,6 +216,12 @@ export function createRpcHandlers(
     }),
     'terminals.list': () => terminals.list(),
     'terminals.open': ({ cwd }) => terminals.open(cwd),
+    'terminals.run': ({ conversationId, command, cwd }) => agentTerminals.run(conversationId, command, cwd),
+    'terminals.read': ({ conversationId, id, tail }) => terminals.read(conversationId, id, tail),
+    'terminals.stop': async ({ conversationId, id }) => {
+      await terminals.stop(conversationId, id)
+      return OK
+    },
     'terminals.close': async ({ id }) => {
       await terminals.kill(id)
       return OK

@@ -6,13 +6,15 @@ import type { Terminal } from '@kando/protocol'
 import type { DaemonMethod, DaemonParams, DaemonResult } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { TaskStore } from './task-store'
-import { TerminalService, userShell } from './terminal-service'
+import { commandShell, plainOutput, TerminalService, userShell } from './terminal-service'
 
 type Handlers = { [M in DaemonMethod]: (params: DaemonParams<M>) => DaemonResult<M> }
 
-function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: string[] } {
+function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: string[]; released: string[]; buffers: Map<string, string> } {
   const spawns: DaemonParams<'spawn'>[] = []
   const killed: string[] = []
+  const released: string[] = []
+  const buffers = new Map<string, string>()
   const handlers: Handlers = {
     spawn: (params) => {
       spawns.push(params)
@@ -24,14 +26,17 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
       killed.push(sessionId)
       return { ok: true }
     },
-    attach: ({ sessionId }) => ({ sessionId, buffer: '', bufferStart: 0, endOffset: 0, exited: false, exitCode: null }),
+    attach: ({ sessionId }) => ({ sessionId, buffer: buffers.get(sessionId) ?? '', bufferStart: 0, endOffset: 0, exited: false, exitCode: null }),
     list: () => ({ sessions: [] }),
     spawnPipe: () => { throw new Error('unused') },
-    release: () => ({ ok: true }),
+    release: ({ sessionId }) => {
+      released.push(sessionId)
+      return { ok: true }
+    },
     awakeSet: () => ({ active: false, supported: true, problem: null }),
     awakeStatus: () => ({ active: false, supported: true, problem: null })
   }
-  return { spawns, killed, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
+  return { spawns, killed, released, buffers, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
 }
 
 describe('TerminalService', () => {
@@ -84,6 +89,42 @@ describe('TerminalService', () => {
     service.reconcile([{ sessionId: third.sessionId, exited: true, exitCode: 0 }])
     expect(service.list()).toEqual([])
     expect(emitted.at(-1)).toEqual([])
+  })
+
+  it('runs an agent\'s command in a tab of its own, which outlives the command, saying how it ended', async () => {
+    const run = await service.run('conv-1', root, 'pnpm dev')
+    expect(run).toMatchObject({ conversationId: 'conv-1', command: 'pnpm dev', title: 'pnpm dev', cwd: root, exited: false })
+    expect(daemon.spawns[0]).toMatchObject({ ...commandShell('pnpm dev'), cwd: root })
+    daemon.buffers.set(run.sessionId, '\x1b[32mready\x1b[0m on http://localhost:5173\r\n')
+    expect(await service.read('conv-1', run.id)).toMatchObject({ command: 'pnpm dev', output: 'ready on http://localhost:5173', running: true, exitCode: null })
+    service.handleExit(run.sessionId, 130)
+    expect(service.list()).toEqual([expect.objectContaining({ id: run.id, exited: true, exitCode: 130 })])
+    expect(await service.read('conv-1', run.id)).toMatchObject({ running: false, exitCode: 130 })
+    // Closing it then lets the daemon forget what it printed.
+    await service.kill(run.id)
+    expect(daemon.released).toEqual([run.sessionId])
+    expect(service.list()).toEqual([])
+  })
+
+  it('lets a conversation reach only the terminals it opened', async () => {
+    const mine = await service.run('conv-1', root, 'pnpm dev')
+    const shell = await service.open(root)
+    await expect(service.read('conv-2', mine.id)).rejects.toMatchObject({ reason: 'terminal-not-found' })
+    await expect(service.stop('conv-1', shell.id)).rejects.toMatchObject({ reason: 'terminal-not-found' })
+    await service.stop('conv-1', mine.id)
+    expect(daemon.killed).toEqual([mine.sessionId])
+  })
+
+  it('keeps an agent\'s finished command while the daemon still holds it', async () => {
+    const run = await service.run('conv-1', root, 'pnpm test')
+    service.reconcile([{ sessionId: run.sessionId, exited: true, exitCode: 1 }])
+    expect(service.list()).toEqual([expect.objectContaining({ id: run.id, exited: true, exitCode: 1 })])
+    service.reconcile([])
+    expect(service.list()).toEqual([])
+  })
+
+  it('reads output as plain text, a redrawn line as it last stood', () => {
+    expect(plainOutput('\x1b]0;title\x07\x1b[1mbold\x1b[22m\r\nstep 1\rstep 2\rdone\n')).toBe('bold\ndone\n')
   })
 
   it('starts a login shell, falling back to sh', () => {

@@ -6,9 +6,10 @@ import { connectRpc, coreUrl, isPreviewImage, PREVIEW_EXTENSIONS, SHOW_PREVIEW_T
 import { readCoreEndpoint, kandoPaths } from '@kando/protocol/node'
 import { AttachmentStore } from './attachment-store'
 import { BROWSER_ARGUMENTS, BROWSER_TOOL_SPECS, browserToolsOverCore, type BrowserTools, type ToolOutcome } from './mcp-browser-tools'
+import { TERMINAL_ARGUMENTS, TERMINAL_TOOL_SPECS, terminalToolsOverCore, type TerminalTools } from './mcp-terminal-tools'
 
 // A tools-only MCP server over stdio, giving an agent Kando's own tools: showing a file it wrote in
-// the chat, and the browser Kando hosts.
+// the chat, the browser Kando hosts, and terminals of its own in the app's panel.
 // Messages are newline-delimited JSON-RPC 2.0; stdout is the channel, so logs go to stderr.
 
 const Message = z.object({
@@ -49,6 +50,8 @@ export type McpTools = {
   preview: (path: string) => Promise<void>
   // The browser tools, there when the server was started for a conversation.
   browser?: BrowserTools
+  // Terminals of the conversation's own in the app's panel, there likewise.
+  terminal?: TerminalTools
 }
 
 export type McpResponse = {
@@ -77,7 +80,7 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 // arguments are the model's to fix, so they come back as a tool error it can read.
 type ToolEntry = { spec: object & { name: string }; run(args: Record<string, unknown>): Promise<McpResult> }
 
-function toolTable({ preview, browser }: McpTools): ToolEntry[] {
+function toolTable({ preview, browser, terminal }: McpTools): ToolEntry[] {
   const entries: ToolEntry[] = [
     {
       spec: PREVIEW_TOOL,
@@ -103,6 +106,18 @@ function toolTable({ preview, browser }: McpTools): ToolEntry[] {
           const args = BROWSER_ARGUMENTS[kind].safeParse(raw)
           if (!args.success) return textResult(`参数不对：${args.error.issues.map((issue) => `${issue.path.join('.') || '参数'} ${issue.message}`).join('；')}`, true)
           return outcomeResult(await browser.call(kind, args.data))
+        }
+      })
+    }
+  }
+  if (terminal) {
+    for (const { kind, ...spec } of TERMINAL_TOOL_SPECS) {
+      entries.push({
+        spec,
+        run: async (raw) => {
+          const args = TERMINAL_ARGUMENTS[kind].safeParse(raw)
+          if (!args.success) return textResult(`参数不对：${args.error.issues.map((issue) => `${issue.path.join('.') || '参数'} ${issue.message}`).join('；')}`, true)
+          return outcomeResult(await terminal.call(kind, args.data))
         }
       })
     }
@@ -184,7 +199,10 @@ export async function serveMcp(home: string | undefined, conversationId?: string
   }
   const handle = createMcpHandler({
     preview: checkPreviewFile,
-    ...(conversationId ? { browser: browserToolsOverCore(withCore, conversationId, new AttachmentStore(kandoPaths(home).attachments)) } : {})
+    ...(conversationId ? {
+      browser: browserToolsOverCore(withCore, conversationId, new AttachmentStore(kandoPaths(home).attachments)),
+      terminal: terminalToolsOverCore(withCore, conversationId)
+    } : {})
   })
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY })
   for await (const line of lines) {
