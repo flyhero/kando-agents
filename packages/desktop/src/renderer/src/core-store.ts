@@ -30,6 +30,7 @@ import type { InspectorTab } from './components/Inspector'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
 import { updateUtilityPanelOrder, type UtilityPanelKind } from './utility-panel-order'
+import { exclusivePanels } from './side-panels'
 
 export type ConnectionState = 'waiting-for-core' | 'connecting' | 'connected'
 
@@ -161,6 +162,12 @@ export const useCore = create<CoreState>()(() => ({
   chatCommands: [],
   login: null
 }))
+
+// One side of the room beside the content at a time: the terminal panel or an inspector.
+useCore.subscribe((next, previous) => {
+  const patch = exclusivePanels(next, previous)
+  if (patch) useCore.setState(patch)
+})
 
 // A started task opens on its chat until it is closed: that is where the work happens. One under
 // review opens with the inspector showing what the agent changed.
