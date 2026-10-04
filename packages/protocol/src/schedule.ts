@@ -42,6 +42,12 @@ export const SCHEDULE_STATUSES = ['waiting', 'starting', 'started', 'failed', 'c
 export const ScheduleStatus = z.enum(SCHEDULE_STATUSES)
 export type ScheduleStatus = z.infer<typeof ScheduleStatus>
 
+// How a routine run's turn ended: as the agent reported, or 'awaiting' while it waits on the
+// user to answer or allow something.
+export const ROUTINE_OUTCOMES = ['completed', 'failed', 'interrupted', 'awaiting'] as const
+export const RoutineOutcome = z.enum(ROUTINE_OUTCOMES)
+export type RoutineOutcome = z.infer<typeof RoutineOutcome>
+
 export const ScheduledRun = z.object({
   id: z.string().uuid(),
   target: ScheduledTarget,
@@ -59,7 +65,17 @@ export const ScheduledRun = z.object({
   error: z.string().nullable(),
   createdAt: z.number(),
   // When it started, failed or was cancelled.
-  settledAt: z.number().nullable()
+  settledAt: z.number().nullable(),
+  // For a run a routine made: the routine, and the time on its schedule the run stands for
+  // (a run made up for after the computer slept is later than its dueAt). Older cores leave
+  // them out, and they are null on every other run.
+  routineId: z.string().uuid().nullable().optional(),
+  dueAt: z.number().nullable().optional(),
+  // When the routine run's turn ended, how, and when the user looked at the result; a run that
+  // failed to start is also something to look at. An outcome this client does not know reads as null.
+  finishedAt: z.number().nullable().optional(),
+  outcome: RoutineOutcome.nullable().catch(null).optional(),
+  seenAt: z.number().nullable().optional()
 })
 export type ScheduledRun = z.infer<typeof ScheduledRun>
 

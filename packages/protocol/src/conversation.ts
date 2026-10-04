@@ -34,7 +34,10 @@ export const Conversation = z.object({
   // Whether its latest stage may only plan: read-only, the plan kept rather than carried out.
   planOnly: z.boolean().optional(),
   // When the user pinned it to the top of the list; null when it is not pinned. Older cores leave it out.
-  pinnedAt: z.number().nullable().optional()
+  pinnedAt: z.number().nullable().optional(),
+  // The routine whose run opened it, which keeps it out of the list: it is reached from the
+  // routine's history. Older cores leave it out.
+  routineId: z.string().uuid().nullable().optional()
 })
 export type Conversation= z.infer<typeof Conversation>
 
