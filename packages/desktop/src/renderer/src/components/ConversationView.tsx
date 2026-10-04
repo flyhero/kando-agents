@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { usePlans } from '../chat-state'
-import { selectConversation, setConversationInspectorOpen, useCore } from '../core-store'
+import { markRoutineRunSeen, selectConversation, setConversationInspectorOpen, setSchedulesOpen, useCore } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { primaryProjectName } from './ProjectPicker'
@@ -24,6 +24,18 @@ export function ConversationView({ id }: { id: string }) {
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   const plans = usePlans(id)
+  const routine = useCore((state) => state.routines.find((each) => each.id === conversation?.routineId) ?? null)
+  const routineId = conversation?.routineId ?? null
+  const turn = conversation?.chat?.turn ?? null
+  // Looking at a routine's conversation, with the window in front, is looking at its run: when
+  // it opens, when the window comes back, and when the run ends while it is in view.
+  useEffect(() => {
+    if (!routineId) return
+    const look = () => { if (document.hasFocus()) markRoutineRunSeen(id) }
+    look()
+    window.addEventListener('focus', look)
+    return () => window.removeEventListener('focus', look)
+  }, [id, routineId, turn])
   if (!conversation) return null
   // The agent starts with the next message and goes when idle: no continue or stop to press.
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
@@ -49,6 +61,12 @@ export function ConversationView({ id }: { id: string }) {
         <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{primaryProjectName(conversation.projectPaths)}</span>
         <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
         <span className={state.failed ? 'conversation-exit-failed' : 'muted'} title={state.detail ?? undefined}>{state.label}</span>
+        {conversation.routineId && (
+          <span className="muted conversation-origin">
+            来自定时任务{routine ? `「${routine.title}」` : ''} ·
+            <button type="button" className="link-button" onClick={() => setSchedulesOpen(true)}>回到定时任务</button>
+          </span>
+        )}
       </div>
       <div className="toolbar">
         <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>

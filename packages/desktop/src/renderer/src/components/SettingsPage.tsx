@@ -128,7 +128,7 @@ function NotificationSettings() {
   return (
     <SettingsRow
       label="系统通知"
-      description="窗口不在前台时，agent 等你允许或回答、这一轮做完、异常退出，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话和任务有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
+      description="窗口不在前台时，agent 等你允许或回答、这一轮做完、异常退出，以及定时任务的一次运行做完或没能开始，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话、任务和没看过的定时任务运行有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
       control={(labelId) => <Toggle labelId={labelId} checked={notifications} onChange={(next) => setPreference('notifications', next)} />}
     />
   )

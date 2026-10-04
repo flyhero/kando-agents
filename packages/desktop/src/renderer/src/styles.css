@@ -6970,3 +6970,6 @@ body.side-panel-resizing * {
 .routine-editor-every .input { height: 32px; padding: 0 8px; }
 .routine-editor-note { font-size: 12px; }
 .routine-editor-mode { margin: -6px 0 0; font-size: 12px; }
+/* A routine's conversation says where it came from; it is not in the list to find again. */
+.conversation-origin { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.conversation-origin .link-button { font-size: 12px; }
