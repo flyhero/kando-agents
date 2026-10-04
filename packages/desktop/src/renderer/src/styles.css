@@ -514,7 +514,7 @@ body.stacked-panel-resizing * {
   min-height: 40px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   padding: 0 8px 0 20px;
   border: 0;
   background: transparent;
@@ -524,9 +524,9 @@ body.stacked-panel-resizing * {
   cursor: pointer;
 }
 .sidebar-section-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.sidebar-section-icon { width: 16px; height: 16px; display: grid; place-items: center; flex-shrink: 0; }
+.sidebar-section-icon { width: 16px; height: 16px; display: grid; place-items: center; flex-shrink: 0; color: var(--text-muted); }
 .sidebar-section-icon svg { width: 16px; height: 16px; }
-.sidebar-collapse-icon { width: 24px; height: 24px; display: grid; place-items: center; margin-left: auto; opacity: 0; transition: opacity 0.12s; }
+.sidebar-collapse-icon { width: 24px; height: 24px; display: grid; place-items: center; margin-left: auto; color: var(--text-muted); opacity: 0; transition: opacity 0.12s; }
 .sidebar-collapse-icon svg { width: 16px; height: 16px; transition: transform 0.15s; }
 .sidebar-section-toggle[aria-expanded='true'] .sidebar-collapse-icon svg { transform: rotate(180deg); }
 .task-list:hover .sidebar-collapse-icon, .task-list:focus-within .sidebar-collapse-icon,
@@ -608,12 +608,13 @@ body.stacked-panel-resizing * {
   align-items: center;
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--text);
   background: var(--bg);
 }
 
 .count {
   font-weight: 400;
+  color: var(--text-muted);
 }
 
 .task-list-add {
