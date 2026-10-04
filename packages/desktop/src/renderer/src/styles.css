@@ -250,6 +250,15 @@ body.stacked-panel-resizing * {
   background: var(--surface-muted);
 }
 
+/* A tab an agent runs a command in: its icon before the command, and once it ends, a mark. */
+.terminal-tab-agent { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; }
+.terminal-tab-agent svg { width: 12px; height: 12px; }
+.terminal-tab-exit { margin-right: 4px; color: var(--status-done); font-size: 11px; }
+.terminal-tab-exit[data-failed] { color: var(--danger); font-family: var(--mono); }
+/* Under an agent's terminal run in the chat: the way to the tab it opened. */
+.chat-tool-actions { display: flex; gap: 12px; padding: 0 12px 8px; font-size: var(--chat-font-small); }
+.chat-tool-actions .link-button { margin-left: 0; }
+
 .terminal-tab [role='tab'] {
   max-width: 160px;
   padding: 4px 2px 4px 10px;

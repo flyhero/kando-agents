@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { isHostApproval, type ChatDecision, type ChatItem, type ChatPermissionMode, type ChatQuestion } from '@kando/protocol'
+import { isHostApproval, TERMINAL_RUN_TOOL, terminalToolKind, type ChatDecision, type ChatItem, type ChatPermissionMode, type ChatQuestion } from '@kando/protocol'
 import { questionAnswers } from '../chat-state'
 import { perform } from '../core-store'
 import { commandKeyword, isCommandTool, toolLabel } from '../chat-tools'
@@ -14,8 +14,24 @@ export type RequestItem = ApprovalItem | QuestionItem
 const DECISION_LABEL: Record<ChatDecision, string> = { allow: '允许', allowForSession: '本会话都允许', deny: '拒绝' }
 // A site is allowed for one visit or for the whole conversation; the words say so.
 const HOST_DECISION_LABEL: Record<ChatDecision, string> = { allow: '允许一次', allowForSession: '本会话允许', deny: '拒绝' }
+// Kando's own question before an agent's command runs in a terminal of its own.
+const TERMINAL_DECISION_LABEL: Record<ChatDecision, string> = { allow: '运行这一次', allowForSession: '本会话都允许在终端运行', deny: '拒绝' }
+
+// A request to run a command in a terminal of the agent's own: Kando's (the command is its title)
+// or the agent's own permission prompt for the tool (the command is in the call's input).
+function terminalCommand(item: Extract<ChatItem, { kind: 'approval' }>, input: string | null | undefined): string | null {
+  if (item.tool === TERMINAL_RUN_TOOL) return item.title
+  if (terminalToolKind(item.tool) !== 'run') return null
+  try {
+    const parsed: unknown = JSON.parse(input ?? '')
+    if (parsed && typeof parsed === 'object' && 'command' in parsed && typeof parsed.command === 'string') return parsed.command
+  } catch {
+    // Not the call's JSON: the title has the command's first line.
+  }
+  return item.title
+}
 function decisionLabel(item: ApprovalItem, decision: ChatDecision): string {
-  return (isHostApproval(item) ? HOST_DECISION_LABEL : DECISION_LABEL)[decision]
+  return (isHostApproval(item) ? HOST_DECISION_LABEL : item.tool === TERMINAL_RUN_TOOL ? TERMINAL_DECISION_LABEL : DECISION_LABEL)[decision]
 }
 const RESOLUTION_TEXT: Record<NonNullable<ApprovalItem['resolution']>, string> = {
   allowed: '已允许',
@@ -90,13 +106,16 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   const shorten = useContext(ChatPaths)
   const command = isCommandTool(item.tool)
   const host = isHostApproval(item)
+  const terminal = terminalCommand(item, tool?.input)
   const title = command ? commandKeyword(item.title) : host ? item.title : shorten(item.title)
   // Claude describes a file call by the file's name, which the title already has. A site's card
   // says the site in the headline and the whole address below.
   const detail = host ? null : item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
   const what = host
     ? <>agent 想打开 <span className="mono">{title}</span></>
-    : <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
+    : terminal !== null
+      ? <>agent 想在终端里运行 <span className="mono">{commandKeyword(terminal)}</span></>
+      : <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
   const submit = () => void respond(choice, choice === 'deny' && reason.trim() ? { message: reason.trim() } : {})
   const pick = (decision: ChatDecision) => {
     setChoice(decision)
@@ -123,10 +142,15 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   }
   return (
     <div className="chat-request" data-waiting onKeyDown={onKeyDown}>
-      <div className="chat-request-title">需要你确认：{detail ?? what}</div>
-      {detail && <p className="chat-request-detail muted">{what}</p>}
+      <div className="chat-request-title">需要你确认：{terminal !== null ? what : detail ?? what}</div>
+      {detail && terminal === null && <p className="chat-request-detail muted">{what}</p>}
       {host && item.detail && <p className="chat-request-detail mono muted">{item.detail}</p>}
-      {command && tool?.input
+      {terminal !== null ? (
+        <>
+          <CommandBlock command={terminal} />
+          <p className="chat-request-detail muted">在 Kando 的终端面板里开一个标签运行，你能看到输出，随时可以停掉。{item.tool === TERMINAL_RUN_TOOL && item.detail ? `目录：${item.detail}` : ''}</p>
+        </>
+      ) : command && tool?.input
         ? <CommandBlock command={tool.input} />
         : tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
       <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">

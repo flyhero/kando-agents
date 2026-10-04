@@ -50,7 +50,7 @@ export type LoginState = {
   result: { account: string | null; problem: SourceProblem | null } | null
 }
 
-type CoreState = {
+export type CoreState = {
   connection: ConnectionState
   rpc: RpcConnection | null
   tasks: Record<string, Task>
@@ -274,6 +274,15 @@ export function closeTerminal(id: string): void {
 
 export function selectTerminal(id: string): void {
   useCore.setState({ activeTerminalId: id })
+}
+
+// Brings up the panel on one terminal, as an agent's tool card does for the command it started.
+export function showTerminal(id: string): void {
+  useCore.setState((s) => ({
+    activeTerminalId: id,
+    terminalPanelOpen: true,
+    utilityPanelOrder: s.terminalPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', true)
+  }))
 }
 
 // Opening the panel with nothing in it starts a shell right away.

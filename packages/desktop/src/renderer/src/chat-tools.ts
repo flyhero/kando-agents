@@ -1,4 +1,4 @@
-import { BROWSER_HOST_TOOL, browserToolKind, isBrowserTool, isPreviewTool, type BrowserToolKind, type ChatDiff, type ChatItem } from '@kando/protocol'
+import { BROWSER_HOST_TOOL, browserToolKind, isBrowserTool, isPreviewTool, TERMINAL_RUN_TOOL, terminalToolKind, type BrowserToolKind, type ChatDiff, type ChatItem, type TerminalToolKind } from '@kando/protocol'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -43,8 +43,14 @@ const BROWSER_LABEL: Record<BrowserToolKind, string> = {
   console: '控制台'
 }
 
+// An agent's own terminals in the app's panel.
+const TERMINAL_LABEL: Record<TerminalToolKind, string> = { run: '在终端运行', read: '读终端', stop: '停终端' }
+
 export function toolLabel(name: string): string {
   if (isPreviewTool(name)) return '预览'
+  if (name === TERMINAL_RUN_TOOL) return TERMINAL_LABEL.run
+  const terminal = terminalToolKind(name)
+  if (terminal) return TERMINAL_LABEL[terminal]
   const browser = browserToolKind(name)
   if (browser) return BROWSER_LABEL[browser]
   return TOOL_LABEL[name] ?? name

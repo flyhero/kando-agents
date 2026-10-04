@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import type { ChatDiff, ChatItem, ChatToolStatus } from '@kando/protocol'
+import { terminalToolKind, type ChatDiff, type ChatItem, type ChatToolStatus } from '@kando/protocol'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
+import { showTerminal } from '../core-store'
 import { diffCounts, elapsedText, runHeadline, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChevronRightIcon } from './icons'
@@ -165,10 +166,15 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
 }
 
 // A call that changed files: its collapsed card opens onto the diff, input and output.
+// The terminal a run started, as the tool's result names it.
+const TERMINAL_ID = /标签 id：([0-9a-f-]{36})/
+
 export function ChatToolCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const shorten = useContext(ChatPaths)
   const details = Boolean(item.diffs.length || item.input || item.output)
+  // A command the agent runs in a terminal of its own: the card opens the panel on it.
+  const terminal = terminalToolKind(item.name) === 'run' ? TERMINAL_ID.exec(item.output ?? '')?.[1] ?? null : null
   return (
     <div className="chat-tool" data-status={item.status}>
       <button
@@ -185,6 +191,11 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={item.status} since={item.at} />
       </button>
+      {terminal && (
+        <div className="chat-tool-actions">
+          <button type="button" className="link-button" onClick={() => showTerminal(terminal)}>在终端面板里看</button>
+        </div>
+      )}
       {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
       {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}
       {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}
