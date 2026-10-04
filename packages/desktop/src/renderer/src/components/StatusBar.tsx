@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { setAwakeMode, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, toggleTerminalPanel, useAwakeSupported, useBrowserSupported, useCore, useSchedulesSupported, useWorktreesSupported, type ConnectionState } from '../core-store'
+import { setAwakeMode, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, toggleBrowserPanel, togglePortsPanel, toggleTerminalPanel, useAwakeSupported, useBrowserSupported, useCore, useSchedulesSupported, useWorktreesSupported, type ConnectionState } from '../core-store'
 import { ALL_TABS, useBrowserTabs } from '../browser-state'
 import { formatBytes, worktreeRows, worktreeSummary } from '../worktree-groups'
 import { useWorktrees } from '../worktree-store'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
-import { BranchIcon, CheckIcon, ClockIcon, CoffeeIcon, GearIcon, GlobeIcon, TerminalIcon } from './icons'
+import { BranchIcon, CheckIcon, ClockIcon, CoffeeIcon, GearIcon, GlobeIcon, PortsIcon, TerminalIcon } from './icons'
+import { usePorts } from '../port-state'
 import { UsageBar } from './UsageBar'
 import { openRuns } from '../schedules'
 import { Popover } from './Popover'
@@ -59,7 +60,7 @@ function SettingsButton() {
 // panel is closed, as terminals do.
 function BrowserButton() {
   const supported = useBrowserSupported()
-  const open = useCore((s) => s.browserPanelOpen)
+  const open = useCore((s) => s.browserPanelOpen && !s.portsPanelOpen)
   const count = useBrowserTabs((s) => s[ALL_TABS]?.tabs.length ?? 0)
   if (!supported) return null
   return (
@@ -79,7 +80,7 @@ function BrowserButton() {
 }
 
 function TerminalButton() {
-  const open = useCore((s) => s.terminalPanelOpen)
+  const open = useCore((s) => s.terminalPanelOpen && !s.portsPanelOpen)
   const count = useCore((s) => s.terminals.length)
   return (
     <button
@@ -95,6 +96,14 @@ function TerminalButton() {
       {count > 0 && <span className="count">{count}</span>}
     </button>
   )
+}
+
+function PortsButton() {
+  const supported = useCore((s) => s.rpc?.features.includes('ports') ?? false)
+  const open = useCore((s) => s.portsPanelOpen)
+  const count = usePorts((s) => s.list.ports.length)
+  if (!supported) return null
+  return <button type="button" className="tool-button statusbar-ports" aria-label="端口" aria-pressed={open} data-tooltip={open ? '隐藏端口' : '管理开发服务端口'} data-tooltip-side="top-end" onClick={togglePortsPanel}><PortsIcon />{count > 0 && <span className="count">{count}</span>}</button>
 }
 
 const AWAKE_LABEL = { on: '始终', auto: 'Agent 工作或有预约时', off: '关闭' } as const
@@ -200,6 +209,7 @@ export function StatusBar() {
       <UsageBar />
       <ScheduleButton />
       <WorktreeButton />
+      <PortsButton />
       <BrowserButton />
       <TerminalButton />
       <AwakeButton />

@@ -14,6 +14,7 @@ export function startPty({ command, args, cwd, env }: Launch, cols: number, rows
   proc.onData(events.output)
   proc.onExit(({ exitCode }) => events.exit(exitCode))
   return {
+    pid: proc.pid,
     write: (data) => proc.write(data),
     resize: (cols, rows) => proc.resize(cols, rows),
     // node-pty refuses a signal name on Windows, where every kill is forceful anyway.

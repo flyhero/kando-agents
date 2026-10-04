@@ -162,6 +162,10 @@ export function TerminalIcon() {
   )
 }
 
+export function PortsIcon() {
+  return <svg {...stroked}><rect x="6.5" y="3" width="7" height="5" rx="1" /><path d="M10 8v4M4 12h12M4 12v4M10 12v4M16 12v4" /></svg>
+}
+
 // An open book, for reading. Its last page lies on the right one and turns over the spine while a
 // read runs (see .book-page in the stylesheet); otherwise it is hidden.
 export function BookIcon() {

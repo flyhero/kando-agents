@@ -29,11 +29,12 @@ const host = createSessionHost((event) => {
   clients.forEach((client) => client.write(line))
 }, awake)
 
-function dispatch<M extends DaemonMethod>(method: M, raw: unknown): DaemonResult<M> {
-  return host.handlers[method](daemonSchemas[method].params.parse(raw))
+async function dispatch<M extends DaemonMethod>(method: M, raw: unknown): Promise<DaemonResult<M>> {
+  const result = await host.handlers[method](daemonSchemas[method].params.parse(raw))
+  return daemonSchemas[method].result.parse(result)
 }
 
-function handleLine(socket: net.Socket, line: string): void {
+async function handleLine(socket: net.Socket, line: string): Promise<void> {
   let request
   try {
     request = DaemonRequest.parse(JSON.parse(line))
@@ -47,7 +48,7 @@ function handleLine(socket: net.Socket, line: string): void {
     return
   }
   try {
-    reply({ result: dispatch(method, params) })
+    reply({ result: await dispatch(method, params) })
   } catch (error) {
     reply({ error: error instanceof Error ? error.message : String(error) })
   }
@@ -55,7 +56,7 @@ function handleLine(socket: net.Socket, line: string): void {
 
 const server = net.createServer((socket) => {
   clients.add(socket)
-  socket.on('data', createLineDecoder((line) => handleLine(socket, line)))
+  socket.on('data', createLineDecoder((line) => { void handleLine(socket, line) }))
   socket.on('close', () => clients.delete(socket))
   socket.on('error', () => clients.delete(socket))
 })

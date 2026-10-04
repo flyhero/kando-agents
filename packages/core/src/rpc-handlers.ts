@@ -26,6 +26,7 @@ import type { ScheduleService } from './schedule-service'
 import type { RoutineService } from './routine-service'
 import { AgentTerminals } from './agent-terminals'
 import { dashboardSince, summarizeDashboard } from './dashboard-stats'
+import { PortService } from './port-service'
 
 const OK = { ok: true } as const
 
@@ -51,6 +52,7 @@ export function createRpcHandlers(
   chatCommands: ChatCommandStore,
   routines: RoutineService
 ): RpcHandlers {
+  const ports = new PortService(sessions, () => ({ terminals: terminals.list(), conversations: conversations.list(true), tasks: service.list() }))
   // An agent's own terminals: run in the conversation's folder unless it names another, and
   // asked about in the chat where the agent asks nothing for MCP tools.
   const agentTerminals = new AgentTerminals(
@@ -217,6 +219,8 @@ export function createRpcHandlers(
     'attachments.read': async ({ id, offset, length }) => ({
       data: Buffer.from(await attachments.store.read(id, offset, length)).toString('base64')
     }),
+    'ports.list': () => ports.list(),
+    'ports.stop': async (ref) => { await ports.stop(ref); return OK },
     'terminals.list': () => terminals.list(),
     'terminals.open': ({ cwd }) => terminals.open(cwd),
     'terminals.run': ({ conversationId, command, cwd }) => agentTerminals.run(conversationId, command, cwd),

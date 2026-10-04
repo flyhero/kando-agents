@@ -9,6 +9,7 @@ import { CommitPushResult, Conversation, ConversationMessage, ConversationSearch
 import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal, TerminalCommand, TerminalCommandFields, TerminalOutput, TerminalRun } from './terminal'
+import { PortList, PortRef } from './ports'
 import { ChatCommandFields, SavedChatCommand } from './chat-commands'
 import { ProjectFileMatch } from './project-files'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
@@ -52,7 +53,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports'] as const
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
@@ -293,6 +294,8 @@ export const rpcMethods = {
     result: z.object({ data: z.string() })
   },
   // Shells in the app's own terminal panel; their output flows through sessions.*.
+  'ports.list': { params: z.object({}), result: PortList },
+  'ports.stop': { params: PortRef, result: Ok },
   'terminals.list': { params: z.object({}), result: z.array(Terminal) },
   'terminals.open': { params: z.object({ cwd: z.string().optional() }), result: Terminal },
   'terminals.close': { params: z.object({ id: z.string().uuid() }), result: Ok },

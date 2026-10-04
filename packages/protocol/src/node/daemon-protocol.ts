@@ -1,11 +1,16 @@
 import { StringDecoder } from 'node:string_decoder'
 import { z } from 'zod'
+import { HostedPort, PortRef } from '../ports'
 
 // Newline-delimited JSON over a Unix socket / named pipe between core and the PTY daemon.
 export const DAEMON_PROTOCOL_VERSION = 3
 
 const SessionRef = z.object({ sessionId: z.string() })
 const Ok = z.object({ ok: z.literal(true) })
+export const ProcessSnapshotData = z.object({
+  processes: z.array(z.object({ pid: z.number().int(), parentPid: z.number().int(), startedAt: z.string(), command: z.string() })),
+  listeners: z.array(z.object({ pid: z.number().int(), address: z.string(), port: z.number().int() }))
+})
 const AwakeBackendStatus = z.object({
   active: z.boolean(),
   supported: z.boolean(),
@@ -30,6 +35,8 @@ const Launch = z.object({
 })
 
 export const daemonMethods = {
+  portsList: { params: z.object({}), result: z.array(HostedPort) },
+  portsStop: { params: PortRef, result: Ok },
   spawn: {
     params: Launch.extend({ cols: z.number().int().min(1), rows: z.number().int().min(1) }),
     result: SessionRef

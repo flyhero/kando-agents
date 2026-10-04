@@ -48,6 +48,7 @@ export function startPipe({ command, args, cwd, env }: DaemonParsedParams<'spawn
   child.on('close', (code, signal) => finish(code ?? signalExitCode(signal)))
 
   return {
+    get pid() { return child.exitCode === null && child.signalCode === null ? child.pid : undefined },
     write(data) {
       if (!exited && child.stdin.writable) child.stdin.write(data)
     },

@@ -25,8 +25,10 @@ import { AttentionEntry } from './components/AttentionEntry'
 import { AttentionView } from './components/AttentionView'
 import { WindowBrand } from './components/WindowBrand'
 import { usePreferences } from './preferences'
+import { usePortPolling } from './port-state'
 
 export function App() {
+  usePortPolling()
   const selectedId = useCore((s) => s.selectedId)
   const section = useCore((s) => s.section)
   const selectedConversationId = useCore((s) => s.selectedConversationId)
@@ -46,9 +48,13 @@ export function App() {
   const terminalMaximized = useCore((s) => s.terminalMaximized)
   const browserPanelOpen = useCore((s) => s.browserPanelOpen)
   const browserMaximized = useCore((s) => s.browserMaximized)
+  const portsPanelOpen = useCore((s) => s.portsPanelOpen)
+  const portsMaximized = useCore((s) => s.portsMaximized)
   const utilityPanelOrder = useCore((s) => s.utilityPanelOrder)
   const sidebarHidden = usePreferences((s) => s.sidebarHidden)
-  const maximizedUtility = browserPanelOpen && browserMaximized
+  const maximizedUtility = portsPanelOpen
+    ? portsMaximized ? 'ports' : undefined
+    : browserPanelOpen && browserMaximized
     ? 'browser'
     : terminalPanelOpen && terminalMaximized
       ? 'terminal'
@@ -145,10 +151,11 @@ export function App() {
             )}
           </>
         )}
-        {(browserPanelOpen || terminalPanelOpen) && (
+        {(portsPanelOpen || browserPanelOpen || terminalPanelOpen) && (
           <UtilityPanelDock
             browserOpen={browserPanelOpen}
             terminalOpen={terminalPanelOpen}
+            portsOpen={portsPanelOpen}
             maximized={maximizedUtility}
             order={utilityPanelOrder}
           />

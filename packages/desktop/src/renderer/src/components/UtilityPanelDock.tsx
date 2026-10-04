@@ -11,6 +11,7 @@ import {
   stackedPanelRatioAtPointer
 } from './side-panel-size'
 import { TerminalPanel } from './TerminalPanel'
+import { PortsPanel } from './PortsPanel'
 
 function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
   ratio: number
@@ -76,16 +77,17 @@ function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
 }
 
 // Browser and terminal share one right-hand dock. The first one opened stays above the next one.
-export function UtilityPanelDock({ browserOpen, terminalOpen, maximized, order }: {
+export function UtilityPanelDock({ browserOpen, terminalOpen, portsOpen, maximized, order }: {
   browserOpen: boolean
   terminalOpen: boolean
-  maximized?: UtilityPanelKind
+  portsOpen: boolean
+  maximized?: UtilityPanelKind | 'ports'
   order: readonly UtilityPanelKind[]
 }) {
   const [widthRatio, setWidthRatio] = useState(DEFAULT_UTILITY_PANEL_RATIO)
   const [upperRatio, setUpperRatio] = useState(DEFAULT_STACKED_PANEL_RATIO)
-  const showBrowser = browserOpen && (!maximized || maximized === 'browser')
-  const showTerminal = terminalOpen && (!maximized || maximized === 'terminal')
+  const showBrowser = !portsOpen && browserOpen && (!maximized || maximized === 'browser')
+  const showTerminal = !portsOpen && terminalOpen && (!maximized || maximized === 'terminal')
   const stacked = showBrowser && showTerminal
   const visibleOrder = visibleUtilityPanelOrder(order, showBrowser, showTerminal)
   const upperPanel = visibleOrder[0] ?? 'browser'
@@ -97,7 +99,7 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, maximized, order }
     <>
       {!maximized && (
         <PanelSeparator
-          panelName={stacked ? '浏览器与终端工具栏' : showBrowser ? '浏览器栏' : '终端栏'}
+          panelName={portsOpen ? '端口栏' : stacked ? '浏览器与终端工具栏' : showBrowser ? '浏览器栏' : '终端栏'}
           ratio={widthRatio}
           onRatioChange={setWidthRatio}
         />
@@ -112,6 +114,7 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, maximized, order }
           gridTemplateRows: rows
         }}
       >
+        {portsOpen && <PortsPanel />}
         {visibleOrder.map((panel, index) => (
           <Fragment key={panel}>
             {index > 0 && (

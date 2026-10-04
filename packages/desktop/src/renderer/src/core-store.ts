@@ -120,6 +120,8 @@ export type CoreState = {
   terminals: Terminal[]
   terminalPanelOpen: boolean
   terminalMaximized: boolean
+  portsPanelOpen: boolean
+  portsMaximized: boolean
   // The browser panel in the shared utility dock: every tab there is, the user's own included.
   browserPanelOpen: boolean
   browserMaximized: boolean
@@ -176,6 +178,8 @@ export const useCore = create<CoreState>()(() => ({
   terminals: [],
   terminalPanelOpen: false,
   terminalMaximized: false,
+  portsPanelOpen: false,
+  portsMaximized: false,
   browserPanelOpen: false,
   browserMaximized: false,
   utilityPanelOrder: [],
@@ -257,6 +261,7 @@ export function showConversationPlan(key: string | null): void {
 // Opens the browser panel on a conversation's tab: the one it has, or the one about to appear.
 export function showBrowserPanel(conversationId: string | null): void {
   useCore.setState((s) => ({
+    portsPanelOpen: false,
     browserPanelOpen: true,
     utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
   }))
@@ -266,6 +271,7 @@ export function showBrowserPanel(conversationId: string | null): void {
 // Opens the browser panel on one tab, from the page's card in the chat.
 export function showBrowserTab(tabId: string): void {
   useCore.setState((s) => ({
+    portsPanelOpen: false,
     browserPanelOpen: true,
     utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
   }))
@@ -312,6 +318,7 @@ export function selectTerminal(id: string): void {
 // Brings up the panel on one terminal, as an agent's tool card does for the command it started.
 export function showTerminal(id: string): void {
   useCore.setState((s) => ({
+    portsPanelOpen: false,
     activeTerminalId: id,
     terminalPanelOpen: true,
     utilityPanelOrder: s.terminalPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', true)
@@ -320,13 +327,22 @@ export function showTerminal(id: string): void {
 
 // Opening the panel with nothing in it starts a shell right away.
 export async function toggleTerminalPanel(): Promise<void> {
-  const { terminalPanelOpen, terminals } = useCore.getState()
-  const open = !terminalPanelOpen
+  const { terminalPanelOpen, portsPanelOpen, terminals } = useCore.getState()
+  const open = portsPanelOpen || !terminalPanelOpen
   useCore.setState((s) => ({
+    portsPanelOpen: false,
     terminalPanelOpen: open,
     utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', open)
   }))
-  if (!terminalPanelOpen && terminals.length === 0) await openTerminal()
+  if (open && terminals.length === 0) await openTerminal()
+}
+
+export function togglePortsPanel(): void {
+  useCore.setState((s) => ({ portsPanelOpen: !s.portsPanelOpen }))
+}
+
+export function setPortsMaximized(maximized: boolean): void {
+  useCore.setState({ portsMaximized: maximized, ...(maximized ? { terminalMaximized: false, browserMaximized: false } : {}) })
 }
 
 // The list updates when core says so, through terminalCommands.changed.
@@ -348,13 +364,14 @@ export function deleteChatCommand(id: string): void {
 }
 
 export function setTerminalMaximized(maximized: boolean): void {
-  useCore.setState({ terminalMaximized: maximized, ...(maximized ? { browserMaximized: false } : {}) })
+  useCore.setState({ terminalMaximized: maximized, ...(maximized ? { browserMaximized: false, portsMaximized: false } : {}) })
 }
 
 export function toggleBrowserPanel(): void {
   useCore.setState((s) => {
-    const open = !s.browserPanelOpen
+    const open = s.portsPanelOpen || !s.browserPanelOpen
     return {
+      portsPanelOpen: false,
       browserPanelOpen: open,
       utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', open)
     }
@@ -362,7 +379,7 @@ export function toggleBrowserPanel(): void {
 }
 
 export function setBrowserMaximized(maximized: boolean): void {
-  useCore.setState({ browserMaximized: maximized, ...(maximized ? { terminalMaximized: false } : {}) })
+  useCore.setState({ browserMaximized: maximized, ...(maximized ? { terminalMaximized: false, portsMaximized: false } : {}) })
 }
 
 export function selectConversation(id: string | null): void {

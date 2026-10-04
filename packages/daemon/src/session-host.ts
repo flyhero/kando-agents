@@ -11,6 +11,7 @@ import { OutputBuffer } from './output-buffer'
 import { startPipe } from './pipe-session'
 import { startPty } from './pty-session'
 import type { AwakeBackendStatus } from './awake-service'
+import { SessionPorts } from './session-ports'
 
 // Enough for a reattaching UI to repaint recent output; not a full history.
 const PTY_SCROLLBACK_CHARS = 512 * 1024
@@ -20,6 +21,7 @@ const PIPE_STDERR_CHARS = 64 * 1024
 
 // A running process as the registry drives it, whether it sits behind a PTY or plain pipes.
 export type HostedProcess = {
+  pid?: number
   write(data: string): void
   resize(cols: number, rows: number): void
   kill(force: boolean): void
@@ -41,7 +43,7 @@ type Session = {
 }
 
 export type DaemonHandlers = {
-  [M in DaemonMethod]: (params: DaemonParsedParams<M>) => DaemonResult<M>
+  [M in DaemonMethod]: (params: DaemonParsedParams<M>) => M extends 'portsList' | 'portsStop' ? Promise<DaemonResult<M>> : DaemonResult<M>
 }
 
 const NOT_STARTED: HostedProcess = { write() {}, resize() {}, kill() {} }
@@ -61,6 +63,9 @@ export function createSessionHost(emit: (event: DaemonEvent) => void, awake: Awa
   killAll(): void
 } {
   const sessions = new Map<string, Session>()
+  const ports = new SessionPorts(() => [...sessions.values()].flatMap((session) => session.exitCode === null && session.process.pid !== undefined
+    ? [{ sessionId: session.id, pid: session.process.pid, canStopRoot: session.io === 'pty' }]
+    : []))
 
   function getSession(sessionId: string): Session {
     const session = sessions.get(sessionId)
@@ -105,6 +110,11 @@ export function createSessionHost(emit: (event: DaemonEvent) => void, awake: Awa
   }
 
   const handlers: DaemonHandlers = {
+    portsList: () => ports.list(),
+    async portsStop(ref) {
+      await ports.stop(ref)
+      return { ok: true }
+    },
     spawn({ cols, rows, ...launch }) {
       return track('pty', (events) => startPty(launch, cols, rows, events))
     },

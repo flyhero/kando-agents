@@ -91,6 +91,8 @@ const REASON_TEXT: Record<string, string> = {
   'dependency-cycle': '不能形成循环依赖',
   'worktree-failed': '创建 git worktree 失败',
   'daemon-unavailable': '终端守护进程没有运行（pnpm dev:daemon）',
+  'port-process-changed': '服务已结束或端口归属发生变化，请刷新后重试',
+  'port-process-protected': '这是 agent 的进程，不能从端口面板停止',
   'command-not-found': '找不到 agent 命令（claude 或 codex），请先安装并确认它在 PATH 里',
   'run-in-progress': '任务正在启动，请稍候',
   'task-not-found': '任务不存在',

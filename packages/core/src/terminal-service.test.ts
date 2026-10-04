@@ -16,6 +16,8 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
   const released: string[] = []
   const buffers = new Map<string, string>()
   const handlers: Handlers = {
+    portsList: () => [],
+    portsStop: () => ({ ok: true }),
     spawn: (params) => {
       spawns.push(params)
       return { sessionId: `session-${spawns.length}` }
