@@ -5,6 +5,7 @@ import { perform } from '../core-store'
 import { commandKeyword, isCommandTool, toolLabel } from '../chat-tools'
 import { ChatPaths } from './ChatToolCard'
 import { CheckIcon } from './icons'
+import { ChatToolInput } from './ChatToolInput'
 
 type ApprovalItem = Extract<ChatItem, { kind: 'approval' }>
 type QuestionItem = Extract<ChatItem, { kind: 'question' }>
@@ -152,7 +153,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
         </>
       ) : command && tool?.input
         ? <CommandBlock command={tool.input} />
-        : tool?.input && <pre className="chat-tool-io">{tool.input}</pre>}
+        : tool?.input && <ChatToolInput name={tool.name} input={tool.input} />}
       <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">
         {decisions.map((decision, index) => (
           <div

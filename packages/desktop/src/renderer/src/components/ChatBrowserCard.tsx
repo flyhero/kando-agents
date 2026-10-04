@@ -11,6 +11,7 @@ import { previewUrl } from '../file-links'
 import { LocalImageViewer } from './ChatMarkdown'
 import { ImageViewer } from './ImageViewer'
 import { ChatToolIcon } from './ChatToolIcon'
+import { ChatToolInput } from './ChatToolInput'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -116,7 +117,7 @@ export function ChatShotCard({ item }: { item: ToolItem }) {
       </button>
       {images.map((image, index) => <BrowserShot key={image.id} image={image} onOpen={() => setViewing(index)} />)}
       {path && <FileShot path={path} />}
-      {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}
+      {open && item.input && <ChatToolInput name={item.name} input={item.input} />}
       {open && output && <pre className="chat-tool-io">{clipped(output)}</pre>}
       {viewing !== null && images.length > 0 && (
         <ImageViewer

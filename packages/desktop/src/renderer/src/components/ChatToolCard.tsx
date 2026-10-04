@@ -6,6 +6,7 @@ import { showTerminal } from '../core-store'
 import { diffCounts, elapsedText, runHeadline, toolLabel } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChatToolIcon } from './ChatToolIcon'
+import { ChatToolInput } from './ChatToolInput'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
 
@@ -135,7 +136,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={tool.status} since={tool.at} />
       </button>
-      {open && tool.input && <pre className="chat-tool-io">{tool.input}</pre>}
+      {open && tool.input && <ChatToolInput name={tool.name} input={tool.input} />}
       {open && tool.output && <pre className="chat-tool-io">{clipped(tool.output)}</pre>}
     </div>
   )
@@ -202,7 +203,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         </div>
       )}
       {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
-      {open && item.input && <pre className="chat-tool-io">{item.input}</pre>}
+      {open && item.input && <ChatToolInput name={item.name} input={item.input} />}
       {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}
     </div>
   )

@@ -73,6 +73,16 @@ export function toolIconKind(name: string): ToolIconKind {
   return TOOL_ICONS[name] ?? 'tool'
 }
 
+// What a call's input is written in, for colouring it: a shell command, a plan, or the JSON of
+// any other tool's arguments; null leaves it plain.
+export type ToolInputLanguage = 'bash' | 'markdown' | 'json'
+
+export function toolInputLanguage(name: string, input: string): ToolInputLanguage | null {
+  if (name === 'Bash' || name === 'commandExecution') return 'bash'
+  if (name === 'ExitPlanMode') return 'markdown'
+  return /^\s*[[{]/.test(input) ? 'json' : null
+}
+
 // What a run of calls did, in the words a person would use: counted by kind, in the order each kind
 // first came up.
 const TOOL_KIND: Record<string, { kind: string; say: (count: number) => string }> = {

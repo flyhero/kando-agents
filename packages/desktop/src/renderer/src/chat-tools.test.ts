@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel, toolIconKind } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel, toolIconKind, toolInputLanguage } from './chat-tools'
 
 describe('toolIconKind', () => {
   it('recognizes both agents and Kando MCP aliases', () => {
@@ -12,6 +12,19 @@ describe('toolIconKind', () => {
 
   it('keeps unfamiliar third-party tools recognizable as tools', () => {
     expect(toolIconKind('mcp__github__create_pull_request')).toBe('tool')
+  })
+})
+
+describe('toolInputLanguage', () => {
+  it('reads a command as shell, a plan as markdown and other arguments as JSON', () => {
+    expect(toolInputLanguage('Bash', 'git status')).toBe('bash')
+    expect(toolInputLanguage('commandExecution', 'ls -la')).toBe('bash')
+    expect(toolInputLanguage('ExitPlanMode', '# Plan')).toBe('markdown')
+    expect(toolInputLanguage('mcp__kando__terminal_run', '{\n  "command": "pnpm dev"\n}')).toBe('json')
+  })
+
+  it('leaves input that is neither plain', () => {
+    expect(toolInputLanguage('mcp__github__search', 'free text')).toBeNull()
   })
 })
 
