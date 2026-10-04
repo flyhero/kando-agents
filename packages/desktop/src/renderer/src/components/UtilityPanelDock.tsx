@@ -3,7 +3,7 @@ import { visibleUtilityPanelOrder, type UtilityPanelKind } from '../utility-pane
 import { BrowserSidePanel } from './BrowserSidePanel'
 import { PanelSeparator } from './PanelSeparator'
 import {
-  DEFAULT_SIDE_PANEL_RATIO,
+  DEFAULT_UTILITY_PANEL_RATIO,
   DEFAULT_STACKED_PANEL_RATIO,
   MAX_STACKED_PANEL_RATIO,
   MIN_STACKED_PANEL_RATIO,
@@ -82,7 +82,7 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, maximized, order }
   maximized?: UtilityPanelKind
   order: readonly UtilityPanelKind[]
 }) {
-  const [widthRatio, setWidthRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
+  const [widthRatio, setWidthRatio] = useState(DEFAULT_UTILITY_PANEL_RATIO)
   const [upperRatio, setUpperRatio] = useState(DEFAULT_STACKED_PANEL_RATIO)
   const showBrowser = browserOpen && (!maximized || maximized === 'browser')
   const showTerminal = terminalOpen && (!maximized || maximized === 'terminal')

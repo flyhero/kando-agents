@@ -1,4 +1,6 @@
 export const DEFAULT_SIDE_PANEL_RATIO = 0.42
+// The terminal and browser open on a third of the window, beside the chat rather than over it.
+export const DEFAULT_UTILITY_PANEL_RATIO = 1 / 3
 export const MIN_SIDE_PANEL_RATIO = 0.25
 export const MAX_SIDE_PANEL_RATIO = 0.75
 export const DEFAULT_STACKED_PANEL_RATIO = 0.5
