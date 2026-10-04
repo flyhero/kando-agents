@@ -1569,6 +1569,15 @@ button.task-tag:hover {
   right: 0;
 }
 
+/* In the top layer (see Popover), placed by script against the window. The browser's own popover
+   styles would centre it with a frame of their own. */
+.menu.menu-lifted {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  color: var(--text);
+}
+
 .menu-label {
   padding: 4px 8px 2px;
   font-size: 11px;

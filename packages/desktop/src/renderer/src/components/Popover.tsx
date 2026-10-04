@@ -1,43 +1,74 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 
-// A non-modal panel under its trigger. It must sit inside the same parent as the
-// trigger (a `.menu-anchor`), so a click on the trigger is not an outside click. `floating` places
-// it against the window instead, for a trigger inside a box that clips what runs past it.
-export function Popover({ label, onClose, floating = false, children }: { label: string; onClose: () => void; floating?: boolean; children: ReactNode }) {
+// A non-modal panel by its trigger. It must sit inside the same parent as the trigger (a
+// `.menu-anchor`), so a click on the trigger is not an outside click. It is laid out first where
+// the stylesheet puts it beside the trigger, then lifted into the top layer at that spot, so no
+// pane that clips or panel that overlaps can hide it; there it follows the trigger as the page
+// scrolls, and keeps within the window as it grows. `align="end"` puts its right edge on the
+// trigger's, as for a trigger at the end of a row.
+export function Popover({ label, onClose, align = 'start', children }: { label: string; onClose: () => void; align?: 'start' | 'end'; children: ReactNode }) {
   const panel = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     const element = panel.current
-    const anchor = element?.parentElement?.getBoundingClientRect()
-    if (floating && element && anchor) {
-      // Under the trigger, or over it where the window has no room below, or as low as the window
-      // lets it where neither fits; its right edge on the trigger's, as for a trigger at the end of
-      // a row, unless that would run off the left. Placed again as it grows (a field it shows), so
-      // it never runs off the window.
-      const place = () => {
-        const { width, height } = element.getBoundingClientRect()
-        const { clientHeight } = document.documentElement
-        const left = anchor.right - width >= 8 ? anchor.right - width : anchor.left
-        const below = anchor.bottom + 4
-        const above = anchor.top - 4 - height
-        const top = below + height <= clientHeight - 8 ? below : above >= 8 ? above : clientHeight - 8 - height
-        Object.assign(element.style, { position: 'fixed', left: `${Math.max(8, left)}px`, top: `${Math.max(8, top)}px`, right: 'auto', bottom: 'auto' })
-      }
-      place()
-      element.querySelector<HTMLElement>('input, textarea, button')?.focus()
-      const observer = new ResizeObserver(place)
-      observer.observe(element)
-      return () => observer.disconnect()
-    }
-    const box = element?.getBoundingClientRect()
+    const trigger = element?.parentElement
+    if (!element || !trigger) return
+    const { clientWidth, clientHeight } = document.documentElement
     // Flip when the trigger sits too close to the right or bottom edge.
-    if (element && box && box.right > document.documentElement.clientWidth - 8) {
-      element.classList.add('menu-end')
+    let box = element.getBoundingClientRect()
+    if (box.right > clientWidth - 8) element.classList.add('menu-end')
+    box = element.getBoundingClientRect()
+    if (box.bottom > clientHeight - 8 && box.top > box.height + 8) element.classList.add('menu-up')
+    box = element.getBoundingClientRect()
+    const anchor = trigger.getBoundingClientRect()
+    // Where it sits against the trigger, kept as the trigger moves: over or under it, and how far.
+    const above = box.bottom <= anchor.top + 1
+    const gap = above ? anchor.top - box.bottom : box.top - anchor.bottom
+    const dx = box.left - anchor.left
+    const fromRight = anchor.right - box.right
+    const place = () => {
+      const { clientWidth: width, clientHeight: height } = document.documentElement
+      const at = trigger.getBoundingClientRect()
+      const size = element.getBoundingClientRect()
+      const under = at.bottom + gap
+      const over = at.top - gap - size.height
+      const fitsUnder = under + size.height <= height - 8
+      const top = above ? (over >= 8 || !fitsUnder ? over : under) : (fitsUnder || over < 8 ? under : over)
+      const left = element.classList.contains('menu-end') ? at.right - fromRight - size.width : at.left + dx
+      // Inline, over the stylesheet's offsets for where it opens (bottom, right), which would
+      // stretch it against the window.
+      Object.assign(element.style, {
+        right: 'auto',
+        bottom: 'auto',
+        left: `${Math.min(Math.max(8, left), width - 8 - size.width)}px`,
+        top: `${Math.min(Math.max(8, top), height - 8 - size.height)}px`
+      })
     }
-    if (element && box && box.bottom > document.documentElement.clientHeight - 8 && box.top > box.height + 8) {
-      element.classList.add('menu-up')
+    // Only now a popover: one not yet shown is not laid out, so could not be measured above.
+    element.classList.add('menu-lifted')
+    element.popover = 'manual'
+    element.showPopover()
+    place()
+    element.querySelector<HTMLElement>('input, textarea, button')?.focus()
+    const observer = new ResizeObserver(place)
+    observer.observe(element)
+    // Scrolling within the panel itself moves nothing it sits by.
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof Node && element.contains(event.target))) place()
     }
-    element?.querySelector<HTMLElement>('input, textarea, button')?.focus()
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', place)
+      // Back where the stylesheet puts it, should the effect run again on the same element.
+      element.hidePopover()
+      element.popover = null
+      element.classList.remove('menu-lifted', 'menu-up')
+      if (align !== 'end') element.classList.remove('menu-end')
+      for (const side of ['left', 'top', 'right', 'bottom'] as const) element.style[side] = ''
+    }
   }, [])
 
   useEffect(() => {
@@ -64,7 +95,7 @@ export function Popover({ label, onClose, floating = false, children }: { label:
   }, [onClose])
 
   return (
-    <div className="menu" ref={panel} role="dialog" aria-label={label}>
+    <div className={align === 'end' ? 'menu menu-end' : 'menu'} ref={panel} role="dialog" aria-label={label}>
       {children}
     </div>
   )

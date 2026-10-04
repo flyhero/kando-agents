@@ -85,6 +85,7 @@ function ScheduleSendButton({ conversationId, text, quotes, images, disabledReas
       {open && (
         <SchedulePicker
           title="预约发送"
+          align="end"
           onSchedule={async (notBefore) => {
             const message = composeMessage(quotes, draft)
             const run = await createSchedule({ kind: 'conversation', conversationId, text: message.trim(), ...(images.length ? { images: [...images] } : {}) }, notBefore)

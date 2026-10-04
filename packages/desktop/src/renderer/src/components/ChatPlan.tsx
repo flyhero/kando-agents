@@ -22,7 +22,7 @@ function SchedulePlanButton({ conversationId }: { conversationId: string }) {
       <button type="button" className="link-button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>预约批准</button>
       {open && (
         <SchedulePicker
-          floating
+          align="end"
           title="预约批准这个计划"
           note="到点后批准并开始执行，不会停下来等你确认。"
           onSchedule={async (notBefore) => (await createSchedule({ kind: 'conversation', conversationId, text: '' }, notBefore)) !== null}

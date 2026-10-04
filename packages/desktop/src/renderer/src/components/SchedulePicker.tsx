@@ -17,10 +17,10 @@ export function SettingsLink() {
 
 // When a run may start: as soon as its agent's quota allows, or not before a time, a night hour
 // by default. It waits for the quota either way, and runs with nobody there, which the note says.
-export function SchedulePicker({ title, note, children, initial, submitLabel = '预约', floating = false, onSchedule, onClose }: {
+export function SchedulePicker({ title, note, children, initial, submitLabel = '预约', align = 'start', onSchedule, onClose }: {
   title: string
-  // Placed against the window, for a trigger inside a box that clips.
-  floating?: boolean
+  // 'end' for a trigger at the end of a row: the picker's right edge on the trigger's.
+  align?: 'start' | 'end'
   note?: ReactNode
   // What the run will do, where the caller lets it be written here: under the note, above when.
   children?: ReactNode
@@ -45,7 +45,7 @@ export function SchedulePicker({ title, note, children, initial, submitLabel = '
     if (done) onClose()
   }
   return (
-    <Popover label={title} onClose={onClose} floating={floating}>
+    <Popover label={title} onClose={onClose} align={align}>
       <div className="note-form schedule-picker">
         <p className="note-form-title" id={labelId}>{title}</p>
         {note && <p className="menu-note">{note}</p>}
