@@ -4633,8 +4633,13 @@ body.side-panel-resizing * {
 .chat-tool-icon[data-status='running'][data-kind='search'] svg {
   animation: chat-tool-search 1.6s ease-in-out infinite;
 }
-.chat-tool-icon[data-status='running']:is([data-kind='browser'], [data-kind='tool']) svg {
+.chat-tool-icon[data-status='running'][data-kind='browser'] svg {
   animation: spin 3.2s linear infinite;
+}
+/* The gear turns a tooth at a time, easing into each: a wheel being driven, not a spinner. Its
+   eight teeth are alike, so a slow even spin read as standing still. */
+.chat-tool-icon[data-status='running'][data-kind='tool'] svg {
+  animation: chat-tool-gear 3.2s cubic-bezier(.6, 0, .4, 1) infinite;
 }
 .chat-tool-icon[data-status='running']:is([data-kind='image'], [data-kind='agent'], [data-kind='list']) svg {
   animation: chat-tool-read 1.6s ease-in-out infinite;
@@ -4653,6 +4658,17 @@ body.side-panel-resizing * {
   50% { transform: translateX(1px) rotate(6deg); }
 }
 @keyframes chat-tool-terminal { to { opacity: .25; } }
+@keyframes chat-tool-gear {
+  0% { transform: rotate(0deg); }
+  12.5% { transform: rotate(45deg); }
+  25% { transform: rotate(90deg); }
+  37.5% { transform: rotate(135deg); }
+  50% { transform: rotate(180deg); }
+  62.5% { transform: rotate(225deg); }
+  75% { transform: rotate(270deg); }
+  87.5% { transform: rotate(315deg); }
+  100% { transform: rotate(360deg); }
+}
 @keyframes chat-tool-search {
   0%, 100% { transform: translate(0, 0); }
   35% { transform: translate(2px, -1px); }
