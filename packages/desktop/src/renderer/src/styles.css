@@ -3583,6 +3583,9 @@ body.side-panel-resizing * {
   cursor: pointer;
 }
 
+/* Above the lists, the dashboard's entry keeps the lists' own inset and a little air below. */
+.sidebar-dashboard { margin: 8px 8px 4px; }
+
 .inbox-entry svg {
   width: 16px;
   height: 16px;

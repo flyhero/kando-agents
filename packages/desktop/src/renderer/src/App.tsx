@@ -17,6 +17,7 @@ import { UtilityPanelDock } from './components/UtilityPanelDock'
 import { WorktreeManager } from './components/WorktreeManager'
 import { SchedulesView } from './components/SchedulesView'
 import { DashboardView } from './components/DashboardView'
+import { DashboardEntry } from './components/DashboardEntry'
 import { WindowBrand } from './components/WindowBrand'
 import { usePreferences } from './preferences'
 
@@ -105,6 +106,7 @@ export function App() {
         ) : (
           <>
             <div className="sidebar" hidden={sidebarHidden}>
+              <DashboardEntry />
               <EnvironmentNotice />
               <TaskList />
               <ConversationList />
