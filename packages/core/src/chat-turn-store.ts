@@ -26,6 +26,9 @@ const Row = z.object({
 })
 type Row = z.infer<typeof Row>
 
+export const TurnRow = Row.extend({ endedAt: z.number() })
+export type TurnRow = z.infer<typeof TurnRow>
+
 // Rows live in chat_turns and chat_turn_stages, which TaskStore's migrations create. A turn is taken
 // as its item comes out of a live stage; a replayed stage puts the same items out again, which
 // changes nothing.
@@ -84,6 +87,16 @@ export class ChatTurnStore {
       .all()
       .map((row) => Row.parse(row))
     return summarizeTurns(rows)
+  }
+
+  // Free conversations' turns that ended at `since` or later.
+  endedSince(since: number): TurnRow[] {
+    return this.db
+      .prepare(`SELECT conversation_id AS conversationId, agent, model, state, duration_ms AS durationMs,
+        total_tokens AS totalTokens, usage_limit AS usageLimit, ended_at AS endedAt FROM chat_turns
+        WHERE task_id IS NULL AND ended_at >= ?`)
+      .all(since)
+      .map((row) => TurnRow.parse(row))
   }
 
   private count(conversationId: string, item: ChatItem, facts: TurnFacts): void {

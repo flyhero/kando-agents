@@ -63,6 +63,10 @@ export class AgentRunStore {
     return this.db.prepare(`${SELECT} ORDER BY started_at, rowid`).all().map((row) => AgentRun.parse(row))
   }
 
+  endedSince(since: number): AgentRun[] {
+    return this.db.prepare(`${SELECT} WHERE ended_at >= ? ORDER BY started_at, rowid`).all(since).map((row) => AgentRun.parse(row))
+  }
+
   stats(): AgentStats[] {
     return summarizeRuns(this.list())
   }

@@ -24,6 +24,7 @@ import type { ChatSettingsStore } from './chat-settings'
 import type { EnvironmentService } from './environment-check'
 import type { ScheduleService } from './schedule-service'
 import { AgentTerminals } from './agent-terminals'
+import { dashboardSince, summarizeDashboard } from './dashboard-stats'
 
 const OK = { ok: true } as const
 
@@ -285,6 +286,11 @@ export function createRpcHandlers(
     'usage.refresh': () => usage.refresh(),
     'agents.stats': () => runs.stats(),
     'agents.conversationStats': () => turns.stats(),
+    'dashboard.stats': (params) => {
+      const options = { ...params, now: Date.now() }
+      const since = dashboardSince(options)
+      return summarizeDashboard(runs.endedSince(since), turns.endedSince(since), options)
+    },
     'schedules.list': () => schedules.list(),
     'schedules.create': ({ target, notBefore }) => schedules.create(target, notBefore),
     'schedules.update': ({ id, notBefore, text }) => schedules.update(id, { notBefore, text }),
