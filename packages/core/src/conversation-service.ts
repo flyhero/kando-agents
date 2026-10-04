@@ -148,8 +148,10 @@ export class ConversationService {
     showing.forEach((conversation) => this.changed(conversation))
   }
 
-  // The free conversations; a task's own is reached through its task.
-  list(): Conversation[] { return this.store.list().filter((conversation) => !conversation.taskId).map((conversation) => this.withChat(conversation)) }
+  // Task summaries are opt-in; older clients expect only free conversations.
+  list(includeTasks = false): Conversation[] {
+    return this.store.list().filter((conversation) => includeTasks || !conversation.taskId).map((conversation) => this.withChat(conversation))
+  }
   get(id: string): Conversation {
     const found = this.store.get(id)
     if (!found) throw new Rejection('conversation-not-found', `no conversation ${id}`)

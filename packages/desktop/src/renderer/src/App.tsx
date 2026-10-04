@@ -19,6 +19,8 @@ import { WorktreeManager } from './components/WorktreeManager'
 import { SchedulesView } from './components/SchedulesView'
 import { DashboardView } from './components/DashboardView'
 import { DashboardEntry } from './components/DashboardEntry'
+import { AttentionEntry } from './components/AttentionEntry'
+import { AttentionView } from './components/AttentionView'
 import { WindowBrand } from './components/WindowBrand'
 import { usePreferences } from './preferences'
 
@@ -34,6 +36,7 @@ export function App() {
   const worktreesOpen = useCore((s) => s.worktreesOpen)
   const schedulesOpen = useCore((s) => s.schedulesOpen)
   const dashboardOpen = useCore((s) => s.dashboardOpen)
+  const attentionOpen = useCore((s) => s.attentionOpen)
   const inboxOpen = useCore((s) => s.inboxOpen)
   const loginOpen = useCore((s) => s.login !== null)
   const terminalPanelOpen = useCore((s) => s.terminalPanelOpen)
@@ -107,12 +110,15 @@ export function App() {
         ) : (
           <>
             <Sidebar hidden={sidebarHidden}>
+              <AttentionEntry />
               <DashboardEntry />
               <EnvironmentNotice />
               <TaskList />
               <ConversationList />
             </Sidebar>
-            {worktreesOpen ? (
+            {attentionOpen ? (
+              <AttentionView />
+            ) : worktreesOpen ? (
               <WorktreeManager />
             ) : schedulesOpen ? (
               <SchedulesView />

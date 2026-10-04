@@ -100,7 +100,7 @@ export function createRpcHandlers(
     'tasks.branches': ({ id }) => service.branches(id),
     'tasks.changes': ({ id }) => service.changes(id),
     'tasks.diff': ({ id, repo, file }) => service.diff(id, repo, file),
-    'conversations.list': () => conversations.list(),
+    'conversations.list': ({ includeTasks }) => conversations.list(includeTasks),
     'conversations.get': ({ id }) => conversations.get(id),
     'conversations.create': ({ agent, projectPaths, allowBypass, permissionMode, model, effort }) =>
       conversations.create(agent, projectPaths, allowBypass, { permissionMode, model, effort }),

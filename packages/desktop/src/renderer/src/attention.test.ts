@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Conversation, Task } from '@kando/protocol'
-import { attentionCount, noticesBetween, type Snapshot } from './attention'
+import type { Conversation, ScheduledRun, Task } from '@kando/protocol'
+import { actionableItems, attentionCount, noticesBetween, type Snapshot } from './attention'
 
 const conversation = (id: string, patch: Partial<Conversation> = {}): Conversation => ({
   id,
@@ -60,6 +60,103 @@ describe('attentionCount', () => {
     )
     expect(attentionCount(s)).toBe(4)
     expect(attentionCount(snapshot())).toBe(0)
+  })
+})
+
+describe('actionableItems', () => {
+  it('aggregates all four reasons in priority order, counting a task chat once', () => {
+    const items = actionableItems(snapshot([
+      conversation('approval', { taskId: 'approval-task', chat: { turn: 'awaiting' } }),
+      conversation('crash', { sessionId: null, lastExit: { code: 2, at: 5 } }),
+      conversation('unread'),
+      conversation('question', { chat: { turn: 'awaiting' }, updatedAt: 10 })
+    ], [
+      task('approval-task', { conversationId: 'approval', awaitingInput: true }),
+      task('review', { status: 'review' }), task('reply', { awaitingInput: true })
+    ], ['unread']))
+    expect(items.map((item) => [item.target.id, item.reasons])).toEqual([
+      ['approval-task', ['awaiting']], ['question', ['awaiting']], ['crash', ['crashed']], ['review', ['review']], ['reply', ['reply']]
+    ])
+  })
+
+  it('keeps multiple reasons on one subject and links by either ownership field', () => {
+    const items = actionableItems(snapshot([
+      conversation('a', { taskId: 't', sessionId: null, lastExit: { code: 1, at: 5 } }),
+      conversation('b', { chat: { turn: 'awaiting' } })
+    ], [task('t', { status: 'review', awaitingInput: true }), task('u', { conversationId: 'b' })]))
+    expect(items).toEqual([
+      expect.objectContaining({ target: { kind: 'task', id: 'u' }, conversationId: 'b', reasons: ['awaiting'] }),
+      expect.objectContaining({ target: { kind: 'task', id: 't' }, conversationId: 'a', reasons: ['crashed', 'review'] })
+    ])
+  })
+
+  it('excludes done, abandoned and deleted tasks and their conversations', () => {
+    expect(actionableItems(snapshot([
+      conversation('done', { taskId: 'done', chat: { turn: 'awaiting' } }),
+      conversation('abandoned', { chat: { turn: 'awaiting' } }),
+      conversation('deleted', { taskId: 'deleted', sessionId: null, lastExit: { code: 1, at: 5 } })
+    ], [
+      task('done', { status: 'done', awaitingInput: true, conversationId: 'done' }),
+      task('abandoned', { status: 'abandoned', awaitingInput: true, conversationId: 'abandoned' })
+    ]))).toEqual([])
+  })
+
+  it('excludes normal exits, active agents with old failures, stopped requests and dependency waits', () => {
+    const chats = [
+      conversation('normal', { sessionId: null, lastExit: { code: 0, at: 5 } }),
+      conversation('stopped', { sessionId: null, lastExit: { code: null, at: 5 } }),
+      conversation('running', { chat: { turn: 'running' }, lastExit: { code: 1, at: 5 } }),
+      conversation('stale', { sessionId: null, chat: { turn: 'awaiting' } })
+    ]
+    expect(actionableItems(snapshot(chats, [task('blocked', { status: 'pending', dependsOn: ['dependency'] })], chats.map((c) => c.id)))).toEqual([])
+  })
+
+  it('sorts each priority oldest first with a stable id tiebreaker', () => {
+    const items = actionableItems(snapshot([], [
+      task('c', { status: 'review', updatedAt: 20 }), task('b', { status: 'review', updatedAt: 10 }),
+      task('a', { status: 'review', updatedAt: 10 })
+    ]))
+    expect(items.map((item) => item.target.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('does not change limited-core aggregation when a task chat is opened', () => {
+    const t = task('t', { conversationId: 'a', awaitingInput: true })
+    const before = snapshot([], [t])
+    const after = snapshot([conversation('a', { taskId: 't', chat: { turn: 'awaiting' } })], [t])
+    expect(actionableItems(after, false)).toEqual(actionableItems(before, false))
+    expect(actionableItems(after)[0]?.reasons).toEqual(['awaiting'])
+  })
+
+  it('updates reasons after answering, resuming, review completion and deletion', () => {
+    const t = task('t', { conversationId: 'a', awaitingInput: true })
+    const c = conversation('a', { taskId: 't', chat: { turn: 'awaiting' } })
+    expect(actionableItems(snapshot([c], [t]))[0]?.reasons).toEqual(['awaiting'])
+    expect(actionableItems(snapshot([{ ...c, chat: { turn: 'running' } }], [t]))).toEqual([])
+    expect(actionableItems(snapshot([{ ...c, chat: { turn: 'idle' } }], [t]))[0]?.reasons).toEqual(['reply'])
+    expect(actionableItems(snapshot([c], [{ ...t, status: 'review' }]))[0]?.reasons).toEqual(['awaiting', 'review'])
+    expect(actionableItems(snapshot([{ ...c, chat: { turn: 'idle' } }], [{ ...t, status: 'review', awaitingInput: false }]))[0]?.reasons).toEqual(['review'])
+    expect(actionableItems(snapshot([c], [{ ...t, status: 'done' }]))).toEqual([])
+    expect(actionableItems(snapshot([c]))).toEqual([])
+    const crash = conversation('free', { sessionId: null, lastExit: { code: 1, at: 5 } })
+    expect(actionableItems(snapshot([crash]))).toHaveLength(1)
+    expect(actionableItems(snapshot([{ ...crash, sessionId: 'new', chat: { turn: 'running' } }]))).toEqual([])
+    expect(actionableItems(snapshot())).toEqual([])
+  })
+
+  it('excludes automatic quota resumes until they fail or are cancelled, without hiding approvals', () => {
+    const t = task('t', { conversationId: 'a', awaitingInput: true })
+    const c = conversation('a', { taskId: 't' })
+    const run: ScheduledRun = {
+      id: 'run', target: { kind: 'resume', conversationId: 'a', stageId: 'stage', itemId: 'limit' },
+      title: 'resume', agent: 'claude', notBefore: null, resetsAt: 10, status: 'waiting',
+      conversationId: null, attempts: 0, error: null, createdAt: 0, settledAt: null
+    }
+    const s = { ...snapshot([c], [t]), schedules: [run] }
+    expect(actionableItems(s)).toEqual([])
+    expect(actionableItems({ ...s, schedules: [{ ...run, status: 'starting' }] })).toEqual([])
+    expect(actionableItems({ ...s, schedules: [{ ...run, status: 'cancelled' }] })[0]?.reasons).toEqual(['reply'])
+    expect(actionableItems({ ...s, schedules: [{ ...run, status: 'failed' }] })[0]?.reasons).toEqual(['reply'])
+    expect(actionableItems({ ...s, conversations: { a: { ...c, chat: { turn: 'awaiting' } } } })[0]?.reasons).toEqual(['awaiting'])
   })
 })
 

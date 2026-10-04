@@ -51,7 +51,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries'] as const
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -118,7 +118,7 @@ export const rpcMethods = {
   'tasks.changes': { params: TaskRef, result: z.array(RepoChanges) },
   // One file of those changes; `repo` is the path the user picked, `file` a path from the change list.
   'tasks.diff': { params: TaskRef.extend({ repo: z.string().min(1), file: z.string().min(1) }), result: FileDiff },
-  'conversations.list': { params: z.object({}), result: z.array(Conversation) },
+  'conversations.list': { params: z.object({ includeTasks: z.boolean().optional() }), result: z.array(Conversation) },
   'conversations.get': { params: ConversationRef, result: Conversation },
   'conversations.create': {
     // permissionMode, model and effort: what the first start begins with, from what the agent has.

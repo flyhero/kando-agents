@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import {
   RpcError,
@@ -31,6 +32,8 @@ import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
 import { updateUtilityPanelOrder, type UtilityPanelKind } from './utility-panel-order'
 import { exclusivePanels } from './side-panels'
+import { actionableItems, type ActionableItem } from './attention'
+import { attentionSummaryMode, fetchAttentionSummaries, replaySummaryChanges, type AttentionSummaryMode } from './attention-summaries'
 
 export type ConnectionState = 'waiting-for-core' | 'connecting' | 'connected'
 
@@ -95,6 +98,10 @@ export type CoreState = {
   schedulesOpen: boolean
   // And the dashboard of stats.
   dashboardOpen: boolean
+  attentionOpen: boolean
+  attentionSummaryMode: AttentionSummaryMode | null
+  attentionSummaryLoading: boolean
+  attentionSummaryError: string | null
   // What is scheduled to start later, open ones first in the order they go; empty from a core without.
   schedules: ScheduledRun[]
   error: string | null
@@ -149,6 +156,10 @@ export const useCore = create<CoreState>()(() => ({
   worktreesOpen: false,
   schedulesOpen: false,
   dashboardOpen: false,
+  attentionOpen: false,
+  attentionSummaryMode: null,
+  attentionSummaryLoading: true,
+  attentionSummaryError: null,
   schedules: [],
   error: null,
   usage: null,
@@ -186,6 +197,8 @@ export function selectTask(id: string | null): void {
       worktreesOpen: false,
       schedulesOpen: false,
       dashboardOpen: false,
+      attentionOpen: false,
+      settingsOpen: false,
       view: chat ? 'chat' : 'detail',
       inspectorOpen: review || s.inspectorOpen
     }
@@ -205,7 +218,7 @@ export function showTaskPlan(key: string | null): void {
   useCore.setState({ inspectorOpen: true, taskInspectorTab: 'plan', taskInspectorPlan: key })
 }
 
-// A task's conversation is not among the free ones core lists, so its view asks for it.
+// Older cores list only free conversations, so a task's view may still need its summary.
 export async function loadConversation(id: string): Promise<void> {
   const conversation = await perform((rpc) => rpc.call('conversations.get', { id }))
   if (conversation) useCore.setState((s) => ({ conversations: { ...s.conversations, [conversation.id]: conversation } }))
@@ -346,7 +359,7 @@ export function setBrowserMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
   })
 }
 
@@ -358,7 +371,7 @@ function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: 
 }
 
 export function openConversationDraft(): void {
-  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, conversationDraft: true })
+  useCore.setState({ selectedConversationId: null, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: true })
 }
 
 export function closeConversationDraft(): void {
@@ -375,7 +388,8 @@ export function openInbox(): void {
     settingsOpen: false,
     worktreesOpen: false,
     schedulesOpen: false,
-    dashboardOpen: false
+    dashboardOpen: false,
+    attentionOpen: false
   }))
 }
 
@@ -392,22 +406,66 @@ export function setNewTaskOpen(open: boolean): void {
 }
 
 export function setSettingsOpen(open: boolean, section: string | null = null): void {
-  useCore.setState({ settingsOpen: open, settingsSection: section })
+  useCore.setState({ settingsOpen: open, settingsSection: section, ...(open ? { attentionOpen: false } : {}) })
 }
 
 export function setWorktreesOpen(open: boolean): void {
-  useCore.setState({ worktreesOpen: open, schedulesOpen: false, dashboardOpen: false, settingsOpen: false })
+  useCore.setState({ worktreesOpen: open, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
 }
 
 export function setSchedulesOpen(open: boolean): void {
-  useCore.setState({ schedulesOpen: open, worktreesOpen: false, dashboardOpen: false, settingsOpen: false })
+  useCore.setState({ schedulesOpen: open, worktreesOpen: false, dashboardOpen: false, attentionOpen: false, settingsOpen: false })
 }
 
 // Opened from the task list, so it takes the place of the selected task as the inbox does.
 export function setDashboardOpen(open: boolean): void {
   useCore.setState(open
-    ? { dashboardOpen: true, section: 'tasks', selectedId: null, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, settingsOpen: false }
+    ? { dashboardOpen: true, attentionOpen: false, section: 'tasks', selectedId: null, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, settingsOpen: false }
     : { dashboardOpen: false })
+}
+
+export function setAttentionOpen(open: boolean): void {
+  useCore.setState(open
+    ? { attentionOpen: true, section: 'tasks', selectedId: null, selectedConversationId: null, conversationDraft: false, inboxOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, settingsOpen: false }
+    : { attentionOpen: false })
+}
+
+export function useActionableItems(): ActionableItem[] {
+  const tasks = useCore((s) => s.tasks)
+  const conversations = useCore((s) => s.conversations)
+  const mode = useCore((s) => s.attentionSummaryMode)
+  const schedules = useCore((s) => s.schedules)
+  return useMemo(() => actionableItems({ tasks, conversations, schedules }, mode === 'complete'), [tasks, conversations, schedules, mode])
+}
+
+export function openAttentionItem(item: ActionableItem): void {
+  if (item.target.kind === 'conversation') {
+    if (useCore.getState().conversations[item.target.id]) selectConversation(item.target.id)
+  } else {
+    const task = useCore.getState().tasks[item.target.id]
+    if (!task || task.status === 'done' || task.status === 'abandoned') return
+    selectTask(task.id)
+    if (task.status === 'review' && task.conversationId) showTaskChanges()
+  }
+}
+
+export async function refreshAttentionSummaries(): Promise<void> {
+  const { rpc, attentionSummaryLoading } = useCore.getState()
+  if (!rpc || attentionSummaryLoading) return
+  useCore.setState({ attentionSummaryLoading: true, attentionSummaryError: null })
+  try {
+    const conversations = await fetchAttentionSummaries(rpc)
+    if (useCore.getState().rpc !== rpc) return
+    useCore.setState((s) => ({
+      conversations: attentionSummaryMode(rpc) === 'complete' ? conversations : {
+        ...Object.fromEntries(Object.values(s.conversations).filter((c) => c.taskId).map((c) => [c.id, c])),
+        ...conversations
+      },
+      attentionSummaryMode: attentionSummaryMode(rpc), attentionSummaryLoading: false, attentionSummaryError: null
+    }))
+  } catch (error) {
+    if (useCore.getState().rpc === rpc) useCore.setState({ attentionSummaryLoading: false, attentionSummaryError: error instanceof Error ? error.message : String(error) })
+  }
 }
 
 function byAgent(usage: AgentUsage[]): Partial<Record<AgentKind, AgentUsage>> {
@@ -607,27 +665,36 @@ export function startCoreConnection(): void {
       try {
         useCore.setState({ connection: 'connecting' })
         const rpc = await connectRpc(coreUrl(endpoint))
-        rpc.on('tasks.changed', ({ task }) =>
+        let initialized = false
+        const taskChanges = new Map<string, Task | null>()
+        const conversationChanges = new Map<string, Conversation | null>()
+        let changedSchedules: ScheduledRun[] | null = null
+        useCore.setState({ attentionSummaryLoading: true, attentionSummaryError: null })
+        rpc.on('tasks.changed', ({ task }) => {
+          if (!initialized) taskChanges.set(task.id, task)
           useCore.setState((s) => ({ tasks: { ...s.tasks, [task.id]: task } }))
-        )
-        rpc.on('tasks.deleted', ({ id }) =>
+        })
+        rpc.on('tasks.deleted', ({ id }) => {
+          if (!initialized) taskChanges.set(id, null)
           useCore.setState((s) => {
             const { [id]: _removed, ...tasks } = s.tasks
             return { tasks, selectedId: s.selectedId === id ? null : s.selectedId }
           })
-        )
-        rpc.on('conversations.changed', ({ conversation }) =>
+        })
+        rpc.on('conversations.changed', ({ conversation }) => {
+          if (!initialized) conversationChanges.set(conversation.id, conversation)
           useCore.setState((s) => ({
             conversations: { ...s.conversations, [conversation.id]: conversation },
             ...(finishedUnseen(s, s.conversations[conversation.id], conversation) ? { unseen: { ...s.unseen, [conversation.id]: true } } : {})
           }))
-        )
-        rpc.on('conversations.deleted', ({ id }) =>
+        })
+        rpc.on('conversations.deleted', ({ id }) => {
+          if (!initialized) conversationChanges.set(id, null)
           useCore.setState((s) => {
             const { [id]: _removed, ...conversations } = s.conversations
             return { conversations, selectedConversationId: s.selectedConversationId === id ? null : s.selectedConversationId }
           })
-        )
+        })
         rpc.on('conversations.chatItems', ({ conversationId, items }) => receiveChatItems(conversationId, items))
         rpc.on('conversations.chatDelta', ({ conversationId, stageId, itemId, append }) => receiveChatDelta(conversationId, stageId, itemId, append))
         rpc.on('browser.changed', ({ status }) => useCore.setState({ browser: status }))
@@ -655,7 +722,10 @@ export function startCoreConnection(): void {
         )
         rpc.on('terminalCommands.changed', ({ commands }) => useCore.setState({ terminalCommands: commands }))
         rpc.on('chatCommands.changed', ({ commands }) => useCore.setState({ chatCommands: commands }))
-        rpc.on('schedules.changed', ({ runs }) => useCore.setState({ schedules: runs }))
+        rpc.on('schedules.changed', ({ runs }) => {
+          if (!initialized) changedSchedules = runs
+          useCore.setState({ schedules: runs })
+        })
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
         )
@@ -665,7 +735,13 @@ export function startCoreConnection(): void {
           patchLogin(flowId, () => ({ prompt: null, result: { account, problem } }))
         )
         const tasks = await rpc.call('tasks.list', {})
-        const conversations = await rpc.call('conversations.list', {}).catch(() => [])
+        let conversations: Record<string, Conversation> | null = null
+        let summaryError: string | null = null
+        try {
+          conversations = await fetchAttentionSummaries(rpc)
+        } catch (error) {
+          summaryError = error instanceof Error ? error.message : String(error)
+        }
         const usage = await rpc.call('usage.list', {}).catch(() => null)
         const sources = await rpc.call('sources.list', {})
         const inboxes = await rpc.call('sources.inbox', {})
@@ -675,14 +751,18 @@ export function startCoreConnection(): void {
         if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
         if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
-        if (rpc.features.includes('schedules')) void rpc.call('schedules.list', {}).then((schedules) => useCore.setState({ schedules })).catch(() => {})
+        const schedules = rpc.features.includes('schedules') ? await rpc.call('schedules.list', {}).catch(() => []) : []
         if (rpc.features.includes('chat-commands')) void rpc.call('chatCommands.list', {}).then((chatCommands) => useCore.setState({ chatCommands })).catch(() => {})
         if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',
-          tasks: Object.fromEntries(tasks.map((task) => [task.id, task])),
-          conversations: Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation])),
+          tasks: replaySummaryChanges(tasks, taskChanges),
+          conversations: replaySummaryChanges(Object.values(conversations ?? s.conversations), conversationChanges),
+          schedules: changedSchedules ?? schedules,
+          attentionSummaryMode: attentionSummaryMode(rpc),
+          attentionSummaryLoading: false,
+          attentionSummaryError: summaryError,
           usage: usage && byAgent(usage),
           sources,
           inboxes: Object.fromEntries(inboxes.map((inbox) => [inboxKey(inbox), inbox])),
@@ -691,6 +771,9 @@ export function startCoreConnection(): void {
           terminalCommands,
           inboxOpen: s.inboxOpen && inboxes.some((inbox) => inbox.active)
         }))
+        initialized = true
+        taskChanges.clear()
+        conversationChanges.clear()
         await rpc.closed
       } catch {
         // Fall through to retry; the badge already shows we're not connected.

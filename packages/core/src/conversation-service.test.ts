@@ -247,6 +247,8 @@ describe('ConversationService', () => {
     say(free.id, 'user', 'Fix the login page')
     say(own.id, 'user', 'Fix the login form')
     expect(service.list().map((conversation) => conversation.id)).toEqual([free.id])
+    expect(service.list(false).map((conversation) => conversation.id)).toEqual([free.id])
+    expect(service.list(true).map((conversation) => conversation.id).sort()).toEqual([free.id, own.id].sort())
     expect(service.search('login').map((hit) => hit.conversationId)).toEqual([free.id])
     expect(service.get(own.id).taskId).toBe(owner.id)
   })
@@ -475,6 +477,23 @@ describe('ConversationService', () => {
   const exitPlanMode = (requestId: string) => ({
     type: 'control_request', request_id: requestId,
     request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: `toolu_${requestId}` }
+  })
+
+  it('lists task attention summaries before opening their chat and after a core restart', async () => {
+    const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: true, session: 'new' })
+    daemon.reply = () => {}
+    await service.send(started.id, 'plan this')
+    daemon.emit(started.sessionId!, exitPlanMode('attention-plan'))
+    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, taskId: task.id, chat: { turn: 'awaiting' } })])
+    expect(service.list()).toEqual([])
+    service = serve()
+    await service.reconcile((await daemon.request('list', {})).sessions)
+    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, chat: { turn: 'awaiting' } })])
+    daemon.exit(started.sessionId!, 1)
+    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, sessionId: null, lastExit: { code: 1, at: expect.any(Number) } })])
+    service = serve()
+    await service.reconcile((await daemon.request('list', {})).sessions)
+    expect(service.list(true)[0]?.lastExit?.code).toBe(1)
   })
 
   it('starts a task\'s chat afresh in plan mode, then goes on with the same session in the same folder', async () => {
