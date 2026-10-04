@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AGENT_KINDS, type Conversation } from '@kando/protocol'
-import { selectConversation, useCore, setSchedulesOpen, useRoutinesSupported } from '../core-store'
+import { selectConversation, useCore } from '../core-store'
 import { conversationState, timeAgo } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { CONVERSATION_GROUPS, CONVERSATION_SORTS, setPreference, usePreferences, type Preferences } from '../preferences'
@@ -8,7 +8,7 @@ import { ConversationContextMenu, newConversation, renameConversation } from './
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { ConversationStatus } from './ConversationStatus'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
-import { ChatIcon, SlidersIcon, ClockIcon } from './icons'
+import { ChatIcon, SlidersIcon } from './icons'
 import { projectName, projectNames } from './ProjectPicker'
 import { SidebarCollapseButton } from './SidebarCollapseButton'
 import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
@@ -164,10 +164,6 @@ export function ConversationList() {
   const sortBy = usePreferences((p) => p.conversationSort)
   // A task's conversation is reached from its task; a routine's from the routine's history.
   const all = Object.values(conversations).filter((conversation) => !conversation.taskId && !conversation.routineId)
-  const routines = useCore((s) => s.routines)
-  const routinesSupported = useRoutinesSupported()
-  const schedulesOpen = useCore((s) => s.schedulesOpen)
-  const unreadRuns = routines.reduce((sum, routine) => sum + routine.unread, 0)
   // Null while the search box is closed. Groups left empty by a search drop out.
   const [query, setQuery] = useState<string | null>(null)
   const needle = query?.trim() ?? ''
@@ -251,13 +247,6 @@ export function ConversationList() {
         <SidebarSearchField label="搜索会话" placeholder="标题、项目名或聊天内容" query={query} onChange={setQuery} />
       )}
       <div id="sidebar-conversations" className="sidebar-section-content" hidden={collapsed}>
-      {routinesSupported && routines.length > 0 && (
-        <button type="button" className="inbox-entry" aria-current={schedulesOpen} onClick={() => setSchedulesOpen(true)}>
-          <ClockIcon />
-          <span>定时任务</span>
-          {unreadRuns > 0 && <span className="inbox-entry-count" aria-label={`${unreadRuns} 次运行未看`}>{unreadRuns}</span>}
-        </button>
-      )}
       {all.length === 0 ? <p className="task-list-empty">还没有会话，点右上角的 ＋ 新建。</p> :
         visible.length === 0 ? snippets && <p className="task-list-empty">没有找到匹配「{needle}」的会话。</p> :
         groups.map((group) => group.label === null

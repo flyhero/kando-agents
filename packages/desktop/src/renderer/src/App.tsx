@@ -19,6 +19,7 @@ import { WorktreeManager } from './components/WorktreeManager'
 import { SchedulesView } from './components/SchedulesView'
 import { DashboardView } from './components/DashboardView'
 import { DashboardEntry } from './components/DashboardEntry'
+import { RoutinesEntry } from './components/RoutinesEntry'
 import { AttentionEntry } from './components/AttentionEntry'
 import { AttentionView } from './components/AttentionView'
 import { WindowBrand } from './components/WindowBrand'
@@ -112,6 +113,7 @@ export function App() {
             <Sidebar hidden={sidebarHidden}>
               <AttentionEntry />
               <DashboardEntry />
+              <RoutinesEntry />
               <EnvironmentNotice />
               <TaskList />
               <ConversationList />

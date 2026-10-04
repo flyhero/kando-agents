@@ -3675,6 +3675,7 @@ body.side-panel-resizing * {
 
 /* Above the lists, the dashboard's entry keeps the lists' own inset and a little air below. */
 .sidebar-dashboard { margin: 8px 8px 4px; }
+.sidebar-routines { margin: 0 8px 4px; }
 .sidebar-attention { margin: 8px 8px 0; gap: 8px; }
 .inbox-entry.sidebar-attention[aria-current='true'] { box-shadow: none; }
 
