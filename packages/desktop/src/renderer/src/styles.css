@@ -258,6 +258,7 @@ body.stacked-panel-resizing * {
 /* Under an agent's terminal run in the chat: the way to the tab it opened. */
 .chat-tool-actions { display: flex; gap: 12px; padding: 0 12px 8px; font-size: var(--chat-font-small); }
 .chat-tool-actions .link-button { margin-left: 0; }
+.terminal-quote-note { flex-shrink: 0; color: var(--text-3); font-size: 11px; white-space: nowrap; }
 
 .terminal-tab [role='tab'] {
   max-width: 160px;

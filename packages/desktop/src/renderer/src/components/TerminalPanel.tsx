@@ -1,8 +1,60 @@
+import { useEffect, useState } from 'react'
 import type { Terminal } from '@kando/protocol'
-import { closeTerminal, openTerminal, selectTerminal, setTerminalMaximized, toggleTerminalPanel, useCore, useTerminalCommandsSupported } from '../core-store'
-import { AgentIcon, CloseIcon, MaximizeIcon, PlusIcon, RestoreIcon } from './icons'
+import { addQuote } from '../chat-quotes'
+import { closeTerminal, openTerminal, selectTerminal, setTerminalMaximized, toggleTerminalPanel, useCore, useTerminalCommandsSupported, type CoreState } from '../core-store'
+import { AgentIcon, CloseIcon, MaximizeIcon, PlusIcon, QuoteIcon, RestoreIcon } from './icons'
 import { SessionTerminal } from './SessionTerminal'
 import { TerminalCommandsButton } from './TerminalCommandsMenu'
+import { terminalSelection } from './terminal-surface'
+
+// Where a passage of the terminal goes: the conversation whose agent runs it, else the chat the
+// user has open, a task's included.
+function quoteTarget(state: CoreState, terminal: Terminal | undefined): string | null {
+  if (terminal?.conversationId) return terminal.conversationId
+  if (state.selectedConversationId) return state.selectedConversationId
+  return state.selectedId ? state.tasks[state.selectedId]?.conversationId ?? null : null
+}
+
+// What the terminal shows, as text to quote: the spaces it pads each row with dropped.
+function selectedLines(sessionId: string): string {
+  return terminalSelection(sessionId).split('\n').map((line) => line.trimEnd()).join('\n').trim()
+}
+
+// Quotes what is selected in the terminal into a chat's input, to ask the agent about it.
+function QuoteToChatButton({ terminal }: { terminal: Terminal | undefined }) {
+  const target = useCore((s) => quoteTarget(s, terminal))
+  const title = useCore((s) => (target ? s.conversations[target]?.title ?? null : null))
+  const [note, setNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!note) return
+    const timer = setTimeout(() => setNote(null), 2000)
+    return () => clearTimeout(timer)
+  }, [note])
+  const quote = () => {
+    if (!terminal || !target) return
+    const text = selectedLines(terminal.sessionId)
+    if (!text) return setNote('先在终端里选中要引用的内容')
+    addQuote(target, null, text)
+    setNote(title ? `已引用到「${title}」的输入框` : '已引用到输入框')
+  }
+  return (
+    <>
+      {note && <span className="terminal-quote-note" role="status">{note}</span>}
+      <button
+        type="button"
+        className="tool-button"
+        aria-label="引用到对话"
+        data-tooltip={target ? '把选中的内容引用到对话的输入框' : '先打开一个会话，再引用'}
+        disabled={!terminal || !target}
+        // Keeps the terminal's selection and focus while the click reads it.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={quote}
+      >
+        <QuoteIcon />
+      </button>
+    </>
+  )
+}
 
 // An agent's terminal says whose it is and how its command ended.
 function TabLabel({ terminal }: { terminal: Terminal }) {
@@ -61,6 +113,7 @@ export function TerminalPanel() {
             <PlusIcon />
           </button>
         </div>
+        <QuoteToChatButton terminal={active} />
         {commandsSupported && <TerminalCommandsButton terminal={active} />}
         <button
           type="button"
