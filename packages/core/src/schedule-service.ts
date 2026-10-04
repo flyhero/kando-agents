@@ -307,11 +307,11 @@ export class ScheduleService {
 
   // How a routine run's turn ended. Only a run not yet settled, or settled on a question, takes
   // it: a turn replayed from the log changes nothing, and an answered question's outcome is the
-  // user's to look at again.
+  // user's to look at again. A turn may end before the start that sent it has been written down.
   markFinished(id: string, outcome: RoutineOutcome, at: number, error: string | null = null): boolean {
     const changed = this.db.prepare(`UPDATE scheduled_runs
       SET finished_at = ?, outcome = ?, error = COALESCE(?, error), seen_at = CASE WHEN outcome = 'awaiting' AND ? <> 'awaiting' THEN NULL ELSE seen_at END, updated_at = ?
-      WHERE id = ? AND routine_id IS NOT NULL AND status = 'started' AND (finished_at IS NULL OR outcome = 'awaiting')`)
+      WHERE id = ? AND routine_id IS NOT NULL AND status IN ('starting', 'started') AND (finished_at IS NULL OR outcome = 'awaiting')`)
       .run(at, outcome, error, outcome, this.now(), id).changes === 1
     if (changed) this.deps.routines.runChanged(publicRun(this.found(id)))
     return changed
@@ -325,6 +325,11 @@ export class ScheduleService {
 
   markAllSeen(routineId: string): boolean {
     return this.db.prepare(`UPDATE scheduled_runs SET seen_at = ?, updated_at = ? WHERE routine_id = ? AND ${UNREAD}`).run(this.now(), this.now(), routineId).changes > 0
+  }
+
+  find(id: string): ScheduledRun | null {
+    const run = this.rows('WHERE id = ?', id)[0]
+    return run ? publicRun(run) : null
   }
 
   // The routine's runs still waiting go; one starting finds the routine gone or paused itself.

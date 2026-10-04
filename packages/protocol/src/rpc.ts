@@ -16,6 +16,7 @@ import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInp
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 import { Environment } from './environment'
 import { RequestedTarget, ScheduledRun, ScheduledRunList } from './schedule'
+import { Routine, RoutineFields, RoutineList } from './routine'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 10
@@ -51,7 +52,9 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines'] as const
+// routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
+// client without it shows the conversations they opened among the others, since it does not read routineId.
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -369,6 +372,22 @@ export const rpcMethods = {
   // Starts it now, without waiting for its time or its agent's quota.
   'schedules.runNow': { params: z.object({ id: z.string().uuid() }), result: ScheduledRun },
   'schedules.clear': { params: z.object({}), result: Ok },
+  // Routines: rules that open a conversation on a schedule and tell it what to do, unattended.
+  // Each occurrence becomes a scheduled run with the routine's id; the list carries only each
+  // routine's latest run and how many are unread, runs pages through the rest, newest first.
+  'routines.list': { params: z.object({}), result: RoutineList },
+  'routines.create': { params: RoutineFields, result: Routine },
+  'routines.update': { params: z.object({ id: z.string().uuid() }).merge(RoutineFields.partial()), result: Routine },
+  'routines.delete': { params: z.object({ id: z.string().uuid() }), result: Ok },
+  // Starts a run now, without waiting for the schedule or the quota; refused while one is at work.
+  'routines.runNow': { params: z.object({ id: z.string().uuid() }), result: ScheduledRun },
+  'routines.runs': {
+    params: z.object({ routineId: z.string().uuid(), before: z.number().nullable().optional(), limit: z.number().int().min(1).max(50).default(50) }),
+    result: ScheduledRunList
+  },
+  // The user looked at a run's result (its conversation), or at all of a routine's.
+  'routines.markSeen': { params: z.object({ runId: z.string().uuid() }), result: Ok },
+  'routines.markAllSeen': { params: z.object({ routineId: z.string().uuid() }), result: Ok },
   'sources.list': { params: z.object({}), result: z.array(SourceDescriptor) },
   // Non-secret settings only; changing one marked bindsCredential signs the instance out.
   'sources.saveSettings': {
@@ -400,6 +419,8 @@ export const rpcNotifications = {
   'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
   // The whole list (schedules.list) whenever a run in it changes.
   'schedules.changed': z.object({ runs: ScheduledRunList }),
+  // Every routine (routines.list) whenever one, or one of its runs, changes.
+  'routines.changed': z.object({ routines: RoutineList }),
   'conversations.changed': z.object({ conversation: Conversation }),
   'conversations.deleted': ConversationRef,
   // Items added or changed, newest revision each; only to connections watching the conversation.

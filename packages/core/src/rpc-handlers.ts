@@ -23,6 +23,7 @@ import type { ComputerAwakeService } from './computer-awake-service'
 import type { ChatSettingsStore } from './chat-settings'
 import type { EnvironmentService } from './environment-check'
 import type { ScheduleService } from './schedule-service'
+import type { RoutineService } from './routine-service'
 import { AgentTerminals } from './agent-terminals'
 import { dashboardSince, summarizeDashboard } from './dashboard-stats'
 
@@ -47,7 +48,8 @@ export function createRpcHandlers(
   chatSettings: ChatSettingsStore,
   environment: EnvironmentService,
   schedules: ScheduleService,
-  chatCommands: ChatCommandStore
+  chatCommands: ChatCommandStore,
+  routines: RoutineService
 ): RpcHandlers {
   // An agent's own terminals: run in the conversation's folder unless it names another, and
   // asked about in the chat where the agent asks nothing for MCP tools.
@@ -298,6 +300,14 @@ export function createRpcHandlers(
     'schedules.cancel': ({ id }) => schedules.cancel(id),
     'schedules.runNow': ({ id }) => schedules.runNow(id),
     'schedules.clear': () => { schedules.clear(); return OK },
+    'routines.list': () => routines.list(),
+    'routines.create': (fields) => routines.create(fields),
+    'routines.update': ({ id, ...patch }) => routines.update(id, patch),
+    'routines.delete': ({ id }) => { routines.delete(id); return OK },
+    'routines.runNow': ({ id }) => routines.runNow(id),
+    'routines.runs': ({ routineId, before, limit }) => routines.runs(routineId, before ?? null, limit),
+    'routines.markSeen': ({ runId }) => { routines.markSeen(runId); return OK },
+    'routines.markAllSeen': ({ routineId }) => { routines.markAllSeen(routineId); return OK },
     'sources.list': () => sources.list(),
     'sources.saveSettings': (params) => sources.saveSettings(params),
     'sources.login': ({ provider, instance, flowId }, connection) => ({

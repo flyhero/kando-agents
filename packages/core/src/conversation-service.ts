@@ -382,6 +382,11 @@ export class ConversationService {
     return this.changed(this.store.update(id, { title: title.trim(), titleLocked: true }))
   }
 
+  // The conversations a deleted routine opened become the user's like any other: back in the list.
+  clearRoutine(routineId: string): void {
+    for (const conversation of this.store.clearRoutine(routineId)) this.changed(conversation)
+  }
+
   // A task's conversation is listed under its task, so only a free one is pinned.
   setPinned(id: string, pinned: boolean): Conversation {
     const current = this.free(id)

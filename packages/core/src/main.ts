@@ -23,6 +23,7 @@ import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 import { UsageLimitResumes } from './usage-limit-resume'
 import { ScheduleService } from './schedule-service'
+import { RoutineService } from './routine-service'
 import { UsageService } from './usage-service'
 import { kandoChatMcpServer } from './kando-mcp-server'
 import { SourceConfigStore } from './source-config'
@@ -76,6 +77,7 @@ const conversations = new ConversationService(
       // A task's conversation says whether its agent waits on the user.
       service.chatChanged(event.conversation)
       schedules.conversationChanged(event.conversation)
+      routines.conversationChanged(event.conversation)
       refreshAwake()
     } else if (event.type === 'deleted') {
       server?.broadcast('conversations.deleted', { id: event.id })
@@ -85,6 +87,7 @@ const conversations = new ConversationService(
     else if (event.type === 'chatItems') {
       limits.observe(event.conversationId, event.items)
       turns.observe(event.conversationId, event.items)
+      routines.observe(event.conversationId, event.items)
       notifyChatItems(event.conversationId, limits.decorate(event.items))
     } else if (event.type === 'planApproved') {
       service.recordPlan(event.taskId, event.plan)
@@ -168,10 +171,22 @@ const schedules = new ScheduleService(paths.database, {
     refreshAwake()
   },
   limitChanged: (conversationId, limit) => limits.announce(conversationId, limit),
-  routines: { pass: async () => {}, get: () => null, pickAgent: () => 'claude', runChanged: () => {} }
+  routines: {
+    pass: () => routines.pass(),
+    get: (id) => routines.get(id),
+    pickAgent: (routine) => routines.pickAgent(routine),
+    runChanged: (run) => routines.runChanged(run)
+  }
 })
 // Speaks for the scheduler on the usage-limit cards; built after it, called only once runs change.
 const limits = new UsageLimitResumes(schedules, conversations, usage, notifyChatItems)
+// Makes the scheduler's runs for what comes due; built after it, called only from its passes.
+const routines = new RoutineService(paths.database, {
+  schedules,
+  conversations,
+  usage,
+  emit: (list) => server?.broadcast('routines.changed', { routines: list })
+})
 
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
 const terminalCommands = new TerminalCommandStore(paths.database, (commands) => server?.broadcast('terminalCommands.changed', { commands }))
@@ -235,13 +250,14 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment, schedules, chatCommands)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment, schedules, chatCommands, routines)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
 await awake.start()
 refreshAwake()
 usage.start()
+routines.start()
 schedules.start()
 refreshAwake()
 // Stages that ended before turns were kept, counted once in the background.
@@ -259,6 +275,7 @@ async function shutdown(): Promise<void> {
   shuttingDown = true
   usage.stop()
   schedules.stop()
+  routines.stop()
   sources.stop()
   awake?.stop()
   daemon.stop()
