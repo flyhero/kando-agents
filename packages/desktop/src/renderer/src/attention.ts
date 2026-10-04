@@ -1,7 +1,12 @@
-import { isScheduleOpen, limitOf, type AgentKind, type Conversation, type ScheduledRun, type Task } from '@kando/protocol'
+import { isScheduleOpen, limitOf, type AgentKind, type Conversation, type Routine, type ScheduledRun, type Task } from '@kando/protocol'
 
-// Where a notification leads when clicked.
-export type AttentionTarget = { kind: 'task' | 'conversation'; id: string }
+// What waits on the user: a task or a conversation.
+export type ActionableTarget = { kind: 'task' | 'conversation'; id: string }
+// Where a notification leads when clicked: one of those, or the page of routines (for a
+// routine's run that has no conversation to show).
+export type AttentionTarget = ActionableTarget | { kind: 'routines' }
+
+export const targetKey = (target: AttentionTarget): string => (target.kind === 'routines' ? 'routines' : `${target.kind}:${target.id}`)
 
 export type Notice = { title: string; body: string; target: AttentionTarget }
 
@@ -9,6 +14,8 @@ export type Snapshot = {
   tasks: Readonly<Record<string, Task>>
   conversations: Readonly<Record<string, Conversation>>
   unseen: Readonly<Record<string, true>>
+  // The routines, each with how many of its runs are unread; a core without routines has none.
+  routines?: readonly Routine[]
 }
 
 const waiting = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'awaiting'
@@ -17,7 +24,7 @@ const crashed = (conversation: Conversation) => conversation.sessionId === null 
 
 export type ActionableReason = 'awaiting' | 'crashed' | 'review' | 'reply'
 export type ActionableItem = {
-  target: AttentionTarget
+  target: ActionableTarget
   title: string
   agent: AgentKind | null
   projectPaths: string[]
@@ -80,21 +87,25 @@ export function actionableItems(s: Pick<Snapshot, 'tasks' | 'conversations'> & {
   }
   return items.sort((a, b) =>
     REASON_PRIORITY[a.primaryReason] - REASON_PRIORITY[b.primaryReason] || a.updatedAt - b.updatedAt ||
-    `${a.target.kind}:${a.target.id}`.localeCompare(`${b.target.kind}:${b.target.id}`)
+    targetKey(a.target).localeCompare(targetKey(b.target))
   )
 }
 
 // How many things wait on the user: an agent asking, a turn that finished while they were
-// elsewhere, and a task's agent done with its turn. A task's chat is counted once.
+// elsewhere, a task's agent done with its turn, and a routine's runs not yet looked at. A task's
+// chat is counted once; a routine's conversation counts through the routine, which keeps the
+// unread state, not through what this window saw.
 export function attentionCount(s: Snapshot): number {
   const counted = new Set<string>()
   for (const conversation of Object.values(s.conversations)) {
+    if (conversation.routineId) continue
     if (waiting(conversation) || s.unseen[conversation.id]) counted.add(conversation.id)
   }
   let count = counted.size
   for (const task of Object.values(s.tasks)) {
     if (task.awaitingInput && !(task.conversationId && counted.has(task.conversationId))) count += 1
   }
+  for (const routine of s.routines ?? []) count += routine.unread
   return count
 }
 
@@ -105,12 +116,13 @@ function named(conversation: Conversation, tasks: Snapshot['tasks']): { title: s
 }
 
 // What to tell the user about between two states: an agent now waiting on them, a turn over, or
-// an agent gone. Judged on the turn, not the task, so a task's chat is told of once.
+// an agent gone. Judged on the turn, not the task, so a task's chat is told of once. A routine's
+// conversation is told of through its run (routineNoticesBetween), not here.
 export function noticesBetween(prev: Snapshot, next: Snapshot): Notice[] {
   const notices: Notice[] = []
   for (const conversation of Object.values(next.conversations)) {
     const before = prev.conversations[conversation.id]
-    if (!before || before === conversation) continue
+    if (!before || before === conversation || conversation.routineId) continue
     const { title, target } = named(conversation, next.tasks)
     if (crashed(conversation) && !crashed(before)) {
       notices.push({ title, body: `agent 异常退出（code ${conversation.lastExit?.code}），发消息会重新启动它`, target })

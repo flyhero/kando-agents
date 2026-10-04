@@ -61,6 +61,22 @@ describe('attentionCount', () => {
     expect(attentionCount(s)).toBe(4)
     expect(attentionCount(snapshot())).toBe(0)
   })
+
+  it("counts a routine's unread runs through the routine, not through its conversations", () => {
+    const routineId = '00000000-0000-4000-8000-000000000101'
+    const theirs = conversation('r', { routineId, chat: { turn: 'awaiting' } })
+    const base = snapshot([theirs, conversation('b')], [], ['b', 'r'])
+    const routine = {
+      id: routineId, title: '日报', enabled: true, schedule: { kind: 'daily' as const, time: '09:00' },
+      target: { kind: 'new' as const, agent: 'claude' as const, projectPaths: [], text: 'x' },
+      nextRunAt: null, lastFiredAt: null, unread: 2, lastRun: null, createdAt: 0, updatedAt: 0
+    }
+    expect(attentionCount({ ...base, routines: [routine] })).toBe(3)
+    expect(attentionCount(base)).toBe(1)
+    // Its conversation finishing is told of through the routine, not here.
+    const going = { ...base, conversations: { ...base.conversations, r: conversation('r', { routineId, chat: { turn: 'running' } }) } }
+    expect(noticesBetween(going, base)).toEqual([])
+  })
 })
 
 describe('actionableItems', () => {

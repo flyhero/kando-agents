@@ -9,6 +9,7 @@ import {
   type LoginNotice,
   type LoginPrompt,
   type RpcConnection,
+  type Routine,
   type RpcParams,
   type SourceDescriptor,
   type SourceInbox,
@@ -94,8 +95,11 @@ export type CoreState = {
   inboxTab: string | null
   // So does the page of worktrees, over whatever else was shown there.
   worktreesOpen: boolean
-  // And the page of scheduled runs.
+  // And the page of scheduled runs and routines.
   schedulesOpen: boolean
+  // The routines as core keeps them, each with how many of its runs the user has yet to look at;
+  // empty on a core without them.
+  routines: Routine[]
   // And the dashboard of stats.
   dashboardOpen: boolean
   attentionOpen: boolean
@@ -161,6 +165,7 @@ export const useCore = create<CoreState>()(() => ({
   attentionSummaryLoading: true,
   attentionSummaryError: null,
   schedules: [],
+  routines: [],
   error: null,
   usage: null,
   sources: null,
@@ -361,10 +366,21 @@ export function selectConversation(id: string | null): void {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
     return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
   })
+  if (id) markRoutineRunSeen(id)
 }
 
-// A turn that was going and is now over, in a conversation the user is not looking at.
+// Opening a routine's conversation is looking at its run, whose id the conversation shares; core
+// keeps that, so every window and the dock count agree. Harmless on any other conversation.
+export function markRoutineRunSeen(conversationId: string): void {
+  const { conversations, rpc } = useCore.getState()
+  if (!conversations[conversationId]?.routineId || !rpc?.features.includes('routines')) return
+  void rpc.call('routines.markSeen', { runId: conversationId }).catch(() => {})
+}
+
+// A turn that was going and is now over, in a conversation the user is not looking at. A
+// routine's conversation is left out: core keeps whether its run was looked at.
 function finishedUnseen(s: CoreState, previous: Conversation | undefined, next: Conversation): boolean {
+  if (next.routineId) return false
   const working = previous?.chat?.turn === 'running' || previous?.chat?.turn === 'awaiting'
   const looking = s.section === 'conversations' && s.selectedConversationId === next.id
   return working && next.chat?.turn !== 'running' && next.chat?.turn !== 'awaiting' && !looking
@@ -612,6 +628,11 @@ export function useSchedulesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('schedules') ?? false)
 }
 
+// Whether core runs routines, rules that open a conversation on a schedule (routines.*).
+export function useRoutinesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('routines') ?? false)
+}
+
 export function useTaskStartSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-start') ?? false)
 }
@@ -669,6 +690,7 @@ export function startCoreConnection(): void {
         const taskChanges = new Map<string, Task | null>()
         const conversationChanges = new Map<string, Conversation | null>()
         let changedSchedules: ScheduledRun[] | null = null
+        let changedRoutines: Routine[] | null = null
         useCore.setState({ attentionSummaryLoading: true, attentionSummaryError: null })
         rpc.on('tasks.changed', ({ task }) => {
           if (!initialized) taskChanges.set(task.id, task)
@@ -726,6 +748,10 @@ export function startCoreConnection(): void {
           if (!initialized) changedSchedules = runs
           useCore.setState({ schedules: runs })
         })
+        rpc.on('routines.changed', ({ routines }) => {
+          if (!initialized) changedRoutines = routines
+          useCore.setState({ routines })
+        })
         rpc.on('sources.inboxChanged', ({ inbox }) =>
           useCore.setState((s) => ({ inboxes: { ...s.inboxes, [inboxKey(inbox)]: inbox } }))
         )
@@ -752,6 +778,7 @@ export function startCoreConnection(): void {
         if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
         if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
         const schedules = rpc.features.includes('schedules') ? await rpc.call('schedules.list', {}).catch(() => []) : []
+        const routines = rpc.features.includes('routines') ? await rpc.call('routines.list', {}).catch(() => []) : []
         if (rpc.features.includes('chat-commands')) void rpc.call('chatCommands.list', {}).then((chatCommands) => useCore.setState({ chatCommands })).catch(() => {})
         if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
@@ -760,6 +787,7 @@ export function startCoreConnection(): void {
           tasks: replaySummaryChanges(tasks, taskChanges),
           conversations: replaySummaryChanges(Object.values(conversations ?? s.conversations), conversationChanges),
           schedules: changedSchedules ?? schedules,
+          routines: changedRoutines ?? routines,
           attentionSummaryMode: attentionSummaryMode(rpc),
           attentionSummaryLoading: false,
           attentionSummaryError: summaryError,

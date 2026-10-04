@@ -67,7 +67,7 @@ export function setBadge(count: number): void {
   void window.kando?.setBadge?.(count).catch(() => {})
 }
 
-const Target = z.object({ kind: z.enum(['task', 'conversation']), id: z.string() })
+const Target = z.union([z.object({ kind: z.enum(['task', 'conversation']), id: z.string() }), z.object({ kind: z.literal('routines') })])
 
 // Main hands back the target the renderer gave it; only a well-formed one is acted on.
 export function onNotificationClick(listener: (target: Notice['target']) => void): () => void {
