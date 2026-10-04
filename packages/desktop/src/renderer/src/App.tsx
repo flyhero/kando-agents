@@ -8,6 +8,7 @@ import { TaskDetail } from './components/TaskDetail'
 import { TaskList } from './components/TaskList'
 import { TaskChat } from './components/TaskChat'
 import { ConversationList } from './components/ConversationList'
+import { Sidebar } from './components/Sidebar'
 import { ConversationView } from './components/ConversationView'
 import { ConversationDraft } from './components/ConversationDraft'
 import { EnvironmentNotice } from './components/EnvironmentNotice'
@@ -105,12 +106,12 @@ export function App() {
           <SettingsPage />
         ) : (
           <>
-            <div className="sidebar" hidden={sidebarHidden}>
+            <Sidebar hidden={sidebarHidden}>
               <DashboardEntry />
               <EnvironmentNotice />
               <TaskList />
               <ConversationList />
-            </div>
+            </Sidebar>
             {worktreesOpen ? (
               <WorktreeManager />
             ) : schedulesOpen ? (

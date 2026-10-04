@@ -460,13 +460,49 @@ body.stacked-panel-resizing * {
   gap: 8px;
 }
 
+/* As wide as dragged (see sidebar-width.ts), never past 40% of a window that shrank since. */
 .sidebar {
-  width: 320px;
-  flex: 0 0 320px;
+  position: relative;
+  width: min(var(--sidebar-width, 320px), 40vw);
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--border);
+}
+
+/* The sidebar's right edge, a few pixels either side of its border to grab. The border lights up
+   while the edge is hovered, focused or dragged, as a side panel's separator does. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  bottom: 0;
+  z-index: 2;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: background 0.12s ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer[data-dragging='true']::after {
+  background: var(--accent);
 }
 
 .conversation-list { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--border); }
