@@ -1,9 +1,9 @@
 import type { ChatToolStatus } from '@kando/protocol'
 import { toolIconKind, type ToolIconKind } from '../chat-tools'
-import { BranchIcon, DocumentIcon, GearIcon, GlobeIcon, ImageIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon } from './icons'
+import { BookIcon, BranchIcon, GearIcon, GlobeIcon, ImageIcon, ListIcon, PencilIcon, SearchIcon, TerminalIcon } from './icons'
 
 const ICONS = {
-  read: DocumentIcon,
+  read: BookIcon,
   edit: PencilIcon,
   terminal: TerminalIcon,
   search: SearchIcon,

@@ -162,6 +162,20 @@ export function TerminalIcon() {
   )
 }
 
+// An open book, for reading. Its last page lies on the right one and turns over the spine while a
+// read runs (see .book-page in the stylesheet); otherwise it is hidden.
+export function BookIcon() {
+  const right = 'M10 6.2C10 4.9 11.1 4 12.4 4h4.3a.8.8 0 0 1 .8.8v10a.8.8 0 0 1-.8.8h-4.2a2.5 2.5 0 0 0-2.5 2.5'
+  return (
+    <svg {...stroked}>
+      <path d="M10 6.2C10 4.9 8.9 4 7.6 4H3.3a.8.8 0 0 0-.8.8v10a.8.8 0 0 0 .8.8h4.2a2.5 2.5 0 0 1 2.5 2.5" />
+      <path d={right} />
+      <path d="M10 6.2v11.9" />
+      <path className="book-page" d={right} />
+    </svg>
+  )
+}
+
 export function DocumentIcon() {
   return (
     <svg {...stroked}>
