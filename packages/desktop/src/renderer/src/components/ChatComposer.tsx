@@ -99,8 +99,8 @@ function ScheduleSendButton({ conversationId, text, quotes, images, disabledReas
             className="input schedule-message"
             rows={3}
             value={draft}
-            aria-label="到点后发给 agent 的指令"
-            placeholder="到点后发给 agent 的指令；留空就按定下的计划开始实现"
+            aria-label="到点后发给 Agent 的指令"
+            placeholder="到点后发给 Agent 的指令；留空就按定下的计划开始实现"
             onChange={(event) => setDraft(event.target.value)}
           />
           {extras.length > 0 && (
@@ -315,14 +315,14 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         className="chat-input"
         rows={3}
         value={text}
-        aria-label="给 agent 的消息"
+        aria-label="给 Agent 的消息"
         {...commandMenu.inputProps}
         {...mentionMenu.inputProps}
         readOnly={starting}
         placeholder={
-          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
+          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 Agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
             : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
-            : turn === 'awaiting' ? '先回答上面的请求' : 'agent 正在处理，可以先写下一条；Esc 中断')
+            : turn === 'awaiting' ? '先回答上面的请求' : 'Agent 正在处理，可以先写下一条；Esc 中断')
         }
         onChange={(event) => {
           if (suggestion && event.target.value) setDismissed(suggestion)
@@ -374,7 +374,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
           />
         )}
         {canSteer && (
-          <button type="button" className="button ghost chat-steer-button" data-tooltip-side="top-end" data-tooltip="不等回合结束，现在就交给 agent（⌘Enter）" onClick={() => void send(true)}>
+          <button type="button" className="button ghost chat-steer-button" data-tooltip-side="top-end" data-tooltip="不等回合结束，现在就交给 Agent（⌘Enter）" onClick={() => void send(true)}>
             立刻插入
           </button>
         )}

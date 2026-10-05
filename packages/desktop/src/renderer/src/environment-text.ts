@@ -43,7 +43,7 @@ export function problemText(problem: EnvironmentProblem): string {
     case 'no-agent':
       return '没有找到 Claude Code 或 Codex'
     case 'no-signed-in-agent':
-      return '装了 agent，但都还没登录'
+      return '装了 Agent，但都还没登录'
     case 'signed-out':
       return `${TOOL_LABEL[problem.tool]} 还没登录`
   }

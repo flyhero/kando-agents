@@ -64,7 +64,7 @@ describe('runOutcomeText', () => {
   it('tells how a run went, and when it was made up for', () => {
     expect(runOutcomeText(run({}), now)).toBe('09:05 完成')
     expect(runOutcomeText(run({ outcome: 'failed', error: 'chat-start-failed' }), now)).toMatch(/^失败：/)
-    expect(runOutcomeText(run({ outcome: 'interrupted', error: 'agent-lost' }), now)).toBe('中断：agent 没有留下结果就退出了')
+    expect(runOutcomeText(run({ outcome: 'interrupted', error: 'agent-lost' }), now)).toBe('中断：Agent 没有留下结果就退出了')
     expect(runOutcomeText(run({ outcome: 'awaiting' }), now)).toBe('在等你回答')
     expect(runOutcomeText(run({ outcome: null, finishedAt: null }), now)).toBe('09:00 开始，进行中')
     const late = run({ settledAt: at(2026, 10, 4, 11, 30), finishedAt: at(2026, 10, 4, 11, 35) })
@@ -99,7 +99,7 @@ describe('routineNoticesBetween', () => {
     const failed = routine({ lastRun: run({ status: 'failed', error: 'chat-option-invalid', conversationId: null, finishedAt: null, outcome: null }) })
     expect(routineNoticesBetween([before], [failed])[0]).toMatchObject({ body: expect.stringMatching(/^没能开始：/), target: { kind: 'routines' } })
     const asked = routine({ lastRun: run({ outcome: 'awaiting' }) })
-    expect(routineNoticesBetween([before], [asked])[0]?.body).toBe('agent 在等你允许或回答')
+    expect(routineNoticesBetween([before], [asked])[0]?.body).toBe('Agent 在等你允许或回答')
     expect(routineNoticesBetween([asked], [done])[0]?.body).toBe('做完了')
   })
 

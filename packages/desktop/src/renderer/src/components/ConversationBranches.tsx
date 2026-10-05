@@ -34,7 +34,7 @@ function folderName(folder: string): string {
 
 // The agent hears of the switch with the next message.
 function switchedNote(branch: string): string {
-  return `已切到 ${branch}，下一条消息会告诉 agent。`
+  return `已切到 ${branch}，下一条消息会告诉 Agent。`
 }
 
 function SwitchList({ option, onPick }: { option: ProjectBranches; onPick: (ref: string) => void }) {

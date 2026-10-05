@@ -58,7 +58,7 @@ export function BrowserTabStrip() {
 // What is happening on the tab, in a word, for the line under the picture.
 function tabState(tab: BrowserTab, focused: boolean): string {
   if (tab.userDriving) return '你在操作'
-  if (tab.agentActing) return 'agent 正在操作'
+  if (tab.agentActing) return 'Agent 正在操作'
   if (tab.loading) return '页面加载中'
   return focused ? '键盘输入发给页面' : '观看中'
 }
@@ -169,7 +169,7 @@ export function BrowserPanel() {
           <div className="browser-status">
             <span>{tabState(tab, focused)}</span>
             {tab.userDriving && (
-              <button type="button" className="link-button" onClick={() => void perform((rpc) => rpc.call('browser.handBack', { tabId: tab.id }))}>交还给 agent</button>
+              <button type="button" className="link-button" onClick={() => void perform((rpc) => rpc.call('browser.handBack', { tabId: tab.id }))}>交还给 Agent</button>
             )}
             <span className="chat-dock-spacer" />
             {focused && <span className="muted">Esc 回到应用 · Shift+Esc 发给页面</span>}

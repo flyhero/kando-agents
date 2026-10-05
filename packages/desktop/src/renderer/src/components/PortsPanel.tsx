@@ -24,7 +24,7 @@ function PortRow({ port }: { port: ListeningPort }) {
       <div className="port-actions">
         {browserSupported && <button type="button" className="link-button" disabled={busy || !connected} onClick={() => void openPort(port)}><GlobeIcon />打开页面</button>}
         {port.terminalId && <button type="button" className="link-button" disabled={busy || !terminalExists} onClick={() => port.terminalId && showTerminal(port.terminalId)}><TerminalIcon />终端</button>}
-        <button type="button" className="link-button port-stop" disabled={busy || !connected || !port.canStop} data-tooltip={!port.canStop ? '这是 agent 的进程，不能从端口面板停止' : undefined} onClick={() => setConfirm(!confirm)}>{busy ? '正在停止…' : '停止'}</button>
+        <button type="button" className="link-button port-stop" disabled={busy || !connected || !port.canStop} data-tooltip={!port.canStop ? '这是 Agent 的进程，不能从端口面板停止' : undefined} onClick={() => setConfirm(!confirm)}>{busy ? '正在停止…' : '停止'}</button>
       </div>
       {confirm && <div className="port-confirm" role="group" aria-label={`停止端口 ${port.port} 的服务`}><span>停止 {port.label ?? '服务'} :{port.port}？</span><span className="muted">终端标签保留。</span><div><button type="button" className="button danger small" disabled={busy} onClick={() => void stop()}>停止服务</button><button type="button" className="button ghost small" disabled={busy} onClick={() => setConfirm(false)}>取消</button></div></div>}
     </div>

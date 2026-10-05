@@ -75,7 +75,7 @@ describe('ClaudeStream', () => {
     const at = 1_790_000_000_000
     const tool = (id: string, input: Record<string, unknown>) => ({ type: 'tool_use', id, name: 'Agent', input })
     const records: ChatRecord[] = [
-      { dir: 'out', at, frame: { type: 'user', message: { role: 'user', content: '派个 agent 去数' } }, ref: 'ref-1' },
+      { dir: 'out', at, frame: { type: 'user', message: { role: 'user', content: '派个 Agent 去数' } }, ref: 'ref-1' },
       { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1', model: 'claude-x' } },
       { dir: 'in', at, frame: { type: 'assistant', message: { id: 'm1', content: [tool('A1', { subagent_type: 'Explore', description: 'Count packages', prompt: 'count' })] } } },
       { dir: 'in', at, frame: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'A1', content: [{ type: 'text', text: 'Async agent launched successfully. (internal)' }] }] }, tool_use_result: { isAsync: true, status: 'async_launched', agentId: 'a1' } } },
@@ -86,7 +86,7 @@ describe('ClaudeStream', () => {
     // The turn ended, but the subagent is still out: the tool stays running and so does the stage.
     expect(ofKind(driver.items.list(), 'tool')).toMatchObject([{ name: 'Agent', status: 'running', output: null }])
     expect(driver.activity()).toBe('running')
-    expect(ofKind(driver.items.list(), 'state')[0]).toMatchObject({ activity: '等 1 个子 agent 回来' })
+    expect(ofKind(driver.items.list(), 'state')[0]).toMatchObject({ activity: '等 1 个子 Agent 回来' })
 
     const resumed: ChatRecord[] = [
       { dir: 'in', at, frame: { type: 'system', subtype: 'init', session_id: 's-1', model: 'claude-x' } },

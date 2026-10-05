@@ -114,7 +114,7 @@ function AwakeButton() {
   const [open, setOpen] = useState(false)
   if (!supported || !status) return null
   const reasons = [
-    status.workingAgents > 0 && `${status.workingAgents} 个 agent 工作中`,
+    status.workingAgents > 0 && `${status.workingAgents} 个 Agent 工作中`,
     (status.scheduledRuns ?? 0) > 0 && `${status.scheduledRuns} 个预约等着运行`
   ].filter(Boolean).join('，')
   const detail = status.problem ?? (status.active ? `正在保持唤醒${reasons ? ` · ${reasons}` : ''}` : `保持唤醒：${AWAKE_LABEL[status.mode]}`)

@@ -72,7 +72,7 @@ export function scheduleState(run: ScheduledRun, now: number): string {
       if (run.notBefore !== null && run.notBefore > now) return `${scheduleTime(run.notBefore, now)} 之后开始`
       if (run.resetsAt !== null && run.resetsAt > now) return `等额度恢复（${scheduleTime(run.resetsAt, now)}）`
       if (run.attempts > 0) return `没能开始，稍后再试（${reasonText(run.error ?? '', run.error ?? '')}）`
-      return run.notBefore === null ? '额度恢复后开始' : '即将开始（同一个 agent 的预约依次运行）'
+      return run.notBefore === null ? '额度恢复后开始' : '即将开始（同一个 Agent 的预约依次运行）'
     case 'starting':
       return '正在开始'
     case 'started':

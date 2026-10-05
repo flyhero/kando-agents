@@ -50,7 +50,7 @@ function tokensText(item: Extract<ChatItem, { kind: 'turn' }>): string {
 // How a turn ended, how long it ran and what it cost: the one place the turn's totals read.
 function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   const took = (item.durationMs !== null ? ` · ${workedFor(item.durationMs)}` : '') + tokensText(item)
-  const why = item.resumed ? '子 agent 回来后继续，' : ''
+  const why = item.resumed ? '子 Agent 回来后继续，' : ''
   if (item.state === 'completed') return `${why}完成${took}`
   if (item.state === 'interrupted') return `${why}已中断${took}${item.error ? `：${readableNotice(item.error)}` : ''}`
   return `${why}失败${took}${item.error ? `：${readableNotice(item.error)}` : ''}`

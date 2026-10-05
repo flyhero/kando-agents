@@ -195,7 +195,7 @@ function RedoButton({ task }: { task: Task }) {
               className="input note-form-input"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="为什么废弃？（可选，会告诉重做的 agent）"
+              placeholder="为什么废弃？（可选，会告诉重做的 Agent）"
               maxLength={500}
               rows={3}
             />

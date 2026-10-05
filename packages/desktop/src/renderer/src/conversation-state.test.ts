@@ -20,7 +20,7 @@ describe('conversationState', () => {
     expect(label({ lastExit: null }).label).toBe('空闲')
     expect(label({ lastExit: { code: null, at: 1 } }).label).toBe('空闲')
     expect(label({ lastExit: { code: 0, at: 1 } }).label).toBe('空闲')
-    expect(label({ lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true, detail: 'agent 异常退出（code 1），发消息会重新启动它' })
+    expect(label({ lastExit: { code: 1, at: 1 } })).toMatchObject({ label: '异常退出', failed: true, detail: 'Agent 异常退出（code 1），发消息会重新启动它' })
   })
 })
 

@@ -18,9 +18,9 @@ const TOOL_LABEL: Record<string, string> = {
   WebFetch: '读取网页',
   WebSearch: '搜索网页',
   webSearch: '搜索网页',
-  Task: '子 agent',
-  Agent: '子 agent',
-  spawnAgent: '子 agent',
+  Task: '子 Agent',
+  Agent: '子 Agent',
+  spawnAgent: '子 Agent',
   TodoWrite: '待办',
   ExitPlanMode: '计划',
   // Kando's own question about a site its browser is to open, shown among the approvals.

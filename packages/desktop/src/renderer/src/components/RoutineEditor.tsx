@@ -159,7 +159,7 @@ export function RoutineEditor({ routine, template = null, onClose }: { routine: 
         </label>
 
         <div className="modal-field">
-          <span className="modal-label" id={`${ids}-prompt`}>每次运行时让 agent 做什么</span>
+          <span className="modal-label" id={`${ids}-prompt`}>每次运行时让 Agent 做什么</span>
           <div className="chat-input-card routine-editor-card" onDragOver={attached.handlers.onDragOver} onDrop={attached.handlers.onDrop}>
             <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />
             <textarea
@@ -168,7 +168,7 @@ export function RoutineEditor({ routine, template = null, onClose }: { routine: 
               value={text}
               onChange={(e) => setText(e.target.value)}
               onPaste={attached.handlers.onPaste}
-              placeholder="像在聊天里一样写指令。到点会新开一个会话，把这段话发给 agent，无人值守地做完。"
+              placeholder="像在聊天里一样写指令。到点会新开一个会话，把这段话发给 Agent，无人值守地做完。"
               rows={4}
             />
             <div className="chat-options routine-editor-options">
@@ -209,7 +209,7 @@ export function RoutineEditor({ routine, template = null, onClose }: { routine: 
           </div>
           {(agent === 'auto' || projectPaths.length === 0) && (
             <span className="muted routine-editor-note">
-              {agent === 'auto' ? '到点时用有额度的那个 agent。' : ''}
+              {agent === 'auto' ? '到点时用有额度的那个 Agent。' : ''}
               {projectPaths.length === 0 ? '不选项目时，用 Kando 的工作目录。' : ''}
             </span>
           )}

@@ -74,7 +74,7 @@ function TabLabel({ terminal }: { terminal: Terminal }) {
 function tabTitle(terminal: Terminal, owner: string | null): string {
   if (!terminal.conversationId) return terminal.cwd
   const ended = terminal.exited ? `\n已结束${terminal.exitCode === null || terminal.exitCode === undefined ? '' : `，退出码 ${terminal.exitCode}`}` : ''
-  return `${owner ?? '会话'} 的 agent 运行：${terminal.command ?? terminal.title}\n${terminal.cwd}${ended}`
+  return `${owner ?? '会话'} 的 Agent 运行：${terminal.command ?? terminal.title}\n${terminal.cwd}${ended}`
 }
 
 // The app's own terminals: the user's shells, and commands agents run where the user can watch.

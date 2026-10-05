@@ -47,7 +47,7 @@ export function AgentPicker({
         </span>
       </button>
       {open && (
-        <Popover label="选择 agent" onClose={close}>
+        <Popover label="选择 Agent" onClose={close}>
           {kinds.map((kind) => (
             <button
               key={kind}

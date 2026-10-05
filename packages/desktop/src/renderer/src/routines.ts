@@ -116,7 +116,7 @@ function outcomeNotice(run: ScheduledRun): string | null {
     case 'interrupted':
       return run.error ? `中断：${reasonText(run.error, run.error)}` : '中断了'
     case 'awaiting':
-      return 'agent 在等你允许或回答'
+      return 'Agent 在等你允许或回答'
     default:
       return null
   }

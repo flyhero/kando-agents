@@ -61,7 +61,7 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
         <span className="chat-preview-actions">
           <button type="button" className="tool-button" aria-label="重新加载" data-tooltip="重新加载" data-tooltip-side="top-end" onClick={() => setGeneration((n) => n + 1)}><RefreshIcon /></button>
           {browsable && !refused && (
-            <button type="button" className="link-button" data-tooltip="在内置浏览器里打开，全尺寸，agent 也能看到这个标签页" data-tooltip-side="top-end" onClick={() => void openFileInBrowser(path, conversationId)}>在浏览器中打开</button>
+            <button type="button" className="link-button" data-tooltip="在内置浏览器里打开，全尺寸，Agent 也能看到这个标签页" data-tooltip-side="top-end" onClick={() => void openFileInBrowser(path, conversationId)}>在浏览器中打开</button>
           )}
           {canRevealFile() && (
             <button type="button" className="link-button" onClick={() => void revealFile([path])}>显示文件</button>

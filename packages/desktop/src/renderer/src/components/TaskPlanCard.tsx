@@ -24,7 +24,7 @@ export function TaskPlanCard({ task }: { task: Task }) {
         </button>
         <span className="muted">
           {AGENT_LABEL[plan.agent]} · {dayAndTime(plan.createdAt)}
-          {!plan.approved && ' · 开始执行时交给 agent'}
+          {!plan.approved && ' · 开始执行时交给 Agent'}
         </span>
       </header>
       {open && (

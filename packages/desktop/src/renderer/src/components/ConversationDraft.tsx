@@ -117,7 +117,7 @@ export function ConversationDraft() {
         <div className="chat-view" data-width={width} data-font-size={fontSize} data-font={font}>
           <div className="chat-list chat-draft">
             <div className="chat-draft-start">
-              <h2 className="chat-draft-title">用哪个 agent 开始</h2>
+              <h2 className="chat-draft-title">用哪个 Agent 开始</h2>
               <div className="chat-draft-agents" role="radiogroup" aria-label="agent">
                 {installed.map((kind) => (
                   <button
@@ -135,7 +135,7 @@ export function ConversationDraft() {
                   </button>
                 ))}
               </div>
-              <p className="chat-draft-hint muted">发出第一条消息时创建会话并启动 agent。</p>
+              <p className="chat-draft-hint muted">发出第一条消息时创建会话并启动 Agent。</p>
             </div>
           </div>
           <div className="chat-dock">
@@ -161,7 +161,7 @@ export function ConversationDraft() {
                 autoFocus
                 readOnly={busy}
                 aria-label="第一条消息"
-                placeholder={agent ? `给 ${AGENT_LABEL[agent]} 发第一条消息，Enter 发送，Shift+Enter 换行` : '先在上面选一个 agent'}
+                placeholder={agent ? `给 ${AGENT_LABEL[agent]} 发第一条消息，Enter 发送，Shift+Enter 换行` : '先在上面选一个 Agent'}
                 onChange={(event) => setText(event.target.value)}
                 onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
                 onKeyDown={(event) => {

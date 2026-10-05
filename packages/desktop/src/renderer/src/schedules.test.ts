@@ -52,8 +52,8 @@ describe('scheduleState', () => {
     expect(scheduleState(run({ notBefore: at(2026, 10, 4, 1) }), now)).toBe('明天 01:00 之后开始')
     expect(scheduleState(run({ resetsAt: at(2026, 10, 3, 18) }), now)).toBe('等额度恢复（18:00）')
     expect(scheduleState(run({}), now)).toBe('额度恢复后开始')
-    expect(scheduleState(run({ notBefore: at(2026, 10, 3, 1) }), now)).toBe('即将开始（同一个 agent 的预约依次运行）')
-    expect(scheduleState(run({ attempts: 1, error: 'chat-busy' }), now)).toBe('没能开始，稍后再试（agent 还在处理上一条消息）')
+    expect(scheduleState(run({ notBefore: at(2026, 10, 3, 1) }), now)).toBe('即将开始（同一个 Agent 的预约依次运行）')
+    expect(scheduleState(run({ attempts: 1, error: 'chat-busy' }), now)).toBe('没能开始，稍后再试（Agent 还在处理上一条消息）')
   })
 
   it('says how a settled run ended', () => {

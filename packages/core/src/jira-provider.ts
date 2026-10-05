@@ -123,7 +123,7 @@ export function jiraProvider(connect: (credentials: JiraCredentials) => JiraApi 
           await session.prompt({
             kind: 'secret',
             label: 'API token',
-            hint: '只需要读权限。token 只保存在本机，不会交给 agent。',
+            hint: '只需要读权限。token 只保存在本机，不会交给 Agent。',
             link: { url: TOKEN_PAGE, label: '在 Atlassian 账号设置里创建' }
           })
         ).trim()

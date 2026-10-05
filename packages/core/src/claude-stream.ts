@@ -1018,7 +1018,7 @@ export class ClaudeStream implements ChatDriver {
     this.state.set({ turnUsage: null })
     // Subagents still out keep the stage busy; the working line says what it waits for.
     const background = state === 'completed' ? this.backgroundAgents() : 0
-    if (background > 0) this.state.set({ activity: `等 ${background} 个子 agent 回来` })
+    if (background > 0) this.state.set({ activity: `等 ${background} 个子 Agent 回来` })
   }
 
   private finishStreaming(at: number): void {
@@ -1212,7 +1212,7 @@ export class ClaudeStream implements ChatDriver {
   private ended(code: number | null, stderr: string, at: number): void {
     if (this.exited) return
     this.suggested = null
-    if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
+    if (this.turn) this.endTurn('interrupted', 'Agent 已退出', null, at)
     this.finishStreaming(at)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     this.kando.cancelAll(at)

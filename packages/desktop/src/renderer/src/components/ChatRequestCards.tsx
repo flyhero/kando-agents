@@ -113,9 +113,9 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
   // says the site in the headline and the whole address below.
   const detail = host ? null : item.detail && !title.includes(shorten(item.detail)) ? shorten(item.detail) : null
   const what = host
-    ? <>agent 想打开 <span className="mono">{title}</span></>
+    ? <>Agent 想打开 <span className="mono">{title}</span></>
     : terminal !== null
-      ? <>agent 想在终端里运行 <span className="mono">{commandKeyword(terminal)}</span></>
+      ? <>Agent 想在终端里运行 <span className="mono">{commandKeyword(terminal)}</span></>
       : <>{toolLabel(item.tool)} <span className="mono">{title}</span></>
   const submit = () => void respond(choice, choice === 'deny' && reason.trim() ? { message: reason.trim() } : {})
   const pick = (decision: ChatDecision) => {
@@ -170,7 +170,7 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
                 ref={reasonInput}
                 className="chat-approve-reason"
                 aria-label="拒绝，并说明理由"
-                placeholder="拒绝，并告诉 agent 为什么（可不填）"
+                placeholder="拒绝，并告诉 Agent 为什么（可不填）"
                 value={reason}
                 disabled={busy}
                 onFocus={() => setChoice('deny')}
@@ -349,7 +349,7 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
           rows={3}
           autoFocus
           value={note}
-          placeholder="给 agent 的补充说明，会附在每个问题的回答后面；Enter 提交，Shift+Enter 换行"
+          placeholder="给 Agent 的补充说明，会附在每个问题的回答后面；Enter 提交，Shift+Enter 换行"
           aria-label="补充说明"
           disabled={busy}
           onChange={(event) => setNote(event.target.value)}

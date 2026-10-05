@@ -31,7 +31,7 @@ function useTaskChanges(taskId: string, updatedAt: number, refreshCount: number)
 function ChangeList({ changes, onOpen }: { changes: RepoChanges[] | null; onOpen: (repo: string, file: string) => void }) {
   if (changes === null) return <p className="inspector-empty muted">正在读取改动…</p>
   const compared = changes.filter((repo) => repo.base)
-  if (compared.length === 0) return <p className="inspector-empty muted">任务还没有 worktree，执行过之后这里会列出 agent 的改动。</p>
+  if (compared.length === 0) return <p className="inspector-empty muted">任务还没有 worktree，执行过之后这里会列出 Agent 的改动。</p>
   return (
     <div className="branch-status inspector-repos">
       <ProjectGroups items={compared}>

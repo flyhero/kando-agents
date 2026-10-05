@@ -37,7 +37,7 @@ describe('worktree groups', () => {
   it('says why a worktree is kept, or how its commits stand', () => {
     expect(worktreeState({ worktree: worktree('x', { changes: 3 }) })).toEqual({ text: '3 个文件没提交', warn: true })
     expect(worktreeState({ worktree: worktree('x', { alone: true }) }).text).toBe('有只在这里的提交')
-    expect(worktreeState({ worktree: worktree('x', { inUse: true }) })).toEqual({ text: 'agent 还开着', warn: true })
+    expect(worktreeState({ worktree: worktree('x', { inUse: true }) })).toEqual({ text: 'Agent 还开着', warn: true })
     expect(worktreeState({ worktree: worktree('x', { changes: null, repo: null }) }).text).toBe('找不到它所属的仓库')
     expect(worktreeState({ worktree: worktree('x', { unmerged: { count: 2, into: 'origin/main' } }) })).toEqual({ text: '2 个提交还没合进 origin/main', warn: false })
     expect(worktreeState({ worktree: worktree('x', { unmerged: { count: 0, into: 'origin/main' } }) }).text).toBe('已合进 origin/main')

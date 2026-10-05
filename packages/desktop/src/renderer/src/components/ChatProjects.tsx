@@ -48,7 +48,7 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
     if (picked) await apply([...extras, picked])
   }
   // The agent is given its directories at launch.
-  const footer = note ?? (conversation.sessionId !== null ? 'agent 会在同一个会话里重启，拿到新的目录' : null)
+  const footer = note ?? (conversation.sessionId !== null ? 'Agent 会在同一个会话里重启，拿到新的目录' : null)
   return (
     <>
       <button

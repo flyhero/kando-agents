@@ -152,7 +152,7 @@ function TaskDetailBody({ task }: { task: Task }) {
             value={unsavedTaskText(task.id, 'details') ?? task.details}
             onSave={(next) => saveTaskText(task.id, 'details', next)}
             label="任务详情"
-            hint="目标、背景、验收标准、需要注意的文件…支持 Markdown，写下后会作为 prompt 交给 agent"
+            hint="目标、背景、验收标准、需要注意的文件…支持 Markdown，写下后会作为 prompt 交给 Agent"
           />
         </div>
       </div>

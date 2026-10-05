@@ -114,7 +114,7 @@ function AppearanceSettings() {
       />
       <SettingsRow
         label="折叠做完的回合"
-        description="打开时，agent 回完一轮，过程（思考、命令、中间的回复）收进「工作了 N 秒」，只留下最后的回答；点它仍能展开。关掉则一直全部显示。"
+        description="打开时，Agent 回完一轮，过程（思考、命令、中间的回复）收进「工作了 N 秒」，只留下最后的回答；点它仍能展开。关掉则一直全部显示。"
         control={(labelId) => (
           <Toggle labelId={labelId} checked={foldTurns} onChange={(next) => setPreference('foldTurns', next)} />
         )}
@@ -128,7 +128,7 @@ function NotificationSettings() {
   return (
     <SettingsRow
       label="系统通知"
-      description="窗口不在前台时，agent 等你允许或回答、这一轮做完、异常退出，以及定时任务的一次运行做完或没能开始，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话、任务和没看过的定时任务运行有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
+      description="窗口不在前台时，Agent 等你允许或回答、这一轮做完、异常退出，以及定时任务的一次运行做完或没能开始，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话、任务和没看过的定时任务运行有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
       control={(labelId) => <Toggle labelId={labelId} checked={notifications} onChange={(next) => setPreference('notifications', next)} />}
     />
   )
@@ -196,7 +196,7 @@ function BrowserRows() {
     <>
       <SettingsRow
         label="浏览器"
-        description="聊天界面里的 agent 用 Kando 托管的 Chromium 打开页面、截图、点击；本地开发地址直接打开，其他站点第一次访问时在对话里问你。下载到 ~/.kando/browser。"
+        description="聊天界面里的 Agent 用 Kando 托管的 Chromium 打开页面、截图、点击；本地开发地址直接打开，其他站点第一次访问时在对话里问你。下载到 ~/.kando/browser。"
         control={() => (
           <span className="settings-inline">
             <span className="muted">{browserStatusText(status)}</span>
@@ -205,8 +205,8 @@ function BrowserRows() {
         )}
       />
       <SettingsRow
-        label="agent 打开页面时自动显示浏览器"
-        description="agent 第一次在会话里用浏览器时，自动打开右侧的浏览器面板并选中它的标签页。默认关：浏览器在后台跑，对话里的页面卡片上点「打开」才显示。"
+        label="Agent 打开页面时自动显示浏览器"
+        description="Agent 第一次在会话里用浏览器时，自动打开右侧的浏览器面板并选中它的标签页。默认关：浏览器在后台跑，对话里的页面卡片上点「打开」才显示。"
         control={(labelId) => (
           <Toggle labelId={labelId} checked={openOnTab} onChange={(next) => setPreference('openBrowserOnTab', next)} />
         )}
@@ -228,7 +228,7 @@ function AgentSettings() {
       {awakeSupported && awake && (
         <SettingsRow
           label="保持电脑唤醒"
-          description="「Agent 工作时」只在至少一个 agent 正在执行、或还有预约等着运行时阻止系统睡眠；agent 等待输入时允许睡眠。合上笔记本仍会睡眠。关闭 Kando 窗口不影响正在运行的 agent。"
+          description="「Agent 工作时」只在至少一个 Agent 正在执行、或还有预约等着运行时阻止系统睡眠；Agent 等待输入时允许睡眠。合上笔记本仍会睡眠。关闭 Kando 窗口不影响正在运行的 Agent。"
           control={(labelId) => (
             <Segmented
               labelId={labelId}
@@ -268,14 +268,14 @@ function AgentSettings() {
       )}
       <SettingsRow
         label="允许「全部放行」"
-        description="打开后，聊天界面的权限模式里多出「全部放行」：agent 不再请求确认，Codex 也不再受沙箱限制。Claude Code 自己建议只在没有网络的沙箱里这样用。只影响之后启动的聊天会话。"
+        description="打开后，聊天界面的权限模式里多出「全部放行」：Agent 不再请求确认，Codex 也不再受沙箱限制。Claude Code 自己建议只在没有网络的沙箱里这样用。只影响之后启动的聊天会话。"
         control={(labelId) => (
           <Toggle labelId={labelId} checked={allowBypass} onChange={(next) => setPreference('allowBypass', next)} />
         )}
       />
       <SettingsRow
-        label="新建任务的默认 agent"
-        description="「最近用过的」会沿用最新一个任务选的 agent。"
+        label="新建任务的默认 Agent"
+        description="「最近用过的」会沿用最新一个任务选的 Agent。"
         control={(labelId) => (
           <Segmented
             labelId={labelId}
@@ -388,7 +388,7 @@ const SECTIONS: readonly Section[] = [
     id: 'usage',
     group: '界面',
     title: '用量额度',
-    description: '底部状态栏里的 agent 订阅额度。',
+    description: '底部状态栏里的 Agent 订阅额度。',
     keywords: ['状态栏', '额度', '百分比', '已用', '剩余', 'claude', 'codex'],
     Icon: GaugeIcon,
     Body: UsageSettings
@@ -398,7 +398,7 @@ const SECTIONS: readonly Section[] = [
     id: 'notifications',
     group: '界面',
     title: '通知',
-    description: 'agent 需要你的时候，怎么告诉你。',
+    description: 'Agent 需要你的时候，怎么告诉你。',
     keywords: ['通知', '提醒', '角标', 'dock', '前台', '等待', '确认', '做完', '异常退出'],
     Icon: BellIcon,
     Body: NotificationSettings
@@ -407,7 +407,7 @@ const SECTIONS: readonly Section[] = [
     id: 'agents',
     group: '任务',
     title: '智能体',
-    description: '这台电脑上检测到的 agent，以及新建和执行任务、开始会话时它们的默认行为。',
+    description: '这台电脑上检测到的 Agent，以及新建和执行任务、开始会话时它们的默认行为。',
     keywords: ['agent', '默认', '已安装', '检测', '启用', '禁用', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
     Icon: SparkIcon,
     Body: AgentSettings
@@ -416,7 +416,7 @@ const SECTIONS: readonly Section[] = [
     id: 'agent-stats',
     group: '任务',
     title: '智能体表现',
-    description: '每个 agent 和模型的表现。任务（包括在聊天界面里执行的任务）看结果：你接受、继续修改、重做各占多少，从 0.10.0 开始记录；自由会话没有验收，只看用量：回合、失败、撞额度、耗时和 token。',
+    description: '每个 Agent 和模型的表现。任务（包括在聊天界面里执行的任务）看结果：你接受、继续修改、重做各占多少，从 0.10.0 开始记录；自由会话没有验收，只看用量：回合、失败、撞额度、耗时和 token。',
     keywords: ['表现', '统计', '通过率', '接受', '继续修改', '重做', '耗时', 'token', '模型', '会话', '用量', '回合', '失败', '额度', 'claude', 'codex'],
     Icon: GaugeIcon,
     Body: AgentStatsSettings
@@ -457,7 +457,7 @@ const ENVIRONMENT_SECTION: Section = {
   id: 'environment',
   group: '其他',
   title: '环境',
-  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。新建任务和新会话只会列出装了的 agent。装好或登录后点「重新检查」。',
+  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。新建任务和新会话只会列出装了的 Agent。装好或登录后点「重新检查」。',
   keywords: ['环境', '检查', '安装', '登录', 'git', 'claude', 'codex', '版本', 'path', '找不到', '未安装'],
   Icon: PulseIcon,
   Body: EnvironmentSettings
@@ -468,7 +468,7 @@ const BROWSER_SECTION: Section = {
   id: 'browser',
   group: '集成',
   title: '浏览器',
-  description: '聊天里的 agent 用 Kando 托管的 Chromium 看页面：安装状态，以及 agent 打开页面时要不要自动显示浏览器面板。',
+  description: '聊天里的 Agent 用 Kando 托管的 Chromium 看页面：安装状态，以及 Agent 打开页面时要不要自动显示浏览器面板。',
   keywords: ['浏览器', 'chromium', '网页', '截图', '安装', '面板', '集成'],
   Icon: GlobeIcon,
   Body: BrowserRows

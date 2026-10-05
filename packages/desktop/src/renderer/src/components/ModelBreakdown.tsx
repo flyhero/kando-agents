@@ -10,7 +10,7 @@ export function ModelBreakdown({ models }: { models: readonly DashboardModel[] }
   return (
     <section className="dashboard-panel" aria-labelledby="dashboard-models">
       <header className="dashboard-panel-header">
-        <h3 id="dashboard-models">按 agent 和模型</h3>
+        <h3 id="dashboard-models">按 Agent 和模型</h3>
       </header>
       {models.length === 0 ? (
         <p className="dashboard-empty muted">这段时间没有运行或对话。</p>

@@ -162,7 +162,7 @@ export function ChatTodosChip({ todos }: { todos: readonly ChatTodo[] }) {
         {step && <span className="muted">{step}</span>}
       </button>
       {open && (
-        <Popover label="agent 的待办" onClose={close}>
+        <Popover label="Agent 的待办" onClose={close}>
           <TodoList todos={todos} />
         </Popover>
       )}

@@ -31,7 +31,7 @@ function Subagent({ tool, lane }: { tool: ToolItem; lane: number }) {
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChatToolIcon name={tool.name} status={tool.status} />
         <SubagentMark tool={tool} finished={finished} />
-        <span className="chat-subagent-prefix">子 agent:</span>
+        <span className="chat-subagent-prefix">子 Agent:</span>
         {brief.kind && <span className="chat-tool-name">{brief.kind}</span>}
         <span className="chat-subagent-chip" title={tool.title}>{tool.title}</span>
         {tool.metrics && (tool.metrics.tools > 0 || tool.metrics.tokens > 0) && (

@@ -261,8 +261,8 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
               <input
                 ref={noteInput}
                 className="chat-approve-reason"
-                aria-label="继续规划，告诉 agent 要改哪里"
-                placeholder={commented ? `继续规划：带上 ${quotes.length} 条评论，还可以再补充（可不填）` : '继续规划，告诉 agent 要改哪里（可不填）'}
+                aria-label="继续规划，告诉 Agent 要改哪里"
+                placeholder={commented ? `继续规划：带上 ${quotes.length} 条评论，还可以再补充（可不填）` : '继续规划，告诉 Agent 要改哪里（可不填）'}
                 value={note}
                 disabled={busy || saving}
                 onFocus={() => setChoice('revise')}
@@ -303,7 +303,7 @@ export function ChatPlanView({ conversationId, plans, selected, onSelect, note =
   const quotes = useQuotes(conversationId ?? '')
   const plan = plans.find((each) => itemKey(each) === selected) ?? plans.at(-1)
   const said = (each: PlanItem) => note(each) ?? status(each)
-  if (!plan) return <p className="inspector-empty muted">agent 还没有提出计划。</p>
+  if (!plan) return <p className="inspector-empty muted">Agent 还没有提出计划。</p>
   const planKey = itemKey(plan)
   const comments = quotes.filter((quote) => quote.source === planKey).length
   return (

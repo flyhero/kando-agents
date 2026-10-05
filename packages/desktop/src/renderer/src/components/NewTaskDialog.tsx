@@ -225,7 +225,7 @@ export function NewTaskDialog() {
                 className="input modal-textarea"
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
-                placeholder="目标、背景、验收标准…支持 Markdown，会作为 prompt 交给 agent"
+                placeholder="目标、背景、验收标准…支持 Markdown，会作为 prompt 交给 Agent"
                 rows={4}
               />
             </label>

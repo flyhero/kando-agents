@@ -52,7 +52,7 @@ export function githubProvider(connect: (credentials: GitHubCredentials) => GitH
           await session.prompt({
             kind: 'secret',
             label: 'Personal access token',
-            hint: '需要读取账号和可访问仓库的 issue。token 只保存在本机，不会交给 agent。',
+            hint: '需要读取账号和可访问仓库的 issue。token 只保存在本机，不会交给 Agent。',
             link: { url: TOKEN_PAGE, label: '在 GitHub 设置里创建' },
             error
           })

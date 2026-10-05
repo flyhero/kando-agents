@@ -190,13 +190,13 @@ describe('noticesBetween', () => {
     const idle = conversation('a')
     const gone = conversation('a', { sessionId: null, lastExit: { code: 1, at: 5 } })
     expect(noticesBetween(snapshot([running]), snapshot([awaiting]))).toEqual([
-      { title: '会话 a', body: 'agent 在等你允许或回答', target: { kind: 'conversation', id: 'a' } }
+      { title: '会话 a', body: 'Agent 在等你允许或回答', target: { kind: 'conversation', id: 'a' } }
     ])
     expect(noticesBetween(snapshot([awaiting]), snapshot([idle]))).toEqual([
-      { title: '会话 a', body: 'agent 这一轮做完了', target: { kind: 'conversation', id: 'a' } }
+      { title: '会话 a', body: 'Agent 这一轮做完了', target: { kind: 'conversation', id: 'a' } }
     ])
     expect(noticesBetween(snapshot([running]), snapshot([gone]))).toEqual([
-      { title: '会话 a', body: 'agent 异常退出（code 1），发消息会重新启动它', target: { kind: 'conversation', id: 'a' } }
+      { title: '会话 a', body: 'Agent 异常退出（code 1），发消息会重新启动它', target: { kind: 'conversation', id: 'a' } }
     ])
     expect(noticesBetween(snapshot([gone]), snapshot([conversation('a', { sessionId: null, lastExit: { code: 1, at: 5 } })]))).toEqual([])
   })
@@ -205,7 +205,7 @@ describe('noticesBetween', () => {
     const before = conversation('c', { taskId: 't1', chat: { turn: 'running' } })
     const after = conversation('c', { taskId: 't1', chat: { turn: 'idle' } })
     expect(noticesBetween(snapshot([before], [task('t1', { conversationId: 'c' })]), snapshot([after], [task('t1', { conversationId: 'c' })]))).toEqual([
-      { title: '任务 t1', body: 'agent 这一轮做完了', target: { kind: 'task', id: 't1' } }
+      { title: '任务 t1', body: 'Agent 这一轮做完了', target: { kind: 'task', id: 't1' } }
     ])
   })
 })

@@ -125,11 +125,11 @@ export function noticesBetween(prev: Snapshot, next: Snapshot): Notice[] {
     if (!before || before === conversation || conversation.routineId) continue
     const { title, target } = named(conversation, next.tasks)
     if (crashed(conversation) && !crashed(before)) {
-      notices.push({ title, body: `agent 异常退出（code ${conversation.lastExit?.code}），发消息会重新启动它`, target })
+      notices.push({ title, body: `Agent 异常退出（code ${conversation.lastExit?.code}），发消息会重新启动它`, target })
     } else if (waiting(conversation) && !waiting(before)) {
-      notices.push({ title, body: 'agent 在等你允许或回答', target })
+      notices.push({ title, body: 'Agent 在等你允许或回答', target })
     } else if (working(before) && !working(conversation)) {
-      notices.push({ title, body: 'agent 这一轮做完了', target })
+      notices.push({ title, body: 'Agent 这一轮做完了', target })
     }
   }
   return notices

@@ -32,8 +32,8 @@ export function timeAgo(at: number, now: number): string {
 // last failed, is all there is to say.
 export function conversationState(conversation: Conversation): ConversationState {
   const { sessionId, lastExit, chat } = conversation
-  if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'agent 在等你允许或回答' }
+  if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'Agent 在等你允许或回答' }
   if (sessionId && chat?.turn === 'running') return { label: '运行中', running: true, failed: false, detail: null }
-  if (!sessionId && lastExit?.code) return { label: '异常退出', running: false, failed: true, detail: `agent 异常退出（code ${lastExit.code}），发消息会重新启动它` }
+  if (!sessionId && lastExit?.code) return { label: '异常退出', running: false, failed: true, detail: `Agent 异常退出（code ${lastExit.code}），发消息会重新启动它` }
   return { label: '空闲', running: false, failed: false, detail: '发消息就会接着聊' }
 }

@@ -43,7 +43,7 @@ export function DashboardKpis({ stats, days, range }: { stats: DashboardStats; d
   const { current, previous } = stats
   const rate = acceptance(current.accepted, current.decided)
   const kpis: Kpi[] = [
-    { label: '任务运行', title: '这段时间结束的 agent 运行', value: String(current.runs), change: change(current.runs, previous.runs), trend: days.map((day) => day.runs) },
+    { label: '任务运行', title: '这段时间结束的 Agent 运行', value: String(current.runs), change: change(current.runs, previous.runs), trend: days.map((day) => day.runs) },
     {
       label: '接受率',
       title: '你判定过的运行里，直接接受的比例',

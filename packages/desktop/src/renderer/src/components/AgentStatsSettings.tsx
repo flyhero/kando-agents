@@ -111,9 +111,9 @@ const CONVERSATION_COLUMNS = [
   { label: '会话', title: '有回合计入的会话数' },
   { label: '回合', title: '结束了的回合' },
   { label: '失败', title: '出错结束的回合，撞额度的也算在内' },
-  { label: '中断', title: '你停下的，或 agent 退出时还没结束的回合' },
+  { label: '中断', title: '你停下的，或 Agent 退出时还没结束的回合' },
   { label: '撞额度', title: '因为用量额度用完而失败的回合' },
-  { label: '每回合耗时', title: 'agent 每个回合自己工作的时间，中位数' },
+  { label: '每回合耗时', title: 'Agent 每个回合自己工作的时间，中位数' },
   { label: '每回合 token', title: '每个回合读写的 token，中位数' },
   { label: 'token 合计', title: '所有回合读写的 token 加起来' }
 ]

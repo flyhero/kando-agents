@@ -1156,7 +1156,7 @@ export class CodexAppServer implements ChatDriver {
   // A subagent's request is the user's to answer too, in the chat that sent it off, said to be its.
   private requestDetail(method: string, params: unknown, reason: string | null): string | null {
     if (!this.childThread(method, params)) return reason
-    return reason ? `子 agent 的请求：${reason}` : '子 agent 的请求'
+    return reason ? `子 Agent 的请求：${reason}` : '子 Agent 的请求'
   }
 
   private approval(
@@ -1298,7 +1298,7 @@ export class CodexAppServer implements ChatDriver {
 
   private ended(stderr: string, at: number): void {
     if (this.exited) return
-    if (this.turn) this.endTurn('interrupted', 'agent 已退出', null, at)
+    if (this.turn) this.endTurn('interrupted', 'Agent 已退出', null, at)
     // Subagents still at work go with the agent.
     this.items.settleTools('interrupted', at)
     // A plan left waiting goes with the agent; the next stage starts from its own messages.

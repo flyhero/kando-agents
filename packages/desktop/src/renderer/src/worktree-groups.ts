@@ -48,7 +48,7 @@ export function formatBytes(bytes: number): string {
 // What stands out about a worktree, in a few words: why it is kept, or how its commits stand.
 export function worktreeState({ worktree }: Pick<WorktreeRow, 'worktree'>): { text: string; warn: boolean } {
   if (worktree.changes === null) return { text: worktree.repo === null ? '找不到它所属的仓库' : '读不了它的 git 状态', warn: true }
-  if (worktree.inUse) return { text: 'agent 还开着', warn: true }
+  if (worktree.inUse) return { text: 'Agent 还开着', warn: true }
   if (worktree.changes > 0) return { text: `${worktree.changes} 个文件没提交`, warn: true }
   if (worktree.alone) return { text: '有只在这里的提交', warn: true }
   if (worktree.locked) return { text: '已用 git worktree lock 锁定', warn: true }
