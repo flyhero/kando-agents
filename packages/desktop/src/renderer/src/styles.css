@@ -5888,7 +5888,9 @@ body.side-panel-resizing * {
 
 .chat-quote-pick[data-below] { transform: translate(-50%, 6px); }
 .chat-quote-pick svg { width: 13px; height: 13px; color: var(--text-muted); }
-.chat-quote-pick:hover { background: var(--fill-2); }
+/* --fill-2 is translucent, so it goes over the surface rather than in place of it: the button
+   floats over the reply's text, which would otherwise show through. */
+.chat-quote-pick:hover { background: linear-gradient(var(--fill-2), var(--fill-2)), var(--surface); }
 
 /* In a sent message, the passages it quotes sit over what it says, each opening its reply. */
 .chat-user-quotes {
