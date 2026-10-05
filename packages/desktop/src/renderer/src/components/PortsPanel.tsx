@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ListeningPort } from '@kando/protocol'
 import { setPortsMaximized, showTerminal, togglePortsPanel, useCore } from '../core-store'
 import { openPort, portGroups, portKey, stopPort, usePorts } from '../port-state'
+import { ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, GlobeIcon, MaximizeIcon, PortsIcon, RestoreIcon, TerminalIcon } from './icons'
 import './ports-panel.css'
 
@@ -47,7 +48,7 @@ export function PortsPanel() {
   return (
     <aside className="side-panel ports-panel" aria-label="端口" data-maximized={maximized || undefined}>
       <header className="terminal-panel-header ports-panel-header"><h2 className="port-panel-title"><PortsIcon />端口 <span className="count">{list.ports.length}</span></h2><button type="button" className="tool-button" aria-label={maximized ? '还原' : '最大化'} data-tooltip={maximized ? '还原' : '最大化'} onClick={() => setPortsMaximized(!maximized)}>{maximized ? <RestoreIcon /> : <MaximizeIcon />}</button><button type="button" className="tool-button" aria-label="隐藏端口" data-tooltip="隐藏端口" onClick={togglePortsPanel}><CloseIcon /></button></header>
-      <div className="ports-panel-body"><div className="ports-toolbar"><select aria-label="端口范围" value={scope} onChange={(event) => setScope(event.target.value)}><option value="all">全部任务与会话</option><option value="current" disabled={!current}>当前{section === 'tasks' ? '任务' : '会话'}</option></select><span className="muted">{loading ? '正在发现…' : '每 2 秒更新'}</span></div>
+      <div className="ports-panel-body"><div className="ports-toolbar"><ChatPicker label="端口范围" placement="below" value={scope} placeholder="全部任务与会话" onChange={setScope} options={[{ value: 'all', label: '全部任务与会话' }, { value: 'current', label: section === 'tasks' ? '当前任务' : '当前会话', disabled: !current }]} /><span className="muted">{loading ? '正在发现…' : '每 2 秒更新'}</span></div>
         {list.problem ? <p className="port-problem" role="alert">{list.problem}</p> : groups.length === 0 ? <p className="inspector-empty muted">{loading ? '正在查找监听端口…' : '没有发现监听端口。可在 Kando 终端中启动开发服务。'}</p> : groups.map((group) => <section key={group.id} className="port-group"><div className="port-group-title"><span>{group.title}</span>{group.conversation && <span className="port-owner"><AgentIcon agent={group.conversation.agent} />{group.conversation.agent === 'claude' ? 'Claude Code' : 'Codex'}</span>}</div>{group.ports.map((port) => <PortRow key={portKey(port)} port={port} />)}</section>)}
       </div><footer className="ports-panel-footer">{ports.length} 个监听端口 · {groups.length} 个分组</footer>
     </aside>

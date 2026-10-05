@@ -7,7 +7,7 @@ export type PickerOption = { value: string; label: string; description?: string 
 // A choice in the composer's toolbar: its value as a small button as wide as its words, and a menu
 // above it. A native select is as wide as its longest option, which left most values far from their
 // arrow.
-function PickerShell({ label, spoken, tone, disabled, title, align, value, children }: {
+function PickerShell({ label, spoken, tone, disabled, title, align, placement = 'above', value, children }: {
   label: string
   // The button's name for a screen reader, which cannot see the value's colour or suffix.
   spoken: string
@@ -15,6 +15,8 @@ function PickerShell({ label, spoken, tone, disabled, title, align, value, child
   disabled: boolean
   title?: string
   align: 'start' | 'end'
+  // Above in the composer, where below is the rest of it; below for one at the top of a panel.
+  placement?: 'above' | 'below'
   value: ReactNode
   children: (close: () => void) => ReactNode
 }) {
@@ -23,8 +25,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, value, child
   const close = useCallback(() => setAt(null), [])
   const open = () => {
     const box = button.current?.getBoundingClientRect()
-    // From the button's top, opening upward: below is the rest of the composer.
-    if (box) setAt({ x: align === 'end' ? box.right : box.left, y: box.top })
+    if (box) setAt({ x: align === 'end' ? box.right : box.left, y: placement === 'above' ? box.top : box.bottom + 4 })
   }
   return (
     <>
@@ -44,7 +45,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, value, child
         <ChevronDownIcon />
       </button>
       {at && (
-        <ContextMenu at={at} align={align} above trigger={button.current} label={label} onClose={close}>
+        <ContextMenu at={at} align={align} above={placement === 'above'} trigger={button.current} label={label} onClose={close}>
           {children(close)}
         </ContextMenu>
       )}
@@ -72,7 +73,7 @@ function PickerItem({ option, checked, onSelect }: { option: PickerOption; check
 }
 
 // One setting: its options listed with what each means, the current one checked.
-export function ChatPicker({ label, value, placeholder, options, onChange, disabled = false, title, tone, align = 'start' }: {
+export function ChatPicker({ label, value, placeholder, options, onChange, disabled = false, title, tone, align = 'start', placement }: {
   label: string
   value: string | null
   placeholder: string
@@ -83,10 +84,11 @@ export function ChatPicker({ label, value, placeholder, options, onChange, disab
   // Colours the value, as the permission mode does for plan and bypass.
   tone?: string
   align?: 'start' | 'end'
+  placement?: 'above' | 'below'
 }) {
   const current = options.find((option) => option.value === value)?.label ?? placeholder
   return (
-    <PickerShell label={label} spoken={`${label}：${current}`} tone={tone} disabled={disabled} title={title} align={align} value={current}>
+    <PickerShell label={label} spoken={`${label}：${current}`} tone={tone} disabled={disabled} title={title} align={align} placement={placement} value={current}>
       {(close) => (
         <>
           <div className="chat-picker-heading">{label}</div>

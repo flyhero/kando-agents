@@ -4,7 +4,6 @@
 .port-panel-title svg { width: 16px; height: 16px; flex-shrink: 0; }
 .ports-panel-body { flex: 1; min-height: 0; padding: 16px; overflow-y: auto; }
 .ports-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; font-size: 12px; flex-wrap: wrap; }
-.ports-toolbar select { padding: 4px 8px; max-width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-sm); font: inherit; }
 .port-group + .port-group { margin-top: 20px; }
 .port-group-title { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; font-weight: 500; overflow-wrap: anywhere; }
 .port-owner { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 12px; font-weight: 400; }
