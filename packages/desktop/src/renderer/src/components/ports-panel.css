@@ -1,8 +1,7 @@
 .ports-panel { display: flex; flex-direction: column; min-width: 0; }
 .ports-panel-header { gap: 4px; }
-.port-panel-tabs { display: flex; flex: 1; min-width: 0; gap: 4px; flex-wrap: wrap; }
-.port-panel-tabs .tool-button { display: inline-flex; align-items: center; width: auto; padding: 4px 8px; gap: 4px; font-size: 12px; }
-.port-panel-tabs .tool-button[aria-pressed='true'] { color: var(--accent); background: var(--accent-bg); }
+.port-panel-title { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; margin: 0; padding: 4px 8px; font-size: 12px; font-weight: 500; color: var(--text); }
+.port-panel-title svg { width: 16px; height: 16px; flex-shrink: 0; }
 .ports-panel-body { flex: 1; min-height: 0; padding: 16px; overflow-y: auto; }
 .ports-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; font-size: 12px; flex-wrap: wrap; }
 .ports-toolbar select { padding: 4px 8px; max-width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-sm); font: inherit; }
