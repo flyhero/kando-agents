@@ -78,6 +78,18 @@ const SystemFrame = z.looseObject({
   // task_summary: what the agent is doing right now, null once it stops.
   detail: z.string().nullish()
 })
+// What the CLI says of work it keeps in the background: a task started (a command run with
+// run_in_background is local_bash, a subagent local_agent), and one done, with how it ended.
+const TaskFrame = z.looseObject({
+  subtype: z.string(),
+  task_id: z.string(),
+  tool_use_id: z.string().optional(),
+  task_type: z.string().optional(),
+  is_backgrounded: z.boolean().optional(),
+  status: z.string().optional(),
+  summary: z.string().optional()
+})
+type BackgroundKind = 'subagent' | 'command'
 const ModelRow = z.looseObject({
   value: z.string(),
   resolvedModel: z.string().nullish(),
@@ -337,11 +349,15 @@ export class ClaudeStream implements ChatDriver {
   private initError: string | null = null
   private exited = false
   private sessionId: string | null
-  // resumed: the turn began on its own, when a background subagent reported, not from a message.
+  // resumed: the turn began on its own, when background work reported, not from a message.
   // uuid: Claude's id for the turn's latest message, where a fork of the session can stop.
-  private turn: { ref: string; assistant: string | null; resumed?: boolean; uuid?: string } | null = null
+  private turn: { ref: string; assistant: string | null; resumed?: boolean; resumedBy?: BackgroundKind; uuid?: string } | null = null
   private turnsSeen = 0
   private resumes = 0
+  // The CLI's background tasks still out, by task id: the call that started each, and its kind.
+  private readonly backgroundTasks = new Map<string, { toolUseId: string | null; kind: BackgroundKind }>()
+  // What reported back, in order, each opening a turn of the CLI's own.
+  private reported: BackgroundKind[] = []
   // Output tokens of the running turn's messages so far, for the working line.
   private turnOutput = 0
   // Subagents the CLI has reported finished, and the last thing each said while it worked (its
@@ -456,12 +472,16 @@ export class ClaudeStream implements ChatDriver {
   // start a turn of its own when they report.
   activity(): ChatTurnActivity {
     if (this.kando.pending > 0) return 'awaiting'
-    if (!this.turn) return this.backgroundAgents() > 0 ? 'running' : 'idle'
+    if (!this.turn) return this.backgroundAgents() + this.backgroundCommands() > 0 ? 'running' : 'idle'
     return this.pending.size > 0 ? 'awaiting' : 'running'
   }
 
   private backgroundAgents(): number {
     return this.items.list().filter((item) => item.kind === 'tool' && SUBAGENT_TOOLS.has(item.name) && item.status === 'running').length
+  }
+
+  private backgroundCommands(): number {
+    return this.items.list().filter((item) => item.kind === 'tool' && item.background && !SUBAGENT_TOOLS.has(item.name) && item.status === 'running').length
   }
 
   providerSessionId(): string | null {
@@ -553,6 +573,12 @@ export class ClaudeStream implements ChatDriver {
         if (!system.success) return null
         const { subtype, session_id, model, permissionMode } = system.data
         if (subtype === 'init') return { type: 'system', subtype, session_id, model, permissionMode }
+        if (subtype === 'task_started' || subtype === 'task_notification') {
+          const task = TaskFrame.safeParse(frame)
+          if (!task.success) return null
+          const { task_id, tool_use_id, task_type, is_backgrounded, status, summary } = task.data
+          return { type: 'system', subtype, task_id, tool_use_id, task_type, is_backgrounded, status, summary }
+        }
         // A status frame names the permission mode only when it changed.
         if (subtype === 'status' && permissionMode) return { type: 'system', subtype, permissionMode }
         const changed = CommandsChanged.safeParse(frame)
@@ -755,12 +781,14 @@ export class ClaudeStream implements ChatDriver {
     // own: a subagent left working in the background has reported back.
     if (subtype === 'init' && !this.turn && this.turnsSeen > 0) {
       this.suggested = null
-      this.turn = { ref: `resume-${++this.resumes}`, assistant: null, resumed: true }
+      const by = this.reported.shift()
+      this.turn = { ref: `resume-${++this.resumes}`, assistant: null, resumed: true, ...(by ? { resumedBy: by } : {}) }
       this.turnOutput = 0
       this.state.set({ activity: null, turnUsage: null })
     }
     if ((subtype === 'init' || subtype === 'status') && permissionMode) this.permissionMode = PERMISSION_MODES[permissionMode] ?? permissionMode
     if (subtype === 'task_summary') this.state.set({ activity: detail ?? null })
+    if (subtype === 'task_started' || subtype === 'task_notification') this.backgroundTask(frame, at)
     if (subtype === 'compact_boundary') this.items.notice('info', CONTEXT_COMPACTED, at)
     const changed = CommandsChanged.safeParse(frame)
     if (changed.success) this.commands = commandRows(changed.data.commands)
@@ -909,7 +937,13 @@ export class ClaudeStream implements ChatDriver {
       const subagent = SUBAGENT_TOOLS.has(tool.name) ? SubagentResult.safeParse(parsed.data.tool_use_result) : null
       const launched = !block.is_error && subagent?.success && (subagent.data.status === 'async_launched' || subagent.data.isAsync === true)
       if (launched) {
-        this.items.put({ ...tool, status: 'running', output: null }, at)
+        this.items.put({ ...tool, status: 'running', output: null, background: true }, at)
+        continue
+      }
+      // A command sent to the background answers at once with where its output goes; it runs on
+      // until its task reports (task_started came first and named this call).
+      if (!block.is_error && this.inBackground(block.tool_use_id)) {
+        this.items.put({ ...tool, status: 'running', background: true, output: clip(toolResult(block.content, undefined).text) || null }, at)
         continue
       }
       const status = !block.is_error ? 'done' : this.denied.has(id) ? 'denied' : this.stopping ? 'interrupted' : 'failed'
@@ -934,6 +968,36 @@ export class ClaudeStream implements ChatDriver {
         ...(images?.length ? { images } : {})
       }, at)
     }
+  }
+
+  private inBackground(toolUseId: string): boolean {
+    return [...this.backgroundTasks.values()].some((task) => task.toolUseId === toolUseId)
+  }
+
+  // A background task started marks its call as running in the background, whichever of this and
+  // the call's own result comes first; one done settles its call and says what will open the turn
+  // the CLI starts for it.
+  private backgroundTask(frame: unknown, at: number): void {
+    const task = TaskFrame.safeParse(frame)
+    if (!task.success) return
+    const { subtype, task_id, tool_use_id, task_type, is_backgrounded, status, summary } = task.data
+    if (subtype === 'task_started') {
+      if (!is_backgrounded) return
+      this.backgroundTasks.set(task_id, { toolUseId: tool_use_id ?? null, kind: task_type === 'local_agent' ? 'subagent' : 'command' })
+      const tool = tool_use_id ? this.items.get(`t:${tool_use_id}`) : undefined
+      if (tool?.kind === 'tool' && tool.status !== 'failed' && tool.status !== 'denied') this.items.put({ ...tool, status: 'running', background: true }, at)
+      return
+    }
+    const known = this.backgroundTasks.get(task_id)
+    if (!known) return
+    this.backgroundTasks.delete(task_id)
+    this.reported.push(known.kind)
+    const tool = this.items.get(`t:${tool_use_id ?? known.toolUseId ?? ''}`)
+    if (tool?.kind !== 'tool' || tool.status !== 'running') return
+    const settled = status === 'completed' ? 'done' : status === 'failed' ? 'failed' : 'interrupted'
+    // A subagent's report is its output; a command's says how it ended.
+    const output = known.kind === 'command' && summary ? clip([tool.output, summary].filter(Boolean).join('\n')) : tool.output
+    this.items.put({ ...tool, status: settled, output }, at)
   }
 
   private result(frame: unknown, at: number): void {
@@ -1001,14 +1065,14 @@ export class ClaudeStream implements ChatDriver {
     limit: UsageLimitHit | null = null
   ): void {
     this.finishStreaming(at)
-    if (state !== 'completed') this.items.settleTools(state, at)
+    if (state !== 'completed') this.items.settleTools(state, at, true)
     this.stopping = false
     this.state.endTurn()
     this.queue.turnEnded(state)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     const turn = this.turn
     const id = turn ? `turn:${turn.ref}` : `turn:result-${++this.results}`
-    this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true } : {}), providerRef: turn?.uuid ?? null }, at)
+    this.items.put({ id, kind: 'turn', state, error, durationMs, usage, ...(turn?.resumed ? { resumed: true, ...(turn.resumedBy ? { resumedBy: turn.resumedBy } : {}) } : {}), providerRef: turn?.uuid ?? null }, at)
     if (limit) this.items.usageLimit(id, limit, at)
     this.refused = null
     if (turn?.assistant) {
@@ -1016,9 +1080,11 @@ export class ClaudeStream implements ChatDriver {
     }
     this.turn = null
     this.state.set({ turnUsage: null })
-    // Subagents still out keep the stage busy; the working line says what it waits for.
-    const background = state === 'completed' ? this.backgroundAgents() : 0
-    if (background > 0) this.state.set({ activity: `等 ${background} 个子 Agent 回来` })
+    // Subagents and commands still out keep the stage busy; the working line says what it waits for.
+    const agents = state === 'completed' ? this.backgroundAgents() : 0
+    const commands = this.backgroundCommands()
+    const waits = [agents > 0 ? `${agents} 个子 Agent 回来` : null, commands > 0 ? `${commands} 个后台命令结束` : null].filter(Boolean)
+    if (waits.length > 0) this.state.set({ activity: `等 ${waits.join('、')}` })
   }
 
   private finishStreaming(at: number): void {
@@ -1213,6 +1279,8 @@ export class ClaudeStream implements ChatDriver {
     if (this.exited) return
     this.suggested = null
     if (this.turn) this.endTurn('interrupted', 'Agent 已退出', null, at)
+    // What it ran in the background goes with it.
+    this.items.settleTools('interrupted', at)
     this.finishStreaming(at)
     for (const requestId of [...this.pending.keys()]) this.resolve(requestId, 'cancelled', null, at)
     this.kando.cancelAll(at)

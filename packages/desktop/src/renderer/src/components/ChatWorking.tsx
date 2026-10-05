@@ -15,8 +15,8 @@ export function ChatWorking({ phase, tokens, background, since }: {
   phase: WorkingPhase
   // Output tokens the turn has written so far, where the agent reports them as it goes.
   tokens: number | null
-  // Subagents working in the background.
-  background: number
+  // What works in the background: subagents, and commands run there.
+  background: { subagents: number; commands: number }
   since: number | null
 }) {
   const [started] = useState(() => since ?? Date.now())
@@ -25,17 +25,21 @@ export function ChatWorking({ phase, tokens, background, since }: {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  // With the turn over and only subagents out, they are the step: "2 个子 Agent 后台运行中…".
-  // While the turn itself runs, they are a count beside its step.
-  const waiting = phase === 'waiting' && background > 0
+  // With the turn over and only background work out, it is the step: "后台运行中：2 个子 Agent、1 个命令".
+  // While the turn itself runs, it is a count beside its step.
+  const out = [
+    background.subagents > 0 ? `${background.subagents} 个子 Agent` : null,
+    background.commands > 0 ? `${background.commands} 个命令` : null
+  ].filter((part): part is string => part !== null).join('、')
+  const waiting = phase === 'waiting' && out !== ''
   // The count of tokens ticks up as the agent writes: each change lands with a small motion.
   const tick = useTick(tokens)
   const parts = [
     workedFor(Math.max(0, now - (since ?? started))),
     ...(tokens !== null && tokens > 0 ? [<>↓ <span key={tick ?? 0} className="chat-working-tick">{formatTokens(tokens)}</span></>] : []),
-    ...(background > 0 && !waiting ? [`${background} 个子 Agent 后台运行`] : [])
+    ...(out && !waiting ? [`后台：${out}`] : [])
   ]
-  const step = waiting ? `${background} 个子 Agent 后台运行中…` : `${PHASE[phase]}${phase === 'asking' ? '' : '中…'}`
+  const step = waiting ? `后台运行中：${out}` : `${PHASE[phase]}${phase === 'asking' ? '' : '中…'}`
   return (
     <div className="chat-working" role="status">
       <Spinner />

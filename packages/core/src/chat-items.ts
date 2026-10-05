@@ -56,9 +56,11 @@ export class ChatItems {
   }
 
   // Calls still running when their turn ends never finish: the turn stopped under them.
-  settleTools(status: 'interrupted' | 'failed', at: number): void {
+  // keepBackground: a turn ending leaves what the agent runs in the background running; only the
+  // agent's own exit takes those with it.
+  settleTools(status: 'interrupted' | 'failed', at: number, keepBackground = false): void {
     for (const item of this.list()) {
-      if (item.kind === 'tool' && item.status === 'running') this.put({ ...item, status }, at)
+      if (item.kind === 'tool' && item.status === 'running' && !(keepBackground && item.background)) this.put({ ...item, status }, at)
     }
   }
 

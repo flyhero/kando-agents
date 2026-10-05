@@ -636,3 +636,40 @@ describe('ClaudeStream usage limits', () => {
     expect(replayed.items.get('t:t1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
   })
 })
+
+describe('ClaudeStream background tasks, as recorded', () => {
+  // Claude Code 2.1.288: a command run with run_in_background, the turn ending while it runs, its
+  // task reporting, and the turn the CLI then starts for it, as Kando logged them.
+  const records = fixture('claude-background-command.jsonl')
+  const reported = records.findIndex((record) => record.dir === 'in' && JSON.stringify(record.frame).includes('task_notification'))
+
+  it('keeps a background command running, and the stage busy, after its turn ends', () => {
+    const driver = replay(records.slice(0, reported))
+    const [command] = ofKind(driver.items.list(), 'tool')
+    expect(command).toMatchObject({ name: 'Bash', status: 'running', background: true })
+    expect(command?.output).toContain('Command running in background')
+    expect(driver.activity()).toBe('running')
+    expect(ofKind(driver.items.list(), 'state')[0]?.activity).toBe('等 1 个后台命令结束')
+  })
+
+  it('settles the command when it reports, and names it as what opened the next turn', () => {
+    const driver = replay(records)
+    const [command] = ofKind(driver.items.list(), 'tool')
+    expect(command).toMatchObject({ status: 'done', background: true })
+    expect(command?.output).toContain('completed (exit code 0)')
+    expect(ofKind(driver.items.list(), 'turn').map((turn) => [turn.resumed ?? false, turn.resumedBy ?? null])).toEqual([[false, null], [true, 'command']])
+    expect(driver.activity()).toBe('idle')
+  })
+
+  it('tells a failed command from a subagent, each opening a turn of its own', () => {
+    const driver = replay(fixture('claude-background-mixed.jsonl'))
+    const tools = ofKind(driver.items.list(), 'tool')
+    expect(tools.map((tool) => [tool.name, tool.status, tool.background ?? false])).toEqual([['Bash', 'failed', true], ['Agent', 'done', true]])
+    expect(ofKind(driver.items.list(), 'turn').map((turn) => turn.resumedBy ?? null)).toEqual([null, 'subagent', 'command'])
+  })
+
+  it('lets a command still running go when the agent exits', () => {
+    const driver = replay([...records.slice(0, reported), { dir: 'exit', at: 99_999, code: 0, stderr: '' }])
+    expect(ofKind(driver.items.list(), 'tool')[0]?.status).toBe('interrupted')
+  })
+})

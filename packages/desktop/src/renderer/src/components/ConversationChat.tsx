@@ -51,7 +51,8 @@ function tokensText(item: Extract<ChatItem, { kind: 'turn' }>): string {
 // How a turn ended, how long it ran and what it cost: the one place the turn's totals read.
 function turnText(item: Extract<ChatItem, { kind: 'turn' }>): string {
   const took = (item.durationMs !== null ? ` · ${workedFor(item.durationMs)}` : '') + tokensText(item)
-  const why = item.resumed ? '子 Agent 回来后继续，' : ''
+  // What opened a turn of the agent's own; an older core, or an agent that does not say, leaves it unnamed.
+  const why = !item.resumed ? '' : item.resumedBy === 'command' ? '后台命令结束后继续，' : item.resumedBy === 'subagent' ? '子 Agent 回来后继续，' : '自动继续，'
   if (item.state === 'completed') return `${why}完成${took}`
   if (item.state === 'interrupted') return `${why}已中断${took}${item.error ? `：${readableNotice(item.error)}` : ''}`
   return `${why}失败${took}${item.error ? `：${readableNotice(item.error)}` : ''}`
@@ -663,17 +664,19 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   // A reply's shell blocks run in this conversation's own terminal tab, in its folder.
   const runScope = useMemo(() => ({ key: conversation.id, cwd: conversation.workspacePath }), [conversation.id, conversation.workspacePath])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
-  // What kind of step the turn is at, and how many subagents it has out, for the working line;
-  // the step itself shows in the conversation, just above it.
+  // What kind of step the turn is at, and what it has out in the background (subagents, and
+  // commands run there), for the working line; the step itself shows in the conversation, just above it.
   const running = useMemo(() => {
     const tools = items.filter((item): item is Extract<ChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.status === 'running')
+    const subagents = tools.filter((tool) => isSubagent(tool.name)).length
+    const commands = tools.filter((tool) => tool.background && !isSubagent(tool.name)).length
     const last = items.at(-1)
     const phase: WorkingPhase = turn === 'awaiting' ? 'asking'
-      : tools.some((tool) => !isSubagent(tool.name)) ? 'tools'
+      : tools.some((tool) => !isSubagent(tool.name) && !tool.background) ? 'tools'
       : last?.kind === 'reasoning' && last.streaming ? 'thinking'
         : last?.kind === 'assistant' && last.streaming ? 'replying'
           : tools.length > 0 ? 'waiting' : 'working'
-    return { phase, background: tools.filter((tool) => isSubagent(tool.name)).length }
+    return { phase, background: { subagents, commands } }
   }, [items, turn])
   // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
   const modelId = state?.model ?? conversation.chatOptions?.model ?? null

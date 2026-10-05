@@ -127,6 +127,9 @@ export const ChatItem = z.discriminatedUnion('kind', [
     input: z.string().nullable(),
     status: ChatToolStatus.catch('done'),
     output: z.string().nullable(),
+    // The agent left it working in the background, as a command run with run_in_background: it
+    // stays running past its turn until it reports. Older cores leave it out.
+    background: z.boolean().optional(),
     diffs: z.array(ChatDiff).default([]),
     // What a subagent did, once it reports back: its calls, tokens and time. Older cores leave it out.
     metrics: z.object({ tools: z.number(), tokens: z.number(), durationMs: z.number() }).nullable().optional(),
@@ -165,9 +168,12 @@ export const ChatItem = z.discriminatedUnion('kind', [
       z.object({ input: z.number(), output: z.number() }),
       z.object({ total: z.number() })
     ]).nullable().optional(),
-    // The turn began on its own, when a subagent working in the background reported back, not
-    // from a message. Older cores leave it out.
+    // The turn began on its own, not from a message: something the agent left working in the
+    // background reported back. Older cores leave it out.
     resumed: z.boolean().optional(),
+    // What reported, where the agent says: a subagent, or a command it ran in the background. Left
+    // out when not known, as by older cores, which only knew subagents to do this.
+    resumedBy: z.enum(['subagent', 'command']).optional().catch(undefined),
     // The agent's own name for where this turn ended, which a fork of the conversation can stop
     // at: Claude's id for the turn's last message, Codex's id for the turn. Older cores leave it out.
     providerRef: z.string().nullable().optional()
