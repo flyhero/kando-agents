@@ -667,16 +667,17 @@ describe('ConversationService', () => {
       expect(service.get(source.id).sessionId).not.toBeNull()
     })
 
-    it('forks before a user message and sends it again, for the agent to answer anew', async () => {
+    it('forks before a user message, leaving that message for the user to send', async () => {
       const source = await twoTurns()
       const stage = stageOf(source.id)
       const second = service.chatPage(source.id).items.find((item) => item.kind === 'user' && item.text === 'second')!
       const fork = await service.fork(source.id, stage.id, second.id)
       await settle()
       expect(daemon.spawns.at(-1)!.args).toEqual(expect.arrayContaining(['--resume-session-at', 'uuid-first', '--fork-session']))
-      expect(userTexts(fork.id)).toEqual(['first', 'second'])
-      expect(service.chatPage(fork.id).items.filter((item) => item.kind === 'assistant').map((item) => item.text)).toEqual(['echo: first', 'echo: second'])
-      expect(store.messages(fork.id).map((message) => message.text)).toEqual(['first', 'echo: first', 'second', 'echo: second'])
+      expect(userTexts(fork.id)).toEqual(['first'])
+      expect(service.chatPage(fork.id).items.filter((item) => item.kind === 'assistant').map((item) => item.text)).toEqual(['echo: first'])
+      expect(store.messages(fork.id).map((message) => message.text)).toEqual(['first', 'echo: first'])
+      expect(service.get(fork.id).chat?.turn).toBe('idle')
     })
 
     it('forks before the first message afresh, with nothing to resume', async () => {
@@ -688,7 +689,7 @@ describe('ConversationService', () => {
       const args = daemon.spawns.at(-1)!.args
       expect(args).toContain('--session-id')
       expect(args).not.toContain('--resume')
-      expect(userTexts(fork.id)).toEqual(['first'])
+      expect(userTexts(fork.id)).toEqual([])
       expect(JSON.stringify(daemon.written(service.get(fork.id).sessionId ?? ''))).not.toContain('移交文件')
     })
 
@@ -703,7 +704,7 @@ describe('ConversationService', () => {
       await expect(service.fork(source.id, randomUUID(), slow.id)).rejects.toMatchObject({ reason: 'stage-not-found' })
       // The user message itself can be forked before; nothing after it can.
       const fork = await service.fork(source.id, stage.id, slow.id)
-      expect(userTexts(fork.id)).toEqual(['slow'])
+      expect(userTexts(fork.id)).toEqual([])
       const task = store.create('claude', root, [root], randomUUID(), {}, { id: 'task-1', title: 'Dark mode' })
       await expect(service.fork(task.id, stage.id, slow.id)).rejects.toMatchObject({ reason: 'task-conversation' })
     })

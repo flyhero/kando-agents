@@ -1,8 +1,9 @@
-import { useCallback, useContext, useMemo, useState, type KeyboardEvent } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import type { ChatImage, ChatItem, ChatQueued, Conversation } from '@kando/protocol'
 import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useFileMentionsSupported, useScheduleImagesSupported, useSchedulesSupported } from '../core-store'
 import { agentEntries, kandoEntries } from '../chat-commands'
 import { composeMessage, parseQuotes, setQuotes, useQuotes, type ChatQuote } from '../chat-quotes'
+import { takeDraft } from '../chat-drafts'
 import { QuoteCards } from './ChatQuoteCards'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
@@ -210,6 +211,17 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const scheduleImagesSupported = useScheduleImagesSupported()
   const mentionsSupported = useFileMentionsSupported()
   const attached = useComposerImages()
+  // A message left here for the user, as a fork leaves the message it stopped before.
+  useEffect(() => {
+    const draft = takeDraft(id)
+    if (!draft) return
+    const { quotes: quoted, body } = parseQuotes(draft.text)
+    setText(body)
+    if (quoted.length > 0) setQuotes(id, quoted)
+    attached.setImages([...draft.images])
+    // Once, when the composer shows for this conversation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
   const running = conversation.sessionId !== null
   // An older core reports only the first waiting message, without a ref to act on it by.
   const queue: readonly ChatQueued[] = !running || !state ? []

@@ -431,8 +431,8 @@ export class ConversationService {
   }
 
   // A new conversation holding this one's chat up to a message, for the same agent in the same
-  // projects: through the turn an agent's message belongs to, or up to a user message, which is
-  // then sent again for the agent to answer anew. The chat logs are copied and cut, so the new
+  // projects: through the turn an agent's message belongs to, or up to (not including) a user
+  // message, which the client puts back in the input. The chat logs are copied and cut, so the new
   // conversation reads as the old one did at that point; the agent's own session is forked at
   // the same turn where it can be, so it remembers just that much.
   async fork(sourceId: string, stageId: string, itemId: string): Promise<Conversation> {
@@ -450,11 +450,10 @@ export class ConversationService {
     const lastTurnBefore = (end: number) => items.slice(0, end).reverse().find((item): item is Extract<ChatItem, { kind: 'turn' }> => item.kind === 'turn')
     let kept: ChatItem[]
     let turn: Extract<ChatItem, { kind: 'turn' }> | undefined
-    let resend: Extract<ChatItem, { kind: 'user' }> | null = null
-    if (picked.kind === 'user') {
+    const before = picked.kind === 'user' ? picked : null
+    if (before) {
       kept = items.slice(0, position)
       turn = lastTurnBefore(position)
-      resend = picked
     } else {
       const closing = turnAt(position)
       if (!closing) throw new Rejection('fork-turn-running', 'this turn has not ended yet')
@@ -481,8 +480,8 @@ export class ConversationService {
       this.store.startStage(id, stage.agent, null, 0, copyId, stage.planOnly ?? false)
       const { records } = ChatLog.of(this.sessionsRoot, sourceId, stage.id).read()
       const last = stage.id === cutStage.id ? kept.at(-1) : undefined
-      const cutAt = stage.id === cutStage.id ? (resend ? resend.at : last?.at ?? 0) : Infinity
-      const copied = records.filter((record) => (resend && stage.id === cutStage.id ? record.at < cutAt : record.at <= cutAt))
+      const cutAt = stage.id === cutStage.id ? (before ? before.at : last?.at ?? 0) : Infinity
+      const copied = records.filter((record) => (before && stage.id === cutStage.id ? record.at < cutAt : record.at <= cutAt))
       const endedAt = copied.at(-1)?.at ?? this.store.stage(copyId)!.startedAt
       ChatLog.of(this.sessionsRoot, id, copyId).append([...copied, { dir: 'exit', at: endedAt, code: null, stderr: '' }])
       const refs = new Set((stage.id === cutStage.id ? kept : this.chats.items(this.chatStage(source, stage)))
@@ -497,7 +496,6 @@ export class ConversationService {
     }
     this.changed(created)
     await this.start(id, agent, '', false, { fork })
-    if (resend) await this.send(id, resend.text, resend.images.map((image) => image.id))
     return this.withChat(this.store.get(id)!)
   }
 

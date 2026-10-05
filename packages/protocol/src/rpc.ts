@@ -156,9 +156,9 @@ export const rpcMethods = {
     result: Conversation
   },
   // A new conversation with the same agent and projects, holding the chat up to a message: through
-  // the turn an agent's message belongs to, or up to (not including) a user message, which is then
-  // sent again in the new conversation for the agent to answer anew. The agent's own session is
-  // forked where it can be, so the new agent remembers what the chat shows, and no more.
+  // the turn an agent's message belongs to, or up to (not including) a user message, which the
+  // client then offers in the new chat's input. The agent's own session is forked where it can
+  // be, so the new agent remembers what the chat shows, and no more.
   'conversations.fork': { params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1) }), result: Conversation },
   // A message for the agent, text and/or images already uploaded (attachments.commit),
   // in the order they show. With queue, one sent while a turn runs waits its turn behind any

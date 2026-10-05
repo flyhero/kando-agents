@@ -1,6 +1,7 @@
-import type { Conversation } from '@kando/protocol'
+import type { ChatItem, Conversation } from '@kando/protocol'
 import { openConversationDraft, perform, selectConversation, useConversationPinSupported, useCore } from '../core-store'
 import { usePreferences } from '../preferences'
+import { offerDraft } from '../chat-drafts'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
@@ -10,10 +11,13 @@ export function newConversation(): void {
   openConversationDraft()
 }
 
-// A new conversation holding this one's chat up to a message, opened once core has it.
-export async function forkConversation(id: string, stageId: string, itemId: string): Promise<void> {
-  const forked = await perform((rpc) => rpc.call('conversations.fork', { id, stageId, itemId }))
-  if (forked) selectConversation(forked.id)
+// A new conversation holding this one's chat up to a message, opened once core has it. A fork
+// before one of the user's messages leaves that message in the new chat's input, to change or send.
+export async function forkConversation(id: string, item: ChatItem): Promise<void> {
+  const forked = await perform((rpc) => rpc.call('conversations.fork', { id, stageId: item.stageId, itemId: item.id }))
+  if (!forked) return
+  if (item.kind === 'user') offerDraft(forked.id, { text: item.text, images: item.images })
+  selectConversation(forked.id)
 }
 
 // What a start tells core: whether this user lets it offer bypass.

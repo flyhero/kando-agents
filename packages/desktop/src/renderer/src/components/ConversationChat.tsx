@@ -138,12 +138,12 @@ type UserItem = Extract<ChatItem, { kind: 'user' }>
 const JumpToEntry = createContext<(key: string) => void>(() => {})
 
 // Forks the conversation at this item, where the chat's owner allows it: a new conversation that
-// holds the chat to here (through the turn for an agent's reply; before the message, sent again,
-// for the user's).
+// holds the chat to here (through the turn for an agent's reply; before the message, which then
+// waits in the input, for the user's).
 function ForkButton({ item }: { item: ChatItem }) {
   const surface = useChatSurface()
   if (!surface.fork) return null
-  const label = item.kind === 'user' ? '从这条消息 fork：新会话到这里为止，再把它重新发出' : '从这里 fork：新会话到这一轮为止'
+  const label = item.kind === 'user' ? '从这条消息 fork：新会话到它之前为止，这条消息留在输入框里' : '从这里 fork：新会话到这一轮为止'
   return (
     <button type="button" className="copy-button fork-button" aria-label="fork" data-tooltip={label} onClick={() => surface.fork?.(item)}>
       <ForkIcon />
@@ -446,7 +446,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     else element.style.removeProperty('--chat-font-custom')
   }, [font, fontFamily])
   const forkSupported = useCore((s) => s.rpc?.features.includes('conversation-fork') ?? false)
-  const fork = useCallback((item: ChatItem) => void forkConversation(conversation.id, item.stageId, item.id), [conversation.id])
+  const fork = useCallback((item: ChatItem) => void forkConversation(conversation.id, item), [conversation.id])
   const own = useMemo(() => conversationSurface(conversation, onHandoff ?? null, forkSupported ? fork : null), [conversation, onHandoff, forkSupported, fork])
   const shown = surface ?? own
   const rpc = useCore((s) => s.rpc)
