@@ -24,7 +24,8 @@ function focusedMenuItems(root: HTMLElement): HTMLElement[] {
 
 // A menu at a point: the pointer for a right-click, or under a button with `align: 'end'`; with
 // `above`, over the point, as for a control at the bottom whose menu should not cover what is below.
-// Portaled to <body> so the sidebar's clipped, scrolling boxes can't cut it off.
+// Portaled outside clipped, scrolling boxes. A native modal dialog is itself in the browser's top
+// layer, so its menus must stay inside that dialog; anything portaled to <body> would sit behind it.
 export function ContextMenu({ at, align = 'start', above = false, trigger, label, onClose, children }: {
   at: MenuPoint
   align?: 'start' | 'end'
@@ -108,7 +109,7 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, label
     >
       {children}
     </div>,
-    document.body
+    trigger?.closest('dialog') ?? document.body
   )
 }
 

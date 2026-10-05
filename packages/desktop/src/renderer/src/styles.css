@@ -5347,7 +5347,7 @@ body.side-panel-resizing * {
 .chat-latest:hover { background: var(--surface-muted); }
 .chat-latest svg { width: 14px; height: 14px; }
 
-/* While a turn runs: a spinner, what the agent is at under a passing sheen, and a clock. */
+/* While a turn runs: a spinner, what the agent is at, and a clock. */
 /* The numbers that say how the running turn goes; what it is at shows in the conversation above. */
 .chat-working { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 4px 0; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .chat-working-part { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -5364,6 +5364,7 @@ body.side-panel-resizing * {
   color: transparent;
   animation: chat-sheen 2.4s linear infinite;
 }
+.chat-working-sheen { background-image: linear-gradient(90deg, var(--text-3) 35%, var(--text-muted) 50%, var(--text-3) 65%); }
 
 @keyframes chat-sheen {
   from { background-position: 100% 0; }
@@ -5372,6 +5373,7 @@ body.side-panel-resizing * {
 
 @media (prefers-reduced-motion: reduce) {
   .chat-sheen { animation: none; background: none; color: var(--text-muted); }
+  .chat-sheen.chat-working-sheen { color: var(--text-3); }
 }
 
 /* Below the list: the project's changes, what waits on the user, and the composer. Only the

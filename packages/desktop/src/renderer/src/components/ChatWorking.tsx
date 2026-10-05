@@ -45,7 +45,7 @@ export function ChatWorking({ phase, tokens, background, since }: {
           {part}
         </span>
       ))}
-      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className={phase === 'asking' ? undefined : 'chat-sheen'}>{step}</span></span>
+      <span className="chat-working-part"><span className="chat-working-dot" aria-hidden="true">·</span><span className={phase === 'asking' ? undefined : 'chat-sheen chat-working-sheen'}>{step}</span></span>
     </div>
   )
 }
