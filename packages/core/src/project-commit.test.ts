@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { commitAndPush } from './project-commit'
+import { commitAll, commitAndPush, pushBranch } from './project-commit'
 
 function git(dir: string, ...args: string[]): string {
   return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim()
@@ -46,6 +46,18 @@ describe('commitAndPush', () => {
     const result = await commitAndPush(repo, 'feat: add two')
 
     expect(result.upstream).toBe('origin/main')
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(git(remote, 'rev-parse', 'refs/heads/main'))
+  })
+
+  it('commits without pushing, then pushes what is committed', async () => {
+    writeFileSync(path.join(repo, 'one.txt'), 'one\n')
+    const committed = await commitAll(repo, 'feat: add one')
+    expect(committed.branch).toBe('main')
+    expect(git(repo, 'status', '--porcelain')).toBe('')
+    expect(git(repo, 'log', '-1', '--format=%s')).toBe('feat: add one')
+    expect(() => git(remote, 'rev-parse', '--verify', '--quiet', 'refs/heads/main')).toThrow()
+
+    expect(await pushBranch(repo)).toEqual({ branch: 'main', upstream: 'origin/main' })
     expect(git(repo, 'rev-parse', 'HEAD')).toBe(git(remote, 'rev-parse', 'refs/heads/main'))
   })
 

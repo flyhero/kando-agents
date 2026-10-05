@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type CommitResult, type PushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
@@ -20,7 +20,7 @@ import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import { SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
-import { commitAndPush } from './project-commit'
+import { commitAll, commitAndPush, pushBranch } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { UsageReport } from './usage-source'
@@ -217,11 +217,24 @@ export class ConversationService {
   }
 
   async commitPush(id: string, project: string, message: string): Promise<CommitPushResult> {
+    return commitAndPush(this.gitProject(id, project), message)
+  }
+
+  async commit(id: string, project: string, message: string): Promise<CommitResult> {
+    return commitAll(this.gitProject(id, project), message)
+  }
+
+  async push(id: string, project: string): Promise<PushResult> {
+    return pushBranch(this.gitProject(id, project))
+  }
+
+  // A project of the conversation git may write to: only while no agent works in its folder.
+  private gitProject(id: string, project: string): string {
     const conversation = this.get(id)
     const blocker = checkSwitchBranch(conversation)
     if (blocker) throw new Rejection(blocker)
     if (!conversation.projectPaths.includes(project)) throw new Rejection('repo-not-found', `${project} is not one of the conversation's projects`)
-    return commitAndPush(project, message)
+    return project
   }
 
   // Only while no agent works in the folder (checkSwitchBranch). The conversation's changes then

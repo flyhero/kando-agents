@@ -6665,6 +6665,10 @@ body.side-panel-resizing * {
 .branch-dialog .branch-action { margin-top: 0; }
 .branch-dialog .branch-action-list { max-height: min(320px, 50vh); }
 .branch-dialog .branch-action-note { font-size: 12px; }
+.branch-commit { gap: 8px; }
+.branch-commit-message { width: 100%; min-height: 128px; resize: vertical; line-height: 1.5; font-family: var(--mono); font-size: 13px; }
+.branch-commit-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.branch-push-what { margin: 0; font-size: 13px; }
 
 /* The browser card: a screenshot shown whole under the call's header, opening the viewer. */
 .chat-browser-shot { display: block; width: 100%; max-height: 480px; padding: 0; border: 0; border-top: 1px solid var(--border); background: var(--bg); cursor: zoom-in; }

@@ -142,6 +142,8 @@ export function createRpcHandlers(
     'conversations.switchBranch': ({ id, project, ref }) => conversations.switchBranch(id, project, ref),
     'conversations.createBranch': ({ id, project, name }) => conversations.createBranch(id, project, name),
     'conversations.commitPush': ({ id, project, message }) => conversations.commitPush(id, project, message),
+    'conversations.commit': ({ id, project, message }) => conversations.commit(id, project, message),
+    'conversations.push': ({ id, project }) => conversations.push(id, project),
     'conversations.search': ({ query }) => conversations.search(query),
     'conversations.changes': ({ id }) => conversations.changes(id),
     'conversations.diff': ({ id, project, file }) => conversations.diff(id, project, file),

@@ -97,6 +97,10 @@ export const CommitPushResult = z.object({
   upstream: z.string()
 })
 export type CommitPushResult = z.infer<typeof CommitPushResult>
+export const CommitResult = z.object({ commit: z.string(), branch: z.string() })
+export type CommitResult = z.infer<typeof CommitResult>
+export const PushResult = z.object({ branch: z.string(), upstream: z.string() })
+export type PushResult = z.infer<typeof PushResult>
 
 // What a conversation's project could switch to, or start a branch from: its checkout is the
 // user's own, so a switch changes what everything else in that folder sees too.

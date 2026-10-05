@@ -143,6 +143,16 @@ export function InspectorIcon() {
   )
 }
 
+// A commit on its line, as git tools draw one.
+export function CommitIcon() {
+  return (
+    <svg {...stroked}>
+      <circle cx="10" cy="10" r="3" />
+      <path d="M2.5 10H7M13 10h4.5" />
+    </svg>
+  )
+}
+
 // A window with its left column marked off: the sidebar.
 export function SidebarIcon() {
   return (
