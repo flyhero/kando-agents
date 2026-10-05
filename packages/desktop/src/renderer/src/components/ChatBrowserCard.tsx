@@ -95,9 +95,10 @@ export function ChatBrowserCard({ item }: { item: ToolItem }) {
   return <ChatShotCard item={item} />
 }
 
-// A call that brought back pictures, or looked at one on disk: the pictures are the point, so they
-// show whole under the call's line rather than behind a click. A browser screenshot is one; so is
-// any tool's (an MCP screenshot, a Read of an image).
+// A call that brought back pictures, or looked at one on disk. Pictures it brought back are the
+// point, so they show whole under the call's line: a browser screenshot, an MCP one. A picture it
+// read is mostly the agent checking its own work, often shown again as a preview, so it waits
+// behind a click and is only loaded once opened.
 export function ChatShotCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const [viewing, setViewing] = useState<number | null>(null)
@@ -105,7 +106,7 @@ export function ChatShotCard({ item }: { item: ToolItem }) {
   const images = item.images ?? []
   const path = item.status === 'failed' || item.status === 'denied' ? null : toolImagePath(item)
   const output = outputBeside(item.output, images.length > 0 || path !== null)
-  const details = Boolean(item.input || output)
+  const details = Boolean(item.input || output || path)
   return (
     <div className="chat-tool chat-browser" data-status={item.status}>
       <button type="button" className="chat-tool-header" aria-expanded={details ? open : undefined} disabled={!details} onClick={() => setOpen(!open)}>
@@ -116,7 +117,7 @@ export function ChatShotCard({ item }: { item: ToolItem }) {
         <ToolStatus status={item.status} since={item.at} />
       </button>
       {images.map((image, index) => <BrowserShot key={image.id} image={image} onOpen={() => setViewing(index)} />)}
-      {path && <FileShot path={path} />}
+      {open && path && <FileShot path={path} />}
       {open && item.input && <ChatToolInput name={item.name} input={item.input} />}
       {open && output && <pre className="chat-tool-io">{clipped(output)}</pre>}
       {viewing !== null && images.length > 0 && (
