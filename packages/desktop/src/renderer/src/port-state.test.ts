@@ -32,19 +32,27 @@ describe('port panel navigation', () => {
     expect(useCore.getState().portsPanelOpen).toBe(false)
   })
 
-  it('can focus a terminal or browser that was already open behind ports', async () => {
-    useCore.setState({ terminalPanelOpen: true, browserPanelOpen: true, portsPanelOpen: true, terminals: [{ id: 'terminal', sessionId: 's', cwd: '/p', title: 'dev', createdAt: 0 }] })
-    await toggleTerminalPanel()
-    expect(useCore.getState()).toMatchObject({ portsPanelOpen: false, terminalPanelOpen: true })
-    togglePortsPanel()
+  it('stacks two of the three panels, and a third puts the top one away', async () => {
+    useCore.setState({ terminals: [{ id: 'terminal', sessionId: 's', cwd: '/p', title: 'dev', createdAt: 0 }] })
     toggleBrowserPanel()
-    expect(useCore.getState()).toMatchObject({ portsPanelOpen: false, browserPanelOpen: true })
     togglePortsPanel()
-    showTerminal('terminal')
-    expect(useCore.getState()).toMatchObject({ portsPanelOpen: false, activeTerminalId: 'terminal' })
-    togglePortsPanel()
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['browser', 'ports'], browserPanelOpen: true, portsPanelOpen: true })
+    await toggleTerminalPanel()
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['ports', 'terminal'], browserPanelOpen: false, portsPanelOpen: true, terminalPanelOpen: true })
     showBrowserTab('tab')
-    expect(useCore.getState()).toMatchObject({ portsPanelOpen: false, browserPanelOpen: true })
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['terminal', 'browser'], portsPanelOpen: false, browserPanelOpen: true })
+    // Already up: it stays where it is.
+    showTerminal('terminal')
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['terminal', 'browser'], activeTerminalId: 'terminal' })
+    await toggleTerminalPanel()
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['browser'], terminalPanelOpen: false })
+  })
+
+  it('lets a panel opened beside a maximized one show, back at its size', () => {
+    togglePortsPanel()
+    setPortsMaximized(true)
+    toggleBrowserPanel()
+    expect(useCore.getState()).toMatchObject({ utilityPanelOrder: ['ports', 'browser'], portsMaximized: false })
   })
 
   it('does not leave another utility maximized behind a maximized port panel', () => {
@@ -57,7 +65,7 @@ describe('port panel navigation', () => {
     const sent: Array<{ id: number; method: string; params: unknown }> = []
     const client = createRpcClient((frame) => sent.push(JSON.parse(frame)))
     const rpc: RpcConnection = { ...client, features: ['ports', 'browser'], close() {}, closed: new Promise(() => {}) }
-    useCore.setState({ rpc, connection: 'connected', portsPanelOpen: true })
+    useCore.setState({ rpc, connection: 'connected', portsPanelOpen: true, utilityPanelOrder: ['ports'] })
     const operation = openPort({ ...port, conversationId: '11111111-1111-4111-8111-111111111111' })
     const watch = sent[0]
     if (!watch) throw new Error('no watch request')
@@ -70,7 +78,8 @@ describe('port panel navigation', () => {
     expect(open).toMatchObject({ method: 'browser.newTab', params: { conversationId: '11111111-1111-4111-8111-111111111111', url: 'http://127.0.0.1:3000/' } })
     client.receive(JSON.stringify({ jsonrpc: '2.0', id: open.id, result: { id: '55555555-5555-4555-8555-555555555555', conversationId: '11111111-1111-4111-8111-111111111111', url: 'http://127.0.0.1:3000/', title: 'Page', active: true, loading: false, createdAt: 0 } }))
     await operation
-    expect(useCore.getState()).toMatchObject({ browserPanelOpen: true, portsPanelOpen: false })
+    // The page opens under the ports it came from.
+    expect(useCore.getState()).toMatchObject({ browserPanelOpen: true, portsPanelOpen: true, utilityPanelOrder: ['ports', 'browser'] })
     expect(useCore.getState().error).toBeNull()
   })
 })

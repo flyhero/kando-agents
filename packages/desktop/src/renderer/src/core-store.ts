@@ -31,7 +31,7 @@ import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from '.
 import type { InspectorTab } from './components/Inspector'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
-import { updateUtilityPanelOrder, type UtilityPanelKind } from './utility-panel-order'
+import { openUtilityPanel, visibleUtilityPanelOrder, type UtilityPanelKind, type UtilityPanelsOpen } from './utility-panel-order'
 import { exclusivePanels } from './side-panels'
 import { actionableItems, type ActionableItem } from './attention'
 import { attentionSummaryMode, fetchAttentionSummaries, replaySummaryChanges, type AttentionSummaryMode } from './attention-summaries'
@@ -258,23 +258,47 @@ export function showConversationPlan(key: string | null): void {
   useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'plan', conversationPlan: key })
 }
 
+type UtilityPanelState = Pick<CoreState, 'utilityPanelOrder' | 'browserPanelOpen' | 'terminalPanelOpen' | 'portsPanelOpen' | 'browserMaximized' | 'terminalMaximized' | 'portsMaximized'>
+
+// The browser, terminal and ports panels as the dock's order says, which is what decides: those in
+// it are open, and a maximized one stays so only while it is, and only if asked to.
+function utilityPanels(s: CoreState, order: UtilityPanelKind[], keepMaximized: boolean): UtilityPanelState {
+  const open = (panel: UtilityPanelKind) => order.includes(panel)
+  return {
+    utilityPanelOrder: order,
+    browserPanelOpen: open('browser'),
+    terminalPanelOpen: open('terminal'),
+    portsPanelOpen: open('ports'),
+    browserMaximized: keepMaximized && s.browserMaximized && open('browser'),
+    terminalMaximized: keepMaximized && s.terminalMaximized && open('terminal'),
+    portsMaximized: keepMaximized && s.portsMaximized && open('ports')
+  }
+}
+
+function openPanels(s: CoreState): UtilityPanelsOpen {
+  return { browser: s.browserPanelOpen, terminal: s.terminalPanelOpen, ports: s.portsPanelOpen }
+}
+
+// One panel brought up: below what is open, the top one going past two, and no other left
+// maximized over it. Nothing changes for one already up.
+function shownUtilityPanel(s: CoreState, panel: UtilityPanelKind): Partial<UtilityPanelState> {
+  if (openPanels(s)[panel]) return {}
+  return utilityPanels(s, openUtilityPanel(s.utilityPanelOrder, openPanels(s), panel), false)
+}
+
+function hiddenUtilityPanel(s: CoreState, panel: UtilityPanelKind): UtilityPanelState {
+  return utilityPanels(s, visibleUtilityPanelOrder(s.utilityPanelOrder, openPanels(s)).filter((each) => each !== panel), true)
+}
+
 // Opens the browser panel on a conversation's tab: the one it has, or the one about to appear.
 export function showBrowserPanel(conversationId: string | null): void {
-  useCore.setState((s) => ({
-    portsPanelOpen: false,
-    browserPanelOpen: true,
-    utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
-  }))
+  useCore.setState((s) => shownUtilityPanel(s, 'browser'))
   if (conversationId) focusBrowserConversation(conversationId)
 }
 
 // Opens the browser panel on one tab, from the page's card in the chat.
 export function showBrowserTab(tabId: string): void {
-  useCore.setState((s) => ({
-    portsPanelOpen: false,
-    browserPanelOpen: true,
-    utilityPanelOrder: s.browserPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', true)
-  }))
+  useCore.setState((s) => shownUtilityPanel(s, 'browser'))
   focusBrowserTab(tabId)
 }
 
@@ -300,8 +324,7 @@ export async function openTerminal(cwd = contextFolder(useCore.getState())): Pro
     useCore.setState((s) => ({
       terminals: s.terminals.some((each) => each.id === terminal.id) ? s.terminals : [...s.terminals, terminal],
       activeTerminalId: terminal.id,
-      terminalPanelOpen: true,
-      utilityPanelOrder: s.terminalPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', true)
+      ...shownUtilityPanel(s, 'terminal')
     }))
   }
 }
@@ -317,28 +340,19 @@ export function selectTerminal(id: string): void {
 
 // Brings up the panel on one terminal, as an agent's tool card does for the command it started.
 export function showTerminal(id: string): void {
-  useCore.setState((s) => ({
-    portsPanelOpen: false,
-    activeTerminalId: id,
-    terminalPanelOpen: true,
-    utilityPanelOrder: s.terminalPanelOpen ? s.utilityPanelOrder : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', true)
-  }))
+  useCore.setState((s) => ({ activeTerminalId: id, ...shownUtilityPanel(s, 'terminal') }))
 }
 
 // Opening the panel with nothing in it starts a shell right away.
 export async function toggleTerminalPanel(): Promise<void> {
-  const { terminalPanelOpen, portsPanelOpen, terminals } = useCore.getState()
-  const open = portsPanelOpen || !terminalPanelOpen
-  useCore.setState((s) => ({
-    portsPanelOpen: false,
-    terminalPanelOpen: open,
-    utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', open)
-  }))
+  const { terminalPanelOpen, terminals } = useCore.getState()
+  const open = !terminalPanelOpen
+  useCore.setState((s) => (open ? shownUtilityPanel(s, 'terminal') : hiddenUtilityPanel(s, 'terminal')))
   if (open && terminals.length === 0) await openTerminal()
 }
 
 export function togglePortsPanel(): void {
-  useCore.setState((s) => ({ portsPanelOpen: !s.portsPanelOpen }))
+  useCore.setState((s) => (s.portsPanelOpen ? hiddenUtilityPanel(s, 'ports') : shownUtilityPanel(s, 'ports')))
 }
 
 export function setPortsMaximized(maximized: boolean): void {
@@ -368,14 +382,7 @@ export function setTerminalMaximized(maximized: boolean): void {
 }
 
 export function toggleBrowserPanel(): void {
-  useCore.setState((s) => {
-    const open = s.portsPanelOpen || !s.browserPanelOpen
-    return {
-      portsPanelOpen: false,
-      browserPanelOpen: open,
-      utilityPanelOrder: updateUtilityPanelOrder(s.utilityPanelOrder, 'browser', open)
-    }
-  })
+  useCore.setState((s) => (s.browserPanelOpen ? hiddenUtilityPanel(s, 'browser') : shownUtilityPanel(s, 'browser')))
 }
 
 export function setBrowserMaximized(maximized: boolean): void {
@@ -755,18 +762,11 @@ export function startCoreConnection(): void {
         rpc.on('sources.listChanged', ({ sources }) => useCore.setState({ sources }))
         // The last shell exiting puts the panel away, as closing the last tab would.
         rpc.on('terminals.changed', ({ terminals }) =>
-          useCore.setState((s) => {
-            const terminalPanelOpen = s.terminalPanelOpen && terminals.length > 0
-            return {
-              terminals,
-              activeTerminalId: activeAmong(s.activeTerminalId, terminals),
-              terminalPanelOpen,
-              terminalMaximized: s.terminalMaximized && terminals.length > 0,
-              utilityPanelOrder: terminalPanelOpen
-                ? s.utilityPanelOrder
-                : updateUtilityPanelOrder(s.utilityPanelOrder, 'terminal', false)
-            }
-          })
+          useCore.setState((s) => ({
+            terminals,
+            activeTerminalId: activeAmong(s.activeTerminalId, terminals),
+            ...(terminals.length === 0 && s.terminalPanelOpen ? hiddenUtilityPanel(s, 'terminal') : {})
+          }))
         )
         rpc.on('terminalCommands.changed', ({ commands }) => useCore.setState({ terminalCommands: commands }))
         rpc.on('chatCommands.changed', ({ commands }) => useCore.setState({ chatCommands: commands }))

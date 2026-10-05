@@ -52,13 +52,13 @@ export function App() {
   const portsMaximized = useCore((s) => s.portsMaximized)
   const utilityPanelOrder = useCore((s) => s.utilityPanelOrder)
   const sidebarHidden = usePreferences((s) => s.sidebarHidden)
-  const maximizedUtility = portsPanelOpen
-    ? portsMaximized ? 'ports' : undefined
-    : browserPanelOpen && browserMaximized
+  const maximizedUtility = browserPanelOpen && browserMaximized
     ? 'browser'
     : terminalPanelOpen && terminalMaximized
       ? 'terminal'
-      : undefined
+      : portsPanelOpen && portsMaximized
+        ? 'ports'
+        : undefined
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -153,9 +153,7 @@ export function App() {
         )}
         {(portsPanelOpen || browserPanelOpen || terminalPanelOpen) && (
           <UtilityPanelDock
-            browserOpen={browserPanelOpen}
-            terminalOpen={terminalPanelOpen}
-            portsOpen={portsPanelOpen}
+            open={{ browser: browserPanelOpen, terminal: terminalPanelOpen, ports: portsPanelOpen }}
             maximized={maximizedUtility}
             order={utilityPanelOrder}
           />

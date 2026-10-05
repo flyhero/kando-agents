@@ -1,4 +1,4 @@
-import { updateUtilityPanelOrder, type UtilityPanelKind } from './utility-panel-order'
+import type { UtilityPanelKind } from './utility-panel-order'
 
 export type SidePanels = {
   terminalPanelOpen: boolean
@@ -18,7 +18,8 @@ export function exclusivePanels(next: SidePanels, previous: SidePanels): Partial
     return next.inspectorOpen || next.conversationInspectorOpen ? { inspectorOpen: false, conversationInspectorOpen: false } : null
   }
   if (inspectorOpened && (next.terminalPanelOpen || next.portsPanelOpen)) {
-    return { terminalPanelOpen: false, ...(next.portsPanelOpen ? { portsPanelOpen: false } : {}), utilityPanelOrder: updateUtilityPanelOrder(next.utilityPanelOrder, 'terminal', false) }
+    const order = next.utilityPanelOrder.filter((panel) => panel !== 'terminal' && panel !== 'ports')
+    return { terminalPanelOpen: false, ...(next.portsPanelOpen ? { portsPanelOpen: false } : {}), utilityPanelOrder: order }
   }
   return null
 }

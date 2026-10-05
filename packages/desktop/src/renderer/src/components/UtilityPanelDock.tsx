@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { visibleUtilityPanelOrder, type UtilityPanelKind } from '../utility-panel-order'
+import { UTILITY_PANEL_NAME, visibleUtilityPanelOrder, type UtilityPanelKind, type UtilityPanelsOpen } from '../utility-panel-order'
 import { BrowserSidePanel } from './BrowserSidePanel'
 import { PanelSeparator } from './PanelSeparator'
 import {
@@ -13,9 +13,10 @@ import {
 import { TerminalPanel } from './TerminalPanel'
 import { PortsPanel } from './PortsPanel'
 
-function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
+function StackedPanelSeparator({ ratio, upperPanel, lowerPanel, onRatioChange }: {
   ratio: number
   upperPanel: UtilityPanelKind
+  lowerPanel: UtilityPanelKind
   onRatioChange: (ratio: number) => void
 }) {
   const separator = useRef<HTMLDivElement>(null)
@@ -53,12 +54,12 @@ function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
       className="stacked-panel-separator"
       data-dragging={dragging || undefined}
       role="separator"
-      aria-label="调整浏览器和终端高度"
+      aria-label={`调整${UTILITY_PANEL_NAME[upperPanel]}和${UTILITY_PANEL_NAME[lowerPanel]}高度`}
       aria-orientation="horizontal"
       aria-valuemin={MIN_STACKED_PANEL_RATIO * 100}
       aria-valuemax={MAX_STACKED_PANEL_RATIO * 100}
       aria-valuenow={Math.round(ratio * 100)}
-      aria-valuetext={`${upperPanel === 'browser' ? '浏览器' : '终端'}占 ${Math.round(ratio * 100)}%`}
+      aria-valuetext={`${UTILITY_PANEL_NAME[upperPanel]}占 ${Math.round(ratio * 100)}%`}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onPointerDown={(event) => {
@@ -76,21 +77,18 @@ function StackedPanelSeparator({ ratio, upperPanel, onRatioChange }: {
   )
 }
 
-// Browser and terminal share one right-hand dock. The first one opened stays above the next one.
-export function UtilityPanelDock({ browserOpen, terminalOpen, portsOpen, maximized, order }: {
-  browserOpen: boolean
-  terminalOpen: boolean
-  portsOpen: boolean
-  maximized?: UtilityPanelKind | 'ports'
+// Browser, terminal and ports share one right-hand dock, two at most, the one opened first above.
+// A maximized one shows alone.
+export function UtilityPanelDock({ open, maximized, order }: {
+  open: UtilityPanelsOpen
+  maximized?: UtilityPanelKind
   order: readonly UtilityPanelKind[]
 }) {
   const [widthRatio, setWidthRatio] = useState(DEFAULT_UTILITY_PANEL_RATIO)
   const [upperRatio, setUpperRatio] = useState(DEFAULT_STACKED_PANEL_RATIO)
-  const showBrowser = !portsOpen && browserOpen && (!maximized || maximized === 'browser')
-  const showTerminal = !portsOpen && terminalOpen && (!maximized || maximized === 'terminal')
-  const stacked = showBrowser && showTerminal
-  const visibleOrder = visibleUtilityPanelOrder(order, showBrowser, showTerminal)
-  const upperPanel = visibleOrder[0] ?? 'browser'
+  const visibleOrder = visibleUtilityPanelOrder(order, open).filter((panel) => !maximized || panel === maximized)
+  const [upperPanel = 'browser', lowerPanel = 'terminal'] = visibleOrder
+  const stacked = visibleOrder.length > 1
   const rows = stacked
     ? `${upperRatio}fr var(--stacked-panel-separator-size) ${1 - upperRatio}fr`
     : 'minmax(0, 1fr)'
@@ -99,7 +97,7 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, portsOpen, maximiz
     <>
       {!maximized && (
         <PanelSeparator
-          panelName={portsOpen ? '端口栏' : stacked ? '浏览器与终端工具栏' : showBrowser ? '浏览器栏' : '终端栏'}
+          panelName={stacked ? `${UTILITY_PANEL_NAME[upperPanel]}与${UTILITY_PANEL_NAME[lowerPanel]}工具栏` : `${UTILITY_PANEL_NAME[upperPanel]}栏`}
           ratio={widthRatio}
           onRatioChange={setWidthRatio}
         />
@@ -114,17 +112,17 @@ export function UtilityPanelDock({ browserOpen, terminalOpen, portsOpen, maximiz
           gridTemplateRows: rows
         }}
       >
-        {portsOpen && <PortsPanel />}
         {visibleOrder.map((panel, index) => (
           <Fragment key={panel}>
             {index > 0 && (
               <StackedPanelSeparator
                 ratio={upperRatio}
                 upperPanel={upperPanel}
+                lowerPanel={lowerPanel}
                 onRatioChange={setUpperRatio}
               />
             )}
-            {panel === 'browser' ? <BrowserSidePanel /> : <TerminalPanel />}
+            {panel === 'browser' ? <BrowserSidePanel /> : panel === 'terminal' ? <TerminalPanel /> : <PortsPanel />}
           </Fragment>
         ))}
       </section>

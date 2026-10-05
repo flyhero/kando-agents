@@ -60,7 +60,7 @@ function SettingsButton() {
 // panel is closed, as terminals do.
 function BrowserButton() {
   const supported = useBrowserSupported()
-  const open = useCore((s) => s.browserPanelOpen && !s.portsPanelOpen)
+  const open = useCore((s) => s.browserPanelOpen)
   const count = useBrowserTabs((s) => s[ALL_TABS]?.tabs.length ?? 0)
   if (!supported) return null
   return (
@@ -80,7 +80,7 @@ function BrowserButton() {
 }
 
 function TerminalButton() {
-  const open = useCore((s) => s.terminalPanelOpen && !s.portsPanelOpen)
+  const open = useCore((s) => s.terminalPanelOpen)
   const count = useCore((s) => s.terminals.length)
   return (
     <button

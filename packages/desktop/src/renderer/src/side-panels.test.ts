@@ -16,6 +16,13 @@ describe('exclusivePanels', () => {
     expect(exclusivePanels({ ...before, conversationInspectorOpen: true }, before)).toEqual(expected)
   })
 
+  it('puts ports away with the terminal when an inspector opens', () => {
+    const before: SidePanels = { ...closed, terminalPanelOpen: true, portsPanelOpen: true, utilityPanelOrder: ['ports', 'terminal'] }
+    expect(exclusivePanels({ ...before, inspectorOpen: true }, before)).toEqual({ terminalPanelOpen: false, portsPanelOpen: false, utilityPanelOrder: [] })
+    const withBrowser: SidePanels = { ...closed, portsPanelOpen: true, utilityPanelOrder: ['browser', 'ports'] }
+    expect(exclusivePanels({ ...withBrowser, inspectorOpen: true }, withBrowser)).toEqual({ terminalPanelOpen: false, portsPanelOpen: false, utilityPanelOrder: ['browser'] })
+  })
+
   it('changes nothing when nothing opens, or the other side is already away', () => {
     const terminal = { ...closed, terminalPanelOpen: true }
     expect(exclusivePanels(terminal, terminal)).toBeNull()
