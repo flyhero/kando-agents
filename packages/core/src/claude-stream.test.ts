@@ -434,6 +434,29 @@ describe('ClaudeStream commands', () => {
     expect(() => driver.respond('req-1', { decision: 'deny' })).toThrow(expect.objectContaining({ reason: 'chat-request-gone' }))
   })
 
+  it('says what remembering a call would let through, and answers by the choice picked', () => {
+    const driver = started()
+    driver.apply({ dir: 'out', at, frame: driver.send('fetch').wire, ref: 'ref-1' })
+    const suggestions = [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git fetch *' }], behavior: 'allow', destination: 'localSettings' }]
+    const request = canUseTool('req-2')
+    driver.apply({ dir: 'in', at, frame: { ...request, request: { ...request.request, permission_suggestions: suggestions, decision_reason: 'Brace expansion' } } })
+    expect(driver.items.get('a:req-2')).toMatchObject({
+      reason: 'Brace expansion',
+      choices: [
+        { id: 'allow', decision: 'allow', grants: [] },
+        { id: 'allowForSession', decision: 'allowForSession', grants: [{ kind: 'rules', values: ['Bash(git fetch *)'], scope: 'local', behavior: 'allow' }] },
+        { id: 'deny', decision: 'deny', grants: [] }
+      ]
+    })
+    driver.apply({ dir: 'in', at, frame: { ...request, request_id: 'req-3', request: { ...request.request, decision_reason: 'This command requires approval' } } })
+    expect(driver.items.get('a:req-3')).toMatchObject({ reason: null })
+    expect(() => driver.respond('req-2', { decision: 'allow', choice: 'always' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    const [answer] = driver.respond('req-2', { decision: 'allow', choice: 'allowForSession' })
+    expect(answer).toMatchObject({ response: { response: { behavior: 'allow', updatedPermissions: suggestions } } })
+    driver.apply({ dir: 'out', at, frame: answer })
+    expect(driver.items.get('a:req-2')).toMatchObject({ resolution: 'allowedForSession', chosen: 'allowForSession' })
+  })
+
   it('keeps a stage that may only plan from carrying its plan out, and keeps the plan when asked', () => {
     const driver = started({ ...OPTIONS, planOnly: true, allowBypass: true })
     expect(ofKind(driver.items.list(), 'state')[0]?.permissionModes).toEqual(['plan'])

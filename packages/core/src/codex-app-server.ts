@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { choiceDecisions, codexChoiceOf, codexChoices, type CodexChoice } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
@@ -192,6 +193,8 @@ type Pending = {
   rawId: string | number
   // What deny means here: decline where the server offers it, else cancel, which ends the turn.
   denial: 'decline' | 'cancel'
+  // An approval's answers, each with the decision sent back for it.
+  choices?: CodexChoice[]
 }
 
 type Sandbox = 'workspace-write' | 'read-only' | 'danger-full-access'
@@ -252,6 +255,7 @@ function sandboxPolicy(sandbox: Sandbox, writableRoots: readonly string[], netwo
 
 const TODO_STATUS: Record<string, ChatTodo['status']> = { pending: 'pending', inProgress: 'in_progress', completed: 'completed' }
 
+const RESOLUTIONS: Record<ChatDecision, 'allowed' | 'allowedForSession' | 'denied'> = { allow: 'allowed', allowForSession: 'allowedForSession', deny: 'denied' }
 const DECISIONS: Record<string, 'allowed' | 'allowedForSession' | 'denied'> = {
   accept: 'allowed',
   acceptForSession: 'allowedForSession',
@@ -793,8 +797,16 @@ export class CodexAppServer implements ChatDriver {
       const answers = answer.decision === 'deny' || !answer.answers ? {} : answer.answers
       return { answers: Object.fromEntries(Object.entries(answers).map(([question, labels]) => [question, { answers: labels }])) }
     }
-    const decisions: Record<ChatDecision, string> = { allow: 'accept', allowForSession: 'acceptForSession', deny: pending.denial }
-    return { decision: decisions[answer.decision] }
+    const choices = pending.choices ?? []
+    if (answer.choice) {
+      const choice = choices.find((each) => each.id === answer.choice)
+      if (!choice) throw new Rejection('chat-option-invalid', `this request offers no choice ${answer.choice}`)
+      return { decision: choice.raw }
+    }
+    // A client that answers by decision gets the first answer Codex listed for it.
+    if (answer.decision === 'deny') return { decision: pending.denial }
+    const listed = choices.find((each) => each.decision === answer.decision)?.raw
+    return { decision: listed ?? (answer.decision === 'allow' ? 'accept' : 'acceptForSession') }
   }
 
   private receive(frame: Frame, at: number): void {
@@ -1127,15 +1139,18 @@ export class CodexAppServer implements ChatDriver {
     const requestId = String(rawId)
     if (method === 'item/commandExecution/requestApproval') {
       const request = CommandApproval.parse(params)
-      const offered = (request.availableDecisions ?? []).map((decision) => (typeof decision === 'string' ? decision : ''))
-      const available = (decision: string) => request.availableDecisions == null || offered.includes(decision)
-      const decisions: ChatDecision[] = ['allow', ...(available('acceptForSession') ? ['allowForSession' as const] : []), 'deny']
-      this.approval(requestId, rawId, 'commandExecution', unwrapShell(request.command ?? ''), this.requestDetail(method, params, request.reason ?? null), request.itemId, decisions, available('decline') ? 'decline' : 'cancel', at)
+      const offered = request.availableDecisions
+      const denial = offered == null || offered.includes('decline') ? 'decline' : 'cancel'
+      const command = unwrapShell(request.command ?? '')
+      const choices = codexChoices(offered, { kind: 'command', values: [command] }, denial)
+      this.approval(requestId, rawId, 'commandExecution', command, this.requestDetail(method, params, request.reason ?? null), request.itemId, choices, denial, at)
     } else if (method === 'item/fileChange/requestApproval') {
       const request = FileApproval.parse(params)
       const tool = request.itemId ? this.items.get(`t:${request.itemId}`) : undefined
       const title = tool?.kind === 'tool' && tool.title ? tool.title : ((request.itemId && this.childFiles.get(request.itemId)) || '修改文件')
-      this.approval(requestId, rawId, 'fileChange', title, this.requestDetail(method, params, request.reason ?? null), request.itemId, ['allow', 'allowForSession', 'deny'], 'decline', at)
+      const files = tool?.kind === 'tool' && tool.diffs.length ? tool.diffs.map((diff) => diff.path) : ((request.itemId && this.childFiles.get(request.itemId)) || '').split(', ').filter(Boolean)
+      const choices = codexChoices(null, { kind: 'files', values: files }, 'decline')
+      this.approval(requestId, rawId, 'fileChange', title, this.requestDetail(method, params, request.reason ?? null), request.itemId, choices, 'decline', at)
     } else if (method === 'item/tool/requestUserInput') {
       const request = UserInput.parse(params)
       const itemId = `q:${requestId}`
@@ -1166,7 +1181,7 @@ export class CodexAppServer implements ChatDriver {
     title: string,
     detail: string | null,
     itemId: string | undefined,
-    decisions: ChatDecision[],
+    choices: CodexChoice[],
     denial: 'decline' | 'cancel',
     at: number
   ): void {
@@ -1179,10 +1194,11 @@ export class CodexAppServer implements ChatDriver {
       title,
       detail,
       toolItemId: itemId ? `t:${itemId}` : null,
-      decisions,
+      decisions: choiceDecisions(choices),
+      choices: choices.map(({ id, decision, grants }) => ({ id, decision, grants })),
       resolution: null
     }, at)
-    this.pending.set(requestId, { kind: 'approval', itemId: approvalId, rawId, denial })
+    this.pending.set(requestId, { kind: 'approval', itemId: approvalId, rawId, denial, choices })
   }
 
   private sent(frame: Frame, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
@@ -1214,7 +1230,9 @@ export class CodexAppServer implements ChatDriver {
       const answers = Object.fromEntries(Object.entries(decision.data.answers ?? {}).map(([question, value]) => [question, Answers.parse(value).answers]))
       this.resolve(requestId, Object.keys(answers).length ? 'answered' : 'cancelled', answers, at)
     } else {
-      this.resolve(requestId, DECISIONS[String(decision.data.decision)] ?? 'denied', null, at)
+      const choice = codexChoiceOf(pending.choices ?? [], decision.data.decision)
+      const resolution = choice ? RESOLUTIONS[choice.decision] : (DECISIONS[String(decision.data.decision)] ?? 'denied')
+      this.resolve(requestId, resolution, null, at, choice?.id ?? null)
     }
   }
 
@@ -1255,7 +1273,8 @@ export class CodexAppServer implements ChatDriver {
     requestId: string,
     resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled' | 'answered',
     answers: Record<string, string[]> | null,
-    at: number
+    at: number,
+    chosen: string | null = null
   ): void {
     const pending = this.pending.get(requestId)
     if (!pending) return
@@ -1264,7 +1283,7 @@ export class CodexAppServer implements ChatDriver {
     if (item?.kind === 'question') {
       this.items.put({ ...item, answers, resolution: resolution === 'answered' ? 'answered' : 'cancelled' }, at)
     } else if (item?.kind === 'approval') {
-      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution }, at)
+      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution, ...(item.choices ? { chosen } : {}) }, at)
     }
   }
 

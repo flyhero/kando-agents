@@ -429,6 +429,28 @@ describe('CodexAppServer commands', () => {
     expect(driver.items.get('a:0')).toMatchObject({ resolution: 'allowedForSession' })
   })
 
+  it('offers the command prefix Codex proposes, sends it back as listed, and reads the answer back off it', () => {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    handshake(driver)
+    driver.apply({ dir: 'out', at, frame: driver.send('go').wire, ref: 'ref-1' })
+    const execpolicy = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['cat', 'plan.md'] } }
+    driver.apply({ dir: 'in', at, frame: { id: 3, method: 'item/commandExecution/requestApproval', params: { itemId: 'exec-3', command: "/bin/zsh -lc 'cat plan.md'", availableDecisions: ['accept', execpolicy, 'cancel'] } } })
+    expect(driver.items.get('a:3')).toMatchObject({
+      decisions: ['allow', 'allowForSession', 'deny'],
+      choices: [
+        { id: 'accept', decision: 'allow', grants: [] },
+        { id: 'execpolicy', decision: 'allowForSession', grants: [{ kind: 'prefix', values: ['cat', 'plan.md'], scope: 'agent' }] },
+        { id: 'cancel', decision: 'deny', grants: [] }
+      ]
+    })
+    // A client that answers by decision gets what Codex listed for it, not an answer it did not offer.
+    expect(driver.respond('3', { decision: 'allowForSession' })).toEqual([{ id: 3, result: { decision: execpolicy } }])
+    const [answer] = driver.respond('3', { decision: 'allowForSession', choice: 'execpolicy' })
+    expect(answer).toEqual({ id: 3, result: { decision: execpolicy } })
+    driver.apply({ dir: 'out', at, frame: answer })
+    expect(driver.items.get('a:3')).toMatchObject({ resolution: 'allowedForSession', chosen: 'execpolicy' })
+  })
+
   it('interrupts the running turn after cancelling what waits on the user', () => {
     const driver = new CodexAppServer('stage-1', OPTIONS)
     handshake(driver)

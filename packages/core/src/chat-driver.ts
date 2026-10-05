@@ -40,7 +40,8 @@ export type ChatImageFile = ChatImage & AttachmentFile
 export type ChatOutgoing = { wire: unknown; logged: unknown }
 
 // saved: a plan kept for later rather than carried out. Core's own answer, never a client's.
-export type ChatAnswer = { decision: ChatDecision; mode?: ChatPermissionMode; message?: string; answers?: Record<string, string[]>; saved?: boolean }
+// choice: one of the approval's choices, which the driver turns into its decision.
+export type ChatAnswer = { decision: ChatDecision; choice?: string; mode?: ChatPermissionMode; message?: string; answers?: Record<string, string[]>; saved?: boolean }
 
 // Where and how a chat stage's agent works; the driver speaks for Kando within these bounds.
 export type ChatStageOptions = {

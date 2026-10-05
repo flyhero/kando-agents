@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { browserToolKind, ChatPermissionMode, CONTEXT_COMPACTED, takeImageMarkers, toolImagePath, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { offeredCommand } from './agent-commands'
+import { claudeChoices, claudeGrants } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
@@ -50,6 +51,7 @@ export const CLAUDE_MODE_NAMES: Record<string, string> = {
   bypass: 'bypassPermissions'
 }
 const ONE_MILLION = 1_000_000
+const CHOSEN: Record<string, string> = { allowed: 'allow', allowedForSession: 'allowForSession', denied: 'deny' }
 
 const Head = z.looseObject({ type: z.string() })
 const SuggestionFrame = z.looseObject({ suggestion: z.string() })
@@ -171,6 +173,8 @@ const ControlRequest = z.looseObject({
     input: Input.optional(),
     tool_use_id: z.string().optional(),
     description: z.string().optional(),
+    // Why Claude asks: the rule or check the call ran into.
+    decision_reason: z.string().nullish().catch(null),
     permission_suggestions: z.array(z.unknown()).catch([]).optional()
   })
 })
@@ -522,7 +526,16 @@ export class ClaudeStream implements ChatDriver {
   respond(requestId: string, answer: ChatAnswer): unknown[] {
     const pending = this.pending.get(requestId)
     if (!pending) throw new Rejection('chat-request-gone', 'this request is no longer waiting for an answer')
-    return [this.reply(requestId, this.answerBody(pending, answer))]
+    return [this.reply(requestId, this.answerBody(pending, this.chosen(pending, answer)))]
+  }
+
+  // An answer by one of the approval's choices is the decision that choice amounts to.
+  private chosen(pending: Pending, answer: ChatAnswer): ChatAnswer {
+    if (!answer.choice) return answer
+    const item = this.items.get(pending.itemId)
+    const choice = item?.kind === 'approval' ? item.choices?.find((each) => each.id === answer.choice) : undefined
+    if (!choice) throw new Rejection('chat-option-invalid', `this request offers no choice ${answer.choice}`)
+    return { ...answer, decision: choice.decision }
   }
 
   interrupt(): unknown[] {
@@ -1126,6 +1139,8 @@ export class ClaudeStream implements ChatDriver {
     // A plan to approve: carry it out asking each edit (allow) or taking edits as they come
     // (allowForSession), or keep planning (deny).
     const plan = tool === 'ExitPlanMode'
+    // Claude's words when nothing in particular stopped the call say nothing the card does not.
+    const reason = request.decision_reason?.trim().replace(/^This command requires approval\.?$/i, '')
     this.items.put({
       id: itemId,
       kind: 'approval',
@@ -1135,6 +1150,7 @@ export class ClaudeStream implements ChatDriver {
       detail: plan ? str(input.plan) : (str(request.description) ?? str(input.description)),
       toolItemId,
       decisions: plan || suggestions.length ? ['allow', 'allowForSession', 'deny'] : ['allow', 'deny'],
+      ...(plan ? {} : { choices: claudeChoices(claudeGrants(suggestions, PERMISSION_MODES)), reason: reason || null }),
       resolution: null
     }, at)
     this.pending.set(requestId, { kind: 'approval', tool, itemId, toolItemId, input, suggestions })
@@ -1271,7 +1287,10 @@ export class ClaudeStream implements ChatDriver {
     if (item?.kind === 'question') {
       this.items.put({ ...item, answers, resolution: resolution === 'answered' ? 'answered' : 'cancelled' }, at)
     } else if (item?.kind === 'approval') {
-      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution, ...(mode ? { mode } : {}) }, at)
+      const settled = resolution === 'answered' ? 'allowed' : resolution
+      // Claude's choices are named for the decisions they amount to.
+      const chosen = item.choices ? (CHOSEN[settled] ?? null) : undefined
+      this.items.put({ ...item, resolution: settled, ...(mode ? { mode } : {}), ...(chosen !== undefined ? { chosen } : {}) }, at)
     }
   }
 

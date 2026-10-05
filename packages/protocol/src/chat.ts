@@ -28,6 +28,33 @@ export type ChatTurnState = z.infer<typeof ChatTurnState>
 export const ChatDecision = z.enum(['allow', 'allowForSession', 'deny'])
 export type ChatDecision = z.infer<typeof ChatDecision>
 
+// Where what an answer lets through holds: the agent's run, until it stops · the project's own
+// settings, which Git ignores · the project's shared settings · the user's, in every project ·
+// the agent's own rules, kept by the agent across its runs.
+export const ApprovalScope = z.enum(['run', 'local', 'project', 'user', 'agent'])
+export type ApprovalScope = z.infer<typeof ApprovalScope>
+
+// What an answer lets through, or keeps out, beyond the call asked about. values are what it
+// names: rules: permission rules as the agent writes them · mode: a Kando permission mode ·
+// directories: folders · command: the command asked about · files: the files asked about ·
+// prefix: the words a command starts with · host: a network host. other: one Kando cannot read.
+export const ApprovalGrant = z.object({
+  kind: z.enum(['rules', 'mode', 'directories', 'command', 'files', 'prefix', 'host', 'other']).catch('other'),
+  values: z.array(z.string()),
+  scope: ApprovalScope.catch('run'),
+  behavior: z.enum(['allow', 'deny', 'ask']).catch('allow')
+})
+export type ApprovalGrant = z.infer<typeof ApprovalGrant>
+
+// One answer the agent takes, as it offers it: the decision it amounts to, and what it lets
+// through beyond this call. A plain allow or deny grants nothing.
+export const ApprovalChoice = z.object({
+  id: z.string(),
+  decision: ChatDecision.catch('deny'),
+  grants: z.array(ApprovalGrant)
+})
+export type ApprovalChoice = z.infer<typeof ApprovalChoice>
+
 // Kando's names for how freely an agent may act; each agent maps them onto its own settings and
 // offers the ones it has. ask: confirm each call · acceptEdits: file edits go through (Codex:
 // on-request) · plan: read and plan only · auto: the agent's own judgement · readOnly: a read-only
@@ -146,7 +173,15 @@ export const ChatItem = z.discriminatedUnion('kind', [
     toolItemId: z.string().nullable().default(null),
     // What the agent accepts as an answer here; deny is always among them.
     decisions: z.array(ChatDecision.catch('deny')),
+    // The same answers with what each lets through, plain deny among them; answered by its id.
+    // Older cores leave it out.
+    choices: z.array(ApprovalChoice).optional(),
+    // Why the agent asks rather than goes ahead, in its words: a rule it matched, a path outside
+    // its folders. Older cores leave it out.
+    reason: z.string().nullable().optional(),
     resolution: z.enum(['allowed', 'allowedForSession', 'denied', 'cancelled']).catch('cancelled').nullable(),
+    // The choice it was answered with, once answered with one of choices. Older cores leave it out.
+    chosen: z.string().nullable().optional(),
     // A plan carried out: the permission mode it was carried out in. Older cores leave it out.
     mode: ChatPermissionMode.nullable().catch(null).optional()
   }),

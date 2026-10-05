@@ -201,6 +201,9 @@ export const rpcMethods = {
     params: ConversationRef.extend({
       requestId: z.string().min(1).max(200),
       decision: ChatDecision,
+      // One of the approval's choices, which then says what the answer lets through; decision is
+      // what it amounts to, for a core that offers none.
+      choice: z.string().min(1).max(200).optional(),
       // For a plan carried out: the permission mode to carry it out in, one the stage offers.
       mode: ChatPermissionMode.optional(),
       message: z.string().trim().max(2000).optional(),
