@@ -318,7 +318,7 @@ function activeAmong(id: string | null, terminals: readonly Terminal[]): string 
   return terminals.some((terminal) => terminal.id === id) ? id : terminals.at(-1)?.id ?? null
 }
 
-export async function openTerminal(cwd = contextFolder(useCore.getState())): Promise<void> {
+export async function openTerminal(cwd = contextFolder(useCore.getState())): Promise<Terminal | null> {
   const terminal = await perform((rpc) => rpc.call('terminals.open', { cwd }))
   if (terminal) {
     useCore.setState((s) => ({
@@ -327,6 +327,7 @@ export async function openTerminal(cwd = contextFolder(useCore.getState())): Pro
       ...shownUtilityPanel(s, 'terminal')
     }))
   }
+  return terminal
 }
 
 // The list updates when core says so, through terminals.changed.

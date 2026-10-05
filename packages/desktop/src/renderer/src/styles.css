@@ -4594,6 +4594,32 @@ body.side-panel-resizing * {
   font-family: var(--mono);
   font-size: 12px;
 }
+
+.chat-code-actions { display: flex; align-items: center; gap: 2px; }
+/* Run sits before copy: a small labelled button and, for one line, a chevron for pasting instead. */
+.chat-code-run { display: inline-flex; align-items: center; }
+.chat-code-run-button,
+.chat-code-run-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-code-run-more { padding: 0 3px; }
+.chat-code-run-button svg { width: 12px; height: 12px; }
+.chat-code-run-more svg { width: 12px; height: 12px; }
+.chat-code-run-button:hover,
+.chat-code-run-more:hover,
+.chat-code-run-more[aria-expanded='true'] { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
 .chat-markdown .chat-code pre { margin: 0; padding: 0 12px 12px; border-radius: 0; background: transparent; }
 .hljs-keyword, .hljs-selector-tag, .hljs-doctag { color: var(--code-keyword); }
 .hljs-string, .hljs-regexp, .hljs-selector-attr, .hljs-selector-pseudo, .hljs-addition { color: var(--code-string); }

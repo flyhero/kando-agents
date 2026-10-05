@@ -15,6 +15,7 @@ import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
+import { ChatRunScope } from './ChatCodeRun'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
 import { ChatSubagents } from './ChatSubagents'
@@ -232,7 +233,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'assistant':
       return (
         <div className="chat-assistant" data-streaming={item.streaming || undefined}>
-          <ChatMarkdown text={item.text} highlight={!item.streaming} />
+          <ChatMarkdown text={item.text} highlight={!item.streaming} runnable={!item.streaming} />
           {completedAt !== undefined && item.text && (
             <div className="chat-message-actions">
               <CopyButton text={item.text} label="复制回复" />
@@ -659,6 +660,8 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     [conversation.projectPaths, conversation.workspacePath]
   )
   const shorten = useMemo(() => pathShortener(roots), [roots])
+  // A reply's shell blocks run in this conversation's own terminal tab, in its folder.
+  const runScope = useMemo(() => ({ key: conversation.id, cwd: conversation.workspacePath }), [conversation.id, conversation.workspacePath])
   const turn = conversation.sessionId ? (conversation.chat?.turn ?? null) : null
   // What kind of step the turn is at, and how many subagents it has out, for the working line;
   // the step itself shows in the conversation, just above it.
@@ -687,6 +690,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     <ChatAgent.Provider value={agentInfo}>
     <ChatPaths.Provider value={shorten}>
     <ChatRoots.Provider value={roots}>
+    <ChatRunScope.Provider value={runScope}>
     <Thoughts.Provider value={thoughts}>
     <Endings.Provider value={endings}>
     <MergedTurns.Provider value={mergedTurns}>
@@ -754,6 +758,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     </MergedTurns.Provider>
     </Endings.Provider>
     </Thoughts.Provider>
+    </ChatRunScope.Provider>
     </ChatRoots.Provider>
     </ChatPaths.Provider>
     </ChatAgent.Provider>

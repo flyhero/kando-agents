@@ -20,6 +20,19 @@ export function typeIntoTerminal(sessionId: string, command: string, run: boolea
   return true
 }
 
+// Resolves once the session's terminal is on screen and its shell has printed something, its prompt
+// most likely, so what is typed next lands at that prompt; false if neither comes in time.
+export async function terminalReady(sessionId: string, timeoutMs = 3000): Promise<boolean> {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    const term = shown.get(sessionId)
+    const buffer = term?.buffer.active
+    if (buffer && (buffer.length > 1 || buffer.cursorX > 0)) return true
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return shown.has(sessionId)
+}
+
 export function terminalSelection(sessionId: string): string {
   return shown.get(sessionId)?.getSelection() ?? ''
 }

@@ -8,6 +8,8 @@ import { perform, showError, useFindFileSupported } from '../core-store'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { fileCandidates, fileReference, isImagePath, linkTarget, previewUrl, type FileReference, type LinkTarget } from '../file-links'
 import { CopyButton } from './CopyButton'
+import { ChatCodeRun, ChatRunnable } from './ChatCodeRun'
+import { blockCommand } from '../code-commands'
 import { ImageViewer, type ViewerImage } from './ImageViewer'
 
 // The folders a conversation works in, the primary first: where a file a reply names is looked for.
@@ -195,11 +197,16 @@ const components: Components = {
   pre: ({ node, ...props }) => {
     const code = node?.children.find((child): child is HastElement => child.type === 'element' && child.tagName === 'code')
     const language = languageOf(code)
+    const text = code ? textOf(code) : ''
+    const command = blockCommand(language, text)
     return (
       <div className="chat-code">
         <div className="chat-code-header">
           <span className="chat-code-language">{language ?? ''}</span>
-          <CopyButton text={code ? textOf(code).replace(/\n$/, '') : ''} label="复制代码" />
+          <span className="chat-code-actions">
+            {command && <ChatCodeRun command={command} />}
+            <CopyButton text={text.replace(/\n$/, '')} label="复制代码" />
+          </span>
         </div>
         <pre {...props} />
       </div>
@@ -208,12 +215,15 @@ const components: Components = {
 }
 
 // A reply still streaming is left uncoloured: it would be highlighted again at every delta.
-export function ChatMarkdown({ text, highlight = true }: { text: string; highlight?: boolean }) {
+// runnable: its shell blocks may be run in the conversation's terminal (see ChatRunScope).
+export function ChatMarkdown({ text, highlight = true, runnable = false }: { text: string; highlight?: boolean; runnable?: boolean }) {
   return (
     <div className="chat-markdown">
-      <Markdown remarkPlugins={remarkPlugins} rehypePlugins={highlight ? rehypePlugins : []} components={components} urlTransform={urlTransform}>
-        {text}
-      </Markdown>
+      <ChatRunnable.Provider value={runnable}>
+        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={highlight ? rehypePlugins : []} components={components} urlTransform={urlTransform}>
+          {text}
+        </Markdown>
+      </ChatRunnable.Provider>
     </div>
   )
 }
