@@ -716,15 +716,18 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
         {!page && <ChatSkeleton />}
         {blocks.map((block, index) => {
-          const previous = index > 0 ? blocks[index - 1] : undefined
-          const answers = previous ? userAt(previous) : null
+          const next = blocks[index + 1]
+          const sentAt = userAt(block)
           const entering = entered.current.has(block.key)
           // The head under the latest message is the running turn's, while it runs.
-          const live = (turn === 'running' || turn === 'awaiting') && previous?.key === lastUserKey ? turn : null
+          const live = (turn === 'running' || turn === 'awaiting') && block.key === lastUserKey ? turn : null
+          // A message's answer opens with the agent's head, under the message: as soon as it is sent
+          // and the turn runs, before the agent has said anything, and kept in place once it does.
+          const head = sentAt !== null && (next ? userAt(next) === null : live !== null)
           return (
             <Fragment key={block.key}>
-              {answers !== null && userAt(block) === null && <div className="chat-entry" data-fresh={entering || undefined}><TurnHead at={answers} messageKey={previous?.key ?? ''} live={live} /></div>}
               <Block conversationId={id} block={block} task={Boolean(conversation.taskId)} replies={replies} fresh={entering} />
+              {head && <div className="chat-entry" data-fresh={entering || undefined}><TurnHead at={sentAt} messageKey={block.key} live={live} /></div>}
             </Fragment>
           )
         })}
