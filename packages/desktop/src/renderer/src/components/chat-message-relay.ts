@@ -15,7 +15,14 @@ type PendingRelay = RelayMessage & { accepted: boolean; origin: DOMRect }
 // composer and the dock, so each leg takes long enough to be followed.
 const FLIGHT_MS = 760
 const HANDOVER_MS = 150
-const DOT_MS = 450
+// The hand-on: a dashed line drawn from under the message, down to the agent's head and left along
+// it, its dashes running the way the message goes; then held a beat, and faded.
+const DRAW_MS = 620
+const HOLD_MS = 260
+const FADE_MS = 240
+// Room kept between the line and the bubble above it, and the head's last word beside it.
+const LINE_GAP_PX = 10
+const SVG_NS = 'http://www.w3.org/2000/svg'
 // How far above the straight line the copy's flight bows.
 const ARC_PX = 24
 
@@ -23,11 +30,11 @@ const ARC_PX = 24
 // lands, and the dot is the handover to it.
 const RECEIVER_WAIT_MS = 1200
 
-// Where the dot runs to: the icon of the turn that answers the message, else the spinner of the
-// working line, polled for a moment while the turn opens.
+// Where the line runs to: the head of the turn that answers the message, else the working line,
+// polled for a moment while the turn opens.
 async function receiverFor(view: HTMLElement, key: string, disposed: () => boolean): Promise<HTMLElement | null> {
-  const find = () => view.querySelector<HTMLElement>(`[data-relay-for="${CSS.escape(key)}"] .chat-turn-head-icon`)
-    ?? view.querySelector<HTMLElement>('.chat-working .chat-spinner')
+  const find = () => view.querySelector<HTMLElement>(`[data-relay-for="${CSS.escape(key)}"]`)
+    ?? view.querySelector<HTMLElement>('.chat-working')
   const until = performance.now() + RECEIVER_WAIT_MS
   let found = find()
   while (!found && !disposed() && performance.now() < until) {
@@ -98,21 +105,67 @@ function playRelay(view: HTMLElement, list: HTMLElement, message: HTMLElement, o
     ghost.remove()
     const receiver = await receiverFor(view, key, () => disposed)
     if (!receiver) { cleanup(); return }
+    // The head's entry comes in with a motion of its own (chat-entry-in); measured mid-way, the
+    // line would end short of the head's last word.
+    await Promise.race([
+      Promise.all((receiver.closest<HTMLElement>('.chat-entry') ?? receiver).getAnimations({ subtree: true }).filter((each) => each.effect?.getTiming().iterations !== Infinity).map((each) => each.finished.catch(() => {}))),
+      new Promise((resolve) => setTimeout(resolve, 600))
+    ])
+    if (disposed) return
     const from = message.getBoundingClientRect()
     const to = receiver.getBoundingClientRect()
     const area = list.getBoundingClientRect()
     if (to.top < area.top || to.bottom > area.bottom) { cleanup(); return }
+    // Down from under the bubble, a little right of its middle, to the head's height; then left to
+    // just past the head's last word (its time).
+    const startX = from.left + from.width * .55 - bounds.left
+    const startY = from.bottom + LINE_GAP_PX - bounds.top
+    const words = [...receiver.children].map((child) => child.getBoundingClientRect().right)
+    const endX = Math.max(to.left, ...words) + LINE_GAP_PX - bounds.left
+    const endY = to.top + to.height / 2 - bounds.top
+    if (endY <= startY) { cleanup(); return }
+    const d = `M ${startX} ${startY} V ${endY} H ${endX}`
+    const length = (endY - startY) + Math.abs(startX - endX)
+
+    const svg = document.createElementNS(SVG_NS, 'svg')
+    svg.classList.add('chat-relay-line')
+    const mask = document.createElementNS(SVG_NS, 'mask')
+    const maskId = `chat-relay-mask-${Math.random().toString(36).slice(2)}`
+    mask.id = maskId
+    mask.setAttribute('maskUnits', 'userSpaceOnUse')
+    const reach = document.createElementNS(SVG_NS, 'path')
+    reach.setAttribute('d', d)
+    reach.classList.add('chat-relay-reach')
+    reach.style.strokeDasharray = `${length} ${length}`
+    mask.append(reach)
+    const line = document.createElementNS(SVG_NS, 'path')
+    line.setAttribute('d', d)
+    line.classList.add('chat-relay-dashes')
+    line.setAttribute('mask', `url(#${maskId})`)
+    svg.append(mask, line)
+    layer.append(svg)
     const dot = document.createElement('span')
     dot.className = 'chat-relay-dot'
-    dot.style.left = `${from.right - bounds.left - 8}px`
-    dot.style.top = `${from.bottom - bounds.top - 4}px`
+    dot.style.offsetPath = `path('${d}')`
     layer.append(dot)
-    await animate(dot, [
-      { transform: 'translate(0, 0) scale(.6)', opacity: 0 },
-      { opacity: 1, offset: .15 },
-      { opacity: 1, offset: .8 },
-      { transform: `translate(${to.left + to.width / 2 - from.right + 8}px, ${to.top + to.height / 2 - from.bottom + 4}px) scale(.6)`, opacity: 0 }
-    ], DOT_MS, 'cubic-bezier(.4,0,.2,1)')
+
+    const track = (animation: Animation) => { animations.push(animation); return animation }
+    // The dashes run toward the head the whole time; the line is drawn on behind the dot.
+    track(line.animate([{ strokeDashoffset: 0 }, { strokeDashoffset: -18 }], { duration: 600, iterations: Infinity }))
+    await Promise.all([
+      track(reach.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], { duration: DRAW_MS, easing: 'cubic-bezier(.45,0,.2,1)', fill: 'both' })).finished,
+      animate(dot, [
+        { offsetDistance: '0%', opacity: 0 },
+        { opacity: 1, offset: .1 },
+        { offsetDistance: '100%', opacity: 1 }
+      ], DRAW_MS)
+    ])
+    await new Promise((resolve) => setTimeout(resolve, HOLD_MS))
+    if (disposed) return
+    await Promise.all([
+      track(svg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: FADE_MS, easing: 'ease-out', fill: 'both' })).finished,
+      animate(dot, [{ offsetDistance: '100%', opacity: 1, transform: 'scale(1)' }, { offsetDistance: '100%', opacity: 0, transform: 'scale(1.8)' }], FADE_MS, 'ease-out')
+    ])
     cleanup()
   })().catch(cleanup)
   return cleanup
