@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { openTerminal, selectTask, setWorktreesOpen, showError, useCore } from '../core-store'
+import { openTerminal, selectConversation, selectTask, setWorktreesOpen, showError, useCore } from '../core-store'
 import { timeAgo } from '../conversation-state'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { reasonText, STATUS_LABEL } from '../labels'
@@ -10,12 +10,12 @@ import { projectName } from './ProjectPicker'
 
 const GROUP_TEXT: Record<WorktreeGroupId, { title: string; note: string }> = {
   cleanable: { title: '可以清理', note: '任务已完成或已废弃，没有未提交的改动' },
-  orphaned: { title: '找不到任务', note: '任务删了，worktree 还在' },
+  orphaned: { title: '找不到任务或会话', note: '任务或会话删了，worktree 还在' },
   attention: { title: '需要你处理', note: '清理会丢东西，先在终端里提交、移走或丢弃' },
-  active: { title: '进行中', note: '任务还没完成，只看占用' }
+  active: { title: '进行中', note: '任务还没完成或会话还在，只看占用' }
 }
 
-const CLEAN_NOTE = '分支和提交都会保留，之后继续修改时会重建 worktree。被 .gitignore 忽略的文件（如 node_modules、.env）会一起删除。'
+const CLEAN_NOTE = '分支和提交都会保留，任务之后继续修改时会重建 worktree。被 .gitignore 忽略的文件（如 node_modules、.env）会一起删除。'
 
 // Asks first, then says what was kept and why; what went needs no word.
 export async function cleanWithConfirm(paths: readonly string[], subject: string): Promise<void> {
@@ -29,20 +29,20 @@ export async function cleanWithConfirm(paths: readonly string[], subject: string
 }
 
 function Row({ row, now, checked, onToggle }: { row: WorktreeRow; now: number; checked: boolean | null; onToggle: () => void }) {
-  const { worktree, task } = row
+  const { worktree, task, conversation } = row
   const state = worktreeState(row)
   const project = projectName(worktree.repo ?? worktree.path)
   return (
     <li className="worktree-row">
       <span className="worktree-check">
         {checked !== null && (
-          <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`清理 ${task?.title ?? worktree.path}`} />
+          <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`清理 ${task?.title ?? conversation?.title ?? worktree.path}`} />
         )}
       </span>
       <span className="worktree-main">
-        <span className="worktree-title" title={worktree.path}>{task ? task.title : '任务已删除'}</span>
+        <span className="worktree-title" title={worktree.path}>{task?.title ?? conversation?.title ?? (worktree.conversationId ? '会话' : '任务或会话已删除')}</span>
         <span className="worktree-meta">
-          {[task && STATUS_LABEL[task.status], timeAgo(worktree.touchedAt, now), project, worktree.planning && '规划副本'].filter(Boolean).join(' · ')}
+          {[task && STATUS_LABEL[task.status], worktree.conversationId && '会话', timeAgo(worktree.touchedAt, now), project, worktree.planning && '规划副本'].filter(Boolean).join(' · ')}
         </span>
       </span>
       <span className="worktree-branch mono" title={worktree.path}>{worktree.branch ?? '没有分支'}</span>
@@ -52,6 +52,11 @@ function Row({ row, now, checked, onToggle }: { row: WorktreeRow; now: number; c
         {task && (
           <button type="button" className="button ghost worktree-open" onClick={() => selectTask(task.id)}>
             打开任务
+          </button>
+        )}
+        {worktree.conversationId && (
+          <button type="button" className="button ghost worktree-open" onClick={() => selectConversation(worktree.conversationId ?? null)}>
+            打开会话
           </button>
         )}
         <button type="button" className="tool-button" aria-label="在终端里打开" data-tooltip="在终端里打开" onClick={() => void openTerminal(worktree.path)}>
@@ -72,7 +77,8 @@ function Row({ row, now, checked, onToggle }: { row: WorktreeRow; now: number; c
 export function WorktreeManager() {
   const list = useWorktrees((s) => s.list)
   const tasks = useCore((s) => s.tasks)
-  const rows = useMemo(() => (list ? worktreeRows(list, tasks) : []), [list, tasks])
+  const conversations = useCore((s) => s.conversations)
+  const rows = useMemo(() => (list ? worktreeRows(list, tasks, conversations) : []), [list, tasks, conversations])
   const groups = groupWorktrees(rows)
   const summary = worktreeSummary(rows)
   // Unpicked paths; everything that can be cleaned starts picked.

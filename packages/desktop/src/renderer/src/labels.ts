@@ -70,6 +70,8 @@ const REASON_TEXT: Record<string, string> = {
   'primary-fixed': '任务的对话开始后不能更换主项目，附加项目仍可增删',
   'branch-exists': '任务分支已经建好，起点不能再改',
   'task-active': '任务还没完成或废弃',
+  'conversation-open': '会话还在，删除会话后才能清理它的 worktree',
+  'worktree-not-git': '新建 worktree 时，每个项目都必须是 Git 仓库',
   'worktree-locked': '已用 git worktree lock 锁定',
   'worktree-unreadable': '读不了它的 git 状态',
   'worktree-dirty': '有没提交的改动',

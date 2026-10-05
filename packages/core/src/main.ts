@@ -100,7 +100,8 @@ const conversations = new ConversationService(
   },
   projects,
   attachments,
-  (id) => kandoChatMcpServer(paths.home, id)
+  (id) => kandoChatMcpServer(paths.home, id),
+  paths.worktrees
 )
 
 const browser = new BrowserService(
@@ -191,7 +192,7 @@ const routines = new RoutineService(paths.database, {
 const terminals = new TerminalService(paths.database, daemon, (list) => server?.broadcast('terminals.changed', { terminals: list }))
 const terminalCommands = new TerminalCommandStore(paths.database, (commands) => server?.broadcast('terminalCommands.changed', { commands }))
 const chatCommands = new ChatCommandStore(paths.database, (commands) => server?.broadcast('chatCommands.changed', { commands }))
-const worktrees = new WorktreeService(paths.worktrees, service, () => server?.broadcast('worktrees.changed', {}))
+const worktrees = new WorktreeService(paths.worktrees, service, () => server?.broadcast('worktrees.changed', {}), conversations)
 awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig), (status) =>
   server?.broadcast('system.awakeChanged', { status })
 )

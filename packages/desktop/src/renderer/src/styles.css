@@ -6309,6 +6309,9 @@ body.side-panel-resizing * {
 .chat-draft-projects { flex-wrap: wrap; font-size: 12px; }
 /* Opens into the page: below it is only the input and the window's edge. */
 .chat-draft-projects .menu { top: auto; bottom: calc(100% + 4px); }
+.chat-draft-worktree { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); cursor: pointer; }
+.chat-draft-worktree input { margin: 0; accent-color: var(--accent); }
+.chat-draft-worktree:has(input:checked) { color: var(--text); }
 .chat-options-note { font-size: 12px; }
 
 /* Keep the chat's information hierarchy while its base size follows the setting. */

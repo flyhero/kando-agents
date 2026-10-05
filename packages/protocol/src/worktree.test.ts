@@ -18,4 +18,9 @@ describe('checkCleanWorktree', () => {
     expect(checkCleanWorktree({ ...clean, changes: 3 }, { status: 'done' })).toBe('worktree-dirty')
     expect(checkCleanWorktree({ ...clean, alone: true }, null)).toBe('worktree-alone')
   })
+
+  it('keeps a conversation\'s own while the conversation is there', () => {
+    expect(checkCleanWorktree({ ...clean, conversationId: 'c' }, null)).toBe('conversation-open')
+    expect(checkCleanWorktree({ ...clean, conversationId: null }, null)).toBeNull()
+  })
 })

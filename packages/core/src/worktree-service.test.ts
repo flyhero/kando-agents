@@ -154,4 +154,19 @@ describe('WorktreeService', () => {
     expect(await refusing.clean([done])).toEqual([{ path: done, removed: false, reason: 'worktree-in-use' }])
     expect(existsSync(done)).toBe(true)
   })
+
+  it('keeps a conversation\'s worktree while the conversation is there, and says when its agent is at work', async () => {
+    const held = worktree('c')
+    const left = worktree('f')
+    const conversations = [{ id: id('c'), projectPaths: [realpathSync(held)], chat: { turn: 'running' as const } }]
+    const worktrees = new WorktreeService(root, hooks, () => {}, { list: () => conversations })
+    const listed = new Map((await worktrees.list()).map((each) => [each.path, each]))
+    expect(listed.get(held)).toMatchObject({ taskId: null, conversationId: id('c'), inUse: true })
+    expect(listed.get(left)).toMatchObject({ conversationId: null, inUse: false })
+    expect(await worktrees.clean([held, left])).toEqual([
+      { path: held, removed: false, reason: 'conversation-open' },
+      { path: left, removed: true, reason: null }
+    ])
+    expect(existsSync(held)).toBe(true)
+  })
 })

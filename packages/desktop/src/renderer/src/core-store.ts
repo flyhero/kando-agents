@@ -594,6 +594,11 @@ export function useFileMentionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('file-mentions') ?? false)
 }
 
+// Whether a new conversation can work in worktrees of its projects rather than in them.
+export function useConversationWorktreesSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('conversation-worktrees') ?? false)
+}
+
 // Whether core keeps conversations pinned to the top of the list.
 export function useConversationPinSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-pin') ?? false)

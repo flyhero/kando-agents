@@ -43,4 +43,11 @@ describe('worktree groups', () => {
     expect(worktreeState({ worktree: worktree('x', { unmerged: { count: 0, into: 'origin/main' } }) }).text).toBe('已合进 origin/main')
     expect(worktreeState({ worktree: worktree('x', { planning: true, branch: null }) }).text).toBe('规划用的只读副本')
   })
+
+  it('keeps a conversation\'s worktree among the active ones while the conversation is there', () => {
+    const held = worktreeRows([worktree('chat', { conversationId: 'c', changes: 2 })], {})
+    expect(held[0]).toMatchObject({ task: null, conversation: null, blocker: 'conversation-open' })
+    expect(groupWorktrees(held).map((group) => group.id)).toEqual(['active'])
+    expect(worktreeSummary(held).cleanable).toBe(0)
+  })
 })

@@ -1,22 +1,29 @@
-import { checkCleanWorktree, type ManagedWorktree, type Task, type WorktreeCleanBlocker } from '@kando/protocol'
+import { checkCleanWorktree, type Conversation, type ManagedWorktree, type Task, type WorktreeCleanBlocker } from '@kando/protocol'
 
-export type WorktreeRow = { worktree: ManagedWorktree; task: Task | null; blocker: WorktreeCleanBlocker | null }
+export type WorktreeRow = { worktree: ManagedWorktree; task: Task | null; conversation: Conversation | null; blocker: WorktreeCleanBlocker | null }
 
-// Cleanable: a finished task's, safe to go. Orphaned: its task was deleted, the easiest to
-// forget. Attention: holds something only the user can decide on. Active: its task is under way.
+// Cleanable: a finished task's, safe to go. Orphaned: its task or conversation was deleted, the
+// easiest to forget. Attention: holds something only the user can decide on. Active: its task is
+// under way, or its conversation is still there.
 export type WorktreeGroupId = 'cleanable' | 'orphaned' | 'attention' | 'active'
 export type WorktreeGroup = { id: WorktreeGroupId; rows: WorktreeRow[] }
 
 export const GROUP_ORDER: readonly WorktreeGroupId[] = ['cleanable', 'orphaned', 'attention', 'active']
 
-export function worktreeRows(worktrees: readonly ManagedWorktree[], tasks: Readonly<Record<string, Task>>): WorktreeRow[] {
+export function worktreeRows(
+  worktrees: readonly ManagedWorktree[],
+  tasks: Readonly<Record<string, Task>>,
+  conversations: Readonly<Record<string, Conversation>> = {}
+): WorktreeRow[] {
   return worktrees.map((worktree) => {
     const task = worktree.taskId ? (tasks[worktree.taskId] ?? null) : null
-    return { worktree, task, blocker: checkCleanWorktree(worktree, task) }
+    const conversation = worktree.conversationId ? (conversations[worktree.conversationId] ?? null) : null
+    return { worktree, task, conversation, blocker: checkCleanWorktree(worktree, task) }
   })
 }
 
 function groupOf(row: WorktreeRow): WorktreeGroupId {
+  if (row.blocker === 'conversation-open') return 'active'
   if (!row.task) return 'orphaned'
   if (row.blocker === 'task-active') return 'active'
   return row.blocker ? 'attention' : 'cleanable'

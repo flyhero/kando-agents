@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
-import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useCore } from '../core-store'
+import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useConversationWorktreesSupported, useCore } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { currentInstalledAgents, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
@@ -30,6 +30,7 @@ export function ConversationDraft() {
     return latest && currentInstalledAgents().includes(latest) ? latest : defaultAgent(tasks)
   })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
+  const [worktree, setWorktree] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   // Kept per agent, so switching back finds the mode picked for it.
@@ -41,6 +42,8 @@ export function ConversationDraft() {
   const rpc = useCore((s) => s.rpc)
   const optionsSupported = useChatOptionsSupported()
   const imagesSupported = useChatImagesSupported()
+  const worktreesSupported = useConversationWorktreesSupported()
+  const inWorktree = worktree && worktreesSupported && projectPaths.length > 0
   const attached = useComposerImages()
   const allowBypass = usePreferences((s) => s.allowBypass)
   const width = usePreferences((s) => s.chatWidth)
@@ -84,7 +87,7 @@ export function ConversationDraft() {
     const chosen = optionsSupported
       ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...startOptions(), ...chosen }))
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(inWorktree ? { worktree: true } : {}), ...startOptions(), ...chosen }))
   }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
@@ -142,6 +145,16 @@ export function ConversationDraft() {
             <div className="chat-dock-header chat-draft-projects">
               <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
               {projectPaths.length === 0 && <span className="muted">不选项目时，用 Kando 的工作目录</span>}
+              {projectPaths.length > 0 && worktreesSupported && (
+                <label
+                  className="chat-draft-worktree"
+                  data-tooltip-side="top"
+                  data-tooltip="每个项目从当前提交拉一个新分支和 worktree，互不干扰；未提交的改动不会带过去。不勾选就直接在项目目录里改"
+                >
+                  <input type="checkbox" checked={worktree} disabled={busy} onChange={(event) => setWorktree(event.target.checked)} />
+                  新 worktree
+                </label>
+              )}
             </div>
             <div
               className="chat-input-card"
@@ -209,7 +222,7 @@ export function ConversationDraft() {
                   type="button"
                   className="chat-input-button" data-tooltip-side="top-end"
                   aria-label="发送（Enter）"
-                  data-tooltip={busy && agent ? `正在启动 ${AGENT_LABEL[agent]}…` : '发送（Enter）'}
+                  data-tooltip={busy && agent ? (inWorktree ? `正在建 worktree 并启动 ${AGENT_LABEL[agent]}…` : `正在启动 ${AGENT_LABEL[agent]}…`) : '发送（Enter）'}
                   disabled={!canSend}
                   onClick={() => void send()}
                 >

@@ -28,7 +28,7 @@ describe('ConversationService', () => {
   let service: ConversationService
 
   function serve(emit: (event: ConversationEvent) => void = () => {}): ConversationService {
-    const next = new ConversationService(store, daemon, path.join(root, 'sessions'), emit, projects, attachmentsAt(root))
+    const next = new ConversationService(store, daemon, path.join(root, 'sessions'), emit, projects, attachmentsAt(root), null, path.join(root, 'worktrees'))
     daemon.deliver = (event) => {
       if (event.event === 'data') next.handleData(event)
       else if (event.event === 'exit') next.handleExit(event.sessionId, event.exitCode)
@@ -136,6 +136,37 @@ describe('ConversationService', () => {
     expect(daemon.written(codex.sessionId!).find((frame) => JSON.stringify(frame).includes('turn/start')))
       .toMatchObject({ params: { sandboxPolicy: { writableRoots: [realpathSync(second)] } } })
     await expect(service.create('codex', [first, first])).rejects.toThrow('duplicate-project')
+  })
+
+  it('works in a worktree of each project on a branch of its own, leaving the projects as they were', async () => {
+    const repo = (name: string) => {
+      const dir = path.join(root, name)
+      execFileSync('git', ['init', '-q', '-b', 'main', dir])
+      execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init'])
+      return dir
+    }
+    const app = repo('app')
+    const lib = repo('lib')
+    writeFileSync(path.join(app, 'draft.md'), 'stays here\n')
+    const created = await service.create('claude', [app, lib], undefined, { worktree: true })
+    const shortId = created.id.slice(0, 8)
+    const laidOut = [path.join(root, 'worktrees', shortId, 'app'), path.join(root, 'worktrees', shortId, 'lib')].map((dir) => realpathSync(dir))
+    expect(created.projectPaths).toEqual(laidOut)
+    expect(daemon.spawns[0]).toMatchObject({ cwd: laidOut[0] })
+    expect((await service.branches(created.id)).map((head) => head.branch)).toEqual([`kando/${shortId}`, `kando/${shortId}`])
+    expect(existsSync(path.join(laidOut[0]!, 'draft.md'))).toBe(false)
+    expect(execFileSync('git', ['-C', app, 'branch', '--show-current'], { encoding: 'utf8' }).trim()).toBe('main')
+    // The recent list keeps the projects as picked, not their worktrees.
+    expect([...projects.recent()].sort()).toEqual([app, lib])
+  })
+
+  it('lays no worktree out unless every project is a git repo', async () => {
+    const plain = path.join(root, 'plain')
+    mkdirSync(plain)
+    await expect(service.create('claude', [plain], undefined, { worktree: true })).rejects.toMatchObject({ reason: 'worktree-not-git' })
+    await expect(service.create('claude', [], undefined, { worktree: true })).rejects.toMatchObject({ reason: 'missing-repo' })
+    expect(existsSync(path.join(root, 'worktrees'))).toBe(false)
+    expect(service.list()).toEqual([])
   })
 
   it('adds its projects to the recent list tasks pick from, but not the managed workspace', async () => {

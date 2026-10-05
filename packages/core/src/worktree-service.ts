@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
-import { readdir, rmdir, stat } from 'node:fs/promises'
+import { readdir, realpath, rmdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { checkCleanWorktree, shortTaskId, type ManagedWorktree, type Task, type WorktreeCleanResult } from '@kando/protocol'
+import { checkCleanWorktree, shortTaskId, type Conversation, type ManagedWorktree, type Task, type WorktreeCleanResult } from '@kando/protocol'
 import { gitOrNull } from './git-changes'
 import { Rejection } from './rejection'
 import { originDefault } from './task-start'
@@ -23,6 +23,9 @@ export type WorktreeTasks = {
   // The task no longer has the worktree; running it again lays it out anew from its branch.
   forgetWorktree(taskId: string, worktreePath: string): void
 }
+
+// The conversations outside any task, whose projects may be worktrees Kando laid out for them.
+export type WorktreeConversations = { list(): Pick<Conversation, 'id' | 'projectPaths' | 'chat'>[] }
 
 type Folder = { dir: string; shortId: string; planning: boolean }
 
@@ -110,6 +113,7 @@ export class WorktreeService {
     private readonly root: string,
     private readonly tasks: WorktreeTasks,
     private readonly changed: () => void,
+    private readonly conversations: WorktreeConversations = { list: () => [] },
     private readonly now: () => number = Date.now
   ) {}
 
@@ -167,10 +171,15 @@ export class WorktreeService {
     const tasks = this.tasks.list()
     const listing = new Map(tasks.flatMap((task) => task.repos.flatMap((repo) => (repo.worktreePath ? [[repo.worktreePath, task.id] as const] : []))))
     const byShortId = new Map(tasks.map((task) => [shortTaskId(task.id), task.id]))
+    // Conversations keep their projects by real path.
+    const conversations = this.conversations.list()
     const [found, busy] = await Promise.all([folders(this.root), this.tasks.inUse()])
     return Promise.all(found.map(async (folder) => {
       const taskId = listing.get(folder.dir) ?? byShortId.get(folder.shortId) ?? null
-      return { ...(await this.inspect(folder, taskId)), inUse: taskId !== null && busy.has(taskId) }
+      const real = taskId ? folder.dir : await realpath(folder.dir).catch(() => folder.dir)
+      const conversation = taskId ? undefined : conversations.find((each) => each.projectPaths.includes(real))
+      const inUse = taskId !== null ? busy.has(taskId) : conversation?.chat?.turn === 'running'
+      return { ...(await this.inspect(folder, taskId)), conversationId: conversation?.id ?? null, inUse }
     }))
   }
 

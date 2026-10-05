@@ -24,7 +24,7 @@ import { commitAll, commitAndPush, pushBranch } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { UsageReport } from './usage-source'
-import { normalizeRepoPath, projectHead } from './workspace'
+import { normalizeRepoPath, prepareConversationWorktrees, projectHead } from './workspace'
 
 export type ConversationEvent =
   | { type: 'changed'; conversation: Conversation }
@@ -120,7 +120,9 @@ export class ConversationService {
     private readonly attachments: AttachmentStore,
     // Kando's MCP server for a conversation's agent, acting for that conversation; null leaves the
     // agent without Kando's tools.
-    private readonly mcp: ((conversationId: string) => McpServer) | null = null
+    private readonly mcp: ((conversationId: string) => McpServer) | null = null,
+    // Where a conversation started in worktrees lays them out; null offers none.
+    private readonly worktreesRoot: string | null = null
   ) {
     this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
       items: (conversationId, items) => {
@@ -272,17 +274,20 @@ export class ConversationService {
   }
 
   // routine: the routine whose run opens it, which also names it for good; id: the run's own,
-  // so a start tried again finds the conversation it already made.
+  // so a start tried again finds the conversation it already made. start.worktree: it works in a
+  // worktree of each project rather than in the project itself.
   async create(
     agent: AgentKind,
     projectPaths: readonly string[],
     allowBypass?: boolean,
-    start: { permissionMode?: string; model?: string; effort?: string } = {},
+    start: { permissionMode?: string; model?: string; effort?: string; worktree?: boolean } = {},
     routine: { id: string; title: string } | null = null,
     id: string = randomUUID()
   ): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
-    const { permissionMode, model, effort } = start
+    const { permissionMode, model, effort, worktree = false } = start
+    const worktreesRoot = worktree ? this.worktreesRoot : null
+    if (worktree && (!worktreesRoot || projectPaths.length === 0)) throw new Rejection('missing-repo', 'a worktree needs a project to lay out')
     // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
     if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : CODEX_MODES))) {
       throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
@@ -293,7 +298,11 @@ export class ConversationService {
       if (model && !picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${model}`)
       if (effort && !picked?.efforts.includes(effort)) throw new Rejection('chat-option-invalid', `the model takes no effort ${effort}`)
     }
-    const { projects, picked } = await resolveProjects(projectPaths)
+    const resolved = await resolveProjects(projectPaths)
+    const { picked } = resolved
+    const projects = worktreesRoot
+      ? await Promise.all((await prepareConversationWorktrees(id, resolved.projects, worktreesRoot)).map((dir) => realpath(dir)))
+      : resolved.projects
     let workspace: string
     if (projects.length === 0) {
       workspace = path.join(this.sessionsRoot, id, 'workspace')

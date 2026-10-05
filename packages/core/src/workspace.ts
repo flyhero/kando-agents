@@ -246,6 +246,46 @@ export async function prepareWorkspace(
   }
 }
 
+// A conversation started in worktrees: each project's repo gets one under the conversation's
+// directory, on a branch of its own from what the project has checked out. Uncommitted changes
+// stay behind in the project. A start tried again with the same id finds what it laid out.
+export async function prepareConversationWorktrees(conversationId: string, projects: readonly string[], worktreesRoot: string): Promise<string[]> {
+  const shortId = shortTaskId(conversationId)
+  const branch = `kando/${shortId}`
+  const topLevels: string[] = []
+  for (const project of projects) {
+    const topLevel = await gitTopLevel(project)
+    if (!topLevel) throw new Rejection('worktree-not-git', `not a git repo: ${project}`)
+    if (topLevels.includes(topLevel)) throw new Rejection('repo-duplicate', 'two entries point into the same git repo')
+    topLevels.push(topLevel)
+  }
+  const taken = new Set<string>()
+  const made: { topLevel: string; dir: string; branched: boolean }[] = []
+  try {
+    for (const topLevel of topLevels) {
+      const dir = path.join(worktreesRoot, shortId, uniqueName(path.basename(topLevel), taken))
+      if (await isDirectory(dir)) {
+        made.push({ topLevel, dir, branched: false })
+        continue
+      }
+      const branched = !(await branchExists(topLevel, branch))
+      // --no-track: the branch is the conversation's own, not a copy of the one it started from.
+      await addWorktree(topLevel, dir, branched ? ['--quiet', '--no-track', '-b', branch, dir, 'HEAD'] : ['--quiet', dir, branch])
+      made.push({ topLevel, dir, branched })
+    }
+  } catch (error) {
+    // What this start laid out holds nothing yet, and goes without force; a leftover it picked up stays.
+    for (const { topLevel, dir, branched } of made) {
+      if (!branched) continue
+      await execFileAsync('git', ['-C', topLevel, 'worktree', 'remove', dir]).catch(() => {})
+      await execFileAsync('git', ['-C', topLevel, 'branch', '-d', branch]).catch(() => {})
+    }
+    await rmdir(path.join(worktreesRoot, shortId)).catch(() => {})
+    throw error
+  }
+  return made.map(({ dir }) => dir)
+}
+
 // Stack on a dependency's branch only when exactly one dependency left one in the repo; with
 // several there is no single right base.
 function onlyBranch(stackable: ReadonlyMap<string, string[]>, topLevel: string): string | null {
