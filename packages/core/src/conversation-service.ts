@@ -607,6 +607,7 @@ export class ConversationService {
       conversationId: conversation.id,
       stageId: stage.id,
       agent: stage.agent,
+      ended: stage.endedAt != null,
       options: {
         cwd: conversation.workspacePath,
         extraDirs: conversation.projectPaths.slice(1),

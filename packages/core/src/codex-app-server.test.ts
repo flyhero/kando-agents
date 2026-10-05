@@ -547,6 +547,25 @@ describe('CodexAppServer plan mode, as recorded', () => {
     expect(ofKind(driver.items.list(), 'state')[0]?.permissionMode).toBe('plan')
     expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBeNull()
   })
+
+  it('puts a plan waiting after its turn aside, as not carried out, with nothing sent', () => {
+    const answer = records.findIndex((record, index) => index > 0 && record.dir === 'out' && JSON.stringify(record.frame).includes('按这个计划开始执行'))
+    const driver = replay(records.slice(0, answer))
+    const [requestId] = driver.waitingPlans()
+    const plan = ofKind(driver.items.list(), 'approval')[0]
+    expect(requestId).toBe(plan?.requestId)
+    // There is no turn for interrupt() to end.
+    expect(() => driver.interrupt()).toThrow('no turn is running')
+    driver.apply({ dir: 'answer', at: 1, requestId: requestId ?? '', resolution: 'cancelled' })
+    expect(ofKind(driver.items.list(), 'approval')[0]?.resolution).toBe('cancelled')
+    expect(driver.waitingPlans()).toEqual([])
+    expect(driver.activity()).toBe('idle')
+  })
+
+  it('has no plan to put aside while a turn runs', () => {
+    const answer = records.findIndex((record, index) => index > 0 && record.dir === 'out' && JSON.stringify(record.frame).includes('按这个计划开始执行'))
+    expect(replay(records.slice(0, answer + 1)).waitingPlans()).toEqual([])
+  })
 })
 
 describe('CodexAppServer subagents, as recorded', () => {

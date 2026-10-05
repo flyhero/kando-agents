@@ -88,6 +88,8 @@ export interface ChatDriver {
   canSteer(): boolean
   respond(requestId: string, answer: ChatAnswer): unknown[]
   interrupt(): unknown[]
+  // Plans waiting with no turn running, for an agent whose plan outlasts its turn (Codex).
+  waitingPlans?(): string[]
   // Frames that switch an option, after checking the stage offers the value (a Rejection if not).
   setOption(option: ChatOption, value: string): unknown[]
   // The queued message, once the agent is ready and idle to take it.

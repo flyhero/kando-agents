@@ -16,7 +16,8 @@ const STDERR_TAIL_CHARS = 8 * 1024
 // Ended stages kept rebuilt in memory, most recently read last.
 const HISTORY_CACHE = 20
 
-export type ChatStage = { conversationId: string; stageId: string; agent: AgentKind; options: ChatStageOptions }
+// ended: the stage is over in the store (its agent is gone), not merely not taken over yet.
+export type ChatStage = { conversationId: string; stageId: string; agent: AgentKind; options: ChatStageOptions; ended?: boolean }
 
 // Where a chat stage's news goes: to the clients watching it, and into the conversation's records.
 export type ChatSink = {
@@ -219,7 +220,7 @@ export class ChatHost {
       ChatLog.of(this.sessionsRoot, stage.conversationId, stage.stageId).read().records.forEach((record) => replayed.apply(record))
     }
     this.remember(stage.stageId, driver)
-    return driver.items.list()
+    return stage.ended ? settledRequests(driver.items.list()) : driver.items.list()
   }
 
   // While a turn runs: with steer, the message goes into it (an agent that takes none rejects);
@@ -320,8 +321,15 @@ export class ChatHost {
     await Promise.all(sent)
   }
 
+  // A plan waiting after its turn (as Codex's does) has no turn to end: it is put aside instead.
   async interrupt(conversationId: string): Promise<void> {
     const live = this.running(conversationId)
+    const plans = live.driver.waitingPlans?.() ?? []
+    if (plans.length > 0) {
+      for (const requestId of plans) this.record(live, { dir: 'answer', at: this.now(), requestId, resolution: 'cancelled' })
+      this.flush(live)
+      return
+    }
     const sent = live.driver.interrupt().map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
@@ -472,4 +480,14 @@ export class ChatHost {
       started.then(resolve, reject).finally(() => clearTimeout(timer))
     })
   }
+}
+
+// An ended stage's approvals and questions still open when its agent went (one killed with core
+// down leaves no exit to close them): nothing can answer them now.
+export function settledRequests(items: ChatItem[]): ChatItem[] {
+  return items.map((item) => {
+    if (item.kind === 'approval' && item.resolution === null) return { ...item, resolution: 'cancelled' as const }
+    if (item.kind === 'question' && item.resolution === null) return { ...item, resolution: 'cancelled' as const }
+    return item
+  })
 }

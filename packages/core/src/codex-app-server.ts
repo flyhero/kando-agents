@@ -465,8 +465,12 @@ export class CodexAppServer implements ChatDriver {
         this.ended(record.stderr, record.at)
         break
       case 'ask':
-      case 'answer':
         this.kando.apply(record)
+        break
+      case 'answer':
+        // A plan put aside (see waitingPlans); any other answer is to Kando's own question.
+        if (this.pending.get(record.requestId)?.kind === 'plan') this.resolve(record.requestId, record.resolution, null, record.at)
+        else this.kando.apply(record)
     }
     this.refreshOptions()
     this.state.publish(record.at)
@@ -586,6 +590,10 @@ export class CodexAppServer implements ChatDriver {
       return [this.turnStart(this.threadId, '按这个计划开始执行。', answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')]
     }
     return [{ id: pending.rawId, result: this.answerBody(pending, answer) }]
+  }
+
+  waitingPlans(): string[] {
+    return this.turn ? [] : [...this.pending].filter(([, pending]) => pending.kind === 'plan').map(([requestId]) => requestId)
   }
 
   interrupt(): unknown[] {

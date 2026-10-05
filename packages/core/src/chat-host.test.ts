@@ -7,6 +7,7 @@ import type { StageMessage } from './chat-driver'
 import type { UsageReport } from './usage-source'
 import { ChatHost, type ChatSink, type ChatStage } from './chat-host'
 import { AttachmentStore } from './attachment-store'
+import { ChatLog } from './chat-log'
 import { fakeChatDaemon } from './fake-chat-agent'
 import { pngBytes } from './image-fixtures'
 
@@ -70,6 +71,15 @@ describe('ChatHost', () => {
     await host.open(STAGE, sessionId, 0, true)
     return { host, sessionId }
   }
+
+  it('shows what an ended stage left asking as no longer waiting', () => {
+    // An agent killed while core was down leaves no exit behind to close what it asked.
+    ChatLog.of(root, STAGE.conversationId, STAGE.stageId).append([{ dir: 'in', at: 1, frame: canUseTool('req-1') }])
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink)
+    const resolution = (stage: ChatStage) => host.items(stage).find((item) => item.kind === 'approval')
+    expect(resolution(STAGE)).toMatchObject({ resolution: null })
+    expect(resolution({ ...STAGE, ended: true })).toMatchObject({ resolution: 'cancelled' })
+  })
 
   it('initializes the agent, then carries a message and its reply', async () => {
     const recorded = recordingSink()
