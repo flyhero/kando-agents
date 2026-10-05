@@ -5629,22 +5629,46 @@ body.side-panel-resizing * {
   .chat-input-card[data-working]::before { content: none; }
 }
 
-/* Grows with what is typed up to a limit, so no resize grip competes with the corner button. */
+/* Grows with what is typed up to a limit, so no resize grip competes with the corner button. Its
+   copy under it (.chat-input-marks) must lay text out exactly as it does. */
+.chat-input,
+.chat-input-marks {
+  padding: 10px 12px 4px;
+  font: inherit;
+  line-height: 1.5;
+  letter-spacing: normal;
+  word-spacing: normal;
+}
 .chat-input {
   display: block;
   width: 100%;
   field-sizing: content;
   min-height: 48px;
   max-height: 40vh;
-  padding: 10px 12px 4px;
   border: none;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--text);
-  font: inherit;
-  line-height: 1.5;
 }
+
+/* While the input holds mentions, what shows is a copy of its text under it with their names in
+   colour; the textarea above keeps only its caret and selection, the selection see-through. */
+.chat-input-field { position: relative; }
+.chat-input-field > .chat-input { position: relative; }
+.chat-input-marks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+.chat-input-field[data-marked] > .chat-input { color: transparent; caret-color: var(--text); }
+.chat-input-field[data-marked] > .chat-input::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.chat-mention { color: var(--accent); }
+.chat-input-marks [data-composing] { text-decoration: underline; }
 
 /* Send, or stop: round, at the end of the toolbar. One turns into the other as the turn starts
    and ends. */

@@ -4,12 +4,14 @@ import { perform, useChatImagesSupported, useChatOptionsSupported, useCore, useF
 import { agentEntries, kandoEntries } from '../chat-commands'
 import { composeMessage, parseQuotes, setQuotes, useQuotes, type ChatQuote } from '../chat-quotes'
 import { takeDraft } from '../chat-drafts'
+import { writeMentions } from '../chat-mentions'
 import { QuoteCards } from './ChatQuoteCards'
 import { AGENT_LABEL } from '../labels'
 import { useChatSurface } from './chat-surface'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
+import { MentionField, useMentionedText } from './ChatMentionField'
 import { ChatOptionsBar } from './ChatOptionsBar'
 import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon } from './icons'
 import { SchedulePicker } from './SchedulePicker'
@@ -202,7 +204,8 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const { id } = conversation
   const surface = useChatSurface()
   const beginRelay = useContext(ChatMessageRelay)
-  const [text, setText] = useState('')
+  const { value, setText, setValue } = useMentionedText()
+  const { text } = value
   const [busy, setBusy] = useState(false)
   const quotes = useQuotes(id)
   const imagesSupported = useChatImagesSupported()
@@ -255,10 +258,12 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
     setText,
     sendCommand: (command) => void send(false, command)
   })
-  const mentionMenu = useChatMentionMenu({ text, setText, roots: conversation.projectPaths, cwd: conversation.workspacePath, agent: conversation.agent })
+  const mentionMenu = useChatMentionMenu({ value, setText, setValue, roots: conversation.projectPaths, cwd: conversation.workspacePath, agent: conversation.agent })
+  // The input as the agent reads it, each mention written out.
+  const written = writeMentions(value, conversation.agent)
   // steer: into the running turn now; otherwise a message while the agent works waits its turn.
   // The user's own command expands into the input to be read over, rather than going.
-  const send = async (steer = false, message = text) => {
+  const send = async (steer = false, message = written) => {
     const expanded = commandMenu.expand(message)
     if (expanded !== null) {
       setText(expanded)
@@ -323,41 +328,43 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
       {mentionMenu.menu}
       {quotes.length > 0 && <QuoteCards conversationId={id} quotes={quotes} onDone={() => mentionMenu.inputProps.ref.current?.focus()} />}
       {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
-      <textarea
-        className="chat-input"
-        rows={3}
-        value={text}
-        aria-label="给 Agent 的消息"
-        {...commandMenu.inputProps}
-        {...mentionMenu.inputProps}
-        readOnly={starting}
-        placeholder={
-          surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 Agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
-            : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
-            : turn === 'awaiting' ? '先回答上面的请求' : 'Agent 正在处理，可以先写下一条；Esc 中断')
-        }
-        onChange={(event) => {
-          if (suggestion && event.target.value) setDismissed(suggestion)
-          setText(event.target.value)
-        }}
-        onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
-        onKeyDown={(event) => {
-          if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event)) return
-          if (suggestion && takesSuggestion(event)) {
-            event.preventDefault()
-            setText(suggestion)
-          } else if (steersMessage(event)) {
-            event.preventDefault()
-            void send(true)
-          } else if (sendsMessage(event)) {
-            event.preventDefault()
-            void send()
-          } else if (event.key === 'Escape' && working && !event.nativeEvent.isComposing) {
-            event.preventDefault()
-            interrupt()
+      <MentionField value={value} input={mentionMenu.inputProps.ref}>
+        <textarea
+          className="chat-input"
+          rows={3}
+          value={text}
+          aria-label="给 Agent 的消息"
+          {...commandMenu.inputProps}
+          {...mentionMenu.inputProps}
+          readOnly={starting}
+          placeholder={
+            surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 Agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
+              : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
+              : turn === 'awaiting' ? '先回答上面的请求' : 'Agent 正在处理，可以先写下一条；Esc 中断')
           }
-        }}
-      />
+          onChange={(event) => {
+            if (suggestion && event.target.value) setDismissed(suggestion)
+            setText(event.target.value, event.target.selectionEnd)
+          }}
+          onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
+          onKeyDown={(event) => {
+            if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event)) return
+            if (suggestion && takesSuggestion(event)) {
+              event.preventDefault()
+              setText(suggestion)
+            } else if (steersMessage(event)) {
+              event.preventDefault()
+              void send(true)
+            } else if (sendsMessage(event)) {
+              event.preventDefault()
+              void send()
+            } else if (event.key === 'Escape' && working && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              interrupt()
+            }
+          }}
+        />
+      </MentionField>
       {/* Under the input, inside its box: what goes with the message, how the agent runs, and send. */}
       <div className="chat-options">
         {imagesSupported && <ChatAddMenu disabled={starting} onAdd={attached.add} />}
@@ -370,7 +377,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         {schedulesSupported && (
           <ScheduleSendButton
             conversationId={id}
-            text={text}
+            text={written}
             quotes={quotes}
             images={attached.images.map((image) => image.id)}
             disabledReason={

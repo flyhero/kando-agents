@@ -12,6 +12,8 @@ import { sendsMessage } from './ChatComposer'
 import { ChatAddMenu, ChatImageStrip, useComposerImages } from './ChatImages'
 import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
+import { MentionField, useMentionedText } from './ChatMentionField'
+import { writeMentions } from '../chat-mentions'
 import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBar'
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
@@ -31,7 +33,8 @@ export function ConversationDraft() {
   })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [worktree, setWorktree] = useState(false)
-  const [text, setText] = useState('')
+  const { value, setText, setValue } = useMentionedText()
+  const { text } = value
   const [busy, setBusy] = useState(false)
   // Kept per agent, so switching back finds the mode picked for it.
   const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: START_MODES.claude[0]!, codex: START_MODES.codex[0]! })
@@ -55,7 +58,9 @@ export function ConversationDraft() {
   const commandEntries = useMemo(() => kandoEntries(chatCommands, projectPaths), [chatCommands, projectPaths])
   const commandMenu = useChatCommandMenu({ text, entries: commandEntries, agentLabel: agent ? AGENT_LABEL[agent] : '', setText, sendCommand: () => {} })
   // The agent will work in the first project picked.
-  const mentionMenu = useChatMentionMenu({ text, setText, roots: projectPaths, cwd: projectPaths[0] ?? null, agent })
+  const mentionMenu = useChatMentionMenu({ value, setText, setValue, roots: projectPaths, cwd: projectPaths[0] ?? null, agent })
+  // Written out for the agent picked when it goes, which may not be the one picked before.
+  const written = agent ? writeMentions(value, agent) : text
 
   useEffect(() => {
     if (!agent || !rpc || !optionsSupported || agent in catalogs) return
@@ -92,7 +97,7 @@ export function ConversationDraft() {
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
   const send = async () => {
-    const expanded = commandMenu.expand(text)
+    const expanded = commandMenu.expand(written)
     if (expanded !== null) {
       setText(expanded)
       return
@@ -102,7 +107,7 @@ export function ConversationDraft() {
     const created = await create()
     if (created) {
       const images = attached.images.map((image) => image.id)
-      await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: text.trim(), ...(images.length ? { images } : {}) }))
+      await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: written.trim(), ...(images.length ? { images } : {}) }))
       selectConversation(created.id)
       return
     }
@@ -165,24 +170,26 @@ export function ConversationDraft() {
               {commandMenu.menu}
               {mentionMenu.menu}
               {imagesSupported && <ChatImageStrip images={attached.images} uploading={attached.uploading} onRemove={attached.remove} />}
-              <textarea
-                className="chat-input"
-                rows={3}
-                value={text}
-                {...commandMenu.inputProps}
-                {...mentionMenu.inputProps}
-                autoFocus
-                readOnly={busy}
-                aria-label="第一条消息"
-                placeholder={agent ? `给 ${AGENT_LABEL[agent]} 发第一条消息，Enter 发送，Shift+Enter 换行` : '先在上面选一个 Agent'}
-                onChange={(event) => setText(event.target.value)}
-                onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
-                onKeyDown={(event) => {
-                  if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event) || !sendsMessage(event)) return
-                  event.preventDefault()
-                  void send()
-                }}
-              />
+              <MentionField value={value} input={mentionMenu.inputProps.ref}>
+                <textarea
+                  className="chat-input"
+                  rows={3}
+                  value={text}
+                  {...commandMenu.inputProps}
+                  {...mentionMenu.inputProps}
+                  autoFocus
+                  readOnly={busy}
+                  aria-label="第一条消息"
+                  placeholder={agent ? `给 ${AGENT_LABEL[agent]} 发第一条消息，Enter 发送，Shift+Enter 换行` : '先在上面选一个 Agent'}
+                  onChange={(event) => setText(event.target.value, event.target.selectionEnd)}
+                  onPaste={imagesSupported ? attached.handlers.onPaste : undefined}
+                  onKeyDown={(event) => {
+                    if (commandMenu.onKeyDown(event) || mentionMenu.onKeyDown(event) || !sendsMessage(event)) return
+                    event.preventDefault()
+                    void send()
+                  }}
+                />
+              </MentionField>
               <div className="chat-options">
                 {imagesSupported && <ChatAddMenu disabled={busy} onAdd={attached.add} />}
                 {agent && optionsSupported && (

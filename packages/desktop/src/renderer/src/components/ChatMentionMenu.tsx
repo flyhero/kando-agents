@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject, type TextareaHTMLAttributes } from 'react'
 import type { AgentKind, ProjectFileMatch } from '@kando/protocol'
 import { useCore, useFileMentionsSupported } from '../core-store'
-import { fileTarget, insertMention, matchProjects, mentionQuery, mentionText, type MentionTarget } from '../chat-mentions'
+import { fileTarget, insertMention, matchProjects, mentionQuery, placeMention, type MentionedText, type MentionTarget } from '../chat-mentions'
+import type { SetText } from './ChatMentionField'
 import { projectName } from './ProjectPicker'
 
 // Long enough that a word typed at speed asks once.
@@ -54,11 +55,13 @@ function MentionOption({ entry, id, active, onHover, onPick }: {
 }
 
 // Files, folders and projects matching an @word the caret is in, above the input. Enter puts the
-// one picked in as the agent reads a reference (see mentionText); Tab on a folder opens it to pick
-// inside, and elsewhere picks too; Esc puts the list away until the text changes.
-export function useChatMentionMenu({ text, setText, roots, cwd, agent }: {
-  text: string
-  setText: (text: string) => void
+// one picked in as a mention, its name in colour, written out for the agent as the message goes
+// (see writeMentions); Tab on a folder opens it to pick inside, and elsewhere picks too; Esc puts
+// the list away until the text changes.
+export function useChatMentionMenu({ value, setText, setValue, roots, cwd, agent }: {
+  value: MentionedText
+  setText: SetText
+  setValue: (value: MentionedText) => void
   // The folders the agent works in, its working folder first.
   roots: readonly string[]
   cwd: string | null
@@ -69,6 +72,7 @@ export function useChatMentionMenu({ text, setText, roots, cwd, agent }: {
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean
 } {
   const listId = useId()
+  const { text } = value
   const input = useRef<HTMLTextAreaElement>(null)
   const [caret, setCaret] = useState(0)
   // Where the caret goes once a pick's text is in the input.
@@ -132,14 +136,17 @@ export function useChatMentionMenu({ text, setText, roots, cwd, agent }: {
   const active = Math.min(highlight, shown.length - 1)
   useEffect(() => setHighlight(0), [query])
 
-  const place = (next: { text: string; caret: number }) => {
-    placed.current = next.caret
-    setText(next.text)
-  }
   const pick = (entry: MentionEntry, tab: boolean) => {
-    if (!range || !agent) return
-    if (tab && entry.opens !== null) place(insertMention(text, range, `@${entry.opens}`, false))
-    else place(insertMention(text, range, mentionText(entry.target, agent), true))
+    if (!range) return
+    if (tab && entry.opens !== null) {
+      const next = insertMention(text, range, `@${entry.opens}`, false)
+      placed.current = next.caret
+      setText(next.text, next.caret)
+    } else {
+      const next = placeMention(value, range, entry.target)
+      placed.current = next.caret
+      setValue(next.value)
+    }
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
