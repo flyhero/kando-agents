@@ -6656,6 +6656,15 @@ body.side-panel-resizing * {
 .branch-action-note { margin: 0; font-size: 11px; color: var(--text-muted); }
 .branch-action-note[data-warn] { color: var(--warning); }
 .branch-action-done { color: var(--text); }
+/* A branch action opened from the popover: narrower than a form dialog, the list given more room. */
+.branch-dialog { width: min(440px, calc(100vw - 32px)); }
+.branch-dialog .modal-body { gap: 12px; padding: 20px 22px; }
+.branch-dialog .modal-header { align-items: flex-start; }
+.branch-dialog .modal-header h2 { font-size: 16px; }
+.branch-dialog-where { margin: 2px 0 0; font-size: 12px; }
+.branch-dialog .branch-action { margin-top: 0; }
+.branch-dialog .branch-action-list { max-height: min(320px, 50vh); }
+.branch-dialog .branch-action-note { font-size: 12px; }
 
 /* The browser card: a screenshot shown whole under the call's header, opening the viewer. */
 .chat-browser-shot { display: block; width: 100%; max-height: 480px; padding: 0; border: 0; border-top: 1px solid var(--border); background: var(--bg); cursor: zoom-in; }

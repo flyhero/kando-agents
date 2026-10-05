@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { checkSwitchBranch, type Conversation, type ProjectBranches, type ProjectHead } from '@kando/protocol'
 import { perform, useCore } from '../core-store'
 import { reasonText } from '../labels'
@@ -127,6 +127,53 @@ function CommitForm({ title, onCommit }: { title: string; onCommit: (message: st
   )
 }
 
+type BranchAction = 'switch' | 'create' | 'commit'
+
+const ACTION_TITLE: Record<BranchAction, string> = { switch: '切换分支', create: '新建分支', commit: 'Commit & Push' }
+
+// One branch action in a dialog of its own, over the popover. It stays inside the popover's DOM, so
+// pressing in it is not a click outside, and keeps Escape to itself, so the popover stays open
+// under it and shows how the action went.
+function BranchActionDialog({ action, head, onClose, children }: { action: BranchAction; head: ProjectHead; onClose: () => void; children: ReactNode }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const element = dialog.current
+    element?.showModal()
+    // showModal takes the focus to the first button, the close; the action's field wants it.
+    element?.querySelector<HTMLElement>('input, textarea')?.focus()
+    return () => element?.close()
+  }, [])
+  return (
+    <dialog
+      ref={dialog}
+      className="modal branch-dialog"
+      aria-label={`${ACTION_TITLE[action]} · ${folderName(head.path)}`}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') event.stopPropagation()
+      }}
+      // The backdrop is the dialog itself; its content sits in .modal-body.
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="modal-body">
+        <header className="modal-header">
+          <div>
+            <h2>{ACTION_TITLE[action]}</h2>
+            <p className="branch-dialog-where muted">{folderName(head.path)}{head.branch ? ` · 当前在 ${head.branch}` : ''}</p>
+          </div>
+          <button type="button" className="icon-button modal-close" aria-label="关闭" onClick={onClose}>×</button>
+        </header>
+        {children}
+      </div>
+    </dialog>
+  )
+}
+
 function ProjectActions({ conversation, head, option, onChanged }: {
   conversation: Conversation
   head: ProjectHead
@@ -134,7 +181,7 @@ function ProjectActions({ conversation, head, option, onChanged }: {
   onChanged: (note: string) => void
 }) {
   const commitPush = useCore((s) => s.rpc?.features.includes('conversation-commit-push') ?? false)
-  const [open, setOpen] = useState<'switch' | 'create' | 'commit' | null>(null)
+  const [open, setOpen] = useState<BranchAction | null>(null)
   const [busy, setBusy] = useState(false)
   if (!option?.git) return null
   const blocker = checkSwitchBranch(conversation)
@@ -156,16 +203,15 @@ function ProjectActions({ conversation, head, option, onChanged }: {
       onChanged(`已提交 ${result.commit} 并推送到 ${result.upstream}。`)
     }
   }
-  const toggle = (next: 'switch' | 'create' | 'commit') => setOpen(open === next ? null : next)
   const hint = blocker ? reasonText(blocker, blocker) : undefined
   const commitHint = hint ?? (!head.branch ? '当前没有可推送的分支' : head.changes === 0 ? '没有可以提交的改动' : undefined)
   return (
     <>
       <div className="branch-actions">
-        <button type="button" className="branch-action-button" aria-expanded={open === 'switch'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('switch')}>
+        <button type="button" className="branch-action-button" aria-haspopup="dialog" aria-expanded={open === 'switch'} disabled={busy || blocker !== null} title={hint} onClick={() => setOpen('switch')}>
           <BranchIcon />切换
         </button>
-        <button type="button" className="branch-action-button" aria-expanded={open === 'create'} disabled={busy || blocker !== null} title={hint} onClick={() => toggle('create')}>
+        <button type="button" className="branch-action-button" aria-haspopup="dialog" aria-expanded={open === 'create'} disabled={busy || blocker !== null} title={hint} onClick={() => setOpen('create')}>
           <PlusIcon />新建
         </button>
         {commitPush && (
@@ -173,21 +219,25 @@ function ProjectActions({ conversation, head, option, onChanged }: {
             type="button"
             className="branch-action-button"
             data-primary={!blocker && head.branch && (head.changes ?? 0) > 0 ? true : undefined}
-            aria-expanded={open === 'commit'}
+            aria-haspopup="dialog" aria-expanded={open === 'commit'}
             disabled={busy || blocker !== null || !head.branch || head.changes === 0}
             title={commitHint}
-            onClick={() => toggle('commit')}
+            onClick={() => setOpen('commit')}
           >
             <ArrowUpIcon />Commit &amp; Push
           </button>
         )}
         {blocker && <span className="branch-actions-blocked">{hint}</span>}
       </div>
-      {open === 'switch' && (
-        <SwitchList option={option} onPick={(ref) => void run((rpc) => rpc.call('conversations.switchBranch', { id: conversation.id, project: head.path, ref }), localName(ref))} />
+      {open && (
+        <BranchActionDialog action={open} head={head} onClose={() => setOpen(null)}>
+          {open === 'switch' && (
+            <SwitchList option={option} onPick={(ref) => void run((rpc) => rpc.call('conversations.switchBranch', { id: conversation.id, project: head.path, ref }), localName(ref))} />
+          )}
+          {open === 'create' && <CreateForm onCreate={(name) => void run((rpc) => rpc.call('conversations.createBranch', { id: conversation.id, project: head.path, name }), name)} />}
+          {open === 'commit' && <CommitForm title={conversation.title} onCommit={(message) => void commit(message)} />}
+        </BranchActionDialog>
       )}
-      {open === 'create' && <CreateForm onCreate={(name) => void run((rpc) => rpc.call('conversations.createBranch', { id: conversation.id, project: head.path, name }), name)} />}
-      {open === 'commit' && <CommitForm title={conversation.title} onCommit={(message) => void commit(message)} />}
     </>
   )
 }
