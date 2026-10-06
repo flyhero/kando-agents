@@ -346,6 +346,14 @@ function AboutSettings() {
   ] as const
   return (
     <>
+      <SettingsRow
+        label="项目地址"
+        control={() => (
+          <a className="settings-about-link" href="https://github.com/flyhero/kando-agents" target="_blank" rel="noreferrer">
+            https://github.com/flyhero/kando-agents
+          </a>
+        )}
+      />
       <SettingsRow label="桌面端版本" control={() => <span className="mono">{packageJson.version}</span>} />
       <SettingsRow label="协议版本" control={() => <span className="mono">{PROTOCOL_VERSION}</span>} />
       <SettingsRow
@@ -434,8 +442,8 @@ const SECTIONS: readonly Section[] = [
     id: 'about',
     group: '其他',
     title: '关于',
-    description: '版本、连接状态与快捷键。',
-    keywords: ['版本', '协议', '连接', 'core', '快捷键'],
+    description: '项目地址、版本、连接状态与快捷键。',
+    keywords: ['项目地址', 'GitHub', '仓库', '版本', '协议', '连接', 'core', '快捷键'],
     Icon: InfoIcon,
     Body: AboutSettings
   }

@@ -3909,6 +3909,22 @@ body.side-panel-resizing * {
   font: 12px var(--mono);
 }
 
+.settings-row-control:has(.settings-about-link) {
+  min-width: 0;
+  flex-shrink: 1;
+  text-align: right;
+}
+
+.settings-about-link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.settings-about-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .toast {
   position: fixed;
   bottom: 44px;
