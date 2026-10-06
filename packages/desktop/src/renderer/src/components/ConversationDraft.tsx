@@ -159,7 +159,6 @@ export function ConversationDraft() {
           <div className="chat-dock">
             <div className="chat-dock-header chat-draft-projects">
               <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
-              {projectPaths.length === 0 && <span className="muted">不选项目时，用 Kando 的工作目录</span>}
               {branches.options?.git && (
                 <DraftBranchPicker
                   options={branches.options}

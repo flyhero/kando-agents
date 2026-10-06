@@ -207,12 +207,7 @@ export function RoutineEditor({ routine, template = null, onClose }: { routine: 
               <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
             </div>
           </div>
-          {(agent === 'auto' || projectPaths.length === 0) && (
-            <span className="muted routine-editor-note">
-              {agent === 'auto' ? '到点时用有额度的那个 Agent。' : ''}
-              {projectPaths.length === 0 ? '不选项目时，用 Kando 的工作目录。' : ''}
-            </span>
-          )}
+          {agent === 'auto' && <span className="muted routine-editor-note">到点时用有额度的那个 Agent。</span>}
         </div>
 
         <div className="modal-field">
