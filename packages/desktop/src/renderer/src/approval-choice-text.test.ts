@@ -8,7 +8,7 @@ const choice = (grants: ApprovalGrant[], decision: ApprovalChoice['decision'] = 
 describe('approval choice text', () => {
   it('says what a choice remembers, for how long and where it is kept', () => {
     expect(choiceText(choice([grant({ values: ['Bash(git fetch *)'], scope: 'local' })]))).toEqual({
-      label: '允许，本项目以后 Bash(git fetch *) 不再问',
+      label: '允许，本项目以后以 git fetch 开头的命令不再问',
       note: '写进本项目的 .claude/settings.local.json（Git 忽略），之后的会话也生效'
     })
     expect(choiceText(choice([grant({ kind: 'prefix', values: ['cat', 'plan.md'], scope: 'agent' })])).label).toBe('允许，以后以 cat plan.md 开头的命令不再问')
@@ -23,7 +23,7 @@ describe('approval choice text', () => {
       grant({ kind: 'directories', values: ['/tmp'] }),
       grant({ values: ['Bash(a *)', 'Bash(b *)', 'Bash(c *)', 'Bash(d *)'], scope: 'local' })
     ]))
-    expect(text.label).toBe('允许，这次运行内 Read(//tmp/**)、Read(//private/tmp/**) 不再问，访问 /tmp 不再问；本项目以后 Bash(a *)、Bash(b *)、Bash(c *) 等 4 项 不再问')
+    expect(text.label).toBe('允许，这次运行内 Read(//tmp/**)、Read(//private/tmp/**) 不再问，访问 /tmp 不再问；本项目以后以 a、b、c 等 4 项 开头的命令不再问')
     expect(text.note).toBe('Agent 停下或重启后就失效；写进本项目的 .claude/settings.local.json（Git 忽略），之后的会话也生效')
   })
 
@@ -40,7 +40,7 @@ describe('approval choice text', () => {
       decisions: ['allow', 'allowForSession', 'deny'], resolution: 'allowedForSession', chosen,
       choices: [{ id: 'allow', decision: 'allow', grants: [] }, { id: 'always', decision: 'allowForSession', grants: [grant({ values: ['Bash(git fetch *)'], scope: 'local' })] }]
     })
-    expect(chosenText(item('always'))).toBe('已允许，本项目以后 Bash(git fetch *) 不再问')
+    expect(chosenText(item('always'))).toBe('已允许，本项目以后以 git fetch 开头的命令不再问')
     expect(chosenText(item('allow'))).toBeNull()
     expect(chosenText(item(null))).toBeNull()
   })

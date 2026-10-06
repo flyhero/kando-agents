@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ApprovalChoice, ApprovalGrant, ApprovalScope, ChatDecision } from '@kando/protocol'
+import { commandPrefixes } from './command-rules'
 
 // Where Claude writes a permission update: session lasts the CLI's run, as does a cliArg one.
 const CLAUDE_SCOPES: Record<string, ApprovalScope> = {
@@ -38,6 +39,21 @@ export function claudeGrants(suggestions: readonly unknown[], modes: Readonly<Re
   })
 }
 
+// What a Bash call is remembered by, in Claude's own permission update: Kando's short rules (see
+// command-rules) for this project's local settings, in place of Claude's suggestion, which is the
+// command whole; none for a command that may not be remembered.
+export function claudeBashRules(command: string): unknown[] {
+  const prefixes = commandPrefixes(command)
+  if (!prefixes) return []
+  return [{
+    type: 'addRules',
+    // As Claude Code writes its own: the words, then a wildcard for whatever follows.
+    rules: prefixes.map((words) => ({ toolName: 'Bash', ruleContent: `${words.join(' ')} *` })),
+    behavior: 'allow',
+    destination: 'localSettings'
+  }]
+}
+
 // Claude's answers to a tool call: once, with what it suggests remembering when it suggests
 // anything, or no.
 export function claudeChoices(grants: readonly ApprovalGrant[]): ApprovalChoice[] {
@@ -62,11 +78,16 @@ export type CodexChoice = ApprovalChoice & { raw: unknown }
 // command or files again this run, commands starting the same way from now on (Codex keeps those
 // in its rules), a host let through or kept out. Of decline and cancel, only the one that stands
 // for no. Older servers list none: then once, this run, and no. what: the command, or the files.
+// Commands starting the same way are remembered by Kando's own short prefix (command-rules), sent
+// in place of Codex's, which is the command word for word; when the command has no single prefix
+// to keep, that answer is not offered.
 export function codexChoices(
   available: readonly unknown[] | null | undefined,
   what: { kind: 'command' | 'files'; values: readonly string[] },
   denial: 'decline' | 'cancel'
 ): CodexChoice[] {
+  const prefixes = what.kind === 'command' && what.values[0] ? commandPrefixes(what.values[0]) : null
+  const prefix = prefixes?.length === 1 ? prefixes[0] : undefined
   const listed = available ?? ['accept', 'acceptForSession', denial]
   // No is always an answer, whatever the list says.
   return [...listed, ...(listed.includes(denial) ? [] : [denial])].flatMap((raw): CodexChoice[] => {
@@ -78,8 +99,9 @@ export function codexChoices(
     if (raw === denial) return [{ id: denial, decision: 'deny', grants: [], raw }]
     const exec = ExecPolicy.safeParse(raw)
     if (exec.success) {
-      const words = exec.data.acceptWithExecpolicyAmendment.execpolicy_amendment
-      return [{ id: 'execpolicy', decision: 'allowForSession', grants: [{ kind: 'prefix', values: words, scope: 'agent', behavior: 'allow' }], raw }]
+      if (!prefix) return []
+      const ours = { acceptWithExecpolicyAmendment: { execpolicy_amendment: prefix } }
+      return [{ id: 'execpolicy', decision: 'allowForSession', grants: [{ kind: 'prefix', values: prefix, scope: 'agent', behavior: 'allow' }], raw: ours }]
     }
     const network = NetworkPolicy.safeParse(raw)
     if (network.success) {
@@ -91,10 +113,18 @@ export function codexChoices(
   })
 }
 
-// The choice an answer sent to Codex was, read back off the answer, as a replay reads it.
+// The choice an answer sent to Codex was, read back off the answer, as a replay reads it. An
+// amendment sent before Kando chose the prefix is Codex's own, and still the same choice.
 export function codexChoiceOf(choices: readonly CodexChoice[], decision: unknown): CodexChoice | undefined {
   const sent = JSON.stringify(decision)
   return choices.find((choice) => JSON.stringify(choice.raw) === sent)
+    ?? (ExecPolicy.safeParse(decision).success ? choices.find((choice) => choice.id === 'execpolicy') : undefined)
+}
+
+// What an answer Codex was sent amounts to when no choice on the card is it any more: an amendment
+// remembered something, and let the command through.
+export function codexAnswerAllows(decision: unknown): boolean {
+  return ExecPolicy.safeParse(decision).success || NetworkPolicy.safeParse(decision).data?.applyNetworkPolicyAmendment.network_policy_amendment.action === 'allow'
 }
 
 // The decisions older clients pick from, in their order, from what the choices amount to.

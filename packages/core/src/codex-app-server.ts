@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
-import { choiceDecisions, codexChoiceOf, codexChoices, type CodexChoice } from './approval-choices'
+import { choiceDecisions, codexAnswerAllows, codexChoiceOf, codexChoices, type CodexChoice } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
@@ -1258,7 +1258,7 @@ export class CodexAppServer implements ChatDriver {
       this.resolve(requestId, Object.keys(answers).length ? 'answered' : 'cancelled', answers, at)
     } else {
       const choice = codexChoiceOf(pending.choices ?? [], decision.data.decision)
-      const resolution = choice ? RESOLUTIONS[choice.decision] : (DECISIONS[String(decision.data.decision)] ?? 'denied')
+      const resolution = choice ? RESOLUTIONS[choice.decision] : (DECISIONS[String(decision.data.decision)] ?? (codexAnswerAllows(decision.data.decision) ? 'allowedForSession' : 'denied'))
       this.resolve(requestId, resolution, null, at, choice?.id ?? null)
     }
   }

@@ -420,26 +420,31 @@ describe('ClaudeStream commands', () => {
 
     driver.apply({ dir: 'in', at, frame: canUseTool('req-1') })
     expect(driver.activity()).toBe('awaiting')
+    // rm is never remembered, whatever Claude suggests: allowing it lets this call through alone.
+    expect(driver.items.get('a:req-1')).toMatchObject({ decisions: ['allow', 'deny'] })
     expect(driver.respond('req-1', { decision: 'allowForSession' })).toEqual([{
       type: 'control_response',
       response: {
         subtype: 'success',
         request_id: 'req-1',
-        response: { behavior: 'allow', updatedInput: { command: 'rm -rf build' }, updatedPermissions: canUseTool('').request.permission_suggestions }
+        response: { behavior: 'allow', updatedInput: { command: 'rm -rf build' } }
       }
     }])
-    driver.apply({ dir: 'out', at, frame: driver.respond('req-1', { decision: 'allowForSession' })[0] })
+    driver.apply({ dir: 'out', at, frame: driver.respond('req-1', { decision: 'allow' })[0] })
     expect(driver.activity()).toBe('running')
-    expect(driver.items.get('a:req-1')).toMatchObject({ resolution: 'allowedForSession' })
+    expect(driver.items.get('a:req-1')).toMatchObject({ resolution: 'allowed' })
     expect(() => driver.respond('req-1', { decision: 'deny' })).toThrow(expect.objectContaining({ reason: 'chat-request-gone' }))
   })
 
   it('says what remembering a call would let through, and answers by the choice picked', () => {
     const driver = started()
     driver.apply({ dir: 'out', at, frame: driver.send('fetch').wire, ref: 'ref-1' })
+    // Claude suggests the command whole; Kando keeps it by what it does, for this project.
+    const claudes = [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git fetch origin main --prune' }], behavior: 'allow', destination: 'localSettings' }]
     const suggestions = [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'git fetch *' }], behavior: 'allow', destination: 'localSettings' }]
     const request = canUseTool('req-2')
-    driver.apply({ dir: 'in', at, frame: { ...request, request: { ...request.request, permission_suggestions: suggestions, decision_reason: 'Brace expansion' } } })
+    const fetching = { ...request.request, input: { command: 'git fetch origin main --prune' }, permission_suggestions: claudes }
+    driver.apply({ dir: 'in', at, frame: { ...request, request: { ...fetching, decision_reason: 'Brace expansion' } } })
     expect(driver.items.get('a:req-2')).toMatchObject({
       reason: 'Brace expansion',
       choices: [
@@ -448,6 +453,10 @@ describe('ClaudeStream commands', () => {
         { id: 'deny', decision: 'deny', grants: [] }
       ]
     })
+    // Any other tool keeps what Claude suggests, which goes by the tool already.
+    const web = [{ type: 'addRules', rules: [{ toolName: 'WebFetch', ruleContent: 'domain:example.com' }], behavior: 'allow', destination: 'localSettings' }]
+    driver.apply({ dir: 'in', at, frame: { ...request, request_id: 'req-4', request: { ...request.request, tool_name: 'WebFetch', input: { url: 'https://example.com' }, permission_suggestions: web } } })
+    expect(driver.items.get('a:req-4')).toMatchObject({ choices: [{ id: 'allow' }, { id: 'allowForSession', grants: [{ kind: 'rules', values: ['WebFetch(domain:example.com)'] }] }, { id: 'deny' }] })
     driver.apply({ dir: 'in', at, frame: { ...request, request_id: 'req-3', request: { ...request.request, decision_reason: 'This command requires approval' } } })
     expect(driver.items.get('a:req-3')).toMatchObject({ reason: null })
     expect(() => driver.respond('req-2', { decision: 'allow', choice: 'always' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { browserToolKind, ChatPermissionMode, CONTEXT_COMPACTED, takeImageMarkers, toolImagePath, type ChatCommand, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { offeredCommand } from './agent-commands'
-import { claudeChoices, claudeGrants } from './approval-choices'
+import { claudeBashRules, claudeChoices, claudeGrants } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
 import { KandoRequests } from './kando-requests'
@@ -1134,7 +1134,9 @@ export class ClaudeStream implements ChatDriver {
       this.pending.set(requestId, { kind: 'question', tool, itemId, toolItemId, input, suggestions: [] })
       return
     }
-    const suggestions = request.permission_suggestions ?? []
+    // A command is remembered by Kando's short rules, the same as Codex's are; other tools by
+    // what Claude suggests, which already goes by the tool.
+    const suggestions = tool === 'Bash' ? claudeBashRules(str(input.command) ?? '') : (request.permission_suggestions ?? [])
     const itemId = `a:${requestId}`
     // A plan to approve: carry it out asking each edit (allow) or taking edits as they come
     // (allowForSession), or keep planning (deny).

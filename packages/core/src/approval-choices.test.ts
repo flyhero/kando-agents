@@ -38,14 +38,21 @@ describe('approval choices', () => {
     const execpolicy = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['cat', 'plan.md'] } }
     const network = { applyNetworkPolicyAmendment: { network_policy_amendment: { host: 'example.com', action: 'deny' } } }
     const choices = codexChoices(['accept', execpolicy, network, 'decline', 'cancel', 'somethingNew'], { kind: 'command', values: ['cat plan.md'] }, 'decline')
+    // Codex proposes the command word for word; Kando sends its own short prefix instead.
+    const ours = { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['cat'] } }
     expect(choices).toEqual([
       { id: 'accept', decision: 'allow', grants: [], raw: 'accept' },
-      { id: 'execpolicy', decision: 'allowForSession', grants: [{ kind: 'prefix', values: ['cat', 'plan.md'], scope: 'agent', behavior: 'allow' }], raw: execpolicy },
+      { id: 'execpolicy', decision: 'allowForSession', grants: [{ kind: 'prefix', values: ['cat'], scope: 'agent', behavior: 'allow' }], raw: ours },
       { id: 'network:deny:example.com', decision: 'deny', grants: [{ kind: 'host', values: ['example.com'], scope: 'agent', behavior: 'deny' }], raw: network },
       { id: 'decline', decision: 'deny', grants: [], raw: 'decline' }
     ])
     expect(choiceDecisions(choices)).toEqual(['allow', 'allowForSession', 'deny'])
+    expect(codexChoiceOf(choices, ours)?.id).toBe('execpolicy')
+    // An answer sent with Codex's own prefix, before Kando chose one, reads back as the same choice.
     expect(codexChoiceOf(choices, { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['cat', 'plan.md'] } })?.id).toBe('execpolicy')
+    // Nothing to remember for a command that may do anything, nor for one of several different prefixes.
+    expect(codexChoices(['accept', execpolicy, 'decline'], { kind: 'command', values: ['rm -rf build'] }, 'decline').map((choice) => choice.id)).toEqual(['accept', 'decline'])
+    expect(codexChoices(['accept', execpolicy, 'decline'], { kind: 'command', values: ['git status && pnpm test'] }, 'decline').map((choice) => choice.id)).toEqual(['accept', 'decline'])
     expect(codexChoiceOf(choices, 'acceptForSession')).toBeUndefined()
   })
 

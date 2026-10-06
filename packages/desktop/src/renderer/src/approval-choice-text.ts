@@ -29,8 +29,12 @@ function listed(values: readonly string[]): string {
 function grantAction(grant: ApprovalGrant): string {
   const what = listed(grant.values)
   switch (grant.kind) {
-    case 'rules':
+    case 'rules': {
+      // Command prefixes, as Kando writes them for Bash, read as Codex's do: what they start with.
+      const prefixes = grant.values.map((value) => /^Bash\((.+?)(?::\*| \*)\)$/.exec(value)?.[1])
+      if (grant.behavior === 'allow' && prefixes.every((prefix) => prefix !== undefined)) return `以 ${listed(prefixes.map(String))} 开头的命令不再问`
       return grant.behavior === 'deny' ? `都不许用 ${what}` : grant.behavior === 'ask' ? `${what} 每次都先问` : `${what} 不再问`
+    }
     case 'mode':
       return `改用「${modeLabel('claude', grant.values[0] ?? '')}」模式`
     case 'directories':
