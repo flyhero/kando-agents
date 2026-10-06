@@ -485,10 +485,7 @@ export function BranchIcon() {
 export function ForkIcon() {
   return (
     <svg {...stroked}>
-      <circle cx="6" cy="4.5" r="1.8" />
-      <circle cx="14" cy="4.5" r="1.8" />
-      <circle cx="10" cy="15.5" r="1.8" />
-      <path d="M6 6.3v1.2c0 1.6 1.2 2.5 2.6 2.9l1.4.4 1.4-.4c1.4-.4 2.6-1.3 2.6-2.9V6.3M10 10.8v2.9" />
+      <path d="M3.5 10H8m0 0 7.5-6.5m-4 0h4v4M8 10l7.5 6.5m-4 0h4v-4" />
     </svg>
   )
 }
