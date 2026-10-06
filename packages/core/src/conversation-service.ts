@@ -20,6 +20,7 @@ import { searchSnippet } from './conversation-search'
 import { buildHandoff } from './conversation-handoff'
 import { SCHEDULED_GO_TEXT, UNATTENDED_NOTE } from './agent-prompt'
 import { createProjectBranch, projectBranches, switchProjectBranch } from './project-branches'
+import { resolveStart } from './task-start'
 import { commitAll, commitAndPush, pushBranch } from './project-commit'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
@@ -199,6 +200,16 @@ export class ConversationService {
   branches(id: string): Promise<ProjectHead[]> {
     return Promise.all(this.get(id).projectPaths.map(async (projectPath) => ({ path: projectPath, ...await projectHead(projectPath) })))
   }
+  // A project's branches before any conversation has it: for a new one to start on.
+  async projectBranchOptions(project: string): Promise<ProjectBranches> {
+    const live = this.store.list().filter((other) => other.sessionId !== null)
+    return {
+      path: project,
+      ...await projectBranches(project),
+      sharedWith: live.filter((other) => other.projectPaths.includes(project)).map((other) => other.title)
+    }
+  }
+
   // Other conversations with an agent open in a folder see its files change with a switch.
   async branchOptions(id: string): Promise<ProjectBranches[]> {
     const conversation = this.get(id)
@@ -280,12 +291,12 @@ export class ConversationService {
     agent: AgentKind,
     projectPaths: readonly string[],
     allowBypass?: boolean,
-    start: { permissionMode?: string; model?: string; effort?: string; worktree?: boolean } = {},
+    start: { permissionMode?: string; model?: string; effort?: string; worktree?: boolean; branch?: string } = {},
     routine: { id: string; title: string } | null = null,
     id: string = randomUUID()
   ): Promise<Conversation> {
     if (projectPaths.length > MAX_TASK_REPOS) throw new Rejection('too-many-projects')
-    const { permissionMode, model, effort, worktree = false } = start
+    const { permissionMode, model, effort, worktree = false, branch } = start
     const worktreesRoot = worktree ? this.worktreesRoot : null
     if (worktree && (!worktreesRoot || projectPaths.length === 0)) throw new Rejection('missing-repo', 'a worktree needs a project to lay out')
     // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
@@ -300,8 +311,14 @@ export class ConversationService {
     }
     const resolved = await resolveProjects(projectPaths)
     const { picked } = resolved
+    const primary = resolved.projects[0]
+    if (branch && !primary) throw new Rejection('missing-repo', 'a branch needs a project')
+    // The primary's branch: in a worktree, where its branch starts (a remote one fetched first);
+    // in the project itself, switched to before anything else, so a refusal makes nothing.
+    const primaryStart = branch && primary && worktreesRoot ? (await resolveStart(primary, branch, null, Date.now())).commit : undefined
+    if (branch && primary && !worktreesRoot) await switchProjectBranch(primary, branch)
     const projects = worktreesRoot
-      ? await Promise.all((await prepareConversationWorktrees(id, resolved.projects, worktreesRoot)).map((dir) => realpath(dir)))
+      ? await Promise.all((await prepareConversationWorktrees(id, resolved.projects, worktreesRoot, primaryStart)).map((dir) => realpath(dir)))
       : resolved.projects
     let workspace: string
     if (projects.length === 0) {

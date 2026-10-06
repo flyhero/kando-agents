@@ -160,6 +160,37 @@ describe('ConversationService', () => {
     expect([...projects.recent()].sort()).toEqual([app, lib])
   })
 
+  it('starts on the branch picked: a worktree from it, or the project switched to it', async () => {
+    const app = path.join(root, 'app')
+    const git = (...args: string[]) => execFileSync('git', ['-C', app, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim()
+    execFileSync('git', ['init', '-q', '-b', 'main', app])
+    git('commit', '-q', '--allow-empty', '-m', 'init')
+    git('switch', '-q', '-c', 'feature')
+    git('commit', '-q', '--allow-empty', '-m', 'on feature')
+    git('switch', '-q', 'main')
+    expect(await service.projectBranchOptions(app)).toMatchObject({ branch: 'main', refs: expect.arrayContaining(['refs/heads/main', 'refs/heads/feature']) })
+
+    // In a worktree, the conversation's branch starts from the one picked; the project stays put.
+    const worked = await service.create('claude', [app], undefined, { worktree: true, branch: 'refs/heads/feature' })
+    const branch = `kando/${worked.id.slice(0, 8)}`
+    expect(git('log', '-1', '--format=%s', branch)).toBe('on feature')
+    expect(git('branch', '--show-current')).toBe('main')
+
+    // In the project, it is switched to the branch first; with tracked changes it is not, and
+    // nothing is made.
+    const switched = await service.create('claude', [app], undefined, { branch: 'refs/heads/feature' })
+    expect(switched.projectPaths).toEqual([realpathSync(app)])
+    expect(git('branch', '--show-current')).toBe('feature')
+    writeFileSync(path.join(app, 'tracked.md'), 'one\n')
+    git('add', 'tracked.md')
+    git('commit', '-q', '-m', 'track')
+    writeFileSync(path.join(app, 'tracked.md'), 'changed\n')
+    const before = service.list().length
+    await expect(service.create('claude', [app], undefined, { branch: 'refs/heads/main' })).rejects.toMatchObject({ reason: 'uncommitted-changes' })
+    expect(service.list()).toHaveLength(before)
+    expect(git('branch', '--show-current')).toBe('feature')
+  })
+
   it('lays no worktree out unless every project is a git repo', async () => {
     const plain = path.join(root, 'plain')
     mkdirSync(plain)

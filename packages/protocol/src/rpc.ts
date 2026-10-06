@@ -53,7 +53,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch'] as const
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
 // conversation-fork: a free conversation can be forked at one of its messages into a new one (conversations.fork).
@@ -134,6 +134,11 @@ export const rpcMethods = {
       // Each project, which must then be a git repo, gets a worktree on a new branch from its HEAD,
       // and the conversation works there instead. Needs conversation-worktrees.
       worktree: z.boolean().optional(),
+      // The primary project's branch, by full name (refs/heads/… or refs/remotes/…): with a
+      // worktree, the one it starts from (a remote one fetched first); without, the one the project
+      // is switched to before the agent starts, as conversations.switchBranch would. Needs
+      // conversation-start-branch.
+      branch: z.string().trim().min(1).max(500).optional(),
       allowBypass: AllowBypass,
       permissionMode: ChatPermissionMode.optional(),
       model: z.string().trim().min(1).max(200).optional(),
@@ -226,6 +231,9 @@ export const rpcMethods = {
   'conversations.branches': { params: ConversationRef, result: z.array(ProjectHead) },
   // What each project could switch to (see checkSwitchBranch); read from git on every call.
   'conversations.branchOptions': { params: ConversationRef, result: z.array(ProjectBranches) },
+  // The same for a project no conversation has yet, for a new one to start on (feature
+  // conversation-start-branch).
+  'projects.branches': { params: z.object({ path: z.string().trim().min(1) }), result: ProjectBranches },
   // Checks out a branch by its full name in one project; a remote one gets a local branch tracking it.
   'conversations.switchBranch': { params: ConversationRef.extend({ project: z.string().min(1), ref: z.string().min(1).max(500) }), result: Conversation },
   // Makes a branch at the project's HEAD and checks it out, uncommitted changes and all.

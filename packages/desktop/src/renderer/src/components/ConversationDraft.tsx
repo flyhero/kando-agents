@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChatPermissionMode, type AgentKind, type ChatCatalog } from '@kando/protocol'
-import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useConversationWorktreesSupported, useCore } from '../core-store'
+import { closeConversationDraft, perform, selectConversation, useChatImagesSupported, useChatOptionsSupported, useConversationWorktreesSupported, useCore, useStartBranchSupported } from '../core-store'
 import { defaultAgent } from '../default-agent'
 import { currentInstalledAgents, useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
@@ -18,6 +18,7 @@ import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBa
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
+import { DraftBranchPicker, switchNote, useProjectBranches } from './DraftBranchPicker'
 
 // A new conversation while chats are the default: the agent and projects are picked on the page,
 // and the first message creates the conversation and starts the agent, so none is left empty.
@@ -47,6 +48,15 @@ export function ConversationDraft() {
   const imagesSupported = useChatImagesSupported()
   const worktreesSupported = useConversationWorktreesSupported()
   const inWorktree = worktree && worktreesSupported && projectPaths.length > 0
+  // The primary project's branch: where its worktree starts, or what it is switched to; null keeps
+  // the one checked out. Picked again for each primary.
+  const startBranchSupported = useStartBranchSupported()
+  const primary = startBranchSupported ? (projectPaths[0] ?? null) : null
+  const branches = useProjectBranches(primary)
+  const [branch, setBranch] = useState<string | null>(null)
+  useEffect(() => setBranch(null), [primary])
+  const startBranch = branches.options?.git ? branch : null
+  const branchNote = !inWorktree && branches.options ? switchNote(branches.options, startBranch) : null
   const attached = useComposerImages()
   const allowBypass = usePreferences((s) => s.allowBypass)
   const width = usePreferences((s) => s.chatWidth)
@@ -92,7 +102,7 @@ export function ConversationDraft() {
     const chosen = optionsSupported
       ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(inWorktree ? { worktree: true } : {}), ...startOptions(), ...chosen }))
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(inWorktree ? { worktree: true } : {}), ...(startBranch ? { branch: startBranch } : {}), ...startOptions(), ...chosen }))
   }
   // Created once the agent is ready, then sent before the page gives way to the conversation, so
   // a start that fails leaves the message here to try again.
@@ -150,16 +160,29 @@ export function ConversationDraft() {
             <div className="chat-dock-header chat-draft-projects">
               <ProjectPicker projects={projectPaths.map((path) => ({ path, worktreePath: null }))} onChange={setProjectPaths} locked={busy} />
               {projectPaths.length === 0 && <span className="muted">不选项目时，用 Kando 的工作目录</span>}
+              {branches.options?.git && (
+                <DraftBranchPicker
+                  options={branches.options}
+                  picked={branch}
+                  worktree={inWorktree}
+                  locked={busy}
+                  onOpen={branches.refresh}
+                  onPick={setBranch}
+                />
+              )}
               {projectPaths.length > 0 && worktreesSupported && (
                 <label
                   className="chat-draft-worktree"
                   data-tooltip-side="top"
-                  data-tooltip="每个项目从当前提交拉一个新分支和 worktree，互不干扰；未提交的改动不会带过去。不勾选就直接在项目目录里改"
+                  data-tooltip={startBranchSupported
+                    ? '主项目从左边选的分支、其他项目从当前提交，各拉一个新分支和 worktree，互不干扰；未提交的改动不会带过去。不勾选就直接在项目目录里改'
+                    : '每个项目从当前提交拉一个新分支和 worktree，互不干扰；未提交的改动不会带过去。不勾选就直接在项目目录里改'}
                 >
                   <input type="checkbox" checked={worktree} disabled={busy} onChange={(event) => setWorktree(event.target.checked)} />
                   新 worktree
                 </label>
               )}
+              {branchNote && <span className="chat-draft-branch-note" data-warn={branchNote.warn || undefined}>{branchNote.text}</span>}
             </div>
             <div
               className="chat-input-card"

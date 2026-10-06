@@ -599,6 +599,10 @@ export function useConversationWorktreesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-worktrees') ?? false)
 }
 
+export function useStartBranchSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('conversation-start-branch') ?? false)
+}
+
 // Whether core keeps conversations pinned to the top of the list.
 export function useConversationPinSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-pin') ?? false)

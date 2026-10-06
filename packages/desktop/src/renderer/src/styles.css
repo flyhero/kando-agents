@@ -6354,6 +6354,28 @@ body.side-panel-resizing * {
 .chat-draft-worktree { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); cursor: pointer; }
 .chat-draft-worktree input { margin: 0; accent-color: var(--accent); }
 .chat-draft-worktree:has(input:checked) { color: var(--text); }
+/* The primary project's branch, between the projects and the worktree box: a chip like theirs. */
+.chat-draft-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.chat-draft-branch:hover:not(:disabled),
+.chat-draft-branch[aria-expanded='true'] { background: var(--fill-2); }
+.chat-draft-branch svg { flex-shrink: 0; width: 12px; height: 12px; color: var(--text-muted); }
+.chat-draft-branch-from { color: var(--text-muted); }
+.chat-draft-branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-draft-branch-note { flex-basis: 100%; color: var(--text-muted); }
+.chat-draft-branch-note[data-warn] { color: var(--warning); }
 .chat-options-note { font-size: 12px; }
 
 /* Keep the chat's information hierarchy while its base size follows the setting. */

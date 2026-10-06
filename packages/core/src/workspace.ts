@@ -249,7 +249,9 @@ export async function prepareWorkspace(
 // A conversation started in worktrees: each project's repo gets one under the conversation's
 // directory, on a branch of its own from what the project has checked out. Uncommitted changes
 // stay behind in the project. A start tried again with the same id finds what it laid out.
-export async function prepareConversationWorktrees(conversationId: string, projects: readonly string[], worktreesRoot: string): Promise<string[]> {
+// primaryStart: the commit the first project's branch starts from, where the user picked one;
+// every other one starts from its project's HEAD.
+export async function prepareConversationWorktrees(conversationId: string, projects: readonly string[], worktreesRoot: string, primaryStart?: string): Promise<string[]> {
   const shortId = shortTaskId(conversationId)
   const branch = `kando/${shortId}`
   const topLevels: string[] = []
@@ -270,7 +272,8 @@ export async function prepareConversationWorktrees(conversationId: string, proje
       }
       const branched = !(await branchExists(topLevel, branch))
       // --no-track: the branch is the conversation's own, not a copy of the one it started from.
-      await addWorktree(topLevel, dir, branched ? ['--quiet', '--no-track', '-b', branch, dir, 'HEAD'] : ['--quiet', dir, branch])
+      const base = topLevel === topLevels[0] && primaryStart ? primaryStart : 'HEAD'
+      await addWorktree(topLevel, dir, branched ? ['--quiet', '--no-track', '-b', branch, dir, base] : ['--quiet', dir, branch])
       made.push({ topLevel, dir, branched })
     }
   } catch (error) {
