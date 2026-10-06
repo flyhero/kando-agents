@@ -77,6 +77,8 @@ describe('runHeadline', () => {
 describe('commandKeyword', () => {
   it('names the program, past cd, env and launchers', () => {
     expect(commandKeyword('cd /Users/me/repo && git branch --show-current && grep -rn foo . | head -40')).toBe('git')
+    expect(commandKeyword(`node --input-type=module -e 'import { chromium } from "@playwright/test"'`)).toBe('node')
+    expect(commandKeyword(`python3 -c "print(1)"`)).toBe('python3')
     expect(commandKeyword('set -a && source .env && FOO=1 npx tsx scripts/report/monthly.ts')).toBe('monthly.ts')
     expect(commandKeyword('pnpm vitest run orders --reporter=dot')).toBe('vitest')
     expect(commandKeyword('sudo -n true')).toBe('true')

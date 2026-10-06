@@ -135,17 +135,21 @@ const SHELL_RUNNERS = new Set(['bash', 'bun', 'bunx', 'deno', 'node', 'npm', 'np
 export function commandKeyword(command: string): string {
   const words = command.split(/[\s;&|()]+/).filter(Boolean)
   let skip = false
+  // A launcher given a script inline (node -e '…', python -c "…") is what runs: its script is no name.
+  let runner: string | null = null
   for (const word of words) {
     if (skip) {
       skip = false
       continue
     }
+    if (/^['"]/.test(word)) return runner ?? word.replace(/^['"]+|['"]+$/g, '')
     if (/^[A-Z_]\w*=/i.test(word)) continue
     if (/^[+-]/.test(word)) continue
     if (SHELL_NOISE_WITH_ARG.has(word)) {
       skip = true
       continue
     }
+    if (SHELL_RUNNERS.has(word)) runner = word
     if (SHELL_NOISE.has(word) || SHELL_RUNNERS.has(word)) continue
     return word.includes('/') ? (word.split('/').pop() || word) : word
   }
