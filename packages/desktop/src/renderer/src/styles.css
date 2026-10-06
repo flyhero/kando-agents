@@ -6374,8 +6374,16 @@ body.side-panel-resizing * {
 .chat-draft-branch svg { flex-shrink: 0; width: 12px; height: 12px; color: var(--text-muted); }
 .chat-draft-branch-from { color: var(--text-muted); }
 .chat-draft-branch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-draft-branch-note { flex-basis: 100%; color: var(--text-muted); }
-.chat-draft-branch-note[data-warn] { color: var(--warning); }
+.chat-draft-branch-name { min-width: 0; }
+.chat-draft-branch-current { color: var(--text-muted); max-width: 90px; }
+.chat-draft-branch-arrow { flex-shrink: 0; color: var(--text-muted); }
+/* A switch the send will make: the chip in the accent's wash, as a choice that changes something. */
+.chat-draft-branch[data-switch] { background: var(--accent-bg); }
+.chat-draft-branch[data-switch] .chat-draft-branch-arrow { color: var(--accent); }
+/* One tracked changes refuse: warned on the chip, the reason in its tooltip. */
+.chat-draft-branch[data-blocked] { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+.chat-draft-branch[data-blocked] svg,
+.chat-draft-branch[data-blocked] .chat-draft-branch-arrow { color: var(--warning); }
 .chat-options-note { font-size: 12px; }
 
 /* Keep the chat's information hierarchy while its base size follows the setting. */

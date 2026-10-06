@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
 import type { ProjectBranches } from '@kando/protocol'
 import { useCore } from '../core-store'
 import { shortRef } from '../task-starts'
-import { BranchIcon, CheckIcon, ChevronDownIcon } from './icons'
+import { BranchIcon, CheckIcon, ChevronDownIcon, WarningIcon } from './icons'
 import { Popover } from './Popover'
 import { projectName } from './ProjectPicker'
 
@@ -24,6 +24,8 @@ export function useProjectBranches(project: string | null): { options: ProjectBr
 // Which branch a new conversation starts on, beside its primary project. With a worktree, the
 // branch its own is made from; without, the one the project is switched to before the agent
 // starts. picked: a full ref, or null for the branch the project has checked out.
+// A switch picked shows on the chip itself, "current → picked", what it does and who else works in
+// the folder in its tooltip; one tracked changes will refuse turns it to a warning.
 export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, onPick }: {
   options: ProjectBranches
   picked: string | null
@@ -32,6 +34,7 @@ export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, o
   onOpen: () => void
   onPick: (ref: string | null) => void
 }) {
+  const note = worktree ? null : switchNote(options, picked)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const close = useCallback(() => setOpen(false), [])
@@ -56,6 +59,7 @@ export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, o
     }
   }
   const name = chosen ? shortRef(chosen) : 'HEAD'
+  const tooltip = note?.text ?? (worktree ? '新 worktree 从这个分支拉出' : '在这个分支上工作；选别的分支，发送时会把项目目录切过去')
   return (
     <span className="menu-anchor">
       <button
@@ -64,8 +68,10 @@ export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, o
         aria-haspopup="dialog"
         aria-expanded={open}
         disabled={locked}
-        data-tooltip={worktree ? '新 worktree 从这个分支拉出' : '在这个分支上工作；选别的分支，发送时会把项目目录切过去'}
+        data-tooltip={tooltip}
         data-tooltip-side="top"
+        data-switch={note ? true : undefined}
+        data-blocked={note?.blocked || undefined}
         onClick={() => {
           if (!open) {
             setQuery('')
@@ -74,8 +80,9 @@ export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, o
           setOpen(!open)
         }}
       >
-        <BranchIcon />
+        {note?.blocked ? <WarningIcon /> : <BranchIcon />}
         {worktree && <span className="chat-draft-branch-from">从</span>}
+        {note && options.branch && <><span className="chat-draft-branch-name chat-draft-branch-current mono">{options.branch}</span><span className="chat-draft-branch-arrow" aria-hidden="true">→</span></>}
         <span className="chat-draft-branch-name mono">{name}</span>
         <ChevronDownIcon />
       </button>
@@ -106,10 +113,10 @@ export function DraftBranchPicker({ options, picked, worktree, locked, onOpen, o
 }
 
 // What a switch picked without a worktree will do to the project, and what may stop it.
-export function switchNote(options: ProjectBranches, picked: string | null): { text: string; warn: boolean } | null {
+export function switchNote(options: ProjectBranches, picked: string | null): { text: string; blocked: boolean } | null {
   if (!picked) return null
   const project = projectName(options.path)
-  if (options.changes > 0) return { text: `${project} 有 ${options.changes} 个未提交的改动，切不过去：先提交或暂存，或勾选新 worktree`, warn: true }
+  if (options.changes > 0) return { text: `${project} 有 ${options.changes} 个未提交的改动，切不过去：先提交或暂存，或勾选新 worktree`, blocked: true }
   const shared = options.sharedWith.length > 0 ? `；会话${options.sharedWith.map((title) => `「${title}」`).join('、')}也在用这个目录` : ''
-  return { text: `发送时会把 ${project} 切到 ${shortRef(picked)}${shared}`, warn: true }
+  return { text: `发送时会把 ${project} 从 ${options.branch ?? '当前提交'} 切到 ${shortRef(picked)}${shared}`, blocked: false }
 }

@@ -143,6 +143,16 @@ export function InspectorIcon() {
   )
 }
 
+// Something stands in the way: a triangle with a mark in it.
+export function WarningIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M8.6 3.6 2.9 13.4a1.6 1.6 0 0 0 1.4 2.4h11.4a1.6 1.6 0 0 0 1.4-2.4L11.4 3.6a1.6 1.6 0 0 0-2.8 0z" />
+      <path d="M10 8v3M10 13.6v.1" />
+    </svg>
+  )
+}
+
 // A commit on its line, as git tools draw one.
 export function CommitIcon() {
   return (

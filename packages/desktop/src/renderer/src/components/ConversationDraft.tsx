@@ -18,7 +18,7 @@ import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBa
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
-import { DraftBranchPicker, switchNote, useProjectBranches } from './DraftBranchPicker'
+import { DraftBranchPicker, useProjectBranches } from './DraftBranchPicker'
 
 // A new conversation while chats are the default: the agent and projects are picked on the page,
 // and the first message creates the conversation and starts the agent, so none is left empty.
@@ -56,7 +56,6 @@ export function ConversationDraft() {
   const [branch, setBranch] = useState<string | null>(null)
   useEffect(() => setBranch(null), [primary])
   const startBranch = branches.options?.git ? branch : null
-  const branchNote = !inWorktree && branches.options ? switchNote(branches.options, startBranch) : null
   const attached = useComposerImages()
   const allowBypass = usePreferences((s) => s.allowBypass)
   const width = usePreferences((s) => s.chatWidth)
@@ -181,7 +180,6 @@ export function ConversationDraft() {
                   新 worktree
                 </label>
               )}
-              {branchNote && <span className="chat-draft-branch-note" data-warn={branchNote.warn || undefined}>{branchNote.text}</span>}
             </div>
             <div
               className="chat-input-card"
