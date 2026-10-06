@@ -106,7 +106,15 @@ describe('CodexAppServer', () => {
     driver.apply({ dir: 'in', at: 1, frame: { id: 'kando-init', result: {} } })
     const opened = send().find((frame) => JSON.stringify(frame).includes('"method":"thread/'))
     expect(opened).toEqual({ id: 'kando-thread', method: 'thread/fork', params: expect.objectContaining({ threadId: 'thread-1', lastTurnId: 'turn-2', cwd: '/work/repo', excludeTurns: true }) })
+    // Asked for once: while the answer is on its way, and after, nothing asks again (each ask made
+    // Codex another thread, and each answer took the stage's turns away to it).
+    const opens = () => send().filter((frame) => JSON.stringify(frame).includes('"method":"thread/')).length
+    expect(opens()).toBe(0)
     driver.apply({ dir: 'in', at: 2, frame: { id: 'kando-thread', result: { thread: { id: 'thread-2' } } } })
+    expect(driver.providerSessionId()).toBe('thread-2')
+    expect(opens()).toBe(0)
+    // A thread opened again stays a stranger: the stage keeps the one it has.
+    driver.apply({ dir: 'in', at: 3, frame: { id: 'kando-thread', result: { thread: { id: 'thread-3' } } } })
     expect(driver.providerSessionId()).toBe('thread-2')
   })
 

@@ -826,7 +826,8 @@ export class CodexAppServer implements ChatDriver {
       }
     } else if (method === 'thread/start' || method === 'thread/resume' || method === 'thread/fork') {
       const thread = ThreadOpened.safeParse(frame.result)
-      if (thread.success) {
+      // The stage's thread is the first one opened: another would take its turns for a subagent's.
+      if (thread.success && !this.threadId) {
         this.threadId = thread.data.thread.id
         this.model = thread.data.model ?? this.model
         this.effort = thread.data.reasoningEffort ?? this.effort
@@ -834,7 +835,7 @@ export class CodexAppServer implements ChatDriver {
         this.sandbox = sandboxName(thread.data.sandbox?.type) ?? this.sandbox
         // A thread opened for a plan-mode start is not in plan mode until its first turn says so.
         this.planning = thread.data.collaborationMode ? thread.data.collaborationMode.mode === PLAN_MODE : this.chosen.permissionMode === PLAN_MODE
-      } else {
+      } else if (!thread.success) {
         this.startError = error ?? 'Codex did not open a thread'
       }
     } else if (method === 'model/list') {
@@ -1205,7 +1206,7 @@ export class CodexAppServer implements ChatDriver {
     if (frame.method !== undefined && frame.id !== undefined) {
       this.requests.set(String(frame.id), frame.method)
       if (frame.method === 'initialize') this.initSent = true
-      if (frame.method === 'thread/start' || frame.method === 'thread/resume') this.threadRequested = true
+      if (frame.method === 'thread/start' || frame.method === 'thread/resume' || frame.method === 'thread/fork') this.threadRequested = true
       if (frame.method === 'model/list') this.modelsRequested = true
       if (frame.method === 'config/read') this.configRequested = true
       if (frame.method === 'skills/list') this.skillsRequested = true
