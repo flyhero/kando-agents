@@ -4,6 +4,7 @@ import { perform } from '../core-store'
 import { canPickFolder, pickFolder } from '../desktop-bridge'
 import { ContextMenu, MenuItem, menuPoint, type MenuPoint } from './ContextMenu'
 import { Popover } from './Popover'
+import { FolderIcon } from './icons'
 
 export function projectName(projectPath: string): string {
   return projectPath.split(/[\\/]/).filter(Boolean).at(-1) ?? projectPath
@@ -110,13 +111,15 @@ export function ProjectPicker({
   onChange,
   locked = false,
   primaryLocked = false,
-  maxProjects = MAX_TASK_REPOS
+  maxProjects = MAX_TASK_REPOS,
+  compact = false
 }: {
   projects: readonly ProjectEntry[]
   onChange: (paths: string[]) => void
   locked?: boolean
   primaryLocked?: boolean
   maxProjects?: number
+  compact?: boolean
 }) {
   // Open menu → the recent projects it offers; null while closed.
   const [menu, setMenu] = useState<string[] | null>(null)
@@ -212,7 +215,12 @@ export function ProjectPicker({
             aria-expanded={menu !== null}
             onClick={() => (menu ? setMenu(null) : void open())}
           >
-            ＋ 添加项目
+            {compact && paths.length === 0 ? (
+              <>
+                <FolderIcon />
+                无项目
+              </>
+            ) : '＋ 添加项目'}
           </button>
           {menu && (
             <ProjectMenu
