@@ -158,6 +158,11 @@ const SkillEntry = z.looseObject({
 })
 // The requests that start a turn: a message, and the commands Kando offers.
 const TURN_METHODS: ReadonlySet<string> = new Set(['turn/start', 'thread/compact/start', 'review/start'])
+// The text of a turn/start or turn/steer's input, its text parts joined.
+function inputText(params: unknown): string {
+  const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(params)
+  return input.success ? input.data.input.flatMap((part) => (part.type === 'text' ? [part.text ?? ''] : [])).join('\n') : ''
+}
 // Of the effective config, only the model: the rest may hold secrets and stays out of the log.
 const ConfigRead = z.looseObject({ config: z.looseObject({ model: z.string().nullish() }) })
 const ErrorEvent = z.looseObject({
@@ -399,7 +404,12 @@ export class CodexAppServer implements ChatDriver {
   private readonly childFiles = new Map<string, string>()
   private startError: string | null = null
   private exited = false
-  private turn: { ref: string; turnId: string | null; assistant: string | null } | null = null
+  // steerable: started by a message; a review or a compaction takes none into it.
+  private turn: { ref: string; turnId: string | null; assistant: string | null; steerable?: boolean } | null = null
+  // Messages sent into the running turn, by request, until Codex takes or refuses them: one taken
+  // shows as sent then; one refused waits in the queue for the turn to end instead.
+  private readonly steering = new Map<string, { text: string; images: ChatImage[]; ref: string }>()
+  private steers = 0
   // What this turn used, summed across its model calls.
   private turnUsage: { input: number; output: number } | { total: number } | null = null
   private threadUsage: z.infer<typeof TokenCount> | null = null
@@ -477,6 +487,8 @@ export class CodexAppServer implements ChatDriver {
         else this.kando.apply(record)
     }
     this.refreshOptions()
+    // The composer offers sending into the turn while one that takes it runs.
+    if (this.state.current.steerable !== this.canSteer()) this.state.set({ steerable: this.canSteer() })
     this.state.publish(record.at)
   }
 
@@ -535,13 +547,21 @@ export class CodexAppServer implements ChatDriver {
     return { wire: frame, logged: frame }
   }
 
-  // The app server takes a message only as a new turn; one for the running turn waits in the queue.
-  steer(): ChatOutgoing {
-    throw new Rejection('chat-no-steer', 'Codex takes no message into a running turn')
+  // Into the running turn with turn/steer, which names the turn so a message meant for one that has
+  // just ended is refused rather than starting another.
+  steer(text: string, images: readonly ChatImageFile[] = []): ChatOutgoing {
+    if (!this.threadId || !this.turn?.turnId) throw new Rejection('chat-starting', 'the turn has not started yet')
+    if (!this.canSteer()) throw new Rejection('chat-no-steer', 'this turn takes no message into it')
+    const input = [
+      ...(text || images.length === 0 ? [{ type: 'text', text, text_elements: [] }] : []),
+      ...images.map((image) => ({ type: 'localImage', path: image.path }))
+    ]
+    const frame = { id: `kando-steer-${this.steers + 1}`, method: 'turn/steer', params: { threadId: this.threadId, input, expectedTurnId: this.turn.turnId } }
+    return { wire: frame, logged: frame }
   }
 
   canSteer(): boolean {
-    return false
+    return Boolean(this.turn?.turnId && this.turn.steerable)
   }
 
   private turnStart(threadId: string, text: string, permissionMode: string | undefined, images: readonly ChatImageFile[] = [], skill: unknown = null): unknown {
@@ -838,6 +858,8 @@ export class CodexAppServer implements ChatDriver {
       } else if (!thread.success) {
         this.startError = error ?? 'Codex did not open a thread'
       }
+    } else if (method === 'turn/steer') {
+      this.steered(String(frame.id), error, at)
     } else if (method === 'model/list') {
       const list = ModelList.safeParse(frame.result)
       if (list.success) this.catalog = this.modelEntries(list.data.data)
@@ -1215,6 +1237,10 @@ export class CodexAppServer implements ChatDriver {
         if (this.turn) this.stopping = true
       }
       if (TURN_METHODS.has(frame.method)) this.startTurn(frame, at, ref, images)
+      if (frame.method === 'turn/steer') {
+        this.steers++
+        this.steering.set(String(frame.id), { text: inputText(frame.params), images: [...images], ref: ref ?? `steer-${this.steers}` })
+      }
       return
     }
     if (frame.method === 'initialized') {
@@ -1244,14 +1270,30 @@ export class CodexAppServer implements ChatDriver {
     const params = TurnParams.safeParse(frame.params)
     // A command's turn runs in the thread's mode and leaves a waiting plan waiting.
     if (params.success && frame.method === 'turn/start') this.turnMode(params.data, at)
-    const input = z.looseObject({ input: z.array(z.looseObject({ type: z.string(), text: z.string().optional() })).catch([]) }).safeParse(frame.params)
-    const typed = input.success ? input.data.input.flatMap((part) => (part.type === 'text' ? [part.text ?? ''] : [])).join('\n') : ''
+    const typed = inputText(frame.params)
     const text = frame.method ? (requestText(frame.method, frame.params) ?? typed) : typed
     const id = ref ?? `turn-${this.turns}`
     this.items.put({ id: `u:${id}`, kind: 'user', text, images: [...images] }, at)
     this.queue.sent(ref)
-    this.turn = { ref: id, turnId: null, assistant: null }
+    this.turn = { ref: id, turnId: null, assistant: null, steerable: frame.method === 'turn/start' }
     this.messages.push({ role: 'user', text: messageText(text, images), eventKey: `chat:${id}:user`, complete: false })
+  }
+
+  // Codex's answer to a message sent into the turn: taken, it shows as the user's; refused (the
+  // turn ended, or takes none), it waits for the turn's end, saying why.
+  private steered(requestId: string, error: string | null, at: number): void {
+    const message = this.steering.get(requestId)
+    if (!message) return
+    this.steering.delete(requestId)
+    if (error) {
+      this.queue.add(message.text, message.ref, message.images)
+      const why = /no active turn/i.test(error) ? '这一轮刚好结束了' : error
+      this.items.notice('info', `没能插进正在进行的这一轮（${why}），已排到回合结束后发送`, at)
+      return
+    }
+    this.items.put({ id: `u:${message.ref}`, kind: 'user', text: message.text, images: message.images }, at)
+    this.queue.sent(message.ref)
+    this.messages.push({ role: 'user', text: messageText(message.text, message.images), eventKey: `chat:${message.ref}:user`, complete: false })
   }
 
   // A turn answers a waiting plan by the mode it runs in: plan mode keeps planning, any other

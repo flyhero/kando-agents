@@ -128,6 +128,54 @@ describe('CodexAppServer', () => {
   })
 })
 
+describe('CodexAppServer steering', () => {
+  // A stage with a thread and a turn under way, frames as the chat host logs them.
+  function running(method = 'turn/start') {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    const out = (frame: unknown, ref?: string) => driver.apply({ dir: 'out', at: 1, frame, ...(ref ? { ref } : {}) })
+    const answer = (frame: unknown) => driver.apply({ dir: 'in', at: 2, frame })
+    driver.due().forEach((frame) => out(frame))
+    answer({ id: 'kando-init', result: {} })
+    driver.due().forEach((frame) => out(frame))
+    answer({ id: 'kando-thread', result: { thread: { id: 'thread-1' } } })
+    out({ id: 'kando-turn-1', method, params: { threadId: 'thread-1', input: [{ type: 'text', text: 'list forty numbers' }] } }, 'm1')
+    expect(driver.canSteer()).toBe(false)
+    answer({ method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } })
+    return { driver, out, answer }
+  }
+
+  it('sends a message into the running turn, naming it, and shows it once Codex takes it', () => {
+    const { driver, out, answer } = running()
+    expect(driver.canSteer()).toBe(true)
+    expect(ofKind(driver.items.list(), 'state')[0]?.steerable).toBe(true)
+    const { wire } = driver.steer('stop and say STEERED')
+    expect(wire).toEqual({ id: 'kando-steer-1', method: 'turn/steer', params: { threadId: 'thread-1', input: [{ type: 'text', text: 'stop and say STEERED', text_elements: [] }], expectedTurnId: 'turn-1' } })
+    out(wire, 'm2')
+    // Not the user's until Codex says it took it.
+    expect(driver.items.get('u:m2')).toBeUndefined()
+    answer({ id: 'kando-steer-1', result: { turnId: 'turn-1' } })
+    expect(driver.items.get('u:m2')).toMatchObject({ kind: 'user', text: 'stop and say STEERED' })
+    expect(driver.queuedToSend()).toBeNull()
+  })
+
+  it('queues a message the turn would not take, for when it ends, and says why', () => {
+    const { driver, out, answer } = running()
+    const { wire } = driver.steer('too late')
+    out(wire, 'm2')
+    answer({ id: 'kando-steer-1', error: { code: -32600, message: 'no active turn to steer' } })
+    expect(driver.items.get('u:m2')).toBeUndefined()
+    expect(ofKind(driver.items.list(), 'notice').at(-1)?.text).toContain('这一轮刚好结束了')
+    answer({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } } })
+    expect(driver.queuedToSend()).toMatchObject({ text: 'too late', ref: 'm2' })
+  })
+
+  it('takes nothing into a review, nor before the turn has begun', () => {
+    const { driver } = running('review/start')
+    expect(driver.canSteer()).toBe(false)
+    expect(() => driver.steer('more')).toThrow()
+  })
+})
+
 describe('CodexAppServer state', () => {
   // gpt-6-luna at low effort, then medium effort with the untrusted policy (Kando's ask).
   const records = fixture('codex-options.jsonl')
