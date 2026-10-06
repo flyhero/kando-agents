@@ -9,6 +9,7 @@ import {
   type DaemonMethod,
   type DaemonResult
 } from '@kando/protocol/node'
+import packageJson from '../package.json' with { type: 'json' }
 import { claimEndpoint } from './endpoint-claim'
 import { createSessionHost } from './session-host'
 import { AwakeService } from './awake-service'
@@ -27,7 +28,7 @@ const awake = new AwakeService()
 const host = createSessionHost((event) => {
   const line = `${JSON.stringify(event)}\n`
   clients.forEach((client) => client.write(line))
-}, awake)
+}, awake, { version: packageJson.version, leave: () => shutdown() })
 
 async function dispatch<M extends DaemonMethod>(method: M, raw: unknown): Promise<DaemonResult<M>> {
   const result = await host.handlers[method](daemonSchemas[method].params.parse(raw))
@@ -71,6 +72,8 @@ server.listen(paths.daemonSocket, async () => {
 function shutdown(): void {
   awake.dispose()
   host.killAll()
+  // Clients still connected (core) would keep close waiting; they reconnect to the next daemon.
+  clients.forEach((client) => client.destroy())
   server.close(() => process.exit(0))
 }
 process.on('SIGINT', shutdown)

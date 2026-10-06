@@ -36,7 +36,9 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
       return { ok: true }
     },
     awakeSet: () => ({ active: false, supported: true, problem: null }),
-    awakeStatus: () => ({ active: false, supported: true, problem: null })
+    awakeStatus: () => ({ active: false, supported: true, problem: null }),
+    info: () => ({ version: '0.0.0', pid: process.pid }),
+    retire: () => ({ retired: false, live: 0 })
   }
   return { spawns, killed, released, buffers, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
 }

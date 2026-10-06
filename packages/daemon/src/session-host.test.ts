@@ -134,3 +134,28 @@ describe('pipe sessions', () => {
       .toThrow('command-not-found')
   })
 })
+
+describe('retiring for an update', () => {
+  it('says what it is, refuses while anything but a browser host runs, and leaves once nothing does', async () => {
+    const events: DaemonEvent[] = []
+    const leave = vi.fn()
+    const host = createSessionHost((event) => events.push(event), undefined, { version: '9.9.9', leave })
+    expect(host.handlers.info({})).toEqual({ version: '9.9.9', pid: process.pid })
+    const keep = `setTimeout(() => {}, 10_000)`
+    const agent = host.handlers.spawnPipe({ command: process.execPath, args: ['-e', keep], cwd: process.cwd(), env: {} }).sessionId
+    // The browser host, as core launches it from a packaged app: core starts another when it needs one.
+    const browser = host.handlers.spawnPipe({ command: process.execPath, args: ['-e', keep, '/Applications/Kando.app/Contents/Resources/backend/browser-host.mjs'], cwd: process.cwd(), env: {} }).sessionId
+
+    expect(host.handlers.retire({})).toEqual({ retired: false, live: 1 })
+    host.handlers.kill({ sessionId: agent })
+    const deadline = Date.now() + 5000
+    while (!events.some((event) => event.event === 'exit' && event.sessionId === agent)) {
+      if (Date.now() > deadline) throw new Error('timed out waiting for the agent to exit')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    expect(host.handlers.retire({})).toEqual({ retired: true, live: 0 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(leave).toHaveBeenCalledOnce()
+    host.handlers.kill({ sessionId: browser })
+  })
+})

@@ -59,6 +59,8 @@ export function fakeChatDaemon() {
     portsStop: () => ({ ok: true }),
     awakeSet: () => ({ active: false, supported: true, problem: null }),
     awakeStatus: () => ({ active: false, supported: true, problem: null }),
+    info: () => ({ version: '0.0.0', pid: process.pid }),
+    retire: () => ({ retired: false, live: 0 }),
     spawn: (params) => {
       ptySpawns.push(params)
       const sessionId = `pty-${ptySpawns.length}`

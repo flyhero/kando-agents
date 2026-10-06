@@ -69,7 +69,12 @@ export const daemonMethods = {
     params: z.object({ active: z.boolean(), leaseMs: z.number().int().min(10_000).max(300_000) }),
     result: AwakeBackendStatus
   },
-  awakeStatus: { params: z.object({}), result: AwakeBackendStatus }
+  awakeStatus: { params: z.object({}), result: AwakeBackendStatus },
+  // The daemon's own build, for an app updated in place to tell an old one from its own.
+  info: { params: z.object({}), result: z.object({ version: z.string(), pid: z.number().int() }) },
+  // Leaves, but only when nothing it hosts still runs (a browser host aside, which core starts
+  // again when it needs one): an app updated in place replaces it then. live: what kept it.
+  retire: { params: z.object({}), result: z.object({ retired: z.boolean(), live: z.number().int() }) }
 } as const
 
 export type DaemonMethod = keyof typeof daemonMethods
