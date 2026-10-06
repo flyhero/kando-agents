@@ -1,6 +1,17 @@
 import { z } from 'zod'
-import { ChatTurnActivity } from './chat'
+import { ChatDecision, ChatTurnActivity } from './chat'
 import { AgentKind } from './task'
+
+export const ConversationRequest = z.object({
+  requestId: z.string(),
+  kind: z.enum(['approval', 'question']).catch('question'),
+  // The approval's tool, as on its chat item; null for a question.
+  tool: z.string().nullable(),
+  title: z.string(),
+  decisions: z.array(ChatDecision.catch('deny')),
+  open: z.number().int().positive()
+})
+export type ConversationRequest = z.infer<typeof ConversationRequest>
 
 export const Conversation = z.object({
   id: z.string().uuid(),
@@ -21,7 +32,14 @@ export const Conversation = z.object({
   // Set while a chat-mode agent is running, to tell whether it works or waits on the user.
   // suggestion: what the agent predicts the user will type next, once a turn has ended, until the
   // next message; only when the user has them on. Older cores leave it out.
-  chat: z.object({ turn: ChatTurnActivity.catch('idle'), suggestion: z.string().nullable().optional() }).nullable().optional(),
+  // request: while the turn waits on the user, the oldest request still open (an approval's
+  // title is its command or path, a question's its first question) and how many are open, so a
+  // list can answer a plain approval without opening the chat. Older cores leave it out.
+  chat: z.object({
+    turn: ChatTurnActivity.catch('idle'),
+    suggestion: z.string().nullable().optional(),
+    request: ConversationRequest.nullable().optional()
+  }).nullable().optional(),
   // What the next chat stage starts with, as chosen or as the last stage left it: the permission
   // mode, and the model and effort of the conversation's agent. Older cores leave it out.
   chatOptions: z.object({

@@ -1,5 +1,8 @@
-import type { ActionableItem, ActionableReason } from '../attention'
-import { openAttentionItem, refreshAttentionSummaries, setAttentionOpen, useActionableItems, useCore } from '../core-store'
+import { useState } from 'react'
+import type { ChatDecision, ConversationRequest } from '@kando/protocol'
+import { quickApproval, type ActionableItem, type ActionableReason } from '../attention'
+import { toolLabel } from '../chat-tools'
+import { openAttentionItem, perform, refreshAttentionSummaries, setAttentionOpen, useActionableItems, useCore } from '../core-store'
 import { AGENT_LABEL, chatDayAndTime } from '../labels'
 import { projectNames } from './ProjectPicker'
 import { CloseIcon } from './icons'
@@ -11,10 +14,31 @@ const ACTION_LABEL: Record<ActionableReason, string> = {
   awaiting: '去处理', crashed: '查看异常', review: '检查变更', reply: '继续对话'
 }
 
+// What the agent asks, in a line: the tool and its command or path, or the question.
+function AttentionRequest({ request }: { request: ConversationRequest }) {
+  return (
+    <div className="attention-request">
+      <span className="attention-request-tool">{request.kind === 'question' ? '提问' : toolLabel(request.tool ?? '')}</span>
+      <code title={request.title}>{request.title}</code>
+      {request.open > 1 && <span className="attention-request-more">还有 {request.open - 1} 项</span>}
+    </div>
+  )
+}
+
 function AttentionRow({ item }: { item: ActionableItem }) {
+  const [busy, setBusy] = useState(false)
   const reason = item.primaryReason
   const noChat = !item.conversationId
   const action = noChat ? '查看任务' : ACTION_LABEL[reason]
+  const { request, conversationId } = item
+  const quick = conversationId && quickApproval(request) ? request : null
+  // Allowed this once, nothing remembered: a rule is chosen in the chat, where its reach is shown.
+  const answer = async (decision: ChatDecision) => {
+    if (!quick || !conversationId) return
+    setBusy(true)
+    await perform((rpc) => rpc.call('conversations.respond', { id: conversationId, requestId: quick.requestId, decision }))
+    setBusy(false)
+  }
   return (
     <li className="attention-row">
       <div className="attention-row-content">
@@ -32,10 +56,20 @@ function AttentionRow({ item }: { item: ActionableItem }) {
           <span className="attention-project" title={item.projectPaths.join('\n')}>{projectNames(item.projectPaths)}</span>
           <time dateTime={new Date(item.updatedAt).toISOString()}>更新于 {chatDayAndTime(item.updatedAt)}</time>
         </div>
+        {request && <AttentionRequest request={request} />}
       </div>
-      <button type="button" className="button ghost" aria-label={`${action}：${item.title}`} onClick={() => openAttentionItem(item)}>
-        {action}
-      </button>
+      <div className="attention-row-actions">
+        <button type="button" className="button ghost" aria-label={`${action}：${item.title}`} onClick={() => openAttentionItem(item)}>
+          {action}
+        </button>
+        {quick && (
+          <>
+            <button type="button" className="button" disabled={busy} aria-label={`拒绝：${quick.title}`} onClick={() => void answer('deny')}>拒绝</button>
+            <button type="button" className="button primary" disabled={busy} aria-label={`允许一次：${quick.title}`}
+              data-tooltip="只允许这一次，不记规则" onClick={() => void answer('allow')}>允许</button>
+          </>
+        )}
+      </div>
     </li>
   )
 }

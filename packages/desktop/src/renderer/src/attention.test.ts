@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Conversation, ScheduledRun, Task } from '@kando/protocol'
-import { actionableItems, attentionCount, noticesBetween, type Snapshot } from './attention'
+import { actionableItems, attentionCount, noticesBetween, quickApproval, type Snapshot } from './attention'
 
 const conversation = (id: string, patch: Partial<Conversation> = {}): Conversation => ({
   id,
@@ -104,6 +104,20 @@ describe('actionableItems', () => {
       expect.objectContaining({ target: { kind: 'task', id: 'u' }, conversationId: 'b', reasons: ['awaiting'] }),
       expect.objectContaining({ target: { kind: 'task', id: 't' }, conversationId: 'a', reasons: ['crashed', 'review'] })
     ])
+  })
+
+  it('carries what a waiting agent asks, and answers in the list only a plain approval', () => {
+    const bash = { requestId: 'r1', kind: 'approval' as const, tool: 'Bash', title: 'git commit -m x', decisions: ['allow' as const, 'deny' as const], open: 2 }
+    const items = actionableItems(snapshot([
+      conversation('a', { chat: { turn: 'awaiting', request: bash } }),
+      conversation('b', { sessionId: null, lastExit: { code: 1, at: 5 }, chat: { turn: 'awaiting', request: bash } })
+    ]))
+    expect(items.map((item) => [item.target.id, item.request?.requestId ?? null])).toEqual([['a', 'r1'], ['b', null]])
+    expect(quickApproval(bash)).toBe(true)
+    expect(quickApproval({ ...bash, tool: 'ExitPlanMode' })).toBe(false)
+    expect(quickApproval({ ...bash, decisions: ['deny'] })).toBe(false)
+    expect(quickApproval({ ...bash, kind: 'question', tool: null, decisions: [] })).toBe(false)
+    expect(quickApproval(null)).toBe(false)
   })
 
   it('excludes done, abandoned and deleted tasks and their conversations', () => {

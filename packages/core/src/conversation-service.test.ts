@@ -541,16 +541,18 @@ describe('ConversationService', () => {
     request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: { plan: '# Plan' }, tool_use_id: `toolu_${requestId}` }
   })
 
+  const planRequest = { requestId: 'attention-plan', kind: 'approval', tool: 'ExitPlanMode', title: expect.any(String), decisions: expect.any(Array), open: 1 }
+
   it('lists task attention summaries before opening their chat and after a core restart', async () => {
     const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: true, session: 'new' })
     daemon.reply = () => {}
     await service.send(started.id, 'plan this')
     daemon.emit(started.sessionId!, exitPlanMode('attention-plan'))
-    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, taskId: task.id, chat: { turn: 'awaiting' } })])
+    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, taskId: task.id, chat: { turn: 'awaiting', request: planRequest } })])
     expect(service.list()).toEqual([])
     service = serve()
     await service.reconcile((await daemon.request('list', {})).sessions)
-    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, chat: { turn: 'awaiting' } })])
+    expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, chat: { turn: 'awaiting', request: planRequest } })])
     daemon.exit(started.sessionId!, 1)
     expect(service.list(true)).toEqual([expect.objectContaining({ id: started.id, sessionId: null, lastExit: { code: 1, at: expect.any(Number) } })])
     service = serve()

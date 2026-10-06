@@ -128,6 +128,26 @@ describe('ChatHost', () => {
     expect(restarted.items(STAGE).find((item) => item.kind === 'approval')).toMatchObject({ resolution: 'allowed' })
   })
 
+  it('tells of the oldest open request, and tells again when one of several is answered', async () => {
+    const recorded = recordingSink()
+    const { host } = await started(recorded.sink)
+    const pwd = { ...canUseTool('req-2'), request: { ...canUseTool('req-2').request, input: { command: 'pwd' }, tool_use_id: 'toolu_2' } }
+    daemon.reply = (id) => {
+      daemon.emit(id, canUseTool('req-1'))
+      daemon.emit(id, pwd)
+    }
+    await host.send(STAGE.conversationId, 'list the files')
+    await flushMicrotasks()
+    expect(host.request(STAGE.conversationId)).toMatchObject({ requestId: 'req-1', kind: 'approval', tool: 'Bash', title: 'ls', open: 2 })
+    expect(host.request(STAGE.conversationId)?.decisions).toContain('allow')
+
+    const told = recorded.activity()
+    await host.respond(STAGE.conversationId, 'req-1', { decision: 'allow' })
+    expect(host.activity(STAGE.conversationId)).toBe('awaiting')
+    expect(host.request(STAGE.conversationId)).toMatchObject({ requestId: 'req-2', title: 'pwd', open: 1 })
+    expect(recorded.activity()).toBeGreaterThan(told)
+  })
+
   it('holds output that arrives while it reads the buffer, and feeds it once, in order', async () => {
     const host = new ChatHost(daemon, root, attachments, recordingSink().sink)
     const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })

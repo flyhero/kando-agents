@@ -7212,7 +7212,11 @@ body.side-panel-resizing * {
 .attention-reason[data-reason='crashed'] { color: var(--danger); }
 .attention-row-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--text-3); }
 .attention-project { overflow-wrap: anywhere; }
-.attention-row > button { flex-shrink: 0; }
+.attention-row-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.attention-request { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-top: 8px; font-size: 12px; }
+.attention-request-tool { flex-shrink: 0; color: var(--text-muted); }
+.attention-request code { min-width: 0; overflow: hidden; padding: 1px 6px; border-radius: var(--radius-xs); background: var(--fill); font-family: var(--mono); color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.attention-request-more { flex-shrink: 0; color: var(--text-3); }
 .attention-notice { margin: 0 0 16px; font-size: 12px; }
 .attention-error { display: flex; align-items: center; gap: 12px; color: var(--danger); }
 .attention-error > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }

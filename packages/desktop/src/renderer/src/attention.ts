@@ -1,4 +1,4 @@
-import { isScheduleOpen, limitOf, type AgentKind, type Conversation, type Routine, type ScheduledRun, type Task } from '@kando/protocol'
+import { isScheduleOpen, limitOf, PLAN_TOOLS, type AgentKind, type Conversation, type ConversationRequest, type Routine, type ScheduledRun, type Task } from '@kando/protocol'
 
 // What waits on the user: a task or a conversation.
 export type ActionableTarget = { kind: 'task' | 'conversation'; id: string }
@@ -31,8 +31,19 @@ export type ActionableItem = {
   conversationId: string | null
   primaryReason: ActionableReason
   reasons: ActionableReason[]
+  // What the agent asks, while it waits; null when the core does not say.
+  request: ConversationRequest | null
   updatedAt: number
 }
+
+// An approval the list can answer as it stands: allowed this once or denied. A plan, a question,
+// or anything with no plain allow wants the chat.
+export function quickApproval(request: ConversationRequest | null): request is ConversationRequest & { tool: string } {
+  return request?.kind === 'approval' && request.tool !== null && !PLAN_TOOLS.has(request.tool) && request.decisions.includes('allow')
+}
+
+const requestOf = (conversation: Conversation | undefined, reasons: readonly ActionableReason[]) =>
+  reasons[0] === 'awaiting' ? conversation?.chat?.request ?? null : null
 
 const REASON_PRIORITY: Record<ActionableReason, number> = { awaiting: 0, crashed: 1, review: 2, reply: 3 }
 
@@ -71,7 +82,7 @@ export function actionableItems(s: Pick<Snapshot, 'tasks' | 'conversations'> & {
       target: { kind: 'task', id: task.id }, title: task.title, agent: task.agent,
       projectPaths: task.repos.map((repo) => repo.path),
       conversationId: task.conversationId ?? conversation?.id ?? null,
-      primaryReason, reasons, updatedAt: task.updatedAt
+      primaryReason, reasons, request: requestOf(conversation, reasons), updatedAt: task.updatedAt
     })
   }
   for (const conversation of Object.values(s.conversations)) {
@@ -82,7 +93,7 @@ export function actionableItems(s: Pick<Snapshot, 'tasks' | 'conversations'> & {
     items.push({
       target: { kind: 'conversation', id: conversation.id }, title: conversation.title,
       agent: conversation.agent, projectPaths: conversation.projectPaths, conversationId: conversation.id,
-      primaryReason, reasons, updatedAt: conversation.updatedAt
+      primaryReason, reasons, request: requestOf(conversation, reasons), updatedAt: conversation.updatedAt
     })
   }
   return items.sort((a, b) =>

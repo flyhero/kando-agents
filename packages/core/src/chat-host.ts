@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatQueued, ChatTurnActivity } from '@kando/protocol'
+import type { AgentKind, ChatImage, ChatItem, ChatOption, ChatQueued, ChatTurnActivity, ConversationRequest } from '@kando/protocol'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, ChatDriver, ChatImageFile, ChatOutgoing, ChatStageOptions, StageMessage } from './chat-driver'
 import { ChatLog, type LoggedRecord } from './chat-log'
@@ -45,6 +45,8 @@ type Live = ChatStage & {
   stderr: string
   activity: ChatTurnActivity
   suggestion: string | null
+  // The open requests while the turn awaits them, by id, as last told to the sink.
+  requests: string
   provider: string | null
   started: { resolve(): void; reject(error: Error): void } | null
   // When anything last went either way, or the user last changed something.
@@ -61,6 +63,12 @@ export function createDriver(stage: ChatStage): ChatDriver {
 }
 
 const ignore = () => {}
+
+type OpenRequest = Extract<ChatItem, { kind: 'approval' | 'question' }>
+
+function openRequests(driver: ChatDriver): OpenRequest[] {
+  return driver.items.list().filter((item): item is OpenRequest => (item.kind === 'approval' || item.kind === 'question') && item.resolution === null)
+}
 
 // Drives the chat-mode agents core has running: feeds each one's output to its driver, sends what
 // the driver or the user asks for, and keeps the stage's log.
@@ -103,6 +111,7 @@ export class ChatHost {
       stderr: '',
       activity: driver.activity(),
       suggestion: driver.suggestion?.() ?? null,
+      requests: '',
       provider: null,
       started: null,
       lastActive: records.at(-1)?.at ?? this.now()
@@ -179,6 +188,17 @@ export class ChatHost {
 
   suggestion(conversationId: string): string | null {
     return this.liveOf(conversationId)?.driver.suggestion?.() ?? null
+  }
+
+  // The oldest request waiting on the user, and how many are.
+  request(conversationId: string): ConversationRequest | null {
+    const live = this.liveOf(conversationId)
+    const open = live ? openRequests(live.driver) : []
+    const first = open[0]
+    if (!first) return null
+    return first.kind === 'approval'
+      ? { requestId: first.requestId, kind: 'approval', tool: first.tool, title: first.title, decisions: first.decisions, open: open.length }
+      : { requestId: first.requestId, kind: 'question', tool: null, title: first.questions[0]?.question ?? '', decisions: [], open: open.length }
   }
 
   // For every running stage at once: the setting is the machine's, not one conversation's.
@@ -428,9 +448,11 @@ export class ChatHost {
     if (usage) this.sink.usage(live, usage)
     const activity = live.driver.activity()
     const suggestion = live.driver.suggestion?.() ?? null
-    if (activity !== live.activity || suggestion !== live.suggestion) {
+    const requests = activity === 'awaiting' ? openRequests(live.driver).map((item) => item.requestId).join(' ') : ''
+    if (activity !== live.activity || suggestion !== live.suggestion || requests !== live.requests) {
       live.activity = activity
       live.suggestion = suggestion
+      live.requests = requests
       this.sink.activity(live.conversationId)
     }
     if (live.driver.ready()) {

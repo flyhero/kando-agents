@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StateCreator } from 'zustand'
-import { Task } from '@kando/protocol'
+import { Conversation, Task } from '@kando/protocol'
 import { useCore } from '../core-store'
 import { AttentionEntry } from './AttentionEntry'
 import { AttentionView } from './AttentionView'
@@ -40,6 +40,23 @@ describe('attention page', () => {
     expect(render()).toContain('以下为最近收到的信息')
     expect(render()).toContain('验收登录修复')
     expect(render()).toContain('查看任务')
+  })
+
+  it('offers allow and deny for a plain approval, and only the chat for a plan', () => {
+    const waiting = (request: object) => Conversation.parse({
+      id: '7d3f0a52-8c2e-4b7a-9a51-2f1c6e3b9d40', title: '提交修复', titleLocked: false, agent: 'claude', workspacePath: '/w', projectPaths: [],
+      managedWorkspace: false, sessionId: 's', createdAt: 0, updatedAt: 0, chat: { turn: 'awaiting', request }
+    })
+    const bash = { requestId: 'r1', kind: 'approval', tool: 'Bash', title: 'git commit -m fix', decisions: ['allow', 'deny'], open: 2 }
+    useCore.setState({ connection: 'connected', attentionSummaryMode: 'complete', attentionSummaryLoading: false, conversations: { c: waiting(bash) } })
+    const plain = render()
+    expect(plain).toContain('git commit -m fix')
+    expect(plain).toContain('还有 1 项')
+    expect(plain).toContain('允许一次：git commit -m fix')
+    expect(plain).toContain('拒绝：git commit -m fix')
+    useCore.setState({ conversations: { c: waiting({ ...bash, tool: 'ExitPlanMode', title: '计划', open: 1 }) } })
+    expect(render()).not.toContain('允许一次')
+    expect(render()).toContain('去处理')
   })
 
   it('keeps the sidebar entry at zero and counts the same subjects as the page', () => {
