@@ -6808,8 +6808,10 @@ body.side-panel-resizing * {
 }
 @keyframes chat-halo { to { --chat-halo: 360deg; } }
 .chat-turn-head-name { color: var(--text-muted); }
-.chat-turn-head-model { min-width: 0; overflow: hidden; color: var(--text-3); font-family: var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.chat-turn-head-model::before { content: '·'; margin-right: 8px; }
+.chat-turn-head-model { min-width: 0; overflow: hidden; color: var(--text-3); text-overflow: ellipsis; white-space: nowrap; }
+.chat-turn-head-effort { flex-shrink: 0; color: var(--text-3); white-space: nowrap; }
+.chat-turn-head-model::before,
+.chat-turn-head-effort::before { content: '·'; margin-right: 8px; }
 .chat-turn-head .chat-message-time { margin-left: 0; }
 .chat-turn-tokens { font-family: var(--mono); }
 

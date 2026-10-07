@@ -26,6 +26,7 @@ import { CopyButton } from './CopyButton'
 import { ChatEditsCard, ChatPaths, ChatToolCard, ChatToolRun } from './ChatToolCard'
 import { ChatPreviewCard } from './ChatPreviewCard'
 import { ChatQuotePicker } from './ChatQuotePicker'
+import { effortLabel } from './ChatOptionsBar'
 import { ChatMessageRelay, useMessageRelay } from './chat-message-relay'
 import { cssFontFamily } from '../system-fonts'
 import { freshKeys } from '../chat-motion'
@@ -269,18 +270,19 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
 }
 
 // Who answers and on what: for the head that opens each of the agent's turns.
-const ChatAgent = createContext<{ agent: Conversation['agent']; model: string | null }>({ agent: 'claude', model: null })
+const ChatAgent = createContext<{ agent: Conversation['agent']; model: string | null; effort: string | null }>({ agent: 'claude', model: null, effort: null })
 
-// Opens the agent's turn under the user's message: its icon and name, the model it runs, and when
-// the message it answers came in. While that turn runs, a ring turns around the icon; one waiting
+// Opens the agent's turn under the user's message: its icon and name, the model it runs and how
+// hard it reasons, and when the message it answers came in. While that turn runs, a ring turns around the icon; one waiting
 // on the user holds it still, in the colour of the request.
 function TurnHead({ at, messageKey, live }: { at: number; messageKey: string; live: 'running' | 'awaiting' | null }) {
-  const { agent, model } = useContext(ChatAgent)
+  const { agent, model, effort } = useContext(ChatAgent)
   return (
     <div className="chat-turn-head" data-relay-for={messageKey}>
       <span className="chat-turn-head-icon" data-live={live ?? undefined} aria-hidden="true"><AgentIcon agent={agent} /></span>
       <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
-      {model && <span className="chat-turn-head-model" title={model}>{model}</span>}
+      {model && <span className="chat-turn-head-model" title={`模型：${model}`}>{model}</span>}
+      {model && effort && <span className="chat-turn-head-effort" title={`推理程度：${effortLabel(effort)}`}>推理 {effortLabel(effort)}</span>}
       <MessageTime at={at} />
     </div>
   )
@@ -680,9 +682,11 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   }, [items, turn])
   // The model as the stage runs it, or as the next stage would start; by its label where the agent gives one.
   const modelId = state?.model ?? conversation.chatOptions?.model ?? null
+  // The effort the same way; left out where the agent runs its default without saying which.
+  const effort = state?.effort ?? conversation.chatOptions?.effort ?? null
   const agentInfo = useMemo(
-    () => ({ agent: conversation.agent, model: modelId ? (state?.models.find((each) => each.id === modelId)?.label ?? modelId) : null }),
-    [conversation.agent, modelId, state?.models]
+    () => ({ agent: conversation.agent, model: modelId ? (state?.models.find((each) => each.id === modelId)?.label ?? modelId) : null, effort }),
+    [conversation.agent, modelId, state?.models, effort]
   )
   // A turn runs from the message that set it going.
   const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
