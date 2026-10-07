@@ -1,4 +1,4 @@
-import type { AgentKind, ChatContextUse, ChatItem, ChatOption, ChatPermissionMode, Conversation } from '@kando/protocol'
+import type { AgentKind, ChatContextUse, ChatItem, ChatModel, ChatOption, ChatPermissionMode, Conversation } from '@kando/protocol'
 import { perform } from '../core-store'
 import { usePreferences } from '../preferences'
 import { ChatModelPicker, ChatPicker, type PickerOption } from './ChatPicker'
@@ -48,11 +48,17 @@ export function modeTone(mode: string | null): string | undefined {
   return mode === 'plan' || mode === 'bypass' ? mode : undefined
 }
 
-// What a new conversation can start in, before its agent lists what it offers (bypass aside):
-// auto hangs on the model, so it waits for the agent. The first is where each starts by default.
+// What a new conversation can start in, before its agent lists what it offers (auto and bypass
+// aside). The first is where each starts by default.
 export const START_MODES: Record<AgentKind, readonly ChatPermissionMode[]> = {
   claude: ['ask', 'acceptEdits', 'plan'],
   codex: ['acceptEdits', 'ask', 'plan', 'readOnly']
+}
+
+// Those, with auto where the model takes it (as the agent's catalog says) and bypass where the
+// settings allow it, in the order a running chat lists them.
+export function startModes(agent: AgentKind, model: ChatModel | undefined, allowBypass: boolean): ChatPermissionMode[] {
+  return [...START_MODES[agent], ...(model?.autoMode ? ['auto' as const] : []), ...(allowBypass ? ['bypass' as const] : [])]
 }
 
 const EFFORT_LABEL: Record<string, string> = {

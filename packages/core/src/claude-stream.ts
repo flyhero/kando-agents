@@ -675,7 +675,8 @@ export class ClaudeStream implements ChatDriver {
       label: row.displayName ?? row.value,
       description: row.description ?? null,
       efforts: row.supportedEffortLevels ?? [],
-      isDefault: row.resolvedModel != null && row.resolvedModel === this.catalog.find((each) => each.value === 'default')?.resolvedModel
+      isDefault: row.resolvedModel != null && row.resolvedModel === this.catalog.find((each) => each.value === 'default')?.resolvedModel,
+      ...(row.supportsAutoMode ? { autoMode: true } : {})
     }))
     const current = this.currentModel()
     this.state.set({

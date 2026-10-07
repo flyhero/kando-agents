@@ -14,7 +14,7 @@ import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
 import { MentionField, useMentionedText } from './ChatMentionField'
 import { writeMentions } from '../chat-mentions'
-import { effortLabel, modeOptions, modeTone, START_MODES } from './ChatOptionsBar'
+import { effortLabel, modeOptions, modeTone, START_MODES, startModes } from './ChatOptionsBar'
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
@@ -83,7 +83,12 @@ export function ConversationDraft() {
   const catalog = agent ? catalogs[agent] : null
   const pick = agent ? picks[agent] : {}
   const modelId = pick.model ?? catalog?.models.find((each) => each.isDefault)?.id ?? null
-  const efforts = catalog?.models.find((each) => each.id === modelId)?.efforts ?? []
+  const model = catalog?.models.find((each) => each.id === modelId)
+  const efforts = model?.efforts ?? []
+  // A mode the model or the settings no longer allow (auto, then another model picked) starts as
+  // the agent's first.
+  const offeredModes = agent ? startModes(agent, model, allowBypass) : []
+  const mode = agent ? (offeredModes.includes(modes[agent]) ? modes[agent] : START_MODES[agent][0]!) : null
   const effort = pick.effort && efforts.includes(pick.effort) ? pick.effort : null
   // The model a start would run, as quota windows name models; unknown until its catalog is in.
   const modelFor = (kind: AgentKind) => {
@@ -99,7 +104,7 @@ export function ConversationDraft() {
   const create = () => {
     if (!agent || !confirmQuota(agent, modelFor(agent))) return Promise.resolve(null)
     const chosen = optionsSupported
-      ? { permissionMode: modes[agent], ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
+      ? { permissionMode: mode ?? undefined, ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
     return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(inWorktree ? { worktree: true } : {}), ...(startBranch ? { branch: startBranch } : {}), ...startOptions(), ...chosen }))
   }
@@ -216,10 +221,10 @@ export function ConversationDraft() {
                   <>
                     <ChatPicker
                       label="权限模式"
-                      value={modes[agent]}
+                      value={mode}
                       placeholder="权限模式"
-                      options={modeOptions(agent, [...START_MODES[agent], ...(allowBypass ? ['bypass' as const] : [])])}
-                      tone={modeTone(modes[agent])}
+                      options={modeOptions(agent, offeredModes)}
+                      tone={modeTone(mode)}
                       disabled={busy}
                       onChange={(value) => {
                         const picked = ChatPermissionMode.safeParse(value)

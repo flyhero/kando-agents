@@ -242,6 +242,10 @@ describe('ClaudeStream state', () => {
   it('offers auto only for a model that has it, and bypass only when the user allows it', () => {
     const allowed = replay(records.map((record) => record), { ...OPTIONS, allowBypass: true })
     expect(stateOf(allowed)?.permissionModes).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])
+    // The catalog says which models have it, for a chat that starts in it.
+    const models = stateOf(allowed)?.models ?? []
+    expect(models.find((model) => model.id === 'opus')?.autoMode).toBe(true)
+    expect(models.find((model) => model.id === 'haiku')?.autoMode).toBeUndefined()
   })
 
   it('turns task tool calls into a checklist instead of tool cards', () => {

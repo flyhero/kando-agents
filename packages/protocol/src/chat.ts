@@ -89,7 +89,10 @@ export const ChatModel = z.object({
   description: z.string().nullable(),
   // The reasoning efforts it takes, in the agent's own words; empty when it takes none.
   efforts: z.array(z.string()),
-  isDefault: z.boolean()
+  isDefault: z.boolean(),
+  // The model takes Claude Code's auto mode, so a chat can start in it. Codex, and older cores,
+  // leave it out.
+  autoMode: z.boolean().optional()
 })
 export type ChatModel = z.infer<typeof ChatModel>
 
