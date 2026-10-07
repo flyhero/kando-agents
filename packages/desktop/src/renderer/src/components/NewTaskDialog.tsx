@@ -13,6 +13,7 @@ import { ImageViewer } from './ImageViewer'
 import { imageFilesOf, uploadImageFiles } from '../attachment-images'
 import { AgentIcon, CloseIcon, MaximizeIcon, MoreIcon, RestoreIcon } from './icons'
 import { Popover } from './Popover'
+import { MarkdownEditor } from './MarkdownEditor'
 
 function PaperclipIcon() {
   return (
@@ -36,6 +37,8 @@ export function NewTaskDialog() {
   const installed = useInstalledAgents()
   const [dependsOn, setDependsOn] = useState<string[]>([])
   const [details, setDetails] = useState('')
+  // The details editor holds its own text; a new key starts it empty for the next task.
+  const [detailsKey, setDetailsKey] = useState(0)
   const [images, setImages] = useState<TaskImage[]>([])
   const [uploading, setUploading] = useState(0)
   const [viewing, setViewing] = useState<number | null>(null)
@@ -96,6 +99,7 @@ export function NewTaskDialog() {
       // Keep repos and agent: a batch of tasks usually shares them.
       setTitle('')
       setDetails('')
+      setDetailsKey((key) => key + 1)
       setDependsOn([])
       setImages([])
       setLastCreated(task.title)
@@ -182,12 +186,14 @@ export function NewTaskDialog() {
             placeholder="任务标题"
             maxLength={200}
           />
-          <textarea
+          <MarkdownEditor
+            key={detailsKey}
             className="new-task-details"
-            aria-label="任务详情"
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            placeholder="添加详情..."
+            value=""
+            onChange={setDetails}
+            onSubmit={() => void submit()}
+            label="任务详情"
+            hint="添加详情...（支持 Markdown）"
           />
         </div>
 

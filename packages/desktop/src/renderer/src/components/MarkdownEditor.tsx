@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { imageFilesOf } from '../attachment-images'
@@ -31,20 +31,26 @@ const highlight = HighlightStyle.define([
 
 type Props = {
   value: string
-  onSave: (next: string) => void
+  // A pause in typing or leaving the editor saves; a form that sends it as a whole uses onChange.
+  onSave?: (next: string) => void
+  // Every edit, at once: for a form whose submit must read the text as it stands.
+  onChange?: (next: string) => void
+  // ⌘↵ submits the form around the editor instead of adding a line.
+  onSubmit?: () => void
   label: string
   hint: string
   // Renders `value` with the same live preview but accepts no input, for showing a proposal.
   readOnly?: boolean
+  className?: string
 }
 
 // Uncontrolled: `value` only seeds the editor, so a remote update never clobbers typing.
-export function MarkdownEditor({ value, onSave, label, hint, readOnly = false }: Props) {
+export function MarkdownEditor({ value, onSave, onChange, onSubmit, label, hint, readOnly = false, className }: Props) {
   const host = useRef<HTMLDivElement>(null)
-  const save = useRef(onSave)
+  const handlers = useRef({ onSave, onChange, onSubmit })
 
   useEffect(() => {
-    save.current = onSave
+    handlers.current = { onSave, onChange, onSubmit }
   })
 
   useEffect(() => {
@@ -59,7 +65,7 @@ export function MarkdownEditor({ value, onSave, label, hint, readOnly = false }:
       const next = view.state.doc.toString()
       if (next !== saved) {
         saved = next
-        save.current(next)
+        handlers.current.onSave?.(next)
       }
     }
     const view = new EditorView({
@@ -67,6 +73,17 @@ export function MarkdownEditor({ value, onSave, label, hint, readOnly = false }:
       state: EditorState.create({
         doc: value,
         extensions: [
+          // Ahead of the default ⌘↵ (a blank line), and kept from the form's own handler, which
+          // would submit a second time.
+          Prec.highest(keymap.of([{
+            key: 'Mod-Enter',
+            run: () => {
+              const submit = handlers.current.onSubmit
+              submit?.()
+              return submit !== undefined
+            },
+            stopPropagation: true
+          }])),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           markdown({ base: markdownLanguage }),
@@ -85,6 +102,7 @@ export function MarkdownEditor({ value, onSave, label, hint, readOnly = false }:
           readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
+              handlers.current.onChange?.(update.state.doc.toString())
               clearTimeout(timer)
               timer = setTimeout(flush, SAVE_DELAY_MS)
             }
@@ -101,5 +119,5 @@ export function MarkdownEditor({ value, onSave, label, hint, readOnly = false }:
     }
   }, [])
 
-  return <div className={readOnly ? 'md-editor md-editor-readonly' : 'md-editor'} ref={host} />
+  return <div className={['md-editor', readOnly && 'md-editor-readonly', className].filter(Boolean).join(' ')} ref={host} />
 }

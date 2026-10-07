@@ -3382,8 +3382,7 @@ body.side-panel-resizing * {
   padding: 12px 28px 0;
 }
 
-.new-task-title,
-.new-task-details {
+.new-task-title {
   width: 100%;
   padding: 0;
   border: 0;
@@ -3399,23 +3398,43 @@ body.side-panel-resizing * {
   line-height: 1.4;
 }
 
-.new-task-details {
+/* The details editor sits in the dialog's flow like the title: no box of its own. Its rules
+   outrank the editor theme's scoped ones. */
+.md-editor.new-task-details,
+.md-editor.new-task-details:focus-within {
   flex: 1;
   min-height: 60px;
   margin-top: 12px;
-  font-size: 16px;
-  line-height: 1.6;
-  resize: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.new-task-title::placeholder,
-.new-task-details::placeholder {
+.new-task-details .cm-scroller {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.new-task-dialog .new-task-details .cm-content {
+  padding: 0;
+}
+
+/* Lined up with the title; a quote and a code block keep their inset. */
+.new-task-dialog .new-task-details .cm-line:not(.cm-lp-quote):not(.cm-lp-codeblock) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.new-task-details .cm-placeholder {
+  color: var(--text-3);
+}
+
+.new-task-title::placeholder {
   color: var(--text-3);
   opacity: 1;
 }
 
-.new-task-title:focus-visible,
-.new-task-details:focus-visible {
+.new-task-title:focus-visible {
   outline: 0;
 }
 
