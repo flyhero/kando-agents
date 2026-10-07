@@ -27,6 +27,7 @@ import { Rejection } from './rejection'
 import type { UsageReport } from './usage-source'
 import { normalizeRepoPath, prepareConversationWorktrees, projectHead } from './workspace'
 import { DEFAULT_AGENT_CONCURRENCY } from './chat-settings'
+import { WireLog } from './wire-log'
 
 export type ConversationEvent =
   | { type: 'changed'; conversation: Conversation }
@@ -127,7 +128,9 @@ export class ConversationService {
     // agent without Kando's tools.
     private readonly mcp: ((conversationId: string) => McpServer) | null = null,
     // Where a conversation started in worktrees lays them out; null offers none.
-    private readonly worktreesRoot: string | null = null
+    private readonly worktreesRoot: string | null = null,
+    // Where chat stages' raw traffic goes while the user has it on; null keeps none.
+    private readonly wire: WireLog | null = null
   ) {
     this.chats = new ChatHost(daemon, sessionsRoot, attachments, {
       items: (conversationId, items) => {
@@ -145,7 +148,7 @@ export class ConversationService {
       },
       offset: (stageId, end) => this.store.setChatOffset(stageId, end),
       usage: (stage, report) => this.emit({ type: 'usage', agent: stage.agent, report })
-    })
+    }, Date.now, wire)
   }
 
   // Takes effect in running chats at once: off pauses their suggestions and takes away the one
@@ -630,6 +633,7 @@ export class ConversationService {
       ...(this.mcp ? { mcp: this.mcp(id) } : {})
     })
     let sessionId: string
+    this.wire?.record(id, stage.id, [{ dir: 'spawn', text: JSON.stringify({ command: command.command, args: command.args, cwd: current.workspacePath }) }])
     try {
       ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
     } catch (error) {
@@ -1001,6 +1005,7 @@ export class ConversationService {
     const directory = path.join(this.sessionsRoot, id)
     await rm(path.join(directory, 'handoffs'), { recursive: true, force: true })
     await rm(path.join(directory, 'stages'), { recursive: true, force: true })
+    await rm(WireLog.directory(this.sessionsRoot, id), { recursive: true, force: true })
     // The folder goes too, unless it still holds the workspace Kando made, which stays.
     await rmdir(directory).catch(() => {})
     this.store.delete(id)

@@ -27,6 +27,7 @@ import type { RoutineService } from './routine-service'
 import { AgentTerminals } from './agent-terminals'
 import { dashboardSince, summarizeDashboard } from './dashboard-stats'
 import { PortService } from './port-service'
+import type { WireLog } from './wire-log'
 
 const OK = { ok: true } as const
 
@@ -50,7 +51,8 @@ export function createRpcHandlers(
   environment: EnvironmentService,
   schedules: ScheduleService,
   chatCommands: ChatCommandStore,
-  routines: RoutineService
+  routines: RoutineService,
+  wire: WireLog
 ): RpcHandlers {
   const ports = new PortService(sessions, () => ({ terminals: terminals.list(), conversations: conversations.list(true), tasks: service.list() }))
   // An agent's own terminals: run in the conversation's folder unless it names another, and
@@ -78,6 +80,33 @@ export function createRpcHandlers(
     'system.setAwakeMode': ({ mode }) => awake.setMode(mode),
     'system.chatSettings': () => chatSettings.current(),
     'system.setChatSettings': (patch) => chatSettings.update(patch),
+    'debug.wire': ({ id, stageId, before }) => {
+      const known = new Map(conversations.stages(id).map((stage) => [stage.id, stage]))
+      const stages = wire.stages(id)
+        .map((found) => {
+          const stage = known.get(found.stageId)
+          return {
+            stageId: found.stageId,
+            agent: stage?.agent ?? null,
+            startedAt: stage?.startedAt ?? found.createdAt,
+            endedAt: stage ? stage.endedAt : null,
+            bytes: found.bytes,
+            file: wire.file(id, found.stageId)
+          }
+        })
+        .sort((a, b) => b.startedAt - a.startedAt)
+      const shown = stages.find((stage) => stage.stageId === stageId) ?? stages[0]
+      if (!shown) return { stages, stageId: null, entries: [], before: null }
+      return { stages, stageId: shown.stageId, ...wire.page(id, shown.stageId, before) }
+    },
+    'debug.watchWire': ({ id }, connection) => {
+      conversations.get(id)
+      connection.wiring.add(id)
+      return OK
+    },
+    'debug.unwatchWire': ({ id }, connection) => { connection.wiring.delete(id); return OK },
+    'debug.wireUsage': () => wire.usage(),
+    'debug.clearWire': () => wire.clear(),
     'system.environment': ({ refresh }) => environment.check(refresh ?? false),
     'tasks.list': ({ status }) => service.list(status),
     'tasks.get': ({ id }) => service.get(id),

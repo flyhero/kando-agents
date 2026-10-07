@@ -10,6 +10,7 @@ import { AttachmentStore } from './attachment-store'
 import { ChatLog } from './chat-log'
 import { fakeChatDaemon } from './fake-chat-agent'
 import { pngBytes } from './image-fixtures'
+import { WireLog } from './wire-log'
 
 const STAGE: ChatStage = {
   conversationId: 'conversation-1',
@@ -338,5 +339,47 @@ describe('ChatHost', () => {
     expect(userFrames(sessionId)).toHaveLength(2)
     expect(userFrames(sessionId)[1]).toMatchObject({ message: { content: [{ type: 'image' }] } })
     expect(restarted.items(STAGE).filter((item) => item.kind === 'user').at(-1)).toMatchObject({ text: '', images: [image] })
+  })
+
+  it('keeps every line in the wire log while it is on, as it went', async () => {
+    const added: string[] = []
+    const wire = new WireLog(root, (_conversationId, _stageId, entries) => added.push(...entries.map((entry) => entry.dir)))
+    wire.setEnabled(true)
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink, Date.now, wire)
+    daemon.deliver = (event) => {
+      if (event.event === 'data') host.handleData(event.sessionId, event.offset, event.data)
+      if (event.event === 'exit') host.handleExit(event.sessionId, event.exitCode)
+    }
+    const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })
+    await host.open(STAGE, sessionId, 0, true)
+    // What the chat log leaves out: a line that is no frame, and a stream event.
+    daemon.print(sessionId, 'Warning: something odd\n')
+    daemon.emit(sessionId, { type: 'stream_event', event: { type: 'content_block_delta' } })
+    host.handleStderr(sessionId, 'debug: hello\n')
+    daemon.exit(sessionId, 0)
+    await flushMicrotasks()
+
+    const { entries } = wire.page(STAGE.conversationId, STAGE.stageId)
+    expect(entries[0]?.dir).toBe('stdin')
+    expect(JSON.parse(entries[0]?.text ?? '')).toMatchObject({ request: { subtype: 'initialize' } })
+    // The handshake goes both ways first; then the lines above, in order.
+    expect(entries.slice(-4).map((entry) => [entry.dir, entry.text])).toEqual([
+      ['stdout', 'Warning: something odd'],
+      ['stdout', JSON.stringify({ type: 'stream_event', event: { type: 'content_block_delta' } })],
+      ['stderr', 'debug: hello\n'],
+      ['exit', '{"code":0}']
+    ])
+    expect(added).toEqual(entries.map((entry) => entry.dir))
+  })
+
+  it('keeps no wire log while it is off', async () => {
+    const wire = new WireLog(root, () => {})
+    const host = new ChatHost(daemon, root, attachments, recordingSink().sink, Date.now, wire)
+    daemon.deliver = (event) => {
+      if (event.event === 'data') host.handleData(event.sessionId, event.offset, event.data)
+    }
+    const { sessionId } = await daemon.request('spawnPipe', { command: 'claude', args: [], cwd: '/work/repo', env: {} })
+    await host.open(STAGE, sessionId, 0, true)
+    expect(wire.stages(STAGE.conversationId)).toEqual([])
   })
 })

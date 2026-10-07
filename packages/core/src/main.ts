@@ -39,6 +39,7 @@ import { WorktreeService } from './worktree-service'
 import { AwakeConfigStore } from './awake-config'
 import { ComputerAwakeService } from './computer-awake-service'
 import { ChatSettingsStore } from './chat-settings'
+import { WireLog } from './wire-log'
 
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
@@ -66,6 +67,10 @@ const refreshAwake = () => awake?.refresh(conversations.workingCount(), schedule
 
 const notifyChatItems = (conversationId: string, items: ChatItem[]) =>
   [...(server?.connections ?? [])].filter((c) => c.watching.has(conversationId)).forEach((c) => c.notify('conversations.chatItems', { conversationId, items }))
+
+const wire = new WireLog(paths.sessions, (conversationId, stageId, entries) =>
+  [...(server?.connections ?? [])].filter((c) => c.wiring.has(conversationId)).forEach((c) => c.notify('debug.wireEntries', { conversationId, stageId, entries }))
+)
 
 // Built before the task service, which runs its chat tasks in it; each hands the other its events.
 const conversations = new ConversationService(
@@ -101,7 +106,8 @@ const conversations = new ConversationService(
   projects,
   attachments,
   (id) => kandoChatMcpServer(paths.home, id),
-  paths.worktrees
+  paths.worktrees,
+  wire
 )
 
 const browser = new BrowserService(
@@ -199,12 +205,14 @@ awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig)
 const chatSettings = new ChatSettingsStore(paths.chatSettings, (settings) => {
   conversations.setPromptSuggestions(settings.promptSuggestions)
   conversations.setCapacity(settings, () => { void schedules.tick() })
+  wire.setEnabled(settings.wireLog ?? false)
   server?.broadcast('system.chatSettingsChanged', { settings })
 })
 // Before the daemon connects: a chat stage it still runs is taken back with these settings.
 const initialChatSettings = await chatSettings.load()
 conversations.setPromptSuggestions(initialChatSettings.promptSuggestions)
 conversations.setCapacity(initialChatSettings, () => { void schedules.tick() })
+wire.setEnabled(initialChatSettings.wireLog)
 
 daemon.onEvent((event) => {
   const { sessionId } = event
@@ -255,7 +263,7 @@ server = await startRpcServer({
   handlers: createRpcHandlers(service, conversations, projects, daemon, usage, sources, {
     store: attachments,
     uploads: new AttachmentUploads(attachments)
-  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment, schedules, chatCommands, routines)
+  }, terminals, worktrees, browser, awake, terminalCommands, limits, runs, turns, chatSettings, environment, schedules, chatCommands, routines, wire)
 })
 await writeCoreEndpoint({ port: server.port, token, pid: process.pid, protocolVersion: PROTOCOL_VERSION, version: packageJson.version })
 daemon.start()
@@ -271,6 +279,9 @@ void turns.catchUp().catch((error: unknown) => console.error('[kando-core] count
 sources.start()
 // Idle chat agents are checked for once a minute, so one goes within a minute of its limit.
 setInterval(() => void conversations.releaseIdle(), 60_000).unref()
+// Wire logs are for looking at soon after: a week on, they go.
+wire.prune()
+setInterval(() => wire.prune(), 6 * 60 * 60_000).unref()
 console.log(`[kando-core] listening on 127.0.0.1:${server.port} (home ${paths.home})`)
 
 let shuttingDown = false

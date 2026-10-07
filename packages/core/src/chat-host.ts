@@ -10,6 +10,7 @@ import type { SessionHost } from './daemon-client'
 import { LineFramer } from './line-framer'
 import { Rejection } from './rejection'
 import type { UsageReport } from './usage-source'
+import type { WireLog } from './wire-log'
 
 const START_TIMEOUT_MS = 30_000
 const STDERR_TAIL_CHARS = 8 * 1024
@@ -51,7 +52,12 @@ type Live = ChatStage & {
   started: { resolve(): void; reject(error: Error): void } | null
   // When anything last went either way, or the user last changed something.
   lastActive: number
+  // A process this stage just started: the stderr it wrote before core attached goes to the wire log too.
+  freshStderr: boolean
 }
+
+// Where the raw traffic goes, for the user to debug with; it records nothing while switched off.
+export type WireTap = Pick<WireLog, 'record'>
 
 export function createDriver(stage: ChatStage): ChatDriver {
   switch (stage.agent) {
@@ -86,7 +92,8 @@ export class ChatHost {
     // Where a message's images are read from; the caller has checked they are there.
     private readonly attachments: Pick<AttachmentStore, 'fileOf'>,
     private readonly sink: ChatSink,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly wire: WireTap | null = null
   ) {}
 
   owns(sessionId: string): boolean {
@@ -118,7 +125,8 @@ export class ChatHost {
       requests: '',
       provider: null,
       started: null,
-      lastActive: records.at(-1)?.at ?? this.now()
+      lastActive: records.at(-1)?.at ?? this.now(),
+      freshStderr: records.length === 0
     }
     this.lives.set(sessionId, live)
     this.history.delete(stage.stageId)
@@ -147,6 +155,8 @@ export class ChatHost {
     live.attached = false
     const snapshot = await this.daemon.request('attach', { sessionId: live.sessionId })
     live.stderr = (snapshot.stderr ?? '').slice(-STDERR_TAIL_CHARS)
+    if (live.freshStderr && snapshot.stderr) this.tap(live, [{ dir: 'stderr', text: snapshot.stderr }])
+    live.freshStderr = false
     this.feed(live, snapshot.bufferStart, snapshot.buffer)
     live.queued.sort((a, b) => a.offset - b.offset).forEach((event) => this.feed(live, event.offset, event.data))
     live.queued = []
@@ -172,7 +182,10 @@ export class ChatHost {
 
   handleStderr(sessionId: string, data: string): void {
     const live = this.lives.get(sessionId)
-    if (live) live.stderr = (live.stderr + data).slice(-STDERR_TAIL_CHARS)
+    if (!live) return
+    live.stderr = (live.stderr + data).slice(-STDERR_TAIL_CHARS)
+    // Until attached, the snapshot on its way holds this too.
+    if (live.attached) this.tap(live, [{ dir: 'stderr', text: data }])
   }
 
   handleExit(sessionId: string, exitCode: number | null): void {
@@ -398,8 +411,10 @@ export class ChatHost {
 
   private read(live: Live, lines: ReadonlyArray<{ text: string; end: number }>, gap: boolean): void {
     const records: LoggedRecord[] = []
+    const gapNote = 'core 不在线时有一部分输出没能保存下来'
+    this.tap(live, [...(gap ? [{ dir: 'note' as const, text: gapNote }] : []), ...lines.map((line) => ({ dir: 'stdout' as const, text: line.text }))])
     if (gap) {
-      const note: LoggedRecord = { dir: 'note', at: this.now(), level: 'warning', text: 'core 不在线时有一部分输出没能保存下来' }
+      const note: LoggedRecord = { dir: 'note', at: this.now(), level: 'warning', text: gapNote }
       live.driver.apply(note)
       records.push(note)
     }
@@ -447,7 +462,13 @@ export class ChatHost {
   // Logged and applied before it is written, so a crash in between cannot send it twice.
   private dispatch(live: Live, message: ChatOutgoing, ref?: string, images: readonly ChatImage[] = []): Promise<unknown> {
     this.record(live, { dir: 'out', at: this.now(), frame: message.logged, ...(ref ? { ref } : {}), ...(images.length ? { images: [...images] } : {}) })
-    return this.daemon.request('write', { sessionId: live.sessionId, data: `${JSON.stringify(message.wire)}\n` })
+    const line = JSON.stringify(message.wire)
+    this.tap(live, [{ dir: 'stdin', text: line }])
+    return this.daemon.request('write', { sessionId: live.sessionId, data: `${line}\n` })
+  }
+
+  private tap(live: Live, entries: Parameters<WireTap['record']>[2]): void {
+    this.wire?.record(live.conversationId, live.stageId, entries)
   }
 
   private flush(live: Live): void {
@@ -487,6 +508,7 @@ export class ChatHost {
     const last = live.framer.flush()
     if (last) this.read(live, [last], false)
     const record: LoggedRecord = { dir: 'exit', at: this.now(), code, stderr: live.stderr.slice(-2000) }
+    this.tap(live, [{ dir: 'exit', text: JSON.stringify({ code }) }])
     live.log.append([record])
     live.driver.apply(record)
     this.flush(live)

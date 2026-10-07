@@ -6,6 +6,7 @@ export type FakeConnection = FlowOwner & {
   attached: Set<string>
   watching: Set<string>
   browsing: Set<string>
+  wiring: Set<string>
   notes: { name: RpcNotificationName; params: unknown }[]
   close(): void
   // The latest notification of one kind, read back through its schema.
@@ -19,6 +20,7 @@ export function fakeConnection(): FakeConnection {
     attached: new Set(),
     watching: new Set(),
     browsing: new Set(),
+    wiring: new Set(),
     notes,
     notify: (name, params) => {
       notes.push({ name, params })

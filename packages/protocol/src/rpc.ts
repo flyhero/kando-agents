@@ -18,6 +18,7 @@ import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
 import { Environment } from './environment'
 import { RequestedTarget, ScheduledRun, ScheduledRunList } from './schedule'
 import { Routine, RoutineFields, RoutineList } from './routine'
+import { WireEntry, WirePage, WireUsage } from './wire'
 
 // Bump only for breaking changes; additive optional fields keep the version.
 export const PROTOCOL_VERSION = 10
@@ -53,10 +54,11 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log'] as const
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
 // conversation-fork: a free conversation can be forked at one of its messages into a new one (conversations.fork).
+// wire-log: core can record what passes between it and chat agents (ChatSettings.wireLog) and serves it (debug.*).
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
@@ -81,6 +83,14 @@ export const rpcMethods = {
   'system.setChatSettings': { params: ChatSettings.partial(), result: ChatSettings },
   // What of git and the agent CLIs core finds on its path; the last answer, unless asked to look again.
   'system.environment': { params: z.object({ refresh: z.boolean().optional() }), result: Environment },
+  // A conversation's wire log: one stage's page (the newest stage without stageId), and the stages that have one.
+  'debug.wire': { params: ConversationRef.extend({ stageId: z.string().optional(), before: z.number().int().nonnegative().optional() }), result: WirePage },
+  // New entries of the conversation's wire log arrive as debug.wireEntries while watched.
+  'debug.watchWire': { params: ConversationRef, result: Ok },
+  'debug.unwatchWire': { params: ConversationRef, result: Ok },
+  'debug.wireUsage': { params: z.object({}), result: WireUsage },
+  // Deletes every wire log; what is left, which a stage still writing may already have added to.
+  'debug.clearWire': { params: z.object({}), result: WireUsage },
   'tasks.list': {
     params: z.object({ status: TaskStatus.optional() }),
     result: z.array(Task)
@@ -448,6 +458,8 @@ export const rpcNotifications = {
   'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
   'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
   'system.environmentChanged': z.object({ environment: Environment }),
+  // Entries just added to a stage's wire log; only to connections watching the conversation's.
+  'debug.wireEntries': z.object({ conversationId: z.string(), stageId: z.string(), entries: z.array(WireEntry) }),
   // The whole list (schedules.list) whenever a run in it changes.
   'schedules.changed': z.object({ runs: ScheduledRunList }),
   // Every routine (routines.list) whenever one, or one of its runs, changes.

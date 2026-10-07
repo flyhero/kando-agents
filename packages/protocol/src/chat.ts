@@ -22,7 +22,9 @@ export const ChatSettings = z.object({
   // Applies to live agent processes, including one awaiting the user's approval. Older cores
   // omit both limits; each new agent gets the default until configured.
   maxConcurrentAgents: z.number().int().min(1).max(50).optional(),
-  agentConcurrency: z.partialRecord(AgentKind, z.number().int().min(1).max(50)).optional()
+  agentConcurrency: z.partialRecord(AgentKind, z.number().int().min(1).max(50)).optional(),
+  // Whether core records the raw traffic with chat agents (see WireEntry); older cores omit it.
+  wireLog: z.boolean().optional()
 })
 export type ChatSettings = z.infer<typeof ChatSettings>
 

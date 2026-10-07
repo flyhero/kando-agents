@@ -9,13 +9,15 @@ const DEFAULTS = {
   promptSuggestions: true,
   unattendedMode: 'acceptEdits',
   maxConcurrentAgents: 20,
-  agentConcurrency: { claude: DEFAULT_AGENT_CONCURRENCY, codex: DEFAULT_AGENT_CONCURRENCY }
+  agentConcurrency: { claude: DEFAULT_AGENT_CONCURRENCY, codex: DEFAULT_AGENT_CONCURRENCY },
+  wireLog: false
 } satisfies Required<ChatSettings>
 const Saved = z.object({
   promptSuggestions: z.boolean().catch(DEFAULTS.promptSuggestions),
   unattendedMode: UnattendedMode.catch(DEFAULTS.unattendedMode),
   maxConcurrentAgents: ChatSettings.shape.maxConcurrentAgents.unwrap().catch(DEFAULTS.maxConcurrentAgents),
-  agentConcurrency: ChatSettings.shape.agentConcurrency.unwrap().catch(DEFAULTS.agentConcurrency)
+  agentConcurrency: ChatSettings.shape.agentConcurrency.unwrap().catch(DEFAULTS.agentConcurrency),
+  wireLog: z.boolean().catch(DEFAULTS.wireLog)
 }).catch(DEFAULTS)
 
 // Machine-level, like keeping the computer awake: every window and every chat goes by the same.
@@ -48,7 +50,8 @@ export class ChatSettingsStore {
       promptSuggestions: patch.promptSuggestions ?? this.settings.promptSuggestions,
       unattendedMode: patch.unattendedMode ?? this.settings.unattendedMode,
       maxConcurrentAgents: patch.maxConcurrentAgents ?? this.settings.maxConcurrentAgents,
-      agentConcurrency: { ...this.settings.agentConcurrency, ...patch.agentConcurrency }
+      agentConcurrency: { ...this.settings.agentConcurrency, ...patch.agentConcurrency },
+      wireLog: patch.wireLog ?? this.settings.wireLog
     }
     await writePrivateJson(this.file, { version: 1, ...next })
     this.settings = next

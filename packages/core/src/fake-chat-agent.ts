@@ -36,9 +36,12 @@ export function fakeChatDaemon() {
       fake.emit(sessionId, { type: 'result', subtype: 'success', is_error: false, result: `echo: ${text}`, terminal_reason: 'completed', duration_ms: 5 })
     },
     emit(sessionId: string, frame: unknown): void {
+      fake.print(sessionId, `${JSON.stringify(frame)}\n`)
+    },
+    // Output as it comes, frame or not.
+    print(sessionId: string, data: string): void {
       const session = sessions.get(sessionId)
       if (!session || session.exitCode !== null) return
-      const data = `${JSON.stringify(frame)}\n`
       const offset = session.output.length
       session.output += data
       fake.deliver({ event: 'data', sessionId, data, offset })
