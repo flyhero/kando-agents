@@ -765,6 +765,7 @@ export function startCoreConnection(): void {
         rpc.on('browser.changed', ({ status }) => useCore.setState({ browser: status }))
         rpc.on('system.awakeChanged', ({ status }) => useCore.setState({ awake: status }))
         rpc.on('system.chatSettingsChanged', ({ settings }) => useCore.setState({ chatSettings: settings }))
+        rpc.on('system.environmentChanged', ({ environment }) => useCore.setState({ environment }))
         rpc.on('browser.tabsChanged', ({ conversationId, tabs }) => receiveBrowserTabs(conversationId, tabs))
         rpc.on('usage.changed', ({ usage }) =>
           useCore.setState((s) => ({ usage: { ...s.usage, [usage.agent]: usage } }))

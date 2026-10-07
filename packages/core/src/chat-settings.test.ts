@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { ChatSettings } from '@kando/protocol'
+import { ChatSettings } from '@kando/protocol'
 import { ChatSettingsStore } from './chat-settings'
 
 describe('ChatSettingsStore', () => {
@@ -20,23 +20,33 @@ describe('ChatSettingsStore', () => {
 
   it('suggests the next message and lets scheduled runs edit, unless the user changed that, and keeps it', async () => {
     const store = new ChatSettingsStore(file, (settings) => changes.push(settings))
-    expect(await store.load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
+    expect(await store.load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } })
 
     await store.update({ promptSuggestions: false })
     await store.update({ unattendedMode: 'bypass' })
     expect(changes).toEqual([
-      { promptSuggestions: false, unattendedMode: 'acceptEdits' },
-      { promptSuggestions: false, unattendedMode: 'bypass' }
+      { promptSuggestions: false, unattendedMode: 'acceptEdits', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } },
+      { promptSuggestions: false, unattendedMode: 'bypass', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } }
     ])
 
     const reopened = new ChatSettingsStore(file, () => {})
-    expect(await reopened.load()).toEqual({ promptSuggestions: false, unattendedMode: 'bypass' })
+    expect(await reopened.load()).toEqual({ promptSuggestions: false, unattendedMode: 'bypass', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } })
   })
 
   it('falls back to the default for a file it cannot read', async () => {
     writeFileSync(file, '{"promptSuggestions": "nope", "unattendedMode": "yolo"}')
-    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
+    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } })
     writeFileSync(file, 'not json')
-    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits' })
+    expect(await new ChatSettingsStore(file, () => {}).load()).toEqual({ promptSuggestions: true, unattendedMode: 'acceptEdits', maxConcurrentAgents: 20, agentConcurrency: { claude: 6, codex: 6 } })
+  })
+
+  it('keeps per-agent limits when another agent changes, and rejects invalid limits', async () => {
+    const store = new ChatSettingsStore(file, () => {})
+    await store.load()
+    await store.update({ agentConcurrency: { claude: 2 } })
+    expect(store.current().agentConcurrency).toEqual({ claude: 2, codex: 6 })
+    await store.update({ maxConcurrentAgents: 3 })
+    expect(store.current().maxConcurrentAgents).toBe(3)
+    expect(() => ChatSettings.parse({ promptSuggestions: true, maxConcurrentAgents: 0 })).toThrow()
   })
 })

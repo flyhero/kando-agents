@@ -84,7 +84,7 @@ export type ScheduleDeps = {
     start(id: string, allowBypass: boolean | undefined, unattended: UnattendedMode): Promise<Task>
     resumeChat(id: string, allowBypass?: boolean): Promise<Task>
   }
-  conversations: Pick<ConversationService, 'get' | 'create' | 'continue' | 'send' | 'runScheduled' | 'sentRef'>
+  conversations: Pick<ConversationService, 'get' | 'create' | 'continue' | 'send' | 'runScheduled' | 'sentRef' | 'capacityAvailable'>
   usage: { list(): AgentUsage[]; refresh(): Promise<AgentUsage[]> }
   // The mode runs start in, as the user last set it.
   mode: () => UnattendedMode
@@ -445,6 +445,10 @@ export class ScheduleService {
         held.add(agent)
         continue
       }
+      const conversationId = run.target.kind === 'task'
+        ? this.deps.tasks.get(run.target.taskId)?.conversationId
+        : run.target.kind === 'routine' ? run.conversationId : run.target.conversationId
+      if (!this.deps.conversations.capacityAvailable(agent, conversationId)) continue
       held.add(agent)
       // The row, not this copy, carries the agent chosen now: the start reads it back.
       const current = agent === run.agent ? run : (this.settle(run, { agent }), this.found(run.id))
@@ -470,6 +474,11 @@ export class ScheduleService {
     } catch (thrown) {
       const error = thrown instanceof Error ? thrown : new Error(String(thrown))
       const reason = error instanceof Rejection ? error.reason : error.message
+      if (reason === 'agent-capacity') {
+        this.settle(run, { status: 'waiting', error: reason, check_at: this.now() + TICK_MS })
+        this.limitChanged(run)
+        return error
+      }
       const attempts = run.attempts + 1
       if ((error instanceof Rejection && !TRANSIENT.has(error.reason)) || attempts >= MAX_ATTEMPTS) {
         this.settle(run, { status: 'failed', attempts, error: reason, settled_at: this.now() })

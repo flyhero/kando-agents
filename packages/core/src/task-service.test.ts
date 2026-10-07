@@ -125,6 +125,17 @@ describe('TaskService', () => {
     expect(events.map((e) => e.type)).toEqual(['changed', 'changed'])
   })
 
+  it('refuses a full-capacity task before preparing its worktree', async () => {
+    const repo = initRepo('capacity-project')
+    const task = readyTask('Wait for capacity', [repo])
+    conversations.setCapacity({ maxConcurrentAgents: 1, agentConcurrency: { claude: 1 } }, () => {})
+    await conversations.create('claude', [])
+
+    await expect(service.start(task.id)).rejects.toMatchObject({ reason: 'agent-capacity' })
+    expect(service.get(task.id).status).toBe('pending')
+    expect(existsSync(path.join(dir, 'worktrees', task.id))).toBe(false)
+  })
+
   it('creates a task with repos, agent, dependencies and details in one call', () => {
     const base = service.create({ title: 'Base' })
     events = []

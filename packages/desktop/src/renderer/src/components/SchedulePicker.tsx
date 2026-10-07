@@ -6,7 +6,7 @@ import { Segmented } from './SettingsControls'
 import { InfoIcon } from './icons'
 
 // How every scheduled run goes, whichever way it was set to start.
-const SCHEDULE_RULES = '额度不够时会等它恢复再开始；同一个 Agent 的预约一个接一个运行；电脑睡着时不会运行。'
+const SCHEDULE_RULES = '额度不足或运行位置已满时会等待；同一个 Agent 的预约一个接一个运行；电脑睡着时不会运行。'
 
 type When = 'quota' | 'time'
 

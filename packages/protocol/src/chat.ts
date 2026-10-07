@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { AttachmentId } from './attachments'
+import { AgentKind } from './task'
 
 // idle: the agent waits for a message · running: a turn is under way · awaiting: the turn waits
 // on the user to approve or answer something
@@ -15,7 +16,14 @@ export type UnattendedMode = z.infer<typeof UnattendedMode>
 // How chats run on this machine, whichever window asks; core keeps them.
 // promptSuggestions: after each turn the agent predicts the user's next message (Claude Code only).
 // unattendedMode: see UnattendedMode; older cores leave it out.
-export const ChatSettings = z.object({ promptSuggestions: z.boolean(), unattendedMode: UnattendedMode.optional() })
+export const ChatSettings = z.object({
+  promptSuggestions: z.boolean(),
+  unattendedMode: UnattendedMode.optional(),
+  // Applies to live agent processes, including one awaiting the user's approval. Older cores
+  // omit both limits; each new agent gets the default until configured.
+  maxConcurrentAgents: z.number().int().min(1).max(50).optional(),
+  agentConcurrency: z.partialRecord(AgentKind, z.number().int().min(1).max(50)).optional()
+})
 export type ChatSettings = z.infer<typeof ChatSettings>
 
 // interrupted: the user stopped the turn while the call ran.

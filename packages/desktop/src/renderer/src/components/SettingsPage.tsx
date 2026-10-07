@@ -1,6 +1,6 @@
 import type { BrowserStatus } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { PROTOCOL_VERSION, UNATTENDED_MODES, type SourceDescriptor } from '@kando/protocol'
+import { AGENT_KINDS, PROTOCOL_VERSION, UNATTENDED_MODES, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
 import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported, useChatCommandsSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
@@ -225,6 +225,25 @@ function AgentSettings() {
   return (
     <>
       <InstalledAgentsSettings />
+      {chatSettings?.maxConcurrentAgents !== undefined && (
+        <SettingsRow
+          label="同时运行的 Agent 总数"
+          description="达到上限后，新启动的会话会提示稍后重试；预约任务会等待空位。等待你批准的 Agent 也占一个位置，调低上限不会停止已运行的会话。"
+          control={(labelId) => (
+            <Stepper labelId={labelId} value={chatSettings.maxConcurrentAgents ?? 20} min={1} max={50} unit="个" onChange={(maxConcurrentAgents) => void setChatSettings({ maxConcurrentAgents })} />
+          )}
+        />
+      )}
+      {chatSettings?.agentConcurrency && AGENT_KINDS.map((agent) => (
+        <SettingsRow
+          key={agent}
+          label={`${AGENT_LABEL[agent]} 同时运行`}
+          description="同一 Agent 的上限；实际可启动数量也受总数上限约束。"
+          control={(labelId) => (
+            <Stepper labelId={labelId} value={chatSettings.agentConcurrency?.[agent] ?? 6} min={1} max={50} unit="个" onChange={(count) => void setChatSettings({ agentConcurrency: { [agent]: count } })} />
+          )}
+        />
+      ))}
       {awakeSupported && awake && (
         <SettingsRow
           label="保持电脑唤醒"

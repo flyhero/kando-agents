@@ -198,10 +198,13 @@ awake = new ComputerAwakeService(daemon, new AwakeConfigStore(paths.awakeConfig)
 )
 const chatSettings = new ChatSettingsStore(paths.chatSettings, (settings) => {
   conversations.setPromptSuggestions(settings.promptSuggestions)
+  conversations.setCapacity(settings, () => { void schedules.tick() })
   server?.broadcast('system.chatSettingsChanged', { settings })
 })
 // Before the daemon connects: a chat stage it still runs is taken back with these settings.
-conversations.setPromptSuggestions((await chatSettings.load()).promptSuggestions)
+const initialChatSettings = await chatSettings.load()
+conversations.setPromptSuggestions(initialChatSettings.promptSuggestions)
+conversations.setCapacity(initialChatSettings, () => { void schedules.tick() })
 
 daemon.onEvent((event) => {
   const { sessionId } = event
@@ -241,7 +244,8 @@ daemon.onConnect(() => {
 const environment = new EnvironmentService({
   pathEnv: process.env.PATH ?? '',
   platform: process.platform,
-  signedIn: { claude: hasClaudeCredentials, codex: hasCodexCredentials }
+  signedIn: { claude: hasClaudeCredentials, codex: hasCodexCredentials },
+  changed: (environment) => server?.broadcast('system.environmentChanged', { environment })
 })
 
 const token = randomBytes(32).toString('hex')
@@ -260,6 +264,7 @@ refreshAwake()
 usage.start()
 routines.start()
 schedules.start()
+environment.start()
 refreshAwake()
 // Stages that ended before turns were kept, counted once in the background.
 void turns.catchUp().catch((error: unknown) => console.error('[kando-core] counting earlier chat turns failed:', error))

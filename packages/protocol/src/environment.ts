@@ -21,8 +21,26 @@ export const EnvironmentCheck = z.object({
 })
 export type EnvironmentCheck = z.infer<typeof EnvironmentCheck>
 
+// Inventory is independent of the agent kinds Kando can run. A detected application may not
+// have a CLI, and a CLI may have no desktop application.
+export const DetectedAgent = z.object({
+  id: z.string(),
+  name: z.string(),
+  locations: z.array(z.object({ source: z.enum(['cli', 'application']), path: z.string() })),
+  // A version response proves the CLI can be launched, not that Kando speaks its protocol or
+  // that the user is signed in. Older cores omit this field.
+  cliCheck: z.object({
+    status: z.enum(['responded', 'unverified']),
+    version: z.string().nullable(),
+    reason: z.enum(['probe-failed', 'windows-shim']).nullable()
+  }).optional()
+})
+export type DetectedAgent = z.infer<typeof DetectedAgent>
+
 export const Environment = z.object({
   checks: z.array(EnvironmentCheck),
+  // Older cores only report checks for the two agents they can run.
+  detectedAgents: z.array(DetectedAgent).optional(),
   // The directories looked in, in order: the PATH core starts agents with.
   searchPath: z.array(z.string()),
   checkedAt: z.number()

@@ -101,6 +101,7 @@ const REASON_TEXT: Record<string, string> = {
   'session-not-found': '会话已不存在',
   'conversation-not-found': '会话不存在',
   'conversation-running': '这条会话的 Agent 正在启动，稍后再试',
+  'agent-capacity': 'Agent 运行数量已达到上限；请等其他会话结束，或预约稍后执行',
   'conversation-same-agent': '请选择另一个 Agent 进行移交',
   'invalid-workspace': '项目必须是已存在的绝对目录',
   'too-many-projects': '一条会话最多选择 10 个项目',

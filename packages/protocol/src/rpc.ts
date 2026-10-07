@@ -447,6 +447,7 @@ export const rpcMethods = {
 export const rpcNotifications = {
   'system.awakeChanged': z.object({ status: ComputerAwakeStatus }),
   'system.chatSettingsChanged': z.object({ settings: ChatSettings }),
+  'system.environmentChanged': z.object({ environment: Environment }),
   // The whole list (schedules.list) whenever a run in it changes.
   'schedules.changed': z.object({ runs: ScheduledRunList }),
   // Every routine (routines.list) whenever one, or one of its runs, changes.

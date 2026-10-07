@@ -306,6 +306,33 @@ describe('ScheduleService', () => {
     expect(schedules.list()).toEqual([])
   })
 
+  it('keeps a capacity-blocked run queued without using retry attempts and starts when a slot opens', async () => {
+    conversations.setCapacity({ maxConcurrentAgents: 1, agentConcurrency: { claude: 1 } }, () => { void schedules.tick() })
+    const live = await conversations.create('claude', [])
+    task = pendingTask()
+    const queued = schedules.create({ kind: 'task', taskId: 'task-1' }, null)
+    await due()
+    expect(run(queued.id)).toMatchObject({ status: 'waiting', attempts: 0 })
+    expect(starts).toHaveLength(0)
+
+    daemon.exit(live.sessionId!, 0)
+    await due()
+    expect(run(queued.id)).toMatchObject({ status: 'started', attempts: 0 })
+    expect(starts).toHaveLength(1)
+  })
+
+  it('does not exhaust retries if capacity becomes full between admission and launch', async () => {
+    task = pendingTask()
+    startFails = new Rejection('agent-capacity')
+    const queued = schedules.create({ kind: 'task', taskId: 'task-1' }, null)
+    await due()
+    expect(run(queued.id)).toMatchObject({ status: 'waiting', attempts: 0, error: 'agent-capacity' })
+    clock += 60_000
+    startFails = null
+    await due()
+    expect(run(queued.id)).toMatchObject({ status: 'started', attempts: 0 })
+  })
+
   it('takes a start core was making when it stopped as made, once its message went out', async () => {
     const conversation = await conversations.create('claude', [])
     const scheduled = schedules.create({ kind: 'conversation', conversationId: conversation.id, text: 'go' }, clock + HOUR)

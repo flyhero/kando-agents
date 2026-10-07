@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type CommitPushResult, type CommitResult, type PushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
+import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type ChatSettings, type CommitPushResult, type CommitResult, type PushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
 import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
@@ -26,6 +26,7 @@ import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { UsageReport } from './usage-source'
 import { normalizeRepoPath, prepareConversationWorktrees, projectHead } from './workspace'
+import { DEFAULT_AGENT_CONCURRENCY } from './chat-settings'
 
 export type ConversationEvent =
   | { type: 'changed'; conversation: Conversation }
@@ -103,7 +104,10 @@ async function resolveProjects(projectPaths: readonly string[], taken: readonly 
 export class ConversationService {
   // Core's chat settings say; main hands them over before any stage starts.
   private promptSuggestions = false
-  private readonly launching = new Set<string>()
+  private readonly launching = new Map<string, AgentKind>()
+  private maxConcurrentAgents = 20
+  private agentConcurrency: Partial<Record<AgentKind, number>> = {}
+  private capacityReleased: (() => void) | null = null
   private readonly catalogs = new Map<AgentKind, Promise<ChatCatalog | null>>()
   private readonly chats: ChatHost
   // Sessions being stopped on purpose: their exit reads as a stop, not a crash.
@@ -152,6 +156,28 @@ export class ConversationService {
     const showing = this.store.list().filter((conversation) => this.chats.suggestion(conversation.id) !== null)
     this.chats.pauseSuggestions(!enabled)
     showing.forEach((conversation) => this.changed(conversation))
+  }
+
+  setCapacity(settings: Pick<ChatSettings, 'maxConcurrentAgents' | 'agentConcurrency'>, released: () => void): void {
+    const hadCapacity = this.capacityReleased !== null
+    this.maxConcurrentAgents = settings.maxConcurrentAgents ?? 20
+    this.agentConcurrency = settings.agentConcurrency ?? {}
+    this.capacityReleased = released
+    if (hadCapacity) released()
+  }
+
+  // Count sessions, not turns: an agent awaiting approval still owns a process and a slot. A
+  // launch in progress reserves its slot until it either attaches a session or fails.
+  capacityAvailable(agent: AgentKind, conversationId?: string | null): boolean {
+    const existing = conversationId ? this.store.get(conversationId) : null
+    if (existing?.sessionId && existing.agent === agent) return true
+    const active = new Map(this.store.list().filter((conversation) => conversation.sessionId !== null)
+      .map((conversation) => [conversation.id, conversation.agent]))
+    // A handoff may replace this conversation's old process before starting the new agent.
+    if (existing?.sessionId && conversationId) active.delete(conversationId)
+    for (const [id, kind] of this.launching) if (!active.has(id)) active.set(id, kind)
+    return active.size < this.maxConcurrentAgents &&
+      [...active.values()].filter((kind) => kind === agent).length < (this.agentConcurrency[agent] ?? DEFAULT_AGENT_CONCURRENCY)
   }
 
   // Task summaries are opt-in; older clients expect only free conversations.
@@ -303,6 +329,7 @@ export class ConversationService {
     if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : CODEX_MODES))) {
       throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
     }
+    if (!this.capacityAvailable(agent)) throw new Rejection('agent-capacity')
     if (model || effort) {
       const models = (await this.chatCatalog(agent))?.models ?? []
       const picked = models.find((each) => each.id === (model ?? models.find((one) => one.isDefault)?.id))
@@ -452,6 +479,7 @@ export class ConversationService {
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning && !this.chats.idle(id)) throw new Rejection('conversation-running')
+    if (!this.capacityAvailable(agent, id)) throw new Rejection('agent-capacity')
     if (current.sessionId) await this.stop(id)
     return this.start(id, agent, note, true)
   }
@@ -491,6 +519,7 @@ export class ConversationService {
     const sessionStage = turn ? cutStage : stages.slice(0, index).reverse().find((stage) => this.chats.items(this.chatStage(source, stage)).some((item) => item.kind === 'turn'))
     // The agent whose session is forked goes on; one that has never spoken here is the source's.
     const agent = sessionStage?.agent ?? source.agent
+    if (!this.capacityAvailable(agent)) throw new Rejection('agent-capacity')
     const fork: ForkPoint = { providerSessionId: sessionStage?.providerSessionId ?? null, at: earlier?.kind === 'turn' ? earlier.providerRef ?? null : null }
     // A fork of a Claude session must run in the folder the session ran in: the same projects, or
     // the source's own managed workspace, shared from now on (remove() leaves a workspace in place).
@@ -527,7 +556,8 @@ export class ConversationService {
 
   private async start(id: string, agent: AgentKind, note: string, handoff: boolean, launch: StageLaunch = {}): Promise<Conversation> {
     if (this.launching.has(id)) throw new Rejection('conversation-running')
-    this.launching.add(id)
+    if (!this.capacityAvailable(agent)) throw new Rejection('agent-capacity', 'Agent 运行数量已达到上限，请等待其他会话结束，或预约稍后执行')
+    this.launching.set(id, agent)
     try {
       const current = this.get(id)
       if (current.sessionId) throw new Rejection('conversation-running')
@@ -556,6 +586,7 @@ export class ConversationService {
       return await this.startChat(current, stage, saved !== null, handoffPath, launch.readable ?? [])
     } finally {
       this.launching.delete(id)
+      this.capacityReleased?.()
     }
   }
 
@@ -927,7 +958,9 @@ export class ConversationService {
     if (this.store.get(id)?.sessionId === null) return this.get(id)
     const stage = this.store.activeStage(id)
     if (stage) this.store.endStage(stage.id, null)
-    return this.changed(this.store.update(id, { sessionId: null }))
+    const stopped = this.changed(this.store.update(id, { sessionId: null }))
+    this.capacityReleased?.()
+    return stopped
   }
 
   // An agent is gone only once the daemon says so: clearing the session any earlier would let a
@@ -1018,6 +1051,7 @@ export class ConversationService {
       this.changed(this.store.update(current.id, { sessionId: null }))
     }
     this.exitWaiters.get(sessionId)?.()
+    if (current) this.capacityReleased?.()
   }
 
   workingCount(): number {
@@ -1037,6 +1071,7 @@ export class ConversationService {
         if (!info || !stage) {
           if (stage) this.store.endStage(stage.id, null)
           this.changed(this.store.update(conversation.id, { sessionId: null }))
+          this.capacityReleased?.()
         } else {
           await this.chats.open(this.chatStage(conversation, stage), info.sessionId, this.store.chatOffset(stage.id), false)
           // A question left open across a restart has no browser navigation waiting on it now.

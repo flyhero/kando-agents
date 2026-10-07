@@ -44,7 +44,7 @@ import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHea
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
 // What a task needs of its chat.
-export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get' | 'runUsage'>
+export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get' | 'runUsage' | 'capacityAvailable'>
 
 export class TaskService {
   private readonly launching = new Set<string>()
@@ -334,6 +334,7 @@ export class TaskService {
     if (!agent) {
       throw new Rejection('invalid-task')
     }
+    if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
       const images = await this.images(task)
       const imageIds = this.chatImageIds(task, images.prompt)
@@ -383,6 +384,7 @@ export class TaskService {
     if (!agent) {
       throw new Rejection('invalid-task')
     }
+    if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
       const images = await this.images(task)
       if (task.status === 'pending') {

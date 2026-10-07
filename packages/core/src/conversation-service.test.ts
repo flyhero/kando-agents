@@ -120,6 +120,37 @@ describe('ConversationService', () => {
     expect(daemon.spawns[1]?.args).toEqual(expect.arrayContaining(['--resume', providerId]))
   })
 
+  it('limits live agents by machine and provider, then admits a new one after a process exits', async () => {
+    let released = 0
+    service.setCapacity({ maxConcurrentAgents: 2, agentConcurrency: { claude: 1, codex: 2 } }, () => { released++ })
+    const claude = await service.create('claude', [])
+    const codex = await codexOpens(service.create('codex', []))
+    expect(service.capacityAvailable('claude')).toBe(false)
+    expect(service.capacityAvailable('codex')).toBe(false)
+    await expect(service.create('claude', [])).rejects.toMatchObject({ reason: 'agent-capacity' })
+    await expect(service.create('codex', [])).rejects.toMatchObject({ reason: 'agent-capacity' })
+    expect(daemon.spawns).toHaveLength(2)
+
+    daemon.exit(claude.sessionId!, 0)
+    expect(released).toBeGreaterThan(0)
+    expect(service.capacityAvailable('claude')).toBe(true)
+    expect(service.capacityAvailable('codex')).toBe(true)
+    await codexOpens(service.create('codex', []), 'thread-2')
+    expect(daemon.spawns).toHaveLength(3)
+    expect(service.get(codex.id).sessionId).toBe(codex.sessionId)
+  })
+
+  it('counts persisted live sessions while core reconnects to the daemon', async () => {
+    const first = await service.create('claude', [])
+    const recovered = serve()
+    recovered.setCapacity({ maxConcurrentAgents: 1, agentConcurrency: { claude: 1 } }, () => {})
+    expect(recovered.capacityAvailable('claude')).toBe(false)
+    await recovered.reconcile((await daemon.request('list', {})).sessions)
+    expect(recovered.capacityAvailable('claude')).toBe(false)
+    daemon.exit(first.sessionId!, 0)
+    expect(recovered.capacityAvailable('claude')).toBe(true)
+  })
+
   it('uses the first of multiple projects as cwd and grants every extra directory to both agents', async () => {
     const first = path.join(root, 'first')
     const second = path.join(root, 'second')

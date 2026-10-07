@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process'
 import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
+import { homedir } from 'node:os'
 import { promisify } from 'node:util'
-import { ENVIRONMENT_TOOLS, type Environment, type EnvironmentCheck, type EnvironmentTool } from '@kando/protocol'
+import { ENVIRONMENT_TOOLS, type DetectedAgent, type Environment, type EnvironmentCheck, type EnvironmentTool } from '@kando/protocol'
 
 const execFileAsync = promisify(execFile)
 
@@ -12,13 +13,29 @@ const RESULT_TTL_MS = 5 * 60_000
 // What a CLI on Windows is called, in the order a shell tries them.
 const WINDOWS_EXTENSIONS = ['.exe', '.cmd', '.bat']
 
+// Add a product here when its executable or application bundle can be identified reliably.
+// Integration into Kando's chat is separate from discovery.
+const OTHER_AGENTS = [
+  { id: 'cursor', name: 'Cursor', commands: ['cursor-agent'], applications: ['Cursor.app'] },
+  { id: 'windsurf', name: 'Windsurf', commands: [], applications: ['Windsurf.app'] },
+  { id: 'kiro', name: 'Kiro', commands: [], applications: ['Kiro.app'] },
+  { id: 'gemini', name: 'Gemini CLI', commands: ['gemini'], applications: [] },
+  { id: 'opencode', name: 'OpenCode', commands: ['opencode'], applications: ['OpenCode.app'] },
+  { id: 'aider', name: 'Aider', commands: ['aider'], applications: [] },
+  { id: 'copilot', name: 'GitHub Copilot CLI', commands: ['copilot'], applications: [] },
+  { id: 'goose', name: 'Goose', commands: ['goose'], applications: ['Goose.app'] },
+  { id: 'amp', name: 'Amp', commands: ['amp'], applications: [] }
+]
+
 type Options = {
   // What the agents are started with: core's own PATH, which the daemon shares.
   pathEnv: string
   platform: NodeJS.Platform
   // Whether the tool has an account to run with; left out for one that has none to have.
   signedIn: Partial<Record<EnvironmentTool, () => Promise<boolean>>>
+  applicationDirs?: string[]
   now?: () => number
+  changed?: (environment: Environment) => void
 }
 
 // The first of the directories holding an executable of that name; null when none does.
@@ -40,10 +57,49 @@ export function parseVersion(output: string): string | null {
   return /\d+\.\d+\.\d+/.exec(output)?.[0] ?? null
 }
 
+async function discoverOtherAgents(pathEnv: string, platform: NodeJS.Platform, applicationDirs: string[]): Promise<DetectedAgent[]> {
+  const discovered = await Promise.all(OTHER_AGENTS.map(async ({ id, name, commands, applications }) => {
+    const commandPaths = await Promise.all(commands.map((command) => findOnPath(command, pathEnv, platform)))
+    const commandPath = commandPaths.find((path): path is string => path !== null)
+    const appPaths = platform === 'darwin'
+      ? await Promise.all(applications.flatMap((app) => applicationDirs.map(async (dir) => {
+        const path = join(dir, app)
+        return await access(join(path, 'Contents', 'Info.plist')).then(() => path, () => null)
+      })))
+      : []
+    const locations: DetectedAgent['locations'] = [
+      ...commandPaths.filter((path): path is string => path !== null).map((path) => ({ source: 'cli' as const, path })),
+      ...appPaths.filter((path): path is string => path !== null).map((path) => ({ source: 'application' as const, path }))
+    ]
+    return locations.length > 0 ? {
+      id, name, locations,
+      ...(commandPath ? { cliCheck: await probeAgentCli(commandPath, platform) } : {})
+    } : null
+  }))
+  return discovered.filter((agent): agent is DetectedAgent => agent !== null)
+}
+
+async function probeAgentCli(file: string, platform: NodeJS.Platform): Promise<NonNullable<DetectedAgent['cliCheck']>> {
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
+    return { status: 'unverified', version: null, reason: 'windows-shim' }
+  }
+  try {
+    const { stdout, stderr } = await execFileAsync(file, ['--version'], {
+      timeout: VERSION_TIMEOUT_MS,
+      maxBuffer: 16 * 1024,
+      windowsHide: true
+    })
+    return { status: 'responded', version: parseVersion(`${stdout}\n${stderr}`), reason: null }
+  } catch {
+    return { status: 'unverified', version: null, reason: 'probe-failed' }
+  }
+}
+
 // Keeps the last look at the machine, so the sidebar and the settings page read one answer.
 export class EnvironmentService {
   private last: Environment | null = null
   private pending: Promise<Environment> | null = null
+  private timer: NodeJS.Timeout | null = null
   private readonly now: () => number
 
   constructor(private readonly options: Options) {
@@ -59,9 +115,40 @@ export class EnvironmentService {
     return this.pending
   }
 
+  // A newly installed CLI or app becomes visible without restarting core. The manual refresh
+  // still runs immediately; background checks are infrequent because --version starts binaries.
+  start(): void {
+    if (this.timer) return
+    this.timer = setInterval(() => {
+      void this.check(true).catch((error: unknown) => console.error('[kando-core] agent discovery failed', error))
+    }, RESULT_TTL_MS)
+    this.timer.unref()
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer)
+    this.timer = null
+  }
+
   private async look(): Promise<Environment> {
-    const checks = await Promise.all(ENVIRONMENT_TOOLS.map((tool) => this.checkTool(tool)))
-    this.last = { checks, searchPath: this.options.pathEnv.split(delimiter).filter(Boolean), checkedAt: this.now() }
+    const { pathEnv, platform } = this.options
+    const applicationDirs = this.options.applicationDirs ?? (platform === 'darwin' ? ['/Applications', join(homedir(), 'Applications')] : [])
+    const [checks, otherAgents] = await Promise.all([
+      Promise.all(ENVIRONMENT_TOOLS.map((tool) => this.checkTool(tool))),
+      discoverOtherAgents(pathEnv, platform, applicationDirs)
+    ])
+    const detectedAgents: DetectedAgent[] = [
+      ...checks.flatMap((check) => check.tool !== 'git' && check.path ? [{
+        id: check.tool,
+        name: check.tool === 'claude' ? 'Claude Code' : 'Codex',
+        locations: [{ source: 'cli' as const, path: check.path }]
+      }] : []),
+      ...otherAgents
+    ]
+    const previous = this.last
+    this.last = { checks, detectedAgents, searchPath: pathEnv.split(delimiter).filter(Boolean), checkedAt: this.now() }
+    if (!previous || JSON.stringify({ checks: previous.checks, detectedAgents: previous.detectedAgents, searchPath: previous.searchPath }) !==
+      JSON.stringify({ checks, detectedAgents, searchPath: this.last.searchPath })) this.options.changed?.(this.last)
     return this.last
   }
 
