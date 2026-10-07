@@ -374,7 +374,9 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
             <kbd>Tab</kbd> 填入建议
           </span>
         )}
-        {schedulesSupported && (
+        {/* A routine's chat is out of the list and its follow-ups light nothing: a run scheduled
+            here would finish unseen. Running again belongs to the routine's own schedule. */}
+        {schedulesSupported && !conversation.routineId && (
           <ScheduleSendButton
             conversationId={id}
             text={written}

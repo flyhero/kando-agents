@@ -154,7 +154,9 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const { savePlan } = surface
-  const schedulable = useSchedulesSupported() && !savePlan
+  // Not in a routine's chat, whose follow-ups nobody is told of (ChatComposer).
+  const routine = useCore((s) => Boolean(s.conversations[conversationId]?.routineId))
+  const schedulable = useSchedulesSupported() && !savePlan && !routine
   const runModes = RUN_MODES.filter((mode) => modes.includes(mode))
   const picked = usePreferences((s) => s.planRunMode)
   const runMode: RunMode = runModes.includes(picked) ? picked : runModes.includes('auto') ? 'auto' : 'acceptEdits'
