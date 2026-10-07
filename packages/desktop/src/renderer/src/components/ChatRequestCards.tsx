@@ -61,7 +61,7 @@ export function ChatRequestLine({ item }: { item: RequestItem }) {
   const shorten = useContext(ChatPaths)
   if (item.kind === 'question') {
     if (item.resolution !== null) return <ChatQuestionReceipt item={item} />
-    return <div className="chat-request-line" data-waiting>agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
+    return <div className="chat-request-line" data-waiting>Agent 在问你：{item.questions[0]?.question ?? ''} · 在下方回答</div>
   }
   // A command is named by the program it runs; the card below has it in full. Kando's own
   // question about a site names the site.
@@ -371,6 +371,7 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
           </button>
         </div>
         <span className="chat-dock-spacer" />
+        {item.async && <span className="chat-ask-async muted">Agent 没停下来等 · 回答会作为消息发给它</span>}
         {questions.length > 1 && !free && <span className="chat-ask-count muted">{index + 1}/{questions.length}</span>}
       </div>
       {mode === 'note' && (
@@ -482,7 +483,7 @@ function ChatQuestionReceipt({ item }: { item: QuestionItem }) {
   return (
     <div className="chat-ask-receipt">
       <div className="chat-ask-receipt-title muted">
-        {settled ? (count > 1 ? `回答了 ${count} 个问题` : '回答了问题') : (count > 1 ? `没有回答这 ${count} 个问题` : '没有回答这个问题')}
+        {settled ? (count > 1 ? `回答了 ${count} 个问题` : '回答了问题') : item.async ? '没有用选项回答' : (count > 1 ? `没有回答这 ${count} 个问题` : '没有回答这个问题')}
       </div>
       {item.questions.map((question) => {
         const answers = settled ? questionAnswers(question, item.answers?.[question.id] ?? []) : []

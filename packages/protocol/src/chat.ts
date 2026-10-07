@@ -199,7 +199,11 @@ export const ChatItem = z.discriminatedUnion('kind', [
     questions: z.array(ChatQuestion),
     // Question id to the chosen labels.
     answers: z.record(z.string(), z.array(z.string())).nullable(),
-    resolution: z.enum(['answered', 'cancelled']).catch('cancelled').nullable()
+    resolution: z.enum(['answered', 'cancelled']).catch('cancelled').nullable(),
+    // Asked in passing (Codex's async questions): the agent works on, and the answer reaches it as
+    // a message. Answered with null answers when the user wrote something else instead. Older cores
+    // leave it out.
+    async: z.boolean().optional()
   }),
   Base.extend({
     kind: z.literal('turn'),

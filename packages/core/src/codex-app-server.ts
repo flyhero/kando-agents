@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatModel, type ChatOption, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatItem, type ChatModel, type ChatOption, type ChatQuestion, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { choiceDecisions, codexAnswerAllows, codexChoiceOf, codexChoices, type CodexChoice } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
@@ -45,6 +45,9 @@ const Item = z.looseObject({
   })).catch([]).optional(),
   aggregatedOutput: z.string().nullish(),
   exitCode: z.number().nullish(),
+  // An agent message that asks in passing: Codex works on, and takes the answer as a message.
+  delivery: z.string().nullish(),
+  questions: z.array(z.looseObject({ title: z.string(), options: z.array(z.string()).nullish() })).nullish().catch(null),
   status: z.string().optional(),
   changes: z.array(z.looseObject({
     path: z.string(),
@@ -388,6 +391,20 @@ function mcpResult(item: Item, kept: readonly ChatImage[] = []): { text: string 
   return { text: taken.text || null, images: [...taken.images, ...kept] }
 }
 
+// How Codex writes an async question as plain text: its title, then a line per option.
+function plainQuestions(questions: ReadonlyArray<{ title: string; options?: string[] | null }>): string {
+  return questions.map((question) => [question.title, ...(question.options ?? []).map((option) => `- ${option}`)].join('\n')).join('\n\n').trim()
+}
+
+// The answer as the message Codex takes it in: the choice alone for one question, each under its
+// question for several. A reply typed once for all of them goes once.
+function replyText(questions: readonly ChatQuestion[], answers: Readonly<Record<string, string[]>>): string {
+  const each = questions.map((question) => ({ question: question.question, answer: (answers[question.id] ?? []).join('；') }))
+  const single = new Set(each.map((one) => one.answer))
+  if (each.length === 1 || single.size === 1) return each[0]?.answer ?? ''
+  return each.filter((one) => one.answer).map((one) => `${one.question}\n→ ${one.answer}`).join('\n\n')
+}
+
 export class CodexAppServer implements ChatDriver {
   readonly items: ChatItems
   private readonly kando: KandoRequests
@@ -409,6 +426,8 @@ export class CodexAppServer implements ChatDriver {
   // Messages sent into the running turn, by request, until Codex takes or refuses them: one taken
   // shows as sent then; one refused waits in the queue for the turn to end instead.
   private readonly steering = new Map<string, { text: string; images: ChatImage[]; ref: string }>()
+  // Questions asked in passing and not yet answered, by request id, oldest first.
+  private readonly asks = new Map<string, string>()
   private steers = 0
   // What this turn used, summed across its model calls.
   private turnUsage: { input: number; output: number } | { total: number } | null = null
@@ -485,6 +504,9 @@ export class CodexAppServer implements ChatDriver {
         // A plan put aside (see waitingPlans); any other answer is to Kando's own question.
         if (this.pending.get(record.requestId)?.kind === 'plan') this.resolve(record.requestId, record.resolution, null, record.at)
         else this.kando.apply(record)
+        break
+      case 'reply':
+        this.closeAsk(record.requestId, record.answers, record.at)
     }
     this.refreshOptions()
     // The composer offers sending into the turn while one that takes it runs.
@@ -614,6 +636,33 @@ export class CodexAppServer implements ChatDriver {
       return [this.turnStart(this.threadId, '按这个计划开始执行。', answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')]
     }
     return [{ id: pending.rawId, result: this.answerBody(pending, answer) }]
+  }
+
+  replyByMessage(requestId: string, answer: ChatAnswer): { text: string | null; answers: Record<string, string[]> | null } | undefined {
+    const itemId = this.asks.get(requestId)
+    if (!itemId) return undefined
+    const item = this.items.get(itemId)
+    if (item?.kind !== 'question') return undefined
+    const answers = answer.decision === 'deny' ? null : answer.answers ?? null
+    return { text: answers ? replyText(item.questions, answers) : null, answers }
+  }
+
+  asking(): Array<Extract<ChatItem, { kind: 'question' }>> {
+    return [...this.asks.values()].flatMap((itemId) => {
+      const item = this.items.get(itemId)
+      return item?.kind === 'question' ? [item] : []
+    })
+  }
+
+  // Answered with what the user chose; null, when they put it aside or wrote something else.
+  private closeAsk(requestId: string, answers: Record<string, string[]> | null, at: number): void {
+    const itemId = this.asks.get(requestId)
+    if (!itemId) return
+    this.asks.delete(requestId)
+    const item = this.items.get(itemId)
+    if (item?.kind !== 'question') return
+    const chose = answers !== null && Object.values(answers).some((each) => each.length > 0)
+    this.items.put({ ...item, answers: chose ? answers : null, resolution: chose ? 'answered' : 'cancelled' }, at)
   }
 
   waitingPlans(): string[] {
@@ -1028,8 +1077,12 @@ export class CodexAppServer implements ChatDriver {
       case 'agentMessage': {
         if (!completed) return
         const text = item.text ?? ''
-        this.items.put({ id: `m:${item.id}`, kind: 'assistant', text, streaming: false }, at)
+        const asked = item.delivery === 'async' ? (item.questions ?? []).filter((question) => question.title.trim()) : []
+        // The text of an async question is Codex's plain rendering of it for clients that show no
+        // card; with the card, it would say the same twice.
+        if (!asked.length || text.trim() !== plainQuestions(asked)) this.items.put({ id: `m:${item.id}`, kind: 'assistant', text, streaming: false }, at)
         if (this.turn && text.trim()) this.turn.assistant = text
+        if (asked.length) this.ask(item.id, asked, at)
         return
       }
       case 'reasoning': {
@@ -1224,7 +1277,27 @@ export class CodexAppServer implements ChatDriver {
     this.pending.set(requestId, { kind: 'approval', itemId: approvalId, rawId, denial, choices })
   }
 
+  // Codex's question in passing, as a question card; its options are all it offers, one to pick.
+  private ask(messageId: string, asked: ReadonlyArray<{ title: string; options?: string[] | null }>, at: number): void {
+    const requestId = `async:${messageId}`
+    const itemId = `q:${requestId}`
+    if (this.items.get(itemId)) return
+    const questions = asked.map((question, index) => ({
+      id: `q${index + 1}`,
+      header: '',
+      question: question.title,
+      options: (question.options ?? []).map((label) => ({ label, description: null })),
+      multiSelect: false
+    }))
+    this.items.put({ id: itemId, kind: 'question', requestId, questions, answers: null, resolution: null, async: true }, at)
+    this.asks.set(requestId, itemId)
+  }
+
   private sent(frame: Frame, at: number, ref: string | undefined, images: readonly ChatImage[]): void {
+    // Whatever the user says next answers, or passes over, what was asked in passing.
+    if (frame.method === 'turn/start' || frame.method === 'turn/steer') {
+      for (const requestId of [...this.asks.keys()]) this.closeAsk(requestId, null, at)
+    }
     if (frame.method !== undefined && frame.id !== undefined) {
       this.requests.set(String(frame.id), frame.method)
       if (frame.method === 'initialize') this.initSent = true

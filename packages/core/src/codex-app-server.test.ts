@@ -176,6 +176,71 @@ describe('CodexAppServer steering', () => {
   })
 })
 
+describe('CodexAppServer questions asked in passing', () => {
+  function running() {
+    const driver = new CodexAppServer('stage-1', OPTIONS)
+    const out = (frame: unknown, ref?: string) => driver.apply({ dir: 'out', at: 1, frame, ...(ref ? { ref } : {}) })
+    const answer = (frame: unknown) => driver.apply({ dir: 'in', at: 2, frame })
+    driver.due().forEach((frame) => out(frame))
+    answer({ id: 'kando-init', result: {} })
+    driver.due().forEach((frame) => out(frame))
+    answer({ id: 'kando-thread', result: { thread: { id: 'thread-1' } } })
+    out({ id: 'kando-turn-1', method: 'turn/start', params: { threadId: 'thread-1', input: [{ type: 'text', text: 'release it' }] } }, 'm1')
+    answer({ method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } })
+    return { driver, out, answer }
+  }
+  const asked = (id: string, questions: Array<{ title: string; options?: string[] }>, text = questions.map((q) => [q.title, ...(q.options ?? []).map((o) => `- ${o}`)].join('\n')).join('\n\n')) => ({
+    method: 'item/completed',
+    params: { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id, text, phase: 'final_answer', delivery: 'async', questions } }
+  })
+  const commit = { title: '可以按此提交吗？', options: ['可以，按这两条提交', '有工单号，我来提供', '先不要提交'] }
+
+  it('shows the question as a card in place of its plain text, and the turn goes on', () => {
+    const { driver, answer } = running()
+    answer(asked('call_1', [commit]))
+    expect(ofKind(driver.items.list(), 'assistant')).toEqual([])
+    expect(driver.items.get('q:async:call_1')).toMatchObject({
+      kind: 'question', requestId: 'async:call_1', async: true, resolution: null,
+      questions: [{ id: 'q1', question: '可以按此提交吗？', options: [{ label: '可以，按这两条提交', description: null }, { label: '有工单号，我来提供', description: null }, { label: '先不要提交', description: null }], multiSelect: false }]
+    })
+    expect(driver.activity()).toBe('running')
+    expect(driver.asking().map((item) => item.requestId)).toEqual(['async:call_1'])
+  })
+
+  it('keeps the text when it says more than the question', () => {
+    const { driver, answer } = running()
+    answer(asked('call_1', [commit], '改好了，类型检查通过。\n\n可以按此提交吗？'))
+    expect(ofKind(driver.items.list(), 'assistant').map((item) => item.text)).toEqual(['改好了，类型检查通过。\n\n可以按此提交吗？'])
+  })
+
+  it('answers with a message of what was chosen, and puts a question aside with none', () => {
+    const { driver, answer } = running()
+    answer(asked('call_1', [commit]))
+    expect(driver.replyByMessage('async:call_1', { decision: 'allow', answers: { q1: ['可以，按这两条提交'] } })).toEqual({ text: '可以，按这两条提交', answers: { q1: ['可以，按这两条提交'] } })
+    expect(driver.replyByMessage('async:call_1', { decision: 'deny' })).toEqual({ text: null, answers: null })
+    expect(driver.replyByMessage('7', { decision: 'allow' })).toBeUndefined()
+    driver.apply({ dir: 'reply', at: 3, requestId: 'async:call_1', answers: { q1: ['可以，按这两条提交'] } })
+    expect(driver.items.get('q:async:call_1')).toMatchObject({ resolution: 'answered', answers: { q1: ['可以，按这两条提交'] } })
+    expect(driver.asking()).toEqual([])
+  })
+
+  it('puts each answer under its question when there are several, and a reply for all once', () => {
+    const { driver, answer } = running()
+    answer(asked('call_1', [commit, { title: '要推送吗？', options: ['推送', '先不推'] }]))
+    expect(driver.replyByMessage('async:call_1', { decision: 'allow', answers: { q1: ['先不要提交'], q2: ['先不推'] } })?.text)
+      .toBe('可以按此提交吗？\n→ 先不要提交\n\n要推送吗？\n→ 先不推')
+    expect(driver.replyByMessage('async:call_1', { decision: 'allow', answers: { q1: ['都先别动'], q2: ['都先别动'] } })?.text).toBe('都先别动')
+  })
+
+  it('takes whatever the user says next as passing over what is still asked', () => {
+    const { driver, out, answer } = running()
+    answer(asked('call_1', [commit]))
+    out(driver.steer('先把 README 也改了').wire, 'm2')
+    expect(driver.items.get('q:async:call_1')).toMatchObject({ resolution: 'cancelled', answers: null })
+    expect(driver.asking()).toEqual([])
+  })
+})
+
 describe('CodexAppServer state', () => {
   // gpt-6-luna at low effort, then medium effort with the untrusted policy (Kando's ask).
   const records = fixture('codex-options.jsonl')

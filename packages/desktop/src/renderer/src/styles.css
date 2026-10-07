@@ -5506,6 +5506,7 @@ body.side-panel-resizing * {
   white-space: nowrap;
 }
 .chat-ask-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-ask-async { flex-shrink: 0; font-size: 12px; white-space: nowrap; }
 .chat-ask-question { font-weight: 600; overflow-wrap: anywhere; }
 .chat-ask-hint { margin-left: 8px; font-size: 12px; font-weight: 400; }
 
@@ -6705,6 +6706,7 @@ body.side-panel-resizing * {
   .chat-request-line,
   .chat-ask-tab,
   .chat-ask-count,
+  .chat-ask-async,
   .chat-ask-hint,
   .chat-ask-description,
   .chat-ask-receipt,

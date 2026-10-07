@@ -16,6 +16,7 @@ describe('conversationState', () => {
 
   it('calls a conversation idle whether or not its agent is up, unless it crashed', () => {
     expect(label({ sessionId: 's', chat: { turn: 'idle' } })).toMatchObject({ label: '空闲', running: false })
+    expect(label({ sessionId: 's', chat: { turn: 'idle', request: { requestId: 'async:c1', kind: 'question', tool: null, title: '?', decisions: [], open: 1, async: true } } })).toMatchObject({ label: '等你回答', running: false })
     expect(label({}).label).toBe('空闲')
     expect(label({ lastExit: null }).label).toBe('空闲')
     expect(label({ lastExit: { code: null, at: 1 } }).label).toBe('空闲')

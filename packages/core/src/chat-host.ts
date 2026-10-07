@@ -70,6 +70,10 @@ function openRequests(driver: ChatDriver): OpenRequest[] {
   return driver.items.list().filter((item): item is OpenRequest => (item.kind === 'approval' || item.kind === 'question') && item.resolution === null)
 }
 
+function asksOf(driver: ChatDriver): OpenRequest[] {
+  return driver.asking?.() ?? []
+}
+
 // Drives the chat-mode agents core has running: feeds each one's output to its driver, sends what
 // the driver or the user asks for, and keeps the stage's log.
 export class ChatHost {
@@ -190,15 +194,18 @@ export class ChatHost {
     return this.liveOf(conversationId)?.driver.suggestion?.() ?? null
   }
 
-  // The oldest request waiting on the user, and how many are.
+  // The oldest request the turn waits on, and how many it does; with none, the oldest question
+  // the agent asked in passing.
   request(conversationId: string): ConversationRequest | null {
     const live = this.liveOf(conversationId)
-    const open = live ? openRequests(live.driver) : []
+    if (!live) return null
+    const blocking = live.driver.activity() === 'awaiting' ? openRequests(live.driver).filter((item) => !(item.kind === 'question' && item.async)) : []
+    const open = blocking.length ? blocking : asksOf(live.driver)
     const first = open[0]
     if (!first) return null
     return first.kind === 'approval'
       ? { requestId: first.requestId, kind: 'approval', tool: first.tool, title: first.title, decisions: first.decisions, open: open.length }
-      : { requestId: first.requestId, kind: 'question', tool: null, title: first.questions[0]?.question ?? '', decisions: [], open: open.length }
+      : { requestId: first.requestId, kind: 'question', tool: null, title: first.questions[0]?.question ?? '', decisions: [], open: open.length, ...(first.async ? { async: true } : {}) }
   }
 
   // For every running stage at once: the setting is the machine's, not one conversation's.
@@ -336,6 +343,16 @@ export class ChatHost {
 
   async respond(conversationId: string, requestId: string, answer: ChatAnswer): Promise<void> {
     const live = this.running(conversationId)
+    // A question asked in passing is answered by a message: into the turn while one runs that
+    // takes it, after it otherwise. Logged as answered first, so the message does not pass it over.
+    const reply = live.driver.replyByMessage?.(requestId, answer)
+    if (reply) {
+      this.record(live, { dir: 'reply', at: this.now(), requestId, answers: reply.answers })
+      this.flush(live)
+      const busy = live.driver.activity() !== 'idle'
+      if (reply.text) await this.send(conversationId, reply.text, [], true, busy && live.driver.canSteer())
+      return
+    }
     const sent = live.driver.respond(requestId, answer).map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
@@ -448,7 +465,7 @@ export class ChatHost {
     if (usage) this.sink.usage(live, usage)
     const activity = live.driver.activity()
     const suggestion = live.driver.suggestion?.() ?? null
-    const requests = activity === 'awaiting' ? openRequests(live.driver).map((item) => item.requestId).join(' ') : ''
+    const requests = [...(activity === 'awaiting' ? openRequests(live.driver).map((item) => item.requestId) : []), ...asksOf(live.driver).map((item) => item.requestId)].join(' ')
     if (activity !== live.activity || suggestion !== live.suggestion || requests !== live.requests) {
       live.activity = activity
       live.suggestion = suggestion

@@ -120,6 +120,19 @@ describe('actionableItems', () => {
     expect(quickApproval(null)).toBe(false)
   })
 
+  it('asks for a reply when a turn ended on a question asked in passing, and not while the agent works on', () => {
+    const ask = { requestId: 'async:c1', kind: 'question' as const, tool: null, title: '可以提交吗？', decisions: [], open: 1, async: true }
+    const items = actionableItems(snapshot([
+      conversation('idle', { chat: { turn: 'idle', request: ask } }),
+      conversation('busy', { chat: { turn: 'running', request: ask } })
+    ]))
+    expect(items.map((item) => [item.target.id, item.reasons, item.request?.title])).toEqual([['idle', ['reply'], '可以提交吗？']])
+    expect(quickApproval(ask)).toBe(false)
+    expect(attentionCount(snapshot([conversation('idle', { chat: { turn: 'idle', request: ask } })]))).toBe(1)
+    const before = conversation('idle', { chat: { turn: 'running', request: ask } })
+    expect(noticesBetween(snapshot([before]), snapshot([conversation('idle', { chat: { turn: 'idle', request: ask } })]))[0]?.body).toContain('有个问题等你回答')
+  })
+
   it('excludes done, abandoned and deleted tasks and their conversations', () => {
     expect(actionableItems(snapshot([
       conversation('done', { taskId: 'done', chat: { turn: 'awaiting' } }),

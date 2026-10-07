@@ -9,7 +9,10 @@ export const ConversationRequest = z.object({
   tool: z.string().nullable(),
   title: z.string(),
   decisions: z.array(ChatDecision.catch('deny')),
-  open: z.number().int().positive()
+  open: z.number().int().positive(),
+  // A question asked in passing (see the question item's async): nothing waits on it. Older
+  // cores leave it out.
+  async: z.boolean().optional()
 })
 export type ConversationRequest = z.infer<typeof ConversationRequest>
 
@@ -34,7 +37,8 @@ export const Conversation = z.object({
   // next message; only when the user has them on. Older cores leave it out.
   // request: while the turn waits on the user, the oldest request still open (an approval's
   // title is its command or path, a question's its first question) and how many are open, so a
-  // list can answer a plain approval without opening the chat. Older cores leave it out.
+  // list can answer a plain approval without opening the chat; otherwise a question the agent
+  // asked in passing and nobody has answered. Older cores leave it out.
   chat: z.object({
     turn: ChatTurnActivity.catch('idle'),
     suggestion: z.string().nullable().optional(),

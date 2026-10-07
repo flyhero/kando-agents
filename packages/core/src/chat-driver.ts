@@ -1,4 +1,4 @@
-import type { ChatDecision, ChatImage, ChatOption, ChatPermissionMode, ChatTurnActivity } from '@kando/protocol'
+import type { ChatDecision, ChatImage, ChatItem, ChatOption, ChatPermissionMode, ChatTurnActivity } from '@kando/protocol'
 import type { AttachmentFile } from './attachment-store'
 import type { ChatItems } from './chat-items'
 import type { UsageReport } from './usage-source'
@@ -19,6 +19,9 @@ export type ChatRecord =
   // Kando asked the user something mid-chat (the site its browser may open), and what they answered.
   | { dir: 'ask'; at: number; requestId: string; ask: { kind: 'browser-host'; host: string; url: string } | { kind: 'terminal-run'; command: string; cwd: string } }
   | { dir: 'answer'; at: number; requestId: string; resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled'; message?: string }
+  // The user answered a question the agent asked in passing (answers null: put it aside); what
+  // they chose goes to the agent as a message of its own.
+  | { dir: 'reply'; at: number; requestId: string; answers: Record<string, string[]> | null }
 
 // A user or final assistant message for conversation_messages. The key stays the same however
 // often the stage is replayed, so each is stored once.
@@ -88,6 +91,12 @@ export interface ChatDriver {
   steer(text: string, images?: readonly ChatImageFile[]): ChatOutgoing
   canSteer(): boolean
   respond(requestId: string, answer: ChatAnswer): unknown[]
+  // A question the agent asked in passing, which nothing waits on: answered by a message rather
+  // than through respond(). The text to send (null: put aside, nothing sent), or undefined when
+  // the request is not one of those.
+  replyByMessage?(requestId: string, answer: ChatAnswer): { text: string | null; answers: Record<string, string[]> | null } | undefined
+  // Those questions still open, oldest first.
+  asking?(): Array<Extract<ChatItem, { kind: 'question' }>>
   interrupt(): unknown[]
   // Plans waiting with no turn running, for an agent whose plan outlasts its turn (Codex).
   waitingPlans?(): string[]

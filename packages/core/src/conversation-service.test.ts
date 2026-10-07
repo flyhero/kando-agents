@@ -424,6 +424,31 @@ describe('ConversationService', () => {
     expect(service.stages(created.id)[0]?.providerSessionId).toBe('thread-1')
   })
 
+  it('answers a question Codex asks in passing with a message, into the turn while it runs and after it otherwise', async () => {
+    const created = await codexOpens(service.create('codex', []))
+    const sessionId = created.sessionId!
+    daemon.reply = () => {}
+    await service.send(created.id, 'release it')
+    await settle()
+    daemon.emit(sessionId, { method: 'turn/started', params: { threadId: 'thread-1', turn: { id: 'turn-1' } } })
+    const asked = (id: string) => ({
+      method: 'item/completed',
+      params: { threadId: 'thread-1', turnId: 'turn-1', item: { type: 'agentMessage', id, text: '可以提交吗？\n- 可以\n- 先不要', delivery: 'async', questions: [{ title: '可以提交吗？', options: ['可以', '先不要'] }] } }
+    })
+    daemon.emit(sessionId, asked('call_1'))
+    expect(service.get(created.id).chat).toMatchObject({ turn: 'running', request: { requestId: 'async:call_1', kind: 'question', title: '可以提交吗？', open: 1, async: true } })
+
+    await service.respond(created.id, 'async:call_1', { decision: 'allow', answers: { q1: ['可以'] } })
+    expect(daemon.written(sessionId).at(-1)).toMatchObject({ method: 'turn/steer', params: { input: [{ type: 'text', text: '可以' }], expectedTurnId: 'turn-1' } })
+    expect(service.get(created.id).chat?.request).toBeUndefined()
+
+    daemon.emit(sessionId, asked('call_2'))
+    daemon.emit(sessionId, { method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } } })
+    expect(service.get(created.id).chat).toMatchObject({ turn: 'idle', request: { requestId: 'async:call_2', async: true } })
+    await service.respond(created.id, 'async:call_2', { decision: 'allow', answers: { q1: ['先不要'] } })
+    expect(daemon.written(sessionId).at(-1)).toMatchObject({ method: 'turn/start', params: { input: [{ type: 'text', text: '先不要' }] } })
+  })
+
   it('drops a chat stage that fails to start, leaving nothing to resume', async () => {
     daemon.answerInit = false
     daemon.reply = () => {}

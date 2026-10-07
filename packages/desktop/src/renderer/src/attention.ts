@@ -19,6 +19,8 @@ export type Snapshot = {
 }
 
 const waiting = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'awaiting'
+// The turn is over with a question the agent asked in passing still open.
+const asking = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'idle' && conversation.chat.request?.async === true
 const working = (conversation: Conversation) => conversation.chat?.turn === 'running' || conversation.chat?.turn === 'awaiting'
 const crashed = (conversation: Conversation) => conversation.sessionId === null && (conversation.lastExit?.code ?? 0) !== 0
 
@@ -43,7 +45,7 @@ export function quickApproval(request: ConversationRequest | null): request is C
 }
 
 const requestOf = (conversation: Conversation | undefined, reasons: readonly ActionableReason[]) =>
-  reasons[0] === 'awaiting' ? conversation?.chat?.request ?? null : null
+  reasons[0] === 'awaiting' || reasons[0] === 'reply' ? conversation?.chat?.request ?? null : null
 
 const REASON_PRIORITY: Record<ActionableReason, number> = { awaiting: 0, crashed: 1, review: 2, reply: 3 }
 
@@ -51,6 +53,7 @@ function chatReasons(conversation: Conversation | undefined): ActionableReason[]
   if (!conversation) return []
   if (waiting(conversation)) return ['awaiting']
   if (crashed(conversation)) return ['crashed']
+  if (asking(conversation)) return ['reply']
   return []
 }
 
@@ -74,7 +77,7 @@ export function actionableItems(s: Pick<Snapshot, 'tasks' | 'conversations'> & {
     const conversation = includeTaskSummaries ? (task.conversationId ? s.conversations[task.conversationId] : undefined) ?? byTask.get(task.id) : undefined
     const reasons = chatReasons(conversation)
     if (task.status === 'review') reasons.push('review')
-    if (task.awaitingInput && conversation?.chat?.turn !== 'running' && !reasons.includes('awaiting') && !reasons.includes('crashed') &&
+    if (task.awaitingInput && conversation?.chat?.turn !== 'running' && !reasons.includes('awaiting') && !reasons.includes('crashed') && !reasons.includes('reply') &&
       !automaticResumes.has(task.conversationId ?? conversation?.id ?? '')) reasons.push('reply')
     const primaryReason = reasons[0]
     if (!primaryReason) continue
@@ -110,7 +113,7 @@ export function attentionCount(s: Snapshot): number {
   const counted = new Set<string>()
   for (const conversation of Object.values(s.conversations)) {
     if (conversation.routineId) continue
-    if (waiting(conversation) || s.unseen[conversation.id]) counted.add(conversation.id)
+    if (waiting(conversation) || asking(conversation) || s.unseen[conversation.id]) counted.add(conversation.id)
   }
   let count = counted.size
   for (const task of Object.values(s.tasks)) {
@@ -140,7 +143,7 @@ export function noticesBetween(prev: Snapshot, next: Snapshot): Notice[] {
     } else if (waiting(conversation) && !waiting(before)) {
       notices.push({ title, body: 'Agent 在等你允许或回答', target })
     } else if (working(before) && !working(conversation)) {
-      notices.push({ title, body: 'Agent 这一轮做完了', target })
+      notices.push({ title, body: asking(conversation) ? 'Agent 这一轮做完了，有个问题等你回答' : 'Agent 这一轮做完了', target })
     }
   }
   return notices
