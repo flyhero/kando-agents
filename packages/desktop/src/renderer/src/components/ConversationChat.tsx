@@ -282,7 +282,7 @@ function TurnHead({ at, messageKey, live }: { at: number; messageKey: string; li
       <span className="chat-turn-head-icon" data-live={live ?? undefined} aria-hidden="true"><AgentIcon agent={agent} /></span>
       <span className="chat-turn-head-name">{AGENT_LABEL[agent]}</span>
       {model && <span className="chat-turn-head-model" title={`模型：${model}`}>{model}</span>}
-      {model && effort && <span className="chat-turn-head-effort" title={`推理程度：${effortLabel(effort)}`}>推理 {effortLabel(effort)}</span>}
+      {model && effort && <span className="chat-turn-head-effort" title={`推理程度：${effortLabel(effort)}`}>{effortLabel(effort)}</span>}
       <MessageTime at={at} />
     </div>
   )
