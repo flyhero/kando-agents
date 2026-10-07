@@ -203,7 +203,6 @@ export function NewTaskDialog() {
               images={images}
               uploading={uploading}
               onOpen={setViewing}
-              onAddFiles={(files) => void addImages(files)}
               onRemove={(id) => setImages((current) => current.filter((image) => image.id !== id))}
             />
           </div>
