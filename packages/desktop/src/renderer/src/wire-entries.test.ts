@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WireEntry } from '@kando/protocol'
-import { formatBytes, isWireStream, mergeWireEntries, wireDetail, wireJsonl, wireLabel, wireMatches } from './wire-entries'
+import { formatBytes, groupWireEntries, isWireStream, mergeWireEntries, streamLabel, streamText, wireDetail, wireJsonl, wireLabel, wireMatches } from './wire-entries'
 
 let next = 0
 const entry = (dir: WireEntry['dir'], value: unknown, cut?: number): WireEntry => ({
@@ -74,5 +74,34 @@ describe('wire entries', () => {
     expect(formatBytes(12)).toBe('12 B')
     expect(formatBytes(2048)).toBe('2.0 KB')
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
+  })
+})
+
+describe('groupWireEntries', () => {
+  const text = (value: string) => entry('stdout', { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: value } } })
+
+  it('folds a run of streamed pieces into one row, and leaves one on its own alone', () => {
+    const rows = groupWireEntries([
+      entry('stdin', { type: 'user' }),
+      text('Hel'),
+      entry('stdout', { type: 'keep_alive' }),
+      text('lo'),
+      entry('stdout', { type: 'assistant' }),
+      text('again'),
+      entry('stdout', { type: 'result' })
+    ])
+    expect(rows.map((row) => (row.kind === 'stream' ? `stream ${row.entries.length}` : wireLabel(row.entry)))).toEqual(['user', 'stream 3', 'assistant', 'stream_event · content_block_delta', 'result'])
+  })
+
+  it('joins the text the pieces carry, Claude\'s and Codex\'s', () => {
+    const pieces = [
+      text('Hel'),
+      entry('stdout', { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'lo' } } }),
+      entry('stdout', { type: 'keep_alive' }),
+      entry('stdout', { method: 'item/agentMessage/delta', params: { itemId: 'm', delta: ' world' } })
+    ]
+    expect(streamText(pieces)).toBe('Hello world')
+    expect(streamLabel(pieces)).toBe('流式增量 × 4 · Hello world')
+    expect(streamLabel([entry('stdout', { type: 'keep_alive' }), entry('stdout', { type: 'keep_alive' })])).toBe('流式增量 × 2')
   })
 })

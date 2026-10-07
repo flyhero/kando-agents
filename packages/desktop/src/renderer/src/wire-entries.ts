@@ -59,6 +59,57 @@ export function isWireStream(entry: WireEntry): boolean {
   return json.type === 'stream_event' || json.type === 'keep_alive'
 }
 
+// A row of the list: an entry, or a run of streamed pieces folded into one.
+export type WireRow = { kind: 'entry'; entry: WireEntry } | { kind: 'stream'; entries: WireEntry[] }
+
+// Streamed pieces in a row fold into one: they come by the hundred, and together are mostly one
+// reply. A piece on its own stays a row of its own.
+export function groupWireEntries(entries: readonly WireEntry[]): WireRow[] {
+  const rows: WireRow[] = []
+  let run: WireEntry[] = []
+  const close = () => {
+    if (run.length > 1) rows.push({ kind: 'stream', entries: run })
+    else run.forEach((entry) => rows.push({ kind: 'entry', entry }))
+    run = []
+  }
+  for (const entry of entries) {
+    if (isWireStream(entry)) {
+      run.push(entry)
+    } else {
+      close()
+      rows.push({ kind: 'entry', entry })
+    }
+  }
+  close()
+  return rows
+}
+
+// What a streamed piece adds: Claude's text, thinking or tool input, Codex's delta.
+function pieceText(entry: WireEntry): string {
+  const json = record(wireJson(entry))
+  if (!json) return ''
+  const codex = word(record(json.params)?.delta)
+  if (codex) return codex
+  const delta = record(record(json.event)?.delta)
+  return word(delta?.text) ?? word(delta?.thinking) ?? word(delta?.partial_json) ?? ''
+}
+
+// The streamed pieces' text, joined as the agent wrote it.
+export function streamText(entries: readonly WireEntry[]): string {
+  return entries.map(pieceText).join('')
+}
+
+export function streamLabel(entries: readonly WireEntry[]): string {
+  const text = streamText(entries).replace(/\s+/g, ' ').trim()
+  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
+  return `流式增量 × ${entries.length}${preview ? ` · ${preview}` : ''}`
+}
+
+export function totalSize(entries: readonly WireEntry[]): string {
+  const encoder = new TextEncoder()
+  return formatBytes(entries.reduce((sum, entry) => sum + encoder.encode(entry.text).length, 0))
+}
+
 export function wireMatches(entry: WireEntry, needle: string): boolean {
   return needle === '' || entry.text.toLowerCase().includes(needle) || wireLabel(entry).toLowerCase().includes(needle)
 }

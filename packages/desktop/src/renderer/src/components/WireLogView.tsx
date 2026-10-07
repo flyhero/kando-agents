@@ -3,7 +3,7 @@ import type { WireEntry, WireStage } from '@kando/protocol'
 import { useCore } from '../core-store'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { AGENT_LABEL } from '../labels'
-import { formatBytes, isWireStream, mergeWireEntries, WIRE_DIR_LABEL, WIRE_MARK, wireDetail, wireJsonl, wireLabel, wireMatches, wireSize, wireTime } from '../wire-entries'
+import { formatBytes, groupWireEntries, isWireStream, mergeWireEntries, streamLabel, streamText, totalSize, WIRE_DIR_LABEL, WIRE_MARK, wireDetail, wireJsonl, wireLabel, wireMatches, wireSize, wireTime } from '../wire-entries'
 import { CopyButton } from './CopyButton'
 import { FolderIcon } from './icons'
 
@@ -46,6 +46,44 @@ function WireRow({ entry, open, onToggle }: { entry: WireEntry; open: boolean; o
   )
 }
 
+// A run of streamed pieces as one row; opened, the text they add up to, then each piece.
+function StreamRow({ entries, open, onToggle, isOpen, onToggleEntry }: {
+  entries: WireEntry[]
+  open: boolean
+  onToggle: () => void
+  isOpen: (pos: number) => boolean
+  onToggleEntry: (pos: number) => void
+}) {
+  const first = entries[0]
+  const last = entries.at(-1)
+  if (!first || !last) return null
+  const text = open ? streamText(entries) : ''
+  return (
+    <li className="wire-entry wire-stream" data-dir="stdout" data-open={open || undefined}>
+      <button type="button" className="wire-entry-head" aria-expanded={open} onClick={onToggle}>
+        <span className="wire-entry-mark" aria-label="流式增量" title="一段段流出来的增量，已合在一起">≋</span>
+        <span className="wire-entry-time">{wireTime(first.at)}</span>
+        <span className="wire-entry-label">{streamLabel(entries)}</span>
+        <span className="wire-entry-size">{totalSize(entries)}</span>
+      </button>
+      {open && (
+        <div className="wire-stream-body">
+          {text && (
+            <div className="wire-entry-detail">
+              <CopyButton text={text} label="复制合起来的文字" />
+              <pre>{text}</pre>
+            </div>
+          )}
+          <p className="wire-stream-note">{entries.length} 条，{wireTime(first.at)} 到 {wireTime(last.at)}</p>
+          <ol className="wire-entries">
+            {entries.map((entry) => <WireRow key={entry.pos} entry={entry} open={isOpen(entry.pos)} onToggle={() => onToggleEntry(entry.pos)} />)}
+          </ol>
+        </div>
+      )}
+    </li>
+  )
+}
+
 // What passed between core and the conversation's agent, line by line, as core's wire log kept
 // it: one stage at a time, newest stage first, following new lines while it is open.
 export function WireLogView({ conversationId }: { conversationId: string }) {
@@ -56,7 +94,8 @@ export function WireLogView({ conversationId }: { conversationId: string }) {
   const [shown, setShown] = useState<Shown | null>(null)
   const [showStream, setShowStream] = useState(false)
   const [query, setQuery] = useState('')
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set())
+  // Open entries by pos, open runs of streamed pieces by their first pos.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set())
   const [loadingOlder, setLoadingOlder] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   // Whether the list sits at its bottom, so new lines keep it there.
@@ -106,6 +145,7 @@ export function WireLogView({ conversationId }: { conversationId: string }) {
     () => entries.filter((entry) => (showStream || !isWireStream(entry)) && wireMatches(entry, needle)),
     [entries, showStream, needle]
   )
+  const rows = useMemo(() => groupWireEntries(visible), [visible])
 
   useLayoutEffect(() => {
     const list = listRef.current
@@ -129,11 +169,11 @@ export function WireLogView({ conversationId }: { conversationId: string }) {
     }
   }
 
-  const toggle = (pos: number) => {
+  const toggle = (key: string) => {
     setOpen((previous) => {
       const next = new Set(previous)
-      if (next.has(pos)) next.delete(pos)
-      else next.add(pos)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
@@ -168,7 +208,7 @@ export function WireLogView({ conversationId }: { conversationId: string }) {
           type="button"
           className="wire-chip"
           aria-pressed={showStream}
-          title="Claude 的 stream_event、keep_alive 和 Codex 的 …/delta：一段段流出来的文字，数量很多"
+          title="Claude 的 stream_event、keep_alive 和 Codex 的 …/delta：一段段流出来的文字，数量很多。显示时连续的合成一行"
           onClick={() => setShowStream(!showStream)}
         >
           流式增量 {streamCount}
@@ -197,12 +237,28 @@ export function WireLogView({ conversationId }: { conversationId: string }) {
           <p className="inspector-empty muted">{needle ? `没有包含「${query.trim()}」的行` : '只有流式增量，打开上面的「流式增量」查看'}</p>
         ) : (
           <ol className="wire-entries">
-            {visible.map((entry) => <WireRow key={entry.pos} entry={entry} open={open.has(entry.pos)} onToggle={() => toggle(entry.pos)} />)}
+            {rows.map((row) => {
+              if (row.kind === 'entry') {
+                const key = String(row.entry.pos)
+                return <WireRow key={key} entry={row.entry} open={open.has(key)} onToggle={() => toggle(key)} />
+              }
+              const key = `s${row.entries[0]?.pos ?? 0}`
+              return (
+                <StreamRow
+                  key={key}
+                  entries={row.entries}
+                  open={open.has(key)}
+                  onToggle={() => toggle(key)}
+                  isOpen={(pos) => open.has(String(pos))}
+                  onToggleEntry={(pos) => toggle(String(pos))}
+                />
+              )
+            })}
           </ol>
         )}
       </div>
       <p className="wire-footnote">
-        发给 Agent 的标 →，Agent 输出的标 ←，stderr 标 !。点一行展开。
+        → 发给 Agent　← Agent 输出　! stderr　≋ 合在一起的流式增量。点一行展开。
       </p>
     </div>
   )

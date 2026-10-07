@@ -2512,6 +2512,25 @@ body.side-panel-resizing * {
   color: var(--text-muted);
 }
 
+.wire-stream > .wire-entry-head .wire-entry-label {
+  color: var(--text-muted);
+}
+
+/* The pieces under their run, set in by the mark's column so they read as its children. */
+.wire-stream-body {
+  padding: 4px 0 8px 24px;
+}
+
+.wire-stream-body > .wire-entry-detail {
+  margin-left: 0;
+}
+
+.wire-stream-note {
+  margin: 0 12px 4px 12px;
+  color: var(--text-3);
+  font-family: var(--font);
+}
+
 .wire-entry-detail {
   position: relative;
   margin: 0 12px 8px;
