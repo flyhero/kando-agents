@@ -10,21 +10,22 @@ import { UsageBar } from './UsageBar'
 import { openRuns } from '../schedules'
 import { Popover } from './Popover'
 
-const CONNECTION_LABEL: Record<ConnectionState, string> = {
-  connected: '已连接',
+type ConnectionIssue = Exclude<ConnectionState, 'connected'>
+
+const CONNECTION_LABEL: Record<ConnectionIssue, string> = {
   connecting: '连接中…',
   'waiting-for-core': '等待 core 启动'
 }
 
-const CONNECTION_HINT: Record<ConnectionState, string> = {
-  connected: '已连接到 Kando core',
+const CONNECTION_HINT: Record<ConnectionIssue, string> = {
   connecting: '正在连接 Kando core，断开后会自动重连',
   'waiting-for-core': '没有找到正在运行的 Kando core，先启动 pnpm dev:core'
 }
 
-// Healthy is the common case, so it shrinks to a dot; only trouble earns words.
+// Only interruptions need a status-bar indicator; healthy is the default.
 function ConnectionStatus() {
   const connection = useCore((s) => s.connection)
+  if (connection === 'connected') return null
   return (
     <span
       className="connection"
@@ -34,7 +35,7 @@ function ConnectionStatus() {
       aria-label={CONNECTION_HINT[connection]}
     >
       <span className="connection-dot" aria-hidden="true" />
-      {connection !== 'connected' && <span>{CONNECTION_LABEL[connection]}</span>}
+      <span>{CONNECTION_LABEL[connection]}</span>
     </span>
   )
 }
