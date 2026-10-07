@@ -11,7 +11,7 @@ import {
   type Task,
   type TaskStatus
 } from '@kando/protocol'
-import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWorktreesSupported, type TaskView } from '../core-store'
+import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWireLogShown, useWorktreesSupported, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
@@ -405,6 +405,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const tasks = useCore((s) => s.tasks)
   const dependencies = task.dependsOn.map((id) => tasks[id]).filter((dependency) => dependency !== undefined)
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
+  const wire = useWireLogShown()
   return (
     <div className="toolbar">
       <AgentPicker
@@ -432,7 +433,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       })}
       {/* A finished task goes on by a message in its chat. */}
       {isFinished(task.status) && <RedoButton task={task} />}
-      {task.conversationId && worktree && <InspectorToggle view={view} />}
+      {task.conversationId && (worktree || wire) && <InspectorToggle view={view} />}
       {task.conversationId && <ViewToggle view={view} />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />

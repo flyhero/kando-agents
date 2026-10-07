@@ -2372,6 +2372,178 @@ body.side-panel-resizing * {
   margin: 12px 2px;
 }
 
+/* 原始数据: a toolbar over a list that scrolls on its own, so the body gives up its padding and scroll. */
+.inspector-body:has(> .wire-log) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.wire-log {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wire-log > .inspector-empty,
+.wire-list > .inspector-empty {
+  margin: 12px;
+}
+
+.wire-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wire-stage,
+.wire-search {
+  width: auto;
+  min-width: 0;
+  padding: 4px 8px;
+}
+
+.wire-stage,
+.wire-stage-text {
+  flex: 1 1 120px;
+}
+
+.wire-stage-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.wire-search {
+  flex: 1 1 96px;
+}
+
+.wire-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wire-chip[aria-pressed='true'] {
+  background: var(--fill-2);
+  color: var(--text);
+}
+
+.wire-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 8px;
+}
+
+.wire-older {
+  display: block;
+  margin: 4px 12px 8px;
+}
+
+.wire-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.wire-entry-head {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wire-entry-head:hover,
+.wire-entry[data-open] > .wire-entry-head {
+  background: var(--fill);
+}
+
+.wire-entry-mark {
+  color: var(--text-3);
+  text-align: center;
+}
+
+.wire-entry[data-dir='stdin'] .wire-entry-mark,
+.wire-entry[data-dir='stdout'] .wire-entry-mark {
+  color: var(--text-muted);
+}
+
+.wire-entry[data-dir='stderr'] .wire-entry-mark {
+  color: var(--warning);
+}
+
+.wire-entry-time,
+.wire-entry-size {
+  color: var(--text-3);
+}
+
+.wire-entry-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wire-entry:is([data-dir='spawn'], [data-dir='exit'], [data-dir='note']) .wire-entry-label {
+  color: var(--text-muted);
+}
+
+.wire-entry-detail {
+  position: relative;
+  margin: 0 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.wire-entry-detail pre {
+  max-height: 360px;
+  margin: 0;
+  padding: 8px 32px 8px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.wire-entry-detail > .copy-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.wire-footnote {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
 /* Both git tabs share a project hierarchy; the status popover keeps its compact layout. */
 .inspector-body > .branch-status {
   width: auto;

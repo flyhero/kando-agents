@@ -516,6 +516,16 @@ export function PulseIcon() {
   )
 }
 
+// A bug: the debugging settings.
+export function BugIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="6" y="6.5" width="8" height="10" rx="4" />
+      <path d="M7.5 6.8a2.5 2.5 0 0 1 5 0M10 9.5v7M6 10.5H3M14 10.5h3M6.2 14H3.5M13.8 14h2.7M6.5 7.5 4.5 5.5M13.5 7.5l2-2" />
+    </svg>
+  )
+}
+
 export function BellIcon() {
   return (
     <svg {...stroked}>

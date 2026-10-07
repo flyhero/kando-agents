@@ -1,8 +1,8 @@
-import type { BrowserStatus } from '@kando/protocol'
+import type { BrowserStatus, WireUsage } from '@kando/protocol'
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { AGENT_KINDS, PROTOCOL_VERSION, UNATTENDED_MODES, type SourceDescriptor } from '@kando/protocol'
 import packageJson from '../../../../package.json'
-import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported, useChatCommandsSupported } from '../core-store'
+import { perform, setAwakeMode, setChatSettings, setSettingsOpen, useAwakeSupported, useCore, useBrowserSupported, useChatCommandsSupported, useWireLogSupported } from '../core-store'
 import { setPreference, usePreferences } from '../preferences'
 import { PRIMARY_KEY_LABEL } from '../shortcut-keys'
 import { UNATTENDED_LABEL } from '../schedules'
@@ -11,9 +11,11 @@ import { InstalledAgentsSettings } from './InstalledAgentsSettings'
 import { ChatFontPicker } from './ChatFontPicker'
 import { AGENT_LABEL } from '../labels'
 import { canNotify } from '../desktop-bridge'
+import { formatBytes } from '../wire-entries'
 import {
   ArrowLeftIcon,
   BellIcon,
+  BugIcon,
   ChatIcon,
   ContrastIcon,
   FolderIcon,
@@ -354,6 +356,45 @@ function ProjectSettings() {
   )
 }
 
+// Read when the section opens and after each change: the wire log grows while agents run.
+function DebugSettings() {
+  const rpc = useCore((s) => s.rpc)
+  const wireLog = useCore((s) => s.chatSettings?.wireLog ?? false)
+  const [usage, setUsage] = useState<WireUsage | null>(null)
+  const [clearing, setClearing] = useState(false)
+  useEffect(() => {
+    if (!rpc) return
+    let current = true
+    void rpc.call('debug.wireUsage', {}).then((found) => { if (current) setUsage(found) }, () => {})
+    return () => { current = false }
+  }, [rpc, wireLog])
+  const clear = async () => {
+    if (!rpc || clearing) return
+    setClearing(true)
+    const left = await perform((connection) => connection.call('debug.clearWire', {}))
+    if (left) setUsage(left)
+    setClearing(false)
+  }
+  return (
+    <>
+      <SettingsRow
+        label="记录和 Agent 之间的原始数据"
+        description="打开后，Kando 把和聊天里的 Agent 之间收发的每一行原样记下来：发给 Agent 的、Agent 输出的（包括不是 JSON 的行和一段段流出来的文字）、stderr、启动命令和退出码。会话和任务的检查器里多出「原始数据」，可以按时间看、搜索、展开 JSON、复制。正在运行的 Agent 从下一行开始记录。"
+        control={(labelId) => <Toggle labelId={labelId} checked={wireLog} onChange={(next) => void setChatSettings({ wireLog: next })} />}
+      />
+      <SettingsRow
+        label="已经记下的"
+        description={`${usage ? `${usage.files} 段，共 ${formatBytes(usage.bytes)}。` : ''}存在这台电脑的 ~/.kando/sessions/<会话>/wire/ 下，Agent 的每一段最多记 50 MB，超过 7 天的自动删除。里面有文件内容和命令输出，分享前看一眼。`}
+        control={() => (
+          <button type="button" className="button" disabled={clearing || !usage || usage.files === 0} onClick={() => void clear()}>
+            全部删除
+          </button>
+        )}
+      />
+    </>
+  )
+}
+
 const CONNECTION_TEXT = { connected: '已连接', connecting: '连接中…', 'waiting-for-core': '等待 core 启动' } as const
 
 function AboutSettings() {
@@ -490,6 +531,17 @@ const ENVIRONMENT_SECTION: Section = {
   Body: EnvironmentSettings
 }
 
+// On a core that keeps a wire log: whether it does, and what it holds.
+const DEBUG_SECTION: Section = {
+  id: 'debug',
+  group: '其他',
+  title: '调试',
+  description: '看清 Kando 和 Agent 之间到底传了什么：打开后，原样记下收发的每一行，在检查器的「原始数据」里查看。',
+  keywords: ['调试', 'debug', '原始数据', '日志', 'log', 'stdout', 'stderr', 'stdin', 'json', '协议', '抓包', 'wire'],
+  Icon: BugIcon,
+  Body: DebugSettings
+}
+
 // The browser Kando hosts for chat agents, where core offers one; it follows the task sources.
 const BROWSER_SECTION: Section = {
   id: 'browser',
@@ -524,12 +576,13 @@ export function SettingsPage() {
   const browser = useBrowserSupported()
   const environment = useCore((s) => s.environment !== null)
   const chatCommands = useChatCommandsSupported()
+  const wireLog = useWireLogSupported()
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
     const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify()))
       .flatMap((section) => (section.id === 'agents' && chatCommands ? [section, CHAT_COMMANDS_SECTION] : [section]))
-    return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...about]
-  }, [sources, browser, environment, chatCommands])
+    return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...(wireLog ? [DEBUG_SECTION] : []), ...about]
+  }, [sources, browser, environment, chatCommands, wireLog])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()

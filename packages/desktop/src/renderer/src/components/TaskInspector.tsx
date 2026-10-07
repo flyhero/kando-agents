@@ -6,6 +6,7 @@ import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from 
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
+import { WireLogView } from './WireLogView'
 
 // Read again whenever the task changes (every agent turn and exit), the window regains focus,
 // or the user refreshes. An older core without the method has nothing to show.
@@ -53,18 +54,20 @@ function ChangeList({ changes, onOpen }: { changes: RepoChanges[] | null; onOpen
 // review before accepting it.
 // A chat task's inspector also shows the plans its agent proposed, and has no git to show while the
 // task only plans.
-export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = [], planNote }: {
+export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = [], planNote, wire = false }: {
   task: Task
   widthRatio: number
   onWidthRatioChange: (ratio: number) => void
   plans?: readonly PlanItem[]
   planNote?: (item: PlanItem) => string | null
+  // The raw traffic with the task's chat agent (settings → 调试).
+  wire?: boolean
 }) {
   const rpc = useCore((state) => state.rpc)
   const wanted = useCore((state) => state.taskInspectorTab)
   const selectedPlan = useCore((state) => state.taskInspectorPlan)
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
-  const tabs: InspectorTab[] = [...(worktree ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : [])]
+  const tabs: InspectorTab[] = [...(worktree ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : []), ...(wire && task.conversationId ? ['wire' as const] : [])]
   const tab = tabs.includes(wanted) ? wanted : (tabs[0] ?? 'changes')
   const [refreshCount, setRefreshCount] = useState(0)
   const [selected, setSelected] = useState<{ repo: string; file: string } | null>(null)
@@ -83,7 +86,9 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
       onRefresh={() => setRefreshCount((count) => count + 1)}
       onClose={() => setInspectorOpen(false)}
     >
-      {tab === 'plan' ? (
+      {tab === 'wire' && task.conversationId ? (
+        <WireLogView conversationId={task.conversationId} />
+      ) : tab === 'plan' ? (
         <ChatPlanView conversationId={task.conversationId ?? null} plans={plans} selected={selectedPlan} onSelect={showTaskPlan} note={planNote} />
       ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">任务还没有 worktree，也就没有分支。</p>

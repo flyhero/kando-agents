@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { usePlans } from '../chat-state'
-import { markRoutineRunSeen, selectConversation, setConversationInspectorOpen, setRoutinesOpen, useCore } from '../core-store'
+import { markRoutineRunSeen, selectConversation, setConversationInspectorOpen, setRoutinesOpen, useCore, useWireLogShown } from '../core-store'
 import { conversationState } from '../conversation-state'
 import { AGENT_LABEL } from '../labels'
 import { primaryProjectName } from './ProjectPicker'
@@ -36,6 +36,7 @@ export function ConversationView({ id }: { id: string }) {
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   const plans = usePlans(id)
+  const wire = useWireLogShown()
   const routine = useCore((state) => state.routines.find((each) => each.id === conversation?.routineId) ?? null)
   const routineId = conversation?.routineId ?? null
   const turn = conversation?.chat?.turn ?? null
@@ -53,7 +54,7 @@ export function ConversationView({ id }: { id: string }) {
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
   // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
-  const hasPanel = inspectable || plans.length > 0
+  const hasPanel = inspectable || plans.length > 0 || wire
   const state = conversationState(conversation)
   const action = async (run: () => Promise<unknown>) => {
     if (busy) return
@@ -90,7 +91,7 @@ export function ConversationView({ id }: { id: string }) {
             className="tool-button"
             aria-label="检查器"
             aria-pressed={inspectorOpen}
-            data-tooltip={inspectorOpen ? '收起检查器' : inspectable ? '查看改动' : '查看计划'}
+            data-tooltip={inspectorOpen ? '收起检查器' : inspectable ? '查看改动' : plans.length > 0 ? '查看计划' : '查看原始数据'}
             onClick={() => setConversationInspectorOpen(!inspectorOpen)}
           >
             <InspectorIcon />
@@ -102,7 +103,7 @@ export function ConversationView({ id }: { id: string }) {
     </header>
     <div className="terminal-body">
       <ConversationChat conversation={conversation} onHandoff={openHandoff} />
-      {hasPanel && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} />}
+      {hasPanel && inspectorOpen && <ConversationInspector conversation={conversation} widthRatio={panelRatio} onWidthRatioChange={setPanelRatio} wire={wire} />}
     </div>
     {handoffOpen && <ConversationHandoffDialog conversation={conversation} onClose={() => setHandoffOpen(false)} />}
   </section>

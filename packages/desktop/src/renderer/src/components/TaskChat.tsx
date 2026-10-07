@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { checkChatResume, shortTaskId, type Task } from '@kando/protocol'
 import { usePlans, type PlanItem } from '../chat-state'
-import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore } from '../core-store'
+import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore, useWireLogShown } from '../core-store'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
 import { waitingOn } from '../task-waiting'
@@ -66,6 +66,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
   const bypassable = useChatOptionsSupported()
   const [sidePanelRatio, setSidePanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
   const plans = usePlans(conversationId ?? '')
+  const wire = useWireLogShown() && conversationId !== null
 
   useEffect(() => {
     if (conversationId && !conversation) void loadConversation(conversationId)
@@ -89,7 +90,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
     return null
   }
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
-  const showInspector = inspectorOpen && (worktree || plans.length > 0)
+  const showInspector = inspectorOpen && (worktree || plans.length > 0 || wire)
 
   return (
     <section className="detail terminal-view" aria-label={`${task.title} 的聊天`}>
@@ -129,6 +130,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
             onWidthRatioChange={setSidePanelRatio}
             plans={plans}
             planNote={(item) => planNote(task, item)}
+            wire={wire}
           />
         )}
       </div>

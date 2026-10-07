@@ -614,6 +614,17 @@ export function useWorktreesSupported(): boolean {
 
 // An older core keeps no starts, and would drop a picked one without a word.
 // Whether core hosts a browser for chat agents.
+// Core can record the raw traffic with chat agents (settings → 调试) and serves it to the inspector.
+export function useWireLogSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('wire-log') ?? false)
+}
+
+// Whether the inspectors offer 原始数据: core keeps a wire log and the user has it on.
+export function useWireLogShown(): boolean {
+  const supported = useWireLogSupported()
+  return useCore((s) => supported && (s.chatSettings?.wireLog ?? false))
+}
+
 export function useBrowserSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('browser') ?? false)
 }

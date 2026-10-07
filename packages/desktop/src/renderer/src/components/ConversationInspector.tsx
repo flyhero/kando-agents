@@ -6,6 +6,7 @@ import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from 
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
+import { WireLogView } from './WireLogView'
 
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
 // focus, or the user refreshes. An older core without the method has nothing to show.
@@ -51,17 +52,19 @@ function ChangeList({ changes, onOpen }: { changes: FolderChanges[] | null; onOp
 }
 
 // Beside the transcript, opened by the user or by a plan the agent proposes. A conversation in
-// Kando's own folder has no changes of the user's to show, only its plans.
-export function ConversationInspector({ conversation, widthRatio, onWidthRatioChange }: {
+// Kando's own folder has no changes of the user's to show, only its plans. With wire set, the
+// raw traffic with its agent too (settings → 调试).
+export function ConversationInspector({ conversation, widthRatio, onWidthRatioChange, wire = false }: {
   conversation: Conversation
   widthRatio: number
   onWidthRatioChange: (ratio: number) => void
+  wire?: boolean
 }) {
   const rpc = useCore((state) => state.rpc)
   const wanted = useCore((state) => state.conversationInspectorTab)
   const selectedPlan = useCore((state) => state.conversationPlan)
   const plans = usePlans(conversation.id)
-  const tabs: InspectorTab[] = [...(conversation.projectPaths.length > 0 ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : [])]
+  const tabs: InspectorTab[] = [...(conversation.projectPaths.length > 0 ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : []), ...(wire ? ['wire' as const] : [])]
   const tab = tabs.includes(wanted) ? wanted : (tabs[0] ?? 'changes')
   const [refreshCount, setRefreshCount] = useState(0)
   const [selected, setSelected] = useState<{ project: string; file: string } | null>(null)
@@ -80,7 +83,9 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       onRefresh={() => setRefreshCount((count) => count + 1)}
       onClose={() => setConversationInspectorOpen(false)}
     >
-      {tab === 'plan' ? (
+      {tab === 'wire' ? (
+        <WireLogView conversationId={conversation.id} />
+      ) : tab === 'plan' ? (
         <ChatPlanView conversationId={conversation.id} plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />
       ) : tab === 'branch' ? (
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
