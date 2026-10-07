@@ -149,6 +149,7 @@ function TaskDetailBody({ task }: { task: Task }) {
           <TaskPlanCard task={task} />
 
           <MarkdownEditor
+            className="task-detail-details"
             value={unsavedTaskText(task.id, 'details') ?? task.details}
             onSave={(next) => saveTaskText(task.id, 'details', next)}
             label="任务详情"

@@ -1327,13 +1327,24 @@ button.task-tag:hover {
 .title-input {
   width: calc(100% + 22px);
   margin-inline: -11px;
-  font-size: 18px;
+  padding-block: 4px;
+  font-size: 28px;
   font-weight: 600;
+  line-height: 1.3;
   border-color: transparent;
+  background: transparent;
 }
 
+/* Part of the page rather than a field: a faint fill on hover says it can be edited, and the
+   caret is enough once it is. */
 .title-input:hover {
-  border-color: var(--border);
+  background: var(--fill);
+}
+
+.title-input:focus {
+  outline: 0;
+  border-color: transparent;
+  background: transparent;
 }
 
 .props {
@@ -2146,6 +2157,41 @@ button.task-tag:hover {
   width: 100%;
   vertical-align: middle;
   border-top: 1px solid var(--border);
+}
+
+/* A task's details read as the page itself, like its title: no box, a faint fill on hover, and
+   text in line with the title's. Proposals and snapshots keep their cards. */
+.md-editor.task-detail-details,
+.md-editor.task-detail-details:focus-within {
+  min-height: 120px;
+  margin-inline: -11px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  box-shadow: none;
+  transition: background 0.12s;
+}
+
+.md-editor.task-detail-details:hover:not(:focus-within) {
+  background: var(--fill);
+}
+
+.task-detail .task-detail-details .cm-scroller {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.task-detail .task-detail-details .cm-content {
+  padding: 6px 11px;
+}
+
+.task-detail .task-detail-details .cm-line:not(.cm-lp-quote):not(.cm-lp-codeblock) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.task-detail-details .cm-placeholder {
+  color: var(--text-3);
 }
 
 .md-editor.md-editor-readonly {
