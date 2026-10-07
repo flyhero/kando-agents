@@ -1,12 +1,13 @@
 import { syntaxTree } from '@codemirror/language'
-import type { Range } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
+import { Prec, type EditorState, type Range, type TransactionSpec } from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, WidgetType, keymap, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import type { SyntaxNode } from '@lezer/common'
 import { PRIMARY_KEY_LABEL, hasPrimaryModifier } from '../shortcut-keys'
 
-// Obsidian-style live preview: Markdown renders in place and its markup is hidden,
-// except wherever the cursor is, so clicking into formatted text reveals the source.
-// The document itself is never rewritten; everything here is a decoration.
+// Live preview: Markdown renders in place and its markup is hidden. A mark shows again only while
+// the cursor touches it (the `-` of a list item, the `**` of bold), so the line being written keeps
+// its formatting; fenced code and rules, whose source is the point, show while their line is
+// edited. The document itself is never rewritten; everything here is a decoration.
 
 const OPEN_LINK_HINT = `${PRIMARY_KEY_LABEL}点击打开`
 const INLINE_MARKS = new Set(['EmphasisMark', 'StrikethroughMark', 'CodeMark'])
@@ -16,9 +17,9 @@ class BulletWidget extends WidgetType {
     return true
   }
   override toDOM(): HTMLElement {
+    // A drawn dot: the glyph comes out small and light in most fonts.
     const bullet = document.createElement('span')
     bullet.className = 'cm-lp-bullet'
-    bullet.textContent = '•'
     return bullet
   }
 }
@@ -66,10 +67,11 @@ function buildDecorations(view: EditorView): DecorationSet {
   const focused = view.hasFocus
   const out: Range<Decoration>[] = []
 
-  // Raw Markdown shows wherever a cursor or selection touches, and only while editing.
+  // Raw Markdown shows where a cursor or selection touches it, and only while editing.
   const touches = (from: number, to: number) =>
     focused && state.selection.ranges.some((range) => range.from <= to && range.to >= from)
   const onActiveLine = (from: number, to = from) => touches(doc.lineAt(from).from, doc.lineAt(to).to)
+  const touchesAny = (nodes: readonly SyntaxNode[]) => nodes.some((each) => touches(each.from, each.to))
   const text = (node: SyntaxNode) => doc.sliceString(node.from, node.to)
   // Replacements from a view plugin must stay within one line.
   const hide = (from: number, to: number) => {
@@ -93,16 +95,30 @@ function buildDecorations(view: EditorView): DecorationSet {
   const linkMark = (from: number, to: number, url: string) =>
     out.push(Decoration.mark({ class: 'cm-lp-link', attributes: { title: `${url}（${OPEN_LINK_HINT}）` } }).range(from, to))
 
+  // Room between blocks, as rendered Markdown has: before each one that does not follow a blank
+  // line, and between the items of a list.
+  const gap = (from: number, className: string) => {
+    const line = doc.lineAt(from)
+    if (line.number > 1 && doc.line(line.number - 1).text.trim() !== '') {
+      out.push(Decoration.line({ class: className }).range(line.from))
+    }
+  }
+
   syntaxTree(state).iterate({
     from: view.viewport.from,
     to: view.viewport.to,
     enter: (ref) => {
       const node = ref.node
+      if (node.parent?.name === 'Document') {
+        gap(node.from, 'cm-lp-gap')
+      } else if (node.name === 'ListItem' && node.prevSibling?.name === 'ListItem') {
+        gap(node.from, 'cm-lp-item')
+      }
       const heading = /^ATXHeading(\d)$/.exec(node.name)
       if (heading) {
         out.push(Decoration.line({ class: `cm-lp-heading cm-lp-h${heading[1]}` }).range(doc.lineAt(node.from).from))
-        if (!onActiveLine(node.from)) {
-          const marks = node.getChildren('HeaderMark')
+        const marks = node.getChildren('HeaderMark')
+        if (!touchesAny(marks)) {
           marks.forEach((mark, index) => {
             if (index === 0) {
               hide(mark.from, doc.sliceString(mark.to, mark.to + 1) === ' ' ? mark.to + 1 : mark.to)
@@ -127,12 +143,14 @@ function buildDecorations(view: EditorView): DecorationSet {
           if (node.name === 'InlineCode') {
             out.push(Decoration.mark({ class: 'cm-lp-inline-code' }).range(node.from, node.to))
           }
-          if (!touches(node.from, node.to)) {
-            for (let child = node.firstChild; child; child = child.nextSibling) {
-              if (INLINE_MARKS.has(child.name)) {
-                hide(child.from, child.to)
-              }
+          const marks: SyntaxNode[] = []
+          for (let child = node.firstChild; child; child = child.nextSibling) {
+            if (INLINE_MARKS.has(child.name)) {
+              marks.push(child)
             }
+          }
+          if (!touchesAny(marks)) {
+            marks.forEach((mark) => hide(mark.from, mark.to))
           }
           return
         }
@@ -146,7 +164,7 @@ function buildDecorations(view: EditorView): DecorationSet {
             return
           }
           linkMark(open.to, close.from, text(url))
-          if (!touches(node.from, node.to)) {
+          if (!touches(open.from, open.to) && !touches(close.from, node.to)) {
             hide(open.from, open.to)
             hide(close.from, node.to)
           }
@@ -169,10 +187,10 @@ function buildDecorations(view: EditorView): DecorationSet {
             if (checked && task.to > marker.to) {
               out.push(Decoration.mark({ class: 'cm-lp-task-done' }).range(marker.to, task.to))
             }
-            if (!onActiveLine(node.from)) {
+            if (!touches(node.from, marker.to)) {
               out.push((checked ? checkedTask : uncheckedTask).range(node.from, marker.to))
             }
-          } else if (item?.parent?.name === 'BulletList' && !onActiveLine(node.from)) {
+          } else if (item?.parent?.name === 'BulletList' && !touches(node.from, node.to)) {
             out.push(bullet.range(node.from, node.to))
           }
           return
@@ -181,7 +199,7 @@ function buildDecorations(view: EditorView): DecorationSet {
           eachLine(node, () => ['cm-lp-quote'])
           return
         case 'QuoteMark':
-          if (!onActiveLine(node.from)) {
+          if (!touches(node.from, node.to)) {
             hide(node.from, doc.sliceString(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to)
           }
           return
@@ -296,4 +314,29 @@ const clicks = EditorView.domEventHandlers({
   }
 })
 
-export const livePreview = [decorations, clicks]
+// Enter on an empty last item ends the list with a blank line, so what is typed next is a
+// paragraph of its own: without one, Markdown reads it as more of that last item. Ahead of the
+// Markdown keymap, which would only remove the marker. A nested item,
+// or one with items after it, goes to the default (which outdents or removes it).
+const EMPTY_ITEM = /^([-*+]|\d+[.)])( \[[ xX]\])? ?$/
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s/
+
+export function endList(view: { state: EditorState; dispatch: (spec: TransactionSpec) => void }): boolean {
+  const { state } = view
+  const range = state.selection.main
+  if (!range.empty) {
+    return false
+  }
+  const line = state.doc.lineAt(range.head)
+  if (range.head !== line.to || !EMPTY_ITEM.test(line.text) || line.number === 1) {
+    return false
+  }
+  const next = line.number < state.doc.lines ? state.doc.line(line.number + 1) : null
+  if (next && LIST_ITEM.test(next.text)) {
+    return false
+  }
+  view.dispatch({ changes: { from: line.from, to: line.to, insert: '\n' }, selection: { anchor: line.from + 1 }, userEvent: 'input' })
+  return true
+}
+
+export const livePreview = [decorations, clicks, Prec.highest(keymap.of([{ key: 'Enter', run: endList }]))]

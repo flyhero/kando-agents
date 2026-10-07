@@ -2048,6 +2048,11 @@ button.task-tag:hover {
   line-height: 1.4;
 }
 
+/* Rendered Markdown spaces its blocks apart; the source has no blank line to do it. */
+.cm-editor .cm-line.cm-lp-gap { padding-top: 0.5em; }
+.cm-editor .cm-line.cm-lp-heading.cm-lp-gap { padding-top: 0.7em; }
+.cm-editor .cm-line.cm-lp-item { padding-top: 0.2em; }
+
 .cm-editor .cm-line.cm-lp-h1 { font-size: 1.6em; }
 .cm-editor .cm-line.cm-lp-h2 { font-size: 1.35em; }
 .cm-editor .cm-line.cm-lp-h3 { font-size: 1.15em; }
@@ -2067,14 +2072,29 @@ button.task-tag:hover {
   text-underline-offset: 2px;
 }
 
+/* A bullet and a task's box take the same slot, so the items' text lines up either way. */
 .cm-editor .cm-lp-bullet {
-  color: var(--text-muted);
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1em;
+  vertical-align: 0.2em;
+}
+
+.cm-editor .cm-lp-bullet::before {
+  content: '';
+  width: 0.34em;
+  height: 0.34em;
+  border-radius: 50%;
+  background: var(--text-muted);
 }
 
 .cm-editor .cm-lp-task {
-  margin: 0 0.4em 0 0;
-  vertical-align: -2px;
+  width: 1em;
+  height: 1em;
+  margin: 0 0.15em;
+  vertical-align: -0.15em;
   accent-color: var(--accent);
   cursor: pointer;
 }
