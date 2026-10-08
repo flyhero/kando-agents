@@ -10,23 +10,23 @@ import { fileCandidates, fileReference, isImagePath, linkTarget, previewUrl, typ
 import { CopyButton } from './CopyButton'
 import { ChatCodeRun, ChatRunnable } from './ChatCodeRun'
 import { blockCommand } from '../code-commands'
+import { FILE_MANAGER, showChatFile, useFilePreviewSupported } from '../file-actions'
+import { useChatFiles } from './ChatContextMenu'
 import { ImageViewer, type ViewerImage } from './ImageViewer'
 
 // The folders a conversation works in, the primary first: where a file a reply names is looked for.
 export const ChatRoots = createContext<readonly string[]>([])
 
-const FILE_MANAGER = window.kando?.platform === 'darwin' ? '访达' : window.kando?.platform === 'win32' ? '资源管理器' : '文件管理器'
-
-// A file a reply names, shown in the file manager on a click; never opened, as a reply can name
-// anything. Agents often write a bare name, so when it is nowhere it was tried directly, core
-// looks it up in the projects; the shallowest of several files by that name is shown.
-// `code` is inline code naming the file; without it, a link's own words.
+// Files open in the chat inspector; outside a chat, or on older cores, they are revealed.
 function FileLink({ reference, code = true, children }: { reference: FileReference; code?: boolean; children: ReactNode }) {
   const roots = useContext(ChatRoots)
   const searchable = useFindFileSupported()
+  const scope = useChatFiles()
+  const supported = useFilePreviewSupported()
   const candidates = fileCandidates(reference.path, roots)
-  if (candidates.length === 0) return code ? <code>{children}</code> : <>{children}</>
+  if ((!canRevealFile() && !(scope && supported)) || candidates.length === 0) return code ? <code>{children}</code> : <>{children}</>
   const reveal = async () => {
+    if (scope) return showChatFile(scope, reference)
     if (await revealFile(candidates)) return
     const found = searchable && roots.length > 0 && !reference.path.startsWith('/')
       ? await perform((rpc) => rpc.call('projects.findFile', { roots: [...roots], path: reference.path }))
@@ -38,7 +38,9 @@ function FileLink({ reference, code = true, children }: { reference: FileReferen
     <button
       type="button"
       className={code ? 'chat-file-link' : 'chat-link'}
-      title={`在${FILE_MANAGER}中显示 ${reference.path}`}
+      title={scope && supported ? `预览 ${reference.path}${reference.line ? `:${reference.line}` : ''}` : `在${FILE_MANAGER}中显示 ${reference.path}`}
+      data-file-path={reference.path}
+      data-file-line={reference.line ?? undefined}
       onClick={() => void reveal()}
     >
       {code ? <code>{children}</code> : children}
@@ -82,7 +84,7 @@ function LocalImageStrip({ images }: { images: readonly LocalImage[] }) {
           </span>
         ) : (
           <span key={image.src} className="chat-image">
-            <button type="button" className="chat-image-button" title={image.path} aria-label={`查看图片 ${image.path}`} onClick={() => setViewing(index)}>
+            <button type="button" className="chat-image-button" data-file-path={image.path} title={image.path} aria-label={`查看图片 ${image.path}`} onClick={() => setViewing(index)}>
               <img src={image.src} alt="" draggable={false} onError={() => setMissing((current) => new Set(current).add(image.src))} />
             </button>
           </span>
@@ -97,7 +99,7 @@ function ImageLink({ image, children }: { image: LocalImage; children: ReactNode
   const [open, setOpen] = useState(false)
   return (
     <>
-      <button type="button" className="chat-link" title={`查看图片 ${image.path}`} onClick={() => setOpen(true)}>
+      <button type="button" className="chat-link" data-file-path={image.path} title={`查看图片 ${image.path}`} onClick={() => setOpen(true)}>
         {children}
       </button>
       {open && <LocalImageViewer images={[image]} index={0} onIndex={() => {}} onClose={() => setOpen(false)} />}
@@ -105,13 +107,13 @@ function ImageLink({ image, children }: { image: LocalImage; children: ReactNode
   )
 }
 
-// A web page opens in the browser; a file shows in the file manager, or, an image, in the viewer.
+// Web links open in the browser, text files in the inspector, images in the viewer.
 function ChatLink({ href, title, children }: { href?: string; title?: string; children: ReactNode }) {
   const roots = useContext(ChatRoots)
   const target = href ? linkTarget(href) : null
   const image = localImage(target, roots)
   if (image) return <ImageLink image={image}>{children}</ImageLink>
-  if (target?.kind === 'file' && canRevealFile()) return <FileLink reference={target} code={false}>{children}</FileLink>
+  if (target?.kind === 'file') return <FileLink reference={target} code={false}>{children}</FileLink>
   return <a href={href} title={title} target="_blank" rel="noreferrer">{children}</a>
 }
 
@@ -191,7 +193,7 @@ const components: Components = {
   ),
   // Inline code is a string with no newline and no language; a block's always ends in one.
   code: ({ node: _node, className, children, ...props }) => {
-    const reference = !className && typeof children === 'string' && !children.includes('\n') && canRevealFile() ? fileReference(children) : null
+    const reference = !className && typeof children === 'string' && !children.includes('\n') ? fileReference(children) : null
     return reference ? <FileLink reference={reference}>{children}</FileLink> : <code className={className} {...props}>{children}</code>
   },
   pre: ({ node, ...props }) => {

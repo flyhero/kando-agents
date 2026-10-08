@@ -10,6 +10,9 @@ import { ChatToolInput } from './ChatToolInput'
 import { ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
 import { useJustFinished } from '../chat-motion'
+import { ChatCopyRegion } from './ChatCopyRegion'
+import { copyTextForItem } from '../message-copy'
+import { fileReference } from '../file-links'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -68,7 +71,7 @@ export function ChatDiffs({ diffs }: { diffs: readonly ChatDiff[] }) {
     <div className="chat-diffs">
       {diffs.map((diff, index) => (
         <div key={`${diff.path}:${index}`} className="chat-diff" data-diff-path={diff.path}>
-          <div className="chat-diff-path mono" title={diff.path}>
+          <div className="chat-diff-path mono" data-file-path={diff.path} title={diff.path}>
             {diff.change === 'add' ? '新建 ' : diff.change === 'delete' ? '删除 ' : ''}
             {shorten(diff.path)}
           </div>
@@ -101,7 +104,7 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
         <ChatToolIcon name="Edit" status={tools.find((tool) => tool.status === 'running')?.status ?? tools.find((tool) => tool.status !== 'done')?.status ?? 'done'} />
         <span className="chat-tool-name">编辑:</span>
         <FileExt path={path} />
-        <span className="chat-tool-title" title={path}>{shorten(path)}<span className="chat-tool-count"> · {tools.length} 次</span></span>
+        <span className="chat-tool-title" data-file-path={path} title={path}>{shorten(path)}<span className="chat-tool-count"> · {tools.length} 次</span></span>
         <DiffCount diffs={tools.flatMap((tool) => tool.diffs)} />
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
       </button>
@@ -130,6 +133,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
   const status = toolDisplayStatus(tool)
   const finished = useJustFinished(status === 'running')
   return (
+    <ChatCopyRegion text={copyTextForItem(tool)}>
     <div className="chat-tool-line" data-status={status} data-finished={finished || undefined}>
       <button
         type="button"
@@ -145,7 +149,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         ) : (
           <>
             <span className="chat-tool-name">{toolLabel(tool.name)}</span>
-            <span className="chat-tool-title mono" title={tool.title}>{shorten(tool.title)}</span>
+            <span className="chat-tool-title mono" data-file-path={fileReference(tool.title)?.path} title={tool.title}>{shorten(tool.title)}</span>
           </>
         )}
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
@@ -153,8 +157,9 @@ function ToolLine({ tool }: { tool: ToolItem }) {
       </button>
       {open && <CommandExit tool={tool} />}
       {open && tool.input && <ChatToolInput name={tool.name} input={tool.input} />}
-      {open && tool.output && <pre className="chat-tool-io">{clipped(tool.output)}</pre>}
+      {open && tool.output && <ChatCopyRegion text={tool.output}><pre className="chat-tool-io">{clipped(tool.output)}</pre></ChatCopyRegion>}
     </div>
+    </ChatCopyRegion>
   )
 }
 
@@ -216,7 +221,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         <ChatToolIcon name={item.name} status={status} />
         <span className="chat-tool-name">{toolLabel(item.name)}:</span>
         {item.diffs.length > 0 && <FileExt path={item.diffs[0]?.path ?? item.title} />}
-        <span className="chat-tool-title" title={item.title}>{shorten(item.title)}</span>
+        <span className="chat-tool-title" data-file-path={item.diffs[0]?.path ?? fileReference(item.title)?.path} title={item.title}>{shorten(item.title)}</span>
         <DiffCount diffs={item.diffs} />
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
         <ToolStatus status={status} since={item.at} />
@@ -229,7 +234,7 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
       {open && <CommandExit tool={item} />}
       {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
       {open && item.input && <ChatToolInput name={item.name} input={item.input} />}
-      {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}
+      {open && item.output && <ChatCopyRegion text={item.output}><pre className="chat-tool-io">{clipped(item.output)}</pre></ChatCopyRegion>}
     </div>
   )
 }

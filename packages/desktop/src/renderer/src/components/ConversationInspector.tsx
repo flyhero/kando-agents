@@ -7,6 +7,8 @@ import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
 import { WireLogView } from './WireLogView'
+import { FilePreview } from './FilePreview'
+import { EMPTY_FILE_TABS, updateFileTabs, useFileTabs } from '../file-tabs'
 
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
 // focus, or the user refreshes. An older core without the method has nothing to show.
@@ -60,20 +62,34 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
   onWidthRatioChange: (ratio: number) => void
   wire?: boolean
 }) {
+  const conversationId = conversation.id
+  const files = useFileTabs((state) => state[conversationId] ?? EMPTY_FILE_TABS)
   const rpc = useCore((state) => state.rpc)
   const wanted = useCore((state) => state.conversationInspectorTab)
   const selectedPlan = useCore((state) => state.conversationPlan)
   const plans = usePlans(conversation.id)
-  const tabs: InspectorTab[] = [...(conversation.projectPaths.length > 0 ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : []), ...(wire ? ['wire' as const] : [])]
+  const tabs: InspectorTab[] = [...(conversation.projectPaths.length > 0 ? GIT_TABS : []), ...(plans.length > 0 ? ['plan' as const] : []), ...(wire ? ['wire' as const] : []), ...(files.tabs.length > 0 ? ['files' as const] : [])]
   const tab = tabs.includes(wanted) ? wanted : (tabs[0] ?? 'changes')
+  useEffect(() => {
+    if (wanted !== 'files') updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
+  }, [conversationId, wanted])
+  useEffect(() => () => {
+    updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
+  }, [conversationId])
   const [refreshCount, setRefreshCount] = useState(0)
   const [selected, setSelected] = useState<{ project: string; file: string } | null>(null)
   const changes = useFolderChanges(conversation.id, conversation.updatedAt, refreshCount)
   const heads = useProjectHeads({ kind: 'conversation', id: conversation.id }, conversation.updatedAt, refreshCount)
   const fileCount = changes?.reduce((sum, folder) => sum + folder.files.length, 0) ?? 0
+  const onEmpty = () => {
+    const other = tabs.find((tab) => tab !== 'files')
+    if (other) setConversationInspectorTab(other)
+    else setConversationInspectorOpen(false)
+  }
   return (
     <InspectorPanel
       label="会话检查器"
+      maximized={tab === 'files' && files.maximized}
       ratio={widthRatio}
       onRatioChange={onWidthRatioChange}
       tabs={tabs}
@@ -83,7 +99,9 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       onRefresh={() => setRefreshCount((count) => count + 1)}
       onClose={() => setConversationInspectorOpen(false)}
     >
-      {tab === 'wire' ? (
+      {tab === 'files' ? (
+        <FilePreview conversationId={conversationId} updatedAt={conversation.updatedAt} inspector="conversation" onEmpty={onEmpty} />
+      ) : tab === 'wire' ? (
         <WireLogView conversationId={conversation.id} />
       ) : tab === 'plan' ? (
         <ChatPlanView conversationId={conversation.id} plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />

@@ -136,6 +136,17 @@ ipcMain.handle('kando:reveal-file', async (_event, candidates: unknown) => {
   return null
 })
 
+ipcMain.handle('kando:open-file', async (_event, file: unknown) => {
+  if (typeof file !== 'string' || !isAbsolute(file) || file.includes('\0')) return '文件路径无效'
+  try {
+    const info = await stat(file)
+    if (!info.isFile() && !info.isDirectory()) return '不支持打开此文件'
+    return await shell.openPath(file)
+  } catch {
+    return `无法打开文件：${file}`
+  }
+})
+
 // What the renderer says and where a click leads; the target is handed back as it came.
 const Notice = z.object({ title: z.string().max(200), body: z.string().max(1000), target: z.unknown() })
 

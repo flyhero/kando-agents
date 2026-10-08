@@ -25,6 +25,7 @@ import {
   type ScheduledRun
 } from '@kando/protocol'
 import { receiveChatDelta, receiveChatItems } from './chat-state'
+import { forgetFileTabs } from './file-tabs'
 import { activeInboxes, inboxKey } from './source-inboxes'
 import type { BrowserStatus } from '@kando/protocol'
 import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from './browser-state'
@@ -765,6 +766,7 @@ export function startCoreConnection(): void {
           }))
         })
         rpc.on('conversations.deleted', ({ id }) => {
+          forgetFileTabs(id)
           if (!initialized) conversationChanges.set(id, null)
           useCore.setState((s) => {
             const { [id]: _removed, ...conversations } = s.conversations

@@ -12,6 +12,7 @@ import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { renameConversation } from './ConversationActions'
 import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon } from './icons'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
+import { EMPTY_FILE_TABS, useFileTabs } from '../file-tabs'
 import { TitleEditor } from './TitleEditor'
 
 // Where a fork came from: a way back while the source is still here.
@@ -35,6 +36,7 @@ export function ConversationView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const inspectorOpen = useCore((state) => state.conversationInspectorOpen)
   const [panelRatio, setPanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
+  const files = useFileTabs((state) => state[id] ?? EMPTY_FILE_TABS)
   const plans = usePlans(id)
   const wire = useWireLogShown()
   const routine = useCore((state) => state.routines.find((each) => each.id === conversation?.routineId) ?? null)
@@ -54,7 +56,7 @@ export function ConversationView({ id }: { id: string }) {
   // A managed workspace is Kando's own scratch folder: nothing of the user's to compare, but the
   // inspector still shows the agent's plans.
   const inspectable = conversation.projectPaths.length > 0
-  const hasPanel = inspectable || plans.length > 0 || wire
+  const hasPanel = inspectable || plans.length > 0 || wire || files.tabs.length > 0
   const state = conversationState(conversation)
   const action = async (run: () => Promise<unknown>) => {
     if (busy) return

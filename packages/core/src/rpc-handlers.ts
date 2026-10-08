@@ -7,6 +7,7 @@ import type { AttachmentUploads } from './attachment-uploads'
 import type { BrowserService } from './browser-service'
 import type { SessionHost } from './daemon-client'
 import { findFiles, searchFiles } from './file-search'
+import { ConversationFiles } from './conversation-files'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import type { SourceService } from './source-service'
@@ -54,6 +55,7 @@ export function createRpcHandlers(
   routines: RoutineService,
   wire: WireLog
 ): RpcHandlers {
+  const files = new ConversationFiles((id) => conversations.get(id))
   const ports = new PortService(sessions, () => ({ terminals: terminals.list(), conversations: conversations.list(true), tasks: service.list() }))
   // An agent's own terminals: run in the conversation's folder unless it names another, and
   // asked about in the chat where the agent asks nothing for MCP tools.
@@ -76,6 +78,8 @@ export function createRpcHandlers(
   }
   return {
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
+    'files.resolve': ({ conversationId, path }) => files.resolve(conversationId, path),
+    'files.read': ({ conversationId, path }) => files.read(conversationId, path),
     'system.awakeStatus': () => awake.status(),
     'system.setAwakeMode': ({ mode }) => awake.setMode(mode),
     'system.chatSettings': () => chatSettings.current(),

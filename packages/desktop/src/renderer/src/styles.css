@@ -2368,6 +2368,29 @@ body.side-panel-resizing * {
   animation: panel-out 0.18s ease-in forwards;
 }
 
+.terminal-body:has(> .inspector-panel[data-maximized]) > .chat-view { display: none; }
+.inspector-body:has(> .file-preview) { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.file-preview { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.file-preview-tabs { display: flex; flex-shrink: 0; overflow-x: auto; border-bottom: 1px solid var(--border); padding: 4px 8px; gap: 4px; }
+.file-preview-tab { display: flex; align-items: center; flex: 0 0 auto; max-width: 280px; border-radius: var(--radius-sm); }
+.file-preview-tab[data-active] { background: var(--fill-2); }
+.file-preview-tab button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+.file-preview-tab [role='tab'] { font: inherit; font-size: var(--chat-font-small, 12px); padding: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-preview-tab[data-active] [role='tab'] { color: var(--text); }
+.file-preview-tab-close { display: flex; padding: 4px; margin-right: 4px; border-radius: var(--radius-xs); }
+.file-preview-tab-close:hover { background: var(--fill); }
+.file-preview-tab-close svg { width: 12px; height: 12px; }
+.file-menu-target { display: inline-flex; min-width: 0; }
+.file-preview-toolbar { display: flex; align-items: center; flex-shrink: 0; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.file-preview-toolbar > .file-menu-target { flex: 1; }
+.file-preview-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--chat-font-small, 12px); }
+.file-wrap-button[aria-pressed='true'] { background: var(--fill-2); color: var(--accent); }
+.file-preview-content, .file-source { flex: 1; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.file-source > .cm-editor { flex: 1; min-height: 0; }
+.file-source .cm-search { font-family: var(--font); font-size: var(--chat-font-small, 12px); }
+.file-source .cm-search input { background: var(--surface); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-xs); }
+.file-source .cm-search button { color: var(--text); background: var(--fill); border: 1px solid var(--border); border-radius: var(--radius-xs); }
+
 @keyframes panel-in {
   from {
     opacity: 0;

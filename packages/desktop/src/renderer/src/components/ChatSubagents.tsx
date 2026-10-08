@@ -7,6 +7,8 @@ import { CheckIcon, ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
 import { ChatToolIcon } from './ChatToolIcon'
 import { useJustFinished } from '../chat-motion'
+import { ChatCopyRegion } from './ChatCopyRegion'
+import { copyTextForItem } from '../message-copy'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -27,6 +29,7 @@ function Subagent({ tool, lane }: { tool: ToolItem; lane: number }) {
   const brief = subagentBrief(tool.input)
   const finished = useJustFinished(tool.status === 'running')
   return (
+    <ChatCopyRegion text={copyTextForItem(tool)}>
     <div className="chat-subagent" data-status={tool.status} data-finished={finished || undefined} style={{ '--chat-lane': lane }}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
         <ChatToolIcon name={tool.name} status={tool.status} />
@@ -48,18 +51,19 @@ function Subagent({ tool, lane }: { tool: ToolItem; lane: number }) {
           {brief.prompt && (
             <section>
               <h4 className="chat-subagent-label">指令</h4>
-              <div className="chat-subagent-text">{brief.prompt}</div>
+              <ChatCopyRegion text={brief.prompt}><div className="chat-subagent-text">{brief.prompt}</div></ChatCopyRegion>
             </section>
           )}
           <section>
             <h4 className="chat-subagent-label">结果</h4>
             {tool.output
-              ? <div className="chat-subagent-result"><ChatMarkdown text={tool.output} /></div>
+              ? <ChatCopyRegion text={tool.output}><div className="chat-subagent-result"><ChatMarkdown text={tool.output} /></div></ChatCopyRegion>
               : <p className="muted">{tool.status === 'running' ? '还在进行…' : '没有结果'}</p>}
           </section>
         </div>
       )}
     </div>
+    </ChatCopyRegion>
   )
 }
 

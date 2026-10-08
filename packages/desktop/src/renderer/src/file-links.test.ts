@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { fileCandidates, fileReference, isImagePath, linkTarget, previewUrl } from './file-links'
 
 describe('fileReference', () => {
+  it('reads Windows paths and filenames containing spaces or Unicode', () => {
+    expect(fileReference('C:\\repo\\文件 名.ts:12')).toEqual({ path: 'C:\\repo\\文件 名.ts', line: 12 })
+    expect(fileReference('src/文件 名.java:8')).toEqual({ path: 'src/文件 名.java', line: 8 })
+    expect(fileReference('\\\\host\\share\\a.ts')).toEqual({ path: '\\\\host\\share\\a.ts', line: null })
+  })
   it('reads a file name, with its line, out of inline code', () => {
     expect(fileReference('src/app.ts:42')).toEqual({ path: 'src/app.ts', line: 42 })
     expect(fileReference('greet.js')).toEqual({ path: 'greet.js', line: null })
@@ -25,6 +30,10 @@ describe('fileCandidates', () => {
 })
 
 describe('linkTarget', () => {
+  it('normalizes Windows and UNC file URLs without dropping their authority', () => {
+    expect(linkTarget('file:///C:/repo/a.ts#L8')).toEqual({ kind: 'file', path: 'C:/repo/a.ts', line: 8 })
+    expect(linkTarget('file://host/share/a.ts')).toEqual({ kind: 'file', path: '//host/share/a.ts', line: null })
+  })
   it('sends http and https links to the browser', () => {
     expect(linkTarget('https://example.com/a')).toEqual({ kind: 'web', href: 'https://example.com/a' })
     expect(linkTarget('http://localhost:5173/')).toEqual({ kind: 'web', href: 'http://localhost:5173/' })

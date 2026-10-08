@@ -6,7 +6,7 @@ import { QuoteIcon } from './icons'
 
 // Text selected within one of the agent's replies offers a button over it that quotes it into
 // the input, where the user can say what about it. The selection stays the browser's own.
-export function ChatQuotePicker({ conversationId, list }: { conversationId: string; list: RefObject<HTMLElement | null> }) {
+export function ChatQuotePicker({ conversationId, list, enabled = true }: { conversationId: string; list: RefObject<HTMLElement | null>; enabled?: boolean }) {
   const [picked, setPicked] = useState<SelectedText | null>(null)
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function ChatQuotePicker({ conversationId, list }: { conversationId: stri
     }
   }, [list])
 
-  if (!picked) return null
+  if (!picked || !enabled) return null
   return createPortal(
     <button
       type="button"

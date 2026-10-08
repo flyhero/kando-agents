@@ -13,6 +13,7 @@ import {
 } from '@kando/protocol'
 import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWireLogShown, useWorktreesSupported, type TaskView } from '../core-store'
 import { reasonText } from '../labels'
+import { useFileTabs } from '../file-tabs'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { confirmQuota } from './AgentQuota'
@@ -405,6 +406,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const tasks = useCore((s) => s.tasks)
   const dependencies = task.dependsOn.map((id) => tasks[id]).filter((dependency) => dependency !== undefined)
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
+  const hasFiles = useFileTabs((state) => (state[task.conversationId ?? '']?.tabs.length ?? 0) > 0)
   const wire = useWireLogShown()
   return (
     <div className="toolbar">
@@ -433,7 +435,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       })}
       {/* A finished task goes on by a message in its chat. */}
       {isFinished(task.status) && <RedoButton task={task} />}
-      {task.conversationId && (worktree || wire) && <InspectorToggle view={view} />}
+      {task.conversationId && (worktree || wire || hasFiles) && <InspectorToggle view={view} />}
       {task.conversationId && <ViewToggle view={view} />}
       <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />
