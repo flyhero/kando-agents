@@ -13,7 +13,8 @@ const CSP = [
   // protocol; nothing is ever loaded from the web.
   "img-src 'self' data: blob: kando-preview:",
   "font-src 'self' data:",
-  'connect-src ws://127.0.0.1:*',
+  // Copying an attachment fetches its in-memory object URL before writing a PNG to the clipboard.
+  'connect-src ws://127.0.0.1:* blob:',
   // The preview frames in the chat: files the agent asked to show, served by main (kando-preview:).
   'frame-src kando-preview:'
 ].join('; ')
