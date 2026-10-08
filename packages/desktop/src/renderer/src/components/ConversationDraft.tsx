@@ -14,7 +14,7 @@ import { useChatCommandMenu } from './ChatCommandMenu'
 import { useChatMentionMenu } from './ChatMentionMenu'
 import { MentionField, useMentionedText } from './ChatMentionField'
 import { writeMentions } from '../chat-mentions'
-import { effortLabel, modeOptions, modeTone, START_MODES, startModes } from './ChatOptionsBar'
+import { defaultStartMode, DEFAULT_START_MODES, effortLabel, modeOptions, modeTone, startModes } from './ChatOptionsBar'
 import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
@@ -40,7 +40,7 @@ export function ConversationDraft() {
   const [busy, setBusy] = useState(false)
   useEffect(() => saveComposerDraft(null, value), [value])
   // Kept per agent, so switching back finds the mode picked for it.
-  const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: START_MODES.claude[0]!, codex: START_MODES.codex[0]! })
+  const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>(DEFAULT_START_MODES)
   // A model or effort left unpicked is the agent's own default, which the start does not pass.
   const [picks, setPicks] = useState<Record<AgentKind, { model?: string; effort?: string }>>({ claude: {}, codex: {} })
   // Each agent's models, asked for once it is picked; absent while asking, null when core cannot say.
@@ -87,10 +87,9 @@ export function ConversationDraft() {
   const modelId = pick.model ?? catalog?.models.find((each) => each.isDefault)?.id ?? null
   const model = catalog?.models.find((each) => each.id === modelId)
   const efforts = model?.efforts ?? []
-  // A mode the model or the settings no longer allow (auto, then another model picked) starts as
-  // the agent's first.
+  // A mode the model or settings no longer allow falls back to that agent's available default.
   const offeredModes = agent ? startModes(agent, model, allowBypass) : []
-  const mode = agent ? (offeredModes.includes(modes[agent]) ? modes[agent] : START_MODES[agent][0]!) : null
+  const mode = agent ? (offeredModes.includes(modes[agent]) ? modes[agent] : defaultStartMode(agent, offeredModes)) : null
   const effort = pick.effort && efforts.includes(pick.effort) ? pick.effort : null
   // The model a start would run, as quota windows name models; unknown until its catalog is in.
   const modelFor = (kind: AgentKind) => {

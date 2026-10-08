@@ -48,11 +48,21 @@ export function modeTone(mode: string | null): string | undefined {
   return mode === 'plan' || mode === 'bypass' ? mode : undefined
 }
 
-// What a new conversation can start in, before its agent lists what it offers (auto and bypass
-// aside). The first is where each starts by default.
+// What a new conversation can start in, before its agent lists model-specific auto and optional
+// bypass. The first is the fallback when its preferred default is unavailable.
 export const START_MODES: Record<AgentKind, readonly ChatPermissionMode[]> = {
   claude: ['ask', 'acceptEdits', 'plan'],
   codex: ['acceptEdits', 'ask', 'plan', 'readOnly']
+}
+
+export const DEFAULT_START_MODES: Record<AgentKind, ChatPermissionMode> = {
+  claude: 'auto',
+  codex: 'acceptEdits'
+}
+
+export function defaultStartMode(agent: AgentKind, offered: readonly ChatPermissionMode[]): ChatPermissionMode {
+  const preferred = DEFAULT_START_MODES[agent]
+  return offered.includes(preferred) ? preferred : START_MODES[agent][0]!
 }
 
 // Those, with auto where the model takes it (as the agent's catalog says) and bypass where the

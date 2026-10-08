@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { startModes } from './components/ChatOptionsBar'
+import { defaultStartMode, startModes } from './components/ChatOptionsBar'
 
 const model = (autoMode?: boolean) => ({ id: 'opus', label: 'Opus', description: null, efforts: [], isDefault: true, ...(autoMode === undefined ? {} : { autoMode }) })
 
@@ -9,5 +9,11 @@ describe('startModes', () => {
     expect(startModes('claude', model(), true)).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])
     expect(startModes('claude', undefined, false)).toEqual(['ask', 'acceptEdits', 'plan'])
     expect(startModes('codex', model(), false)).toEqual(['acceptEdits', 'ask', 'plan', 'readOnly'])
+  })
+
+  it('defaults each agent independently and falls back when Claude auto is unavailable', () => {
+    expect(defaultStartMode('claude', startModes('claude', model(true), false))).toBe('auto')
+    expect(defaultStartMode('claude', startModes('claude', model(), false))).toBe('ask')
+    expect(defaultStartMode('codex', startModes('codex', model(), false))).toBe('acceptEdits')
   })
 })
