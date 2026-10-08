@@ -5951,7 +5951,8 @@ body.side-panel-resizing * {
   font-size: 12px;
   cursor: pointer;
 }
-.chat-latest:hover { background: var(--surface-muted); }
+.chat-latest:hover,
+.chat-latest:focus-visible { background: var(--surface); }
 .chat-latest svg { width: 14px; height: 14px; }
 
 /* While a turn runs: a spinner, what the agent is at, and a clock. */
