@@ -11,10 +11,10 @@ export type SetText = (next: string | ((current: string) => string), caret?: num
 // What the input holds: its text and the mentions in it, kept in step however the text changes
 // (typing, a pick, a queued message put back). Undo and redo bring back a text the input held, so
 // a text met before gets back the mentions it had.
-export function useMentionedText(): { value: MentionedText; setText: SetText; setValue: (value: MentionedText) => void } {
-  const [value, setState] = useState<MentionedText>(EMPTY)
+export function useMentionedText(initial: MentionedText = EMPTY): { value: MentionedText; setText: SetText; setValue: (value: MentionedText) => void } {
+  const [value, setState] = useState<MentionedText>(initial)
   const latest = useRef(value)
-  const held = useRef(new Map<string, readonly Mention[]>())
+  const held = useRef(new Map<string, readonly Mention[]>([[initial.text, initial.mentions]]))
   const setValue = useCallback((next: MentionedText) => {
     latest.current = next
     held.current.delete(next.text)

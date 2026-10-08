@@ -19,6 +19,7 @@ import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
 import { DraftBranchPicker, useProjectBranches } from './DraftBranchPicker'
+import { composerDraft, saveComposerDraft } from '../composer-drafts'
 
 // A new conversation while chats are the default: the agent and projects are picked on the page,
 // and the first message creates the conversation and starts the agent, so none is left empty.
@@ -34,9 +35,10 @@ export function ConversationDraft() {
   })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [worktree, setWorktree] = useState(false)
-  const { value, setText, setValue } = useMentionedText()
+  const { value, setText, setValue } = useMentionedText(composerDraft(null))
   const { text } = value
   const [busy, setBusy] = useState(false)
+  useEffect(() => saveComposerDraft(null, value), [value])
   // Kept per agent, so switching back finds the mode picked for it.
   const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: START_MODES.claude[0]!, codex: START_MODES.codex[0]! })
   // A model or effort left unpicked is the agent's own default, which the start does not pass.
@@ -121,7 +123,8 @@ export function ConversationDraft() {
     const created = await create()
     if (created) {
       const images = attached.images.map((image) => image.id)
-      await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: written.trim(), ...(images.length ? { images } : {}) }))
+      const sent = await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: written.trim(), ...(images.length ? { images } : {}) }))
+      if (sent) saveComposerDraft(null, { text: '', mentions: [] })
       selectConversation(created.id)
       return
     }

@@ -17,6 +17,7 @@ import { ChevronDownIcon, ClockIcon, CloseIcon, EnterIcon, PencilIcon, StopIcon 
 import { SchedulePicker } from './SchedulePicker'
 import { createSchedule } from '../schedules'
 import { ChatMessageRelay } from './chat-message-relay'
+import { composerDraft, saveComposerDraft } from '../composer-drafts'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -204,7 +205,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const { id } = conversation
   const surface = useChatSurface()
   const beginRelay = useContext(ChatMessageRelay)
-  const { value, setText, setValue } = useMentionedText()
+  const { value, setText, setValue } = useMentionedText(composerDraft(id))
   const { text } = value
   const [busy, setBusy] = useState(false)
   const quotes = useQuotes(id)
@@ -214,6 +215,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const scheduleImagesSupported = useScheduleImagesSupported()
   const mentionsSupported = useFileMentionsSupported()
   const attached = useComposerImages()
+  useEffect(() => saveComposerDraft(id, value), [id, value])
   // A message left here for the user, as a fork leaves the message it stopped before.
   useEffect(() => {
     const draft = takeDraft(id)
