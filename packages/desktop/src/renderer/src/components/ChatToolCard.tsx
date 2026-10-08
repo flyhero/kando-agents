@@ -3,7 +3,7 @@ import { terminalToolKind, type ChatDiff, type ChatItem, type ChatToolStatus } f
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
 import { showTerminal } from '../core-store'
-import { diffCounts, elapsedText, runHeadline, toolLabel } from '../chat-tools'
+import { commandExitCode, diffCounts, elapsedText, runHeadline, toolDisplayStatus, toolLabel, toolRunStatus } from '../chat-tools'
 import { DiffLines } from './DiffLines'
 import { ChatToolIcon } from './ChatToolIcon'
 import { ChatToolInput } from './ChatToolInput'
@@ -50,6 +50,16 @@ export function ToolStatus({ status, since }: { status: ChatToolStatus; since?: 
   if (status === 'running') return <><Spinner label="进行中" />{since !== undefined && <ToolTimer since={since} />}</>
   const text = STATUS_TEXT[status]
   return text ? <span className="chat-tool-status" data-status={status}>{text}</span> : null
+}
+
+function CommandExit({ tool }: { tool: ToolItem }) {
+  const code = commandExitCode(tool)
+  if (code === null || code === 0) return null
+  return (
+    <div className="chat-tool-actions">
+      <span className="chat-tool-status" data-status="failed" aria-label={`退出码 ${code}`}>exit {code}</span>
+    </div>
+  )
 }
 
 export function ChatDiffs({ diffs }: { diffs: readonly ChatDiff[] }) {
@@ -115,10 +125,12 @@ export function ChatEditsCard({ path, tools }: { path: string; tools: readonly T
 function ToolLine({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useDisclosure(`call:${itemKey(tool)}`)
   const shorten = useContext(ChatPaths)
-  const details = Boolean(tool.input || tool.output)
-  const finished = useJustFinished(tool.status === 'running')
+  const code = commandExitCode(tool)
+  const details = Boolean(tool.input || tool.output || (code !== null && code !== 0))
+  const status = toolDisplayStatus(tool)
+  const finished = useJustFinished(status === 'running')
   return (
-    <div className="chat-tool-line" data-status={tool.status} data-finished={finished || undefined}>
+    <div className="chat-tool-line" data-status={status} data-finished={finished || undefined}>
       <button
         type="button"
         className="chat-tool-row"
@@ -126,7 +138,7 @@ function ToolLine({ tool }: { tool: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
-        <ChatToolIcon name={tool.name} status={tool.status} />
+        <ChatToolIcon name={tool.name} status={status} />
         {tool.description ? (
           // What the agent said the call does; the command itself is a hover, or a click, away.
           <span className="chat-tool-description" title={tool.title}>{tool.description}</span>
@@ -137,16 +149,16 @@ function ToolLine({ tool }: { tool: ToolItem }) {
           </>
         )}
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
-        <ToolStatus status={tool.status} since={tool.at} />
+        <ToolStatus status={status} since={tool.at} />
       </button>
+      {open && <CommandExit tool={tool} />}
       {open && tool.input && <ChatToolInput name={tool.name} input={tool.input} />}
       {open && tool.output && <pre className="chat-tool-io">{clipped(tool.output)}</pre>}
     </div>
   )
 }
 
-// Calls made one after another, as one sentence of what they did: the one still going named beside
-// it, any that failed counted. A lone call is just its line.
+// Only execution exceptions reach the group header; exit results stay in each call's details.
 export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   const [only] = tools
   const [open, setOpen] = useDisclosure(`run:${only ? itemKey(only) : ''}`)
@@ -154,18 +166,21 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
   const running = tools.find((tool) => tool.status === 'running')
   const finished = useJustFinished(Boolean(running))
   if (tools.length === 1 && only) return <ToolLine tool={only} />
-  const failed = tools.filter((tool) => tool.status === 'failed' || tool.status === 'denied').length
+  const outcome = toolRunStatus(tools)
   const headline = runHeadline(tools)
   // The rail beside the open list fills as the calls finish, top down.
   const settled = tools.filter((tool) => tool.status !== 'running').length
   return (
     <div className="chat-tool-run" data-open={open || undefined} data-live={Boolean(running) || finished || undefined} data-finished={finished || undefined}>
       <button type="button" className="chat-tool-row" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <ChatToolIcon name={running?.name ?? only?.name ?? ''} status={running ? 'running' : failed > 0 ? 'failed' : 'done'} />
+        <ChatToolIcon name={running?.name ?? only?.name ?? ''} status={outcome.status} />
         <span className="chat-tool-summary" title={headline.described ? running?.title : undefined}>{headline.text}</span>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
         {running && !headline.described && <span className="chat-tool-title mono" title={running.title}>{shorten(running.title)}</span>}
-        {running ? <ToolStatus status="running" since={running.at} /> : failed > 0 && <span className="chat-tool-status" data-status="failed">{failed} 个失败</span>}
+        {running && <ToolStatus status="running" since={running.at} />}
+        {outcome.failed > 0 && <span className="chat-tool-status" data-status="failed">{outcome.failed} 项异常</span>}
+        {outcome.denied > 0 && <span className="chat-tool-status" data-status="denied">{outcome.denied} 项已拒绝</span>}
+        {outcome.interrupted > 0 && <span className="chat-tool-status" data-status="interrupted">{outcome.interrupted} 项已中断</span>}
       </button>
       {open && (
         <div className="chat-tool-run-lines" style={{ '--chat-rail': `${(settled / tools.length) * 100}%` }}>
@@ -183,12 +198,14 @@ const TERMINAL_ID = /标签 id：([0-9a-f-]{36})/
 export function ChatToolCard({ item }: { item: ToolItem }) {
   const [open, setOpen] = useDisclosure(`card:${itemKey(item)}`)
   const shorten = useContext(ChatPaths)
-  const details = Boolean(item.diffs.length || item.input || item.output)
+  const code = commandExitCode(item)
+  const details = Boolean(item.diffs.length || item.input || item.output || (code !== null && code !== 0))
+  const status = toolDisplayStatus(item)
   // A command the agent runs in a terminal of its own: the card opens the panel on it.
   const terminal = terminalToolKind(item.name) === 'run' ? TERMINAL_ID.exec(item.output ?? '')?.[1] ?? null : null
-  const finished = useJustFinished(item.status === 'running')
+  const finished = useJustFinished(status === 'running')
   return (
-    <div className="chat-tool" data-status={item.status} data-finished={finished || undefined}>
+    <div className="chat-tool" data-status={status} data-finished={finished || undefined}>
       <button
         type="button"
         className="chat-tool-header"
@@ -196,19 +213,20 @@ export function ChatToolCard({ item }: { item: ToolItem }) {
         disabled={!details}
         onClick={() => setOpen(!open)}
       >
-        <ChatToolIcon name={item.name} status={item.status} />
+        <ChatToolIcon name={item.name} status={status} />
         <span className="chat-tool-name">{toolLabel(item.name)}:</span>
         {item.diffs.length > 0 && <FileExt path={item.diffs[0]?.path ?? item.title} />}
         <span className="chat-tool-title" title={item.title}>{shorten(item.title)}</span>
         <DiffCount diffs={item.diffs} />
         {details && <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>}
-        <ToolStatus status={item.status} since={item.at} />
+        <ToolStatus status={status} since={item.at} />
       </button>
       {terminal && (
         <div className="chat-tool-actions">
           <button type="button" className="link-button" onClick={() => showTerminal(terminal)}>在终端面板里看</button>
         </div>
       )}
+      {open && <CommandExit tool={item} />}
       {open && item.diffs.length > 0 && <ChatDiffs diffs={item.diffs} />}
       {open && item.input && <ChatToolInput name={item.name} input={item.input} />}
       {open && item.output && <pre className="chat-tool-io">{clipped(item.output)}</pre>}

@@ -1,5 +1,42 @@
 import { describe, expect, it } from 'vitest'
-import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel, toolIconKind, toolInputLanguage } from './chat-tools'
+import { diffCounts, runHeadline, runSummary, subagentBrief, workedFor, formatTokens, elapsedText, thoughtFor, commandKeyword, toolLabel, toolIconKind, toolInputLanguage, toolDisplayStatus, commandExitCode, toolRunStatus } from './chat-tools'
+import type { ChatItem } from '@kando/protocol'
+
+type ToolExecution = Pick<Extract<ChatItem, { kind: 'tool' }>, 'name' | 'status' | 'execution'>
+
+describe('command execution presentation', () => {
+  const nonzero: ToolExecution = { name: 'commandExecution', status: 'failed', execution: { status: 'completed', exitCode: 1 } }
+
+  it.each(['Bash', 'commandExecution'])('presents a completed %s call without erasing its exit result', (name) => {
+    expect(toolDisplayStatus({ ...nonzero, name })).toBe('done')
+    expect(commandExitCode({ ...nonzero, name })).toBe(1)
+  })
+
+  it('keeps unknown failures and non-command failures visible', () => {
+    expect(toolDisplayStatus({ name: 'Bash', status: 'failed' })).toBe('failed')
+    expect(toolDisplayStatus({ ...nonzero, name: 'Read' })).toBe('failed')
+    expect(commandExitCode({ ...nonzero, name: 'Read' })).toBeNull()
+    expect(toolDisplayStatus({ ...nonzero, execution: { status: 'failed', exitCode: 1 } })).toBe('failed')
+    expect(commandExitCode({ name: 'Bash', status: 'done', execution: { status: 'completed', exitCode: null } })).toBeNull()
+  })
+
+  it.each(['running', 'denied', 'interrupted'] as const)('keeps %s ahead of execution metadata', (status) => {
+    expect(toolDisplayStatus({ ...nonzero, status })).toBe(status)
+  })
+
+  it.each([[19, 1], [21, 3]])('does not count %i commands with %i nonzero exits as group exceptions', (count, nonzeroCount) => {
+    const tools: ToolExecution[] = Array.from({ length: count }, (_, index) => index < nonzeroCount
+      ? nonzero : { name: 'Bash', status: 'done' })
+    expect(toolRunStatus(tools)).toEqual({ status: 'done', failed: 0, denied: 0, interrupted: 0 })
+  })
+
+  it('keeps exceptions, refusals and interruptions distinct while another call runs', () => {
+    expect(toolRunStatus([
+      nonzero, { name: 'Bash', status: 'running' }, { name: 'Bash', status: 'failed' },
+      { name: 'Read', status: 'failed' }, { name: 'Bash', status: 'denied' }, { name: 'Bash', status: 'interrupted' }
+    ])).toEqual({ status: 'running', failed: 2, denied: 1, interrupted: 1 })
+  })
+})
 
 describe('toolIconKind', () => {
   it('recognizes both agents and Kando MCP aliases', () => {

@@ -58,6 +58,8 @@ describe('ClaudeStream', () => {
     ])
     expect(tools[0]?.diffs).toEqual([{ path: '/work/repo/hello.txt', change: 'add', patch: '+hi' }])
     expect(tools[1]?.output).toBe('hi')
+    expect(tools[1]?.execution).toEqual({ status: 'completed', exitCode: null })
+    expect(tools[0]?.execution).toBeUndefined()
     // The words Claude gave the command, which only Bash carries; the result keeps them.
     expect(tools.map((tool) => tool.description)).toEqual([null, 'Display contents of hello.txt', null])
 
@@ -517,6 +519,8 @@ describe('ClaudeStream commands', () => {
       ['sleep 4', 'interrupted'],
       ['sleep 5', 'interrupted']
     ])
+    // Text saying "Exit code 1" is not independent proof that a command completed.
+    expect(ofKind(driver.items.list(), 'tool').map((tool) => tool.execution)).toEqual([undefined, undefined, undefined])
   })
 
   it('asks for suggestions at initialize when the user has them on', () => {
@@ -683,6 +687,7 @@ describe('ClaudeStream background tasks, as recorded', () => {
     const driver = replay(records.slice(0, reported))
     const [command] = ofKind(driver.items.list(), 'tool')
     expect(command).toMatchObject({ name: 'Bash', status: 'running', background: true })
+    expect(command?.execution).toBeUndefined()
     expect(command?.output).toContain('Command running in background')
     expect(driver.activity()).toBe('running')
     expect(ofKind(driver.items.list(), 'state')[0]?.activity).toBe('等 1 个后台命令结束')
@@ -692,6 +697,7 @@ describe('ClaudeStream background tasks, as recorded', () => {
     const driver = replay(records)
     const [command] = ofKind(driver.items.list(), 'tool')
     expect(command).toMatchObject({ status: 'done', background: true })
+    expect(command?.execution).toEqual({ status: 'completed', exitCode: null })
     expect(command?.output).toContain('completed (exit code 0)')
     expect(ofKind(driver.items.list(), 'turn').map((turn) => [turn.resumed ?? false, turn.resumedBy ?? null])).toEqual([[false, null], [true, 'command']])
     expect(driver.activity()).toBe('idle')
@@ -701,6 +707,7 @@ describe('ClaudeStream background tasks, as recorded', () => {
     const driver = replay(fixture('claude-background-mixed.jsonl'))
     const tools = ofKind(driver.items.list(), 'tool')
     expect(tools.map((tool) => [tool.name, tool.status, tool.background ?? false])).toEqual([['Bash', 'failed', true], ['Agent', 'done', true]])
+    expect(tools.map((tool) => tool.execution)).toEqual([{ status: 'failed', exitCode: null }, undefined])
     expect(ofKind(driver.items.list(), 'turn').map((turn) => turn.resumedBy ?? null)).toEqual([null, 'subagent', 'command'])
   })
 

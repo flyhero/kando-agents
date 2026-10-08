@@ -976,6 +976,9 @@ export class ClaudeStream implements ChatDriver {
         description: tool.description ?? null,
         input: tool.input,
         status,
+        ...(tool.name === 'Bash' && status === 'done' ? {
+          execution: { status: 'completed' as const, exitCode: null }
+        } : {}),
         output: output ? clip(output) : null,
         diffs: status === 'done' ? resultDiffs(tool.diffs, parsed.data.tool_use_result) : tool.diffs,
         ...(metrics ? { metrics } : {}),
@@ -1011,7 +1014,12 @@ export class ClaudeStream implements ChatDriver {
     const settled = status === 'completed' ? 'done' : status === 'failed' ? 'failed' : 'interrupted'
     // A subagent's report is its output; a command's says how it ended.
     const output = known.kind === 'command' && summary ? clip([tool.output, summary].filter(Boolean).join('\n')) : tool.output
-    this.items.put({ ...tool, status: settled, output }, at)
+    this.items.put({
+      ...tool, status: settled, output,
+      ...(known.kind === 'command' && (status === 'completed' || status === 'failed') ? {
+        execution: { status, exitCode: null }
+      } : {})
+    }, at)
   }
 
   private result(frame: unknown, at: number): void {

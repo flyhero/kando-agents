@@ -166,6 +166,11 @@ export const ChatItem = z.discriminatedUnion('kind', [
     description: z.string().nullable().optional(),
     input: z.string().nullable(),
     status: ChatToolStatus.catch('done'),
+    // A command's lifecycle is separate from its exit result. Keep status for older clients.
+    execution: z.object({
+      status: z.enum(['completed', 'failed']),
+      exitCode: z.number().int().nullable()
+    }).optional(),
     output: z.string().nullable(),
     // The agent left it working in the background, as a command run with run_in_background: it
     // stays running past its turn until it reports. Older cores leave it out.

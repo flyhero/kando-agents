@@ -29,6 +29,29 @@ const ofKind = <K extends ChatItem['kind']>(items: ChatItem[], kind: K) =>
 const shown = (items: ChatItem[]) => items.map(({ revision: _revision, at: _at, ...item }) => item)
 
 describe('CodexAppServer', () => {
+  it.each([0, 1, 2, null])('keeps a completed command separate from exit %s when replaying its record', (exitCode) => {
+    const driver = replay([{ dir: 'in', at: 1, frame: {
+      method: 'item/completed', params: { item: {
+        type: 'commandExecution', id: 'search', command: 'rg missing .', status: 'completed', exitCode, aggregatedOutput: ''
+      } }
+    } }])
+    expect(ofKind(driver.items.list(), 'tool')[0]).toMatchObject({
+      status: exitCode === null || exitCode === 0 ? 'done' : 'failed',
+      execution: { status: 'completed', exitCode }, output: null
+    })
+  })
+
+  it('keeps execution failures and refusals distinct from completed commands', () => {
+    const driver = replay(['failed', 'declined', 'inProgress'].map((status, index) => ({
+      dir: 'in' as const, at: index, frame: { method: status === 'inProgress' ? 'item/started' : 'item/completed', params: {
+        item: { type: 'commandExecution', id: status, command: 'run', status, exitCode: status === 'failed' ? 1 : null }
+      } }
+    })))
+    const tools = ofKind(driver.items.list(), 'tool')
+    expect(tools.map((tool) => tool.status)).toEqual(['failed', 'denied', 'running'])
+    expect(tools.map((tool) => tool.execution)).toEqual([{ status: 'failed', exitCode: 1 }, undefined, undefined])
+  })
+
   it('turns a recorded thread into messages, file and command cards, approvals and turn outcomes', () => {
     const driver = replay(fixture('codex-session.jsonl'))
     const items = driver.items.list()

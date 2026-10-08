@@ -1,4 +1,4 @@
-import { BROWSER_HOST_TOOL, browserToolKind, isBrowserTool, isPreviewTool, TERMINAL_RUN_TOOL, terminalToolKind, type BrowserToolKind, type ChatDiff, type ChatItem, type TerminalToolKind } from '@kando/protocol'
+import { BROWSER_HOST_TOOL, browserToolKind, isBrowserTool, isPreviewTool, TERMINAL_RUN_TOOL, terminalToolKind, type BrowserToolKind, type ChatDiff, type ChatItem, type ChatToolStatus, type TerminalToolKind } from '@kando/protocol'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -122,6 +122,29 @@ export function runHeadline(tools: readonly Pick<ToolItem, 'name' | 'status' | '
 // Codex spawn.
 export function isCommandTool(name: string): boolean {
   return name === 'Bash' || name === 'commandExecution'
+}
+
+type ToolExecution = Pick<ToolItem, 'name' | 'status' | 'execution'>
+
+// A nonzero exit is a result, not proof that the command could not run.
+export function toolDisplayStatus(tool: ToolExecution): ChatToolStatus {
+  if (!isCommandTool(tool.name) || tool.status === 'running' || tool.status === 'denied' || tool.status === 'interrupted') return tool.status
+  if (tool.execution) return tool.execution.status === 'completed' ? 'done' : 'failed'
+  return tool.status
+}
+
+export function commandExitCode(tool: ToolExecution): number | null {
+  return isCommandTool(tool.name) ? tool.execution?.exitCode ?? null : null
+}
+
+export function toolRunStatus(tools: readonly ToolExecution[]) {
+  const statuses = tools.map(toolDisplayStatus)
+  const failed = statuses.filter((status) => status === 'failed').length
+  const denied = statuses.filter((status) => status === 'denied').length
+  const interrupted = statuses.filter((status) => status === 'interrupted').length
+  const status: ChatToolStatus = statuses.includes('running') ? 'running'
+    : failed > 0 ? 'failed' : denied > 0 ? 'denied' : interrupted > 0 ? 'interrupted' : 'done'
+  return { status, failed, denied, interrupted }
 }
 
 // Shell words that never name the program being run; the ones with an argument take it along.

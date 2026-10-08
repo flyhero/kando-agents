@@ -1100,6 +1100,9 @@ export class CodexAppServer implements ChatDriver {
           description: commandDescription(item.commandActions),
           input: unwrapShell(command),
           status: completed ? this.settled(toolStatus(item.status, item.exitCode)) : 'running',
+          ...(completed && (item.status === 'completed' || item.status === 'failed') ? {
+            execution: { status: item.status, exitCode: item.exitCode ?? null }
+          } : {}),
           output: item.aggregatedOutput ? clip(item.aggregatedOutput) : null,
           diffs: []
         }, at)
