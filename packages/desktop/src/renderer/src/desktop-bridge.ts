@@ -12,6 +12,7 @@ declare global {
       setTheme(theme: string): Promise<unknown>
       // Absent from a main older than the renderer.
       revealFile?(candidates: string[]): Promise<unknown>
+      openFile?(path: string): Promise<unknown>
       notify?(notice: unknown): Promise<unknown>
       setBadge?(count: number): Promise<unknown>
       onNotificationClick?(listener: (target: unknown) => void): () => void
@@ -46,6 +47,15 @@ export async function pickFolder(defaultPath?: string): Promise<string | null> {
 
 export function canRevealFile(): boolean {
   return window.kando?.revealFile !== undefined
+}
+
+export function canOpenFile(): boolean {
+  return window.kando?.openFile !== undefined
+}
+
+export async function openFile(path: string): Promise<string | null> {
+  const error = await window.kando?.openFile?.(path)
+  return typeof error === 'string' ? error || null : '当前客户端不支持系统打开'
 }
 
 // Shows the first of the paths that exists in the system's file manager; which one, or null.

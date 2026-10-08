@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('kando', {
   pickFolder: (defaultPath?: string): Promise<unknown> => ipcRenderer.invoke('kando:pick-folder', defaultPath),
   setTheme: (theme: string): Promise<unknown> => ipcRenderer.invoke('kando:set-theme', theme),
   revealFile: (candidates: string[]): Promise<unknown> => ipcRenderer.invoke('kando:reveal-file', candidates),
+  openFile: (path: string): Promise<unknown> => ipcRenderer.invoke('kando:open-file', path),
   notify: (notice: unknown): Promise<unknown> => ipcRenderer.invoke('kando:notify', notice),
   setBadge: (count: number): Promise<unknown> => ipcRenderer.invoke('kando:set-badge', count),
   onNotificationClick: (listener: (target: unknown) => void): (() => void) => {

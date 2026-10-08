@@ -12,6 +12,7 @@ import { Terminal, TerminalCommand, TerminalCommandFields, TerminalOutput, Termi
 import { PortList, PortRef } from './ports'
 import { ChatCommandFields, SavedChatCommand } from './chat-commands'
 import { ProjectFileMatch } from './project-files'
+import { FileRead, ResolvedFile } from './files'
 import { ManagedWorktree, WorktreeCleanResult } from './worktree'
 import { browserActions, BrowserAction, BrowserConsole, BrowserFrame, BrowserInputEvent, BrowserNavigateTo, BrowserNavigation, BrowserScreenshot, BrowserScreenshotOptions, BrowserSnapshot, BrowserStatus, BrowserTab, BrowserTabId, BrowserUrl, BrowserViewOptions } from './browser'
 import { ComputerAwakeMode, ComputerAwakeStatus } from './awake'
@@ -53,8 +54,9 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // environment: core checks for git and the agent CLIs on its path (system.environment).
 // chat-commands: core keeps the user's own slash commands for the chat composer (chatCommands.*).
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
+// file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview'] as const
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
 // conversation-fork: a free conversation can be forked at one of its messages into a new one (conversations.fork).
@@ -78,6 +80,8 @@ export const rpcMethods = {
     })
   },
   'system.awakeStatus': { params: z.object({}), result: ComputerAwakeStatus },
+  'files.resolve': { params: z.object({ conversationId: z.string().uuid(), path: z.string().min(1).max(32_768) }), result: ResolvedFile.nullable() },
+  'files.read': { params: z.object({ conversationId: z.string().uuid(), path: z.string().min(1).max(32_768) }), result: FileRead },
   'system.setAwakeMode': { params: z.object({ mode: ComputerAwakeMode }), result: ComputerAwakeStatus },
   'system.chatSettings': { params: z.object({}), result: ChatSettings },
   'system.setChatSettings': { params: ChatSettings.partial(), result: ChatSettings },

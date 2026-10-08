@@ -5,9 +5,9 @@ import { CheckIcon, ChevronRightIcon } from './icons'
 export type MenuPoint = { x: number; y: number }
 
 // Opened from the keyboard (context-menu key, Shift+F10) there is no pointer, so it opens under the row.
-export function menuPoint(event: MouseEvent<HTMLElement>): MenuPoint {
+export function menuPoint(event: MouseEvent<HTMLElement>, anchor = event.currentTarget): MenuPoint {
   if (event.clientX === 0 && event.clientY === 0) {
-    const box = event.currentTarget.getBoundingClientRect()
+    const box = anchor.getBoundingClientRect()
     return { x: box.left + 12, y: box.bottom }
   }
   return { x: event.clientX, y: event.clientY }
@@ -26,12 +26,13 @@ function focusedMenuItems(root: HTMLElement): HTMLElement[] {
 // `above`, over the point, as for a control at the bottom whose menu should not cover what is below.
 // Portaled outside clipped, scrolling boxes. A native modal dialog is itself in the browser's top
 // layer, so its menus must stay inside that dialog; anything portaled to <body> would sit behind it.
-export function ContextMenu({ at, align = 'start', above = false, trigger, label, onClose, children }: {
+export function ContextMenu({ at, align = 'start', above = false, trigger, scrollBoundary, label, onClose, children }: {
   at: MenuPoint
   align?: 'start' | 'end'
   above?: boolean
   // The button that toggles the menu; pressing it isn't an outside click.
   trigger?: HTMLElement | null
+  scrollBoundary?: HTMLElement | null
   label: string
   onClose: () => void
   children: ReactNode
@@ -69,7 +70,7 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, label
       if (outside(event)) onClose()
     }
     const onScroll = (event: Event) => {
-      if (outside(event)) onClose()
+      if (outside(event) && (!scrollBoundary || (event.target instanceof Node && event.target.contains(scrollBoundary)))) onClose()
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -96,7 +97,7 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, label
       window.removeEventListener('blur', onClose)
       window.removeEventListener('resize', onClose)
     }
-  }, [onClose, opener, trigger])
+  }, [onClose, opener, trigger, scrollBoundary])
 
   return createPortal(
     <div
@@ -105,7 +106,7 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, label
       role="menu"
       aria-label={label}
       style={{ left: place.x, top: place.y }}
-      onContextMenu={(event) => event.preventDefault()}
+      onContextMenu={(event) => { event.preventDefault(); event.stopPropagation() }}
     >
       {children}
     </div>,

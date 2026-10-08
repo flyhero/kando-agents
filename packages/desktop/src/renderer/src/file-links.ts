@@ -12,12 +12,12 @@ const EXTENSIONS = new Set([
 export type FileReference = { path: string; line: number | null }
 
 export function fileReference(text: string): FileReference | null {
-  const match = /^((?:~|\.{1,2})?\/?(?:[\w.@+-]+\/)*[\w.@+-]+)(?::(\d+)(?::\d+)?)?$/.exec(text.trim())
+  const match = /^((?:[a-zA-Z]:[\\/]|[\\/]{2}|(?:~|\.{1,2})?[\\/]?)?(?:[\p{L}\p{N}_.@+ -]+[\\/])*[\p{L}\p{N}_.@+ -]+)(?::(\d+)(?::\d+)?)?$/u.exec(text.trim())
   const path = match?.[1]
   if (!path) return null
   const extension = path.includes('.') ? path.split('.').at(-1)?.toLowerCase() : undefined
   // An absolute path names a file whatever it ends in.
-  if (!(extension && EXTENSIONS.has(extension)) && !path.startsWith('/')) return null
+  if (!(extension && EXTENSIONS.has(extension)) && !path.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(path) && !path.startsWith('\\\\')) return null
   return { path, line: match[2] ? Number(match[2]) : null }
 }
 
@@ -34,7 +34,7 @@ function joined(root: string, relative: string): string {
 // Where a named file may be: as written when absolute or under home, else under each of the
 // conversation's folders, the primary one first.
 export function fileCandidates(path: string, roots: readonly string[]): string[] {
-  if (path.startsWith('/') || path === '~' || path.startsWith('~/')) return [path]
+  if (path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\') || path === '~' || /^~[\\/]/.test(path)) return [path]
   return [...new Set(roots.map((root) => joined(root, path)))]
 }
 
@@ -47,7 +47,9 @@ export function linkTarget(href: string): LinkTarget | null {
   let path = href
   if (/^file:\/\//i.test(href)) {
     try {
-      path = new URL(href).pathname
+      const url = new URL(href)
+      path = (url.host ? `//${url.host}${url.pathname}` : url.pathname) + url.hash
+      if (/^\/[a-zA-Z]:\//.test(path)) path = path.slice(1)
     } catch {
       return null
     }

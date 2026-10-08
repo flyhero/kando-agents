@@ -50,12 +50,13 @@ export function useChangedFiles(target: BranchTarget | null, updatedAt: number, 
   return files?.key === key ? files.files : null
 }
 
-export type InspectorTab = 'changes' | 'branch' | 'plan' | 'wire'
+export type InspectorTab = 'changes' | 'branch' | 'plan' | 'wire' | 'files'
 
-const TAB_LABEL: Record<InspectorTab, string> = { changes: '变更', branch: '分支', plan: '计划', wire: '原始数据' }
+const TAB_LABEL: Record<InspectorTab, string> = { changes: '变更', branch: '分支', plan: '计划', wire: '原始数据', files: '文件' }
 export const GIT_TABS: readonly InspectorTab[] = ['changes', 'branch']
 
-export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, tab, onTab, fileCount, onRefresh, onClose, children }: {
+export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, tab, onTab, fileCount, onRefresh, onClose, maximized = false, children }: {
+  maximized?: boolean
   label: string
   ratio: number
   onRatioChange: (ratio: number) => void
@@ -69,11 +70,12 @@ export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, t
 }) {
   return (
     <>
-      <PanelSeparator panelName="检查器" ratio={ratio} onRatioChange={onRatioChange} />
+      {!maximized && <PanelSeparator panelName="检查器" ratio={ratio} onRatioChange={onRatioChange} />}
       <aside
         className="side-panel inspector-panel"
+        data-maximized={maximized || undefined}
         aria-label={label}
-        style={{ flexBasis: `calc((100% - var(--side-panel-separator-size)) * ${ratio})` }}
+        style={{ flexBasis: maximized ? '100%' : `calc((100% - var(--side-panel-separator-size)) * ${ratio})` }}
       >
         <header className="inspector-header">
           <div className="inspector-tabs" role="tablist" aria-label="检查器">
@@ -83,7 +85,7 @@ export function InspectorPanel({ label, ratio, onRatioChange, tabs = GIT_TABS, t
               </button>
             ))}
           </div>
-          {tab !== 'plan' && tab !== 'wire' && (
+          {tab !== 'plan' && tab !== 'wire' && tab !== 'files' && (
             <button type="button" className="tool-button inspector-refresh" aria-label="刷新" data-tooltip="刷新" onClick={onRefresh}>
               <RefreshIcon />
             </button>

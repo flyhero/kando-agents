@@ -11,6 +11,7 @@ import type { ChatSurface } from './chat-surface'
 import { ConversationChat } from './ConversationChat'
 import { primaryProjectName } from './ProjectPicker'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
+import { EMPTY_FILE_TABS, useFileTabs } from '../file-tabs'
 import { SourceLink } from './SourceLink'
 import { StatusIcon } from './StatusIcon'
 import { TaskInspector } from './TaskInspector'
@@ -65,6 +66,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
   const inspectorOpen = useCore((s) => s.inspectorOpen)
   const bypassable = useChatOptionsSupported()
   const [sidePanelRatio, setSidePanelRatio] = useState(DEFAULT_SIDE_PANEL_RATIO)
+  const files = useFileTabs((state) => state[conversationId ?? ''] ?? EMPTY_FILE_TABS)
   const plans = usePlans(conversationId ?? '')
   const wire = useWireLogShown() && conversationId !== null
 
@@ -90,7 +92,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
     return null
   }
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
-  const showInspector = inspectorOpen && (worktree || plans.length > 0 || wire)
+  const showInspector = inspectorOpen && (worktree || plans.length > 0 || wire || files.tabs.length > 0)
 
   return (
     <section className="detail terminal-view" aria-label={`${task.title} 的聊天`}>

@@ -2,6 +2,7 @@ import { useMemo, type ReactNode } from 'react'
 import { common, createLowlight } from 'lowlight'
 import { toolInputLanguage } from '../chat-tools'
 import { shellTokens, type ShellTokenKind } from '../shell-highlight'
+import { ChatCopyRegion } from './ChatCopyRegion'
 
 // The same languages rehype-highlight brings to the replies, so nothing more is bundled.
 const lowlight = createLowlight(common)
@@ -38,5 +39,5 @@ function shell(input: string): ReactNode[] {
 export function ChatToolInput({ name, input }: { name: string; input: string }) {
   const language = toolInputLanguage(name, input)
   const content = useMemo(() => (language === 'bash' ? shell(input) : language ? render(lowlight.highlight(language, input).children) : input), [language, input])
-  return <pre className="chat-tool-io" data-language={language ?? undefined}>{content}</pre>
+  return <ChatCopyRegion text={input}><pre className="chat-tool-io" data-language={language ?? undefined}>{content}</pre></ChatCopyRegion>
 }

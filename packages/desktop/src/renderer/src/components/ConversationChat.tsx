@@ -15,6 +15,9 @@ import { usePreferences } from '../preferences'
 import { ChatDock } from './ChatDock'
 import { ChatImageStrip } from './ChatImages'
 import { ChatMarkdown, ChatRoots } from './ChatMarkdown'
+import { ChatFilesContext, useChatContextMenu } from './ChatContextMenu'
+import { ChatCopyRegion } from './ChatCopyRegion'
+import { copyTextForItem } from '../message-copy'
 import { ChatRunScope } from './ChatCodeRun'
 import { ChatPlanLine } from './ChatPlan'
 import { ChatRequestLine, type RequestItem } from './ChatRequestCards'
@@ -380,7 +383,7 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
             const directory = slash === -1 ? '' : path.slice(0, slash + 1)
             const name = slash === -1 ? path : path.slice(slash + 1)
             return (
-              <button key={file.path} type="button" className="chat-changes-file" title={file.path} onClick={() => folds.reveal(collapsible ? fold : null, file.path)}>
+              <button key={file.path} type="button" className="chat-changes-file" data-file-path={file.path} title={file.path} onClick={() => folds.reveal(collapsible ? fold : null, file.path)}>
                 {file.change !== 'update' && (
                   <span className="chat-changes-kind" data-kind={file.change}>{file.change === 'add' ? '新建' : '删除'}</span>
                 )}
@@ -416,19 +419,21 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
 // `fresh` is a block that arrived while the chat was open: it enters with a motion.
 function Block({ conversationId, block, task, replies, fresh }: { conversationId: string; block: ChatBlock; task: boolean; replies: ReadonlyMap<string, number>; fresh?: boolean }) {
   const entering = fresh || undefined
-  if (block.kind === 'tools') return <div className="chat-entry" data-fresh={entering}><ChatToolRun tools={block.tools} /></div>
-  if (block.kind === 'agents') return <div className="chat-entry" data-fresh={entering}><ChatSubagents tools={block.tools} /></div>
-  if (block.kind === 'edits') return <div className="chat-entry" data-fresh={entering}><ChatEditsCard path={block.path} tools={block.tools} /></div>
-  if (block.kind === 'changes') return <div className="chat-entry" data-fresh={entering}><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div>
+  if (block.kind === 'tools') return <ChatCopyRegion text={block.tools.map(copyTextForItem).join('\n\n')}><div className="chat-entry" data-fresh={entering}><ChatToolRun tools={block.tools} /></div></ChatCopyRegion>
+  if (block.kind === 'agents') return <ChatCopyRegion text={block.tools.map(copyTextForItem).join('\n\n')}><div className="chat-entry" data-fresh={entering}><ChatSubagents tools={block.tools} /></div></ChatCopyRegion>
+  if (block.kind === 'edits') return <ChatCopyRegion text={block.tools.map(copyTextForItem).join('\n\n')}><div className="chat-entry" data-fresh={entering}><ChatEditsCard path={block.path} tools={block.tools} /></div></ChatCopyRegion>
+  if (block.kind === 'changes') return <ChatCopyRegion text={block.files.map((file) => `${file.path} +${file.added} −${file.removed}`).join('\n')}><div className="chat-entry" data-fresh={entering}><TurnChanges fold={block.fold} files={block.files} turn={block.turn} reply={block.reply} collapsible={block.collapsible} /></div></ChatCopyRegion>
   if (block.kind === 'fold') return <TurnFold foldKey={block.key} conversationId={conversationId} turn={block.turn} blocks={block.blocks} task={task} replies={replies} steps={block.steps} workMs={block.workMs} />
   const { entry } = block
   const merged = useContext(MergedTurns)
   if (entry.kind === 'item' && entry.item.kind === 'turn' && merged.has(block.key)) return null
   return (
+    <ChatCopyRegion text={entry.kind === 'item' ? copyTextForItem(entry.item) : ''}>
     <div className="chat-entry" data-user={isUserEntry(entry) || undefined} data-entry-key={block.key} data-fresh={entering}>
       {entry.kind === 'stage' ? <StageDivider stage={entry.stage} task={task} />
         : <Item conversationId={conversationId} item={entry.item} completedAt={replies.get(block.key)} blockKey={block.key} />}
     </div>
+    </ChatCopyRegion>
   )
 }
 
@@ -692,11 +697,14 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   const since = useMemo(() => items.findLast((item) => item.kind === 'user')?.at ?? null, [items])
   const beginRelay = useMessageRelay(view, list, items, id)
   const lastUserKey = sent.at(-1)?.key
+  const fileScope = useMemo(() => ({ conversationId: id, inspector: shown.inspector, roots }), [id, shown.inspector, roots])
+  const contextMenu = useChatContextMenu(list, fileScope)
   return (
     <ChatSurfaceContext.Provider value={shown}>
     <ChatAgent.Provider value={agentInfo}>
     <ChatPaths.Provider value={shorten}>
     <ChatRoots.Provider value={roots}>
+    <ChatFilesContext.Provider value={fileScope}>
     <ChatRunScope.Provider value={runScope}>
     <Thoughts.Provider value={thoughts}>
     <Endings.Provider value={endings}>
@@ -710,6 +718,9 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
       <div
         className="chat-list"
         ref={list}
+        onContextMenu={contextMenu.onContextMenu}
+        onKeyDown={contextMenu.onKeyDown}
+        onPointerDownCapture={contextMenu.onPointerDown}
         onScroll={(event) => {
           const element = event.currentTarget
           const below = element.scrollHeight - element.scrollTop - element.clientHeight
@@ -758,7 +769,8 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
         )}
       </div>
       <ChatDock conversation={conversation} state={state} pending={pending} tools={tools} finishedCalls={finishedCalls} onPrevious={previous} sent={sent} onJump={jump} />
-      <ChatQuotePicker conversationId={id} list={list} />
+      <ChatQuotePicker conversationId={id} list={list} enabled={!contextMenu.open} />
+      {contextMenu.menu}
     </div>
     </ChatMessageRelay.Provider>
     </JumpToEntry.Provider>
@@ -769,6 +781,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
     </Endings.Provider>
     </Thoughts.Provider>
     </ChatRunScope.Provider>
+    </ChatFilesContext.Provider>
     </ChatRoots.Provider>
     </ChatPaths.Provider>
     </ChatAgent.Provider>
