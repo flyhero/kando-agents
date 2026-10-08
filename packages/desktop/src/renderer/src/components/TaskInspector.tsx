@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { RepoChanges, Task } from '@kando/protocol'
-import type { PlanItem } from '../chat-state'
-import { setInspectorOpen, setTaskInspectorTab, showTaskPlan, useCore } from '../core-store'
+import { pathShortener, type PlanItem } from '../chat-state'
+import { clearInspectorFile, setInspectorOpen, setTaskInspectorTab, showInspectorFile, showTaskPlan, useCore } from '../core-store'
 import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
@@ -80,7 +80,8 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
     updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
   }, [conversationId])
   const [refreshCount, setRefreshCount] = useState(0)
-  const [selected, setSelected] = useState<{ repo: string; file: string } | null>(null)
+  const selected = useCore((state) => state.inspectorFile?.kind === 'task' && state.inspectorFile.id === task.id ? state.inspectorFile : null)
+  const selectedFolder = task.repos.find((repo) => repo.path === selected?.project)?.worktreePath
   const changes = useTaskChanges(task.id, task.updatedAt, refreshCount)
   const heads = useProjectHeads({ kind: 'task', id: task.id }, task.updatedAt, refreshCount)
   const fileCount = changes?.reduce((sum, repo) => sum + repo.files.length, 0) ?? 0
@@ -112,13 +113,13 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">任务还没有 worktree，也就没有分支。</p>
       ) : selected && rpc ? (
         <FileDiffView
-          file={selected.file}
-          loadKey={`${selected.repo}\0${selected.file}\0${refreshCount}`}
-          load={() => rpc.call('tasks.diff', { id: task.id, repo: selected.repo, file: selected.file })}
-          onBack={() => setSelected(null)}
+          file={selectedFolder ? pathShortener([selectedFolder])(selected.file) : selected.file}
+          loadKey={`${task.id}\0${selected.project}\0${selected.file}\0${selected.revision}\0${refreshCount}`}
+          load={() => rpc.call('tasks.diff', { id: task.id, repo: selected.project, file: selected.file })}
+          onBack={clearInspectorFile}
         />
       ) : (
-        <ChangeList changes={changes} onOpen={(repo, file) => setSelected({ repo, file })} />
+        <ChangeList changes={changes} onOpen={(repo, file) => showInspectorFile('task', task.id, repo, file)} />
       )}
     </InspectorPanel>
   )

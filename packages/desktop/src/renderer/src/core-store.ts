@@ -30,6 +30,7 @@ import { activeInboxes, inboxKey } from './source-inboxes'
 import type { BrowserStatus } from '@kando/protocol'
 import { focusBrowserConversation, focusBrowserTab, receiveBrowserTabs } from './browser-state'
 import type { InspectorTab } from './components/Inspector'
+import type { InspectorFile } from './inspector-file'
 import { resolveCoreEndpoint } from './core-endpoint'
 import { reasonText } from './labels'
 import { openUtilityPanel, visibleUtilityPanelOrder, type UtilityPanelKind, type UtilityPanelsOpen } from './utility-panel-order'
@@ -79,6 +80,7 @@ export type CoreState = {
   conversationInspectorTab: InspectorTab
   // The plan its plan tab shows, by item key; null for the newest.
   conversationPlan: string | null
+  inspectorFile: InspectorFile | null
   // The hosted browser as core last reported it; null until core says, or on a core without one.
   browser: BrowserStatus | null
   awake: ComputerAwakeStatus | null
@@ -153,6 +155,7 @@ export const useCore = create<CoreState>()(() => ({
   conversationInspectorOpen: false,
   conversationInspectorTab: 'changes',
   conversationPlan: null,
+  inspectorFile: null,
   browser: null,
   awake: null,
   chatSettings: null,
@@ -205,6 +208,7 @@ export function selectTask(id: string | null): void {
     const chat = task?.conversationId && task.status !== 'done' && task.status !== 'abandoned'
     return {
       selectedId: id,
+      inspectorFile: s.section === 'tasks' && s.selectedId === id ? s.inspectorFile : null,
       section: 'tasks',
       inboxOpen: false,
       worktreesOpen: false,
@@ -224,7 +228,20 @@ export function setTaskInspectorTab(tab: InspectorTab): void {
 }
 
 export function showTaskChanges(): void {
-  useCore.setState({ inspectorOpen: true, taskInspectorTab: 'changes' })
+  useCore.setState({ inspectorOpen: true, taskInspectorTab: 'changes', inspectorFile: null })
+}
+
+export function showInspectorFile(kind: InspectorFile['kind'], id: string, project: string, file: string): void {
+  useCore.setState((s) => ({
+    inspectorFile: { kind, id, project, file, revision: (s.inspectorFile?.revision ?? 0) + 1 },
+    ...(kind === 'task'
+      ? { inspectorOpen: true, taskInspectorTab: 'changes' as const }
+      : { conversationInspectorOpen: true, conversationInspectorTab: 'changes' as const })
+  }))
+}
+
+export function clearInspectorFile(): void {
+  useCore.setState({ inspectorFile: null })
 }
 
 // One of a chat task's plans by item key, or null for its newest.
@@ -251,7 +268,7 @@ export function setConversationInspectorTab(tab: InspectorTab): void {
 }
 
 export function showConversationChanges(): void {
-  useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'changes' })
+  useCore.setState({ conversationInspectorOpen: true, conversationInspectorTab: 'changes', inspectorFile: null })
 }
 
 // One of the conversation's plans by item key, or null for its newest.
@@ -394,7 +411,7 @@ export function setBrowserMaximized(maximized: boolean): void {
 export function selectConversation(id: string | null): void {
   useCore.setState((s) => {
     const { [id ?? '']: _seen, ...unseen } = s.unseen
-    return { selectedConversationId: id, section: 'conversations', settingsOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
+    return { selectedConversationId: id, section: 'conversations', inspectorFile: s.section === 'conversations' && s.selectedConversationId === id ? s.inspectorFile : null, settingsOpen: false, worktreesOpen: false, schedulesOpen: false, routinesOpen: false, dashboardOpen: false, attentionOpen: false, conversationDraft: false, unseen }
   })
   if (id) markRoutineRunSeen(id)
 }

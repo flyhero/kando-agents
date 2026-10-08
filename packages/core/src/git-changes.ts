@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { realpath } from 'node:fs/promises'
+import path from 'node:path'
 import { promisify } from 'node:util'
 import type { ChangedFile, Commit, FileDiff } from '@kando/protocol'
 
@@ -8,6 +10,25 @@ const MAX_COMMITS = 50
 const MAX_DIFF_CHARS = 256 * 1024
 // Large enough for a big diff to be cut on our terms rather than failing inside execFile.
 const MAX_BUFFER = 16 * 1024 * 1024
+
+// Resolve the parent, since deleted files and tracked symlinks still name entries in git.
+async function canonicalFilePath(file: string): Promise<string> {
+  let parent = path.dirname(file)
+  while (true) {
+    const canonical = await realpath(parent).catch(() => null)
+    if (canonical) return path.join(canonical, path.relative(parent, file))
+    const next = path.dirname(parent)
+    if (next === parent) return file
+    parent = next
+  }
+}
+
+export async function changedFileAt(root: string, files: readonly ChangedFile[], file: string): Promise<ChangedFile | undefined> {
+  if (!path.isAbsolute(file)) return files.find((each) => each.path === file)
+  const [canonicalRoot, canonicalFile] = await Promise.all([realpath(root), canonicalFilePath(file)])
+  const relative = path.relative(canonicalRoot, canonicalFile).split(path.sep).join('/')
+  return files.find((each) => each.path === relative)
+}
 
 // --no-optional-locks keeps every read off index.lock, which the agent's own git would trip on.
 export async function git(dir: string, args: readonly string[]): Promise<string> {

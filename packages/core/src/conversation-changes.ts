@@ -1,5 +1,5 @@
 import type { FileDiff, FolderChanges } from '@kando/protocol'
-import { changedFiles, commitsSince, diffOf, gitOrNull } from './git-changes'
+import { changedFileAt, changedFiles, commitsSince, diffOf, gitOrNull } from './git-changes'
 import { Rejection } from './rejection'
 
 // Recorded when a conversation starts, so its later commits can be told apart from older ones.
@@ -25,7 +25,7 @@ export async function folderChanges(folder: string, start: string | null): Promi
 // Only a file the change list names can be read, so the path cannot reach outside the repo.
 export async function folderDiff(folder: string, file: string): Promise<FileDiff> {
   const { changes, root, head } = await inspect(folder, null)
-  const changed = changes.files.find((each) => each.path === file)
+  const changed = root ? await changedFileAt(root, changes.files, file) : undefined
   if (!root || !changed) throw new Rejection('file-not-changed', `${file} has no uncommitted change`)
   return diffOf(root, head, changed)
 }

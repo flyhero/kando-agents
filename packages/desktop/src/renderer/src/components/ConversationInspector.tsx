@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Conversation, FolderChanges } from '@kando/protocol'
-import { usePlans } from '../chat-state'
-import { setConversationInspectorOpen, setConversationInspectorTab, showConversationPlan, useCore } from '../core-store'
+import { pathShortener, usePlans } from '../chat-state'
+import { clearInspectorFile, setConversationInspectorOpen, setConversationInspectorTab, showConversationPlan, showInspectorFile, useCore } from '../core-store'
 import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
@@ -77,7 +77,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
     updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
   }, [conversationId])
   const [refreshCount, setRefreshCount] = useState(0)
-  const [selected, setSelected] = useState<{ project: string; file: string } | null>(null)
+  const selected = useCore((state) => state.inspectorFile?.kind === 'conversation' && state.inspectorFile.id === conversation.id ? state.inspectorFile : null)
   const changes = useFolderChanges(conversation.id, conversation.updatedAt, refreshCount)
   const heads = useProjectHeads({ kind: 'conversation', id: conversation.id }, conversation.updatedAt, refreshCount)
   const fileCount = changes?.reduce((sum, folder) => sum + folder.files.length, 0) ?? 0
@@ -109,13 +109,13 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
         heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
       ) : selected && rpc ? (
         <FileDiffView
-          file={selected.file}
-          loadKey={`${selected.project}\0${selected.file}\0${refreshCount}`}
+          file={pathShortener([selected.project])(selected.file)}
+          loadKey={`${conversation.id}\0${selected.project}\0${selected.file}\0${selected.revision}\0${refreshCount}`}
           load={() => rpc.call('conversations.diff', { id: conversation.id, project: selected.project, file: selected.file })}
-          onBack={() => setSelected(null)}
+          onBack={clearInspectorFile}
         />
       ) : (
-        <ChangeList changes={changes} onOpen={(project, file) => setSelected({ project, file })} />
+        <ChangeList changes={changes} onOpen={(project, file) => showInspectorFile('conversation', conversation.id, project, file)} />
       )}
     </InspectorPanel>
   )

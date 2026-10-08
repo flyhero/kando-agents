@@ -1,5 +1,5 @@
 import type { FileDiff, RepoChanges, TaskRepo } from '@kando/protocol'
-import { changedFiles, commitsSince, diffOf, gitOrNull } from './git-changes'
+import { changedFileAt, changedFiles, commitsSince, diffOf, gitOrNull } from './git-changes'
 import { Rejection } from './rejection'
 
 // Where the task's branch started: the commit Kando recorded when it made the branch, or for a
@@ -31,7 +31,7 @@ export async function repoChanges(repo: TaskRepo): Promise<RepoChanges> {
 // Only a file the change list names can be read, so the path cannot reach outside the worktree.
 export async function fileDiff(repo: TaskRepo, file: string): Promise<FileDiff> {
   const { changes, base } = await inspect(repo)
-  const changed = changes.files.find((each) => each.path === file)
+  const changed = repo.worktreePath ? await changedFileAt(repo.worktreePath, changes.files, file) : undefined
   if (!repo.worktreePath || !base || !changed) throw new Rejection('file-not-changed', `${file} is not among the task's changes`)
   return diffOf(repo.worktreePath, base, changed)
 }

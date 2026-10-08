@@ -51,6 +51,8 @@ describe('conversation changes', () => {
     const changes = await folderChanges(path.join(repo, 'web'), null)
     expect(changes.files.map((file) => file.path)).toEqual(['a.txt', 'web/page.ts'])
     expect((await folderDiff(path.join(repo, 'web'), 'web/page.ts')).diff).toContain('+more')
+    expect((await folderDiff(path.join(repo, 'web'), path.join(repo, 'web', 'page.ts'))).diff).toContain('+more')
+    expect((await folderDiff(path.join(repo, 'web'), path.join(repo, 'a.txt'))).diff).toContain('+changed')
   })
 
   it('shows nothing for a folder outside git, and only new files in a repo with no commit yet', async () => {
@@ -70,5 +72,21 @@ describe('conversation changes', () => {
     expect((await folderDiff(repo, 'a.txt')).diff).toContain('+two')
     await expect(folderDiff(repo, 'web/page.ts')).rejects.toMatchObject({ reason: 'file-not-changed' })
     await expect(folderDiff(repo, '../app/a.txt')).rejects.toMatchObject({ reason: 'file-not-changed' })
+  })
+
+  it('opens absolute paths for changed, new and deleted files without reading outside the repo', async () => {
+    writeFileSync(path.join(repo, 'a.txt'), 'one\ntwo\n')
+    writeFileSync(path.join(repo, 'new.txt'), 'new\n')
+    rmSync(path.join(repo, 'web'), { recursive: true })
+    expect((await folderDiff(repo, path.join(repo, 'a.txt'))).diff).toContain('+two')
+    expect((await folderDiff(repo, path.join(repo, 'new.txt'))).diff).toContain('+new')
+    expect((await folderDiff(repo, path.join(repo, 'web', 'page.ts'))).diff).toContain('-page')
+    await expect(folderDiff(repo, path.join(root, 'a.txt'))).rejects.toMatchObject({ reason: 'file-not-changed' })
+    git('add', '.')
+    git('commit', '-q', '-m', 'commit the changes')
+    await expect(folderDiff(repo, path.join(repo, 'a.txt'))).rejects.toMatchObject({ reason: 'file-not-changed' })
+    writeFileSync(path.join(repo, 'a.txt'), 'another edit\n')
+    git('restore', 'a.txt')
+    await expect(folderDiff(repo, path.join(repo, 'a.txt'))).rejects.toMatchObject({ reason: 'file-not-changed' })
   })
 })

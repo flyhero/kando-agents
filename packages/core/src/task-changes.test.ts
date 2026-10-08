@@ -106,7 +106,12 @@ describe('task changes', () => {
 
     expect((await fileDiff(task, 'a.txt')).diff).toContain('+three')
     expect(await fileDiff(task, 'c.txt')).toMatchObject({ diff: expect.stringContaining('+new file'), truncated: false })
-    await expect(fileDiff(task, 'b.txt')).rejects.toMatchObject({ reason: 'file-not-changed' })
+    expect((await fileDiff(task, path.join(dir, 'a.txt'))).diff).toContain('+three')
+    expect((await fileDiff(task, path.join(dir, 'c.txt'))).diff).toContain('+new file')
+    unlinkSync(path.join(dir, 'b.txt'))
+    expect((await fileDiff(task, path.join(dir, 'b.txt'))).diff).toContain('-bee')
+    await expect(fileDiff(task, path.join(repo, 'a.txt'))).rejects.toMatchObject({ reason: 'file-not-changed' })
+    await expect(fileDiff(task, 'old.txt')).rejects.toMatchObject({ reason: 'file-not-changed' })
     await expect(fileDiff(task, '../app/a.txt')).rejects.toMatchObject({ reason: 'file-not-changed' })
   })
 })

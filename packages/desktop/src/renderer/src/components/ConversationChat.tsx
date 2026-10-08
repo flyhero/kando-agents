@@ -349,7 +349,7 @@ function TurnFold({ foldKey, conversationId, turn, blocks, task, replies, steps,
 }
 
 // The files a finished turn changed, under its answer: three up front, then the rest on demand.
-// Each file opens the turn's work at that file's card; the inspector has them all.
+// Each file opens its current diff in the inspector, where changes are available.
 function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; files: readonly TurnFile[]; turn: TurnItem; reply: { text: string } | null; collapsible: boolean }) {
   const [showAll, setShowAll] = useDisclosure(`changes:${fold}`)
   const folds = useContext(Folds)
@@ -383,7 +383,7 @@ function TurnChanges({ fold, files, turn, reply, collapsible }: { fold: string; 
             const directory = slash === -1 ? '' : path.slice(0, slash + 1)
             const name = slash === -1 ? path : path.slice(slash + 1)
             return (
-              <button key={file.path} type="button" className="chat-changes-file" data-file-path={file.path} title={file.path} onClick={() => folds.reveal(collapsible ? fold : null, file.path)}>
+              <button key={file.path} type="button" className="chat-changes-file" data-file-path={file.path} title={file.path} onClick={() => surface.changes ? surface.showFileChange(file.path) : folds.reveal(collapsible ? fold : null, file.path)}>
                 {file.change !== 'update' && (
                   <span className="chat-changes-kind" data-kind={file.change}>{file.change === 'add' ? '新建' : '删除'}</span>
                 )}

@@ -3,8 +3,10 @@ import { Task, createRpcClient, type Conversation, type RpcConnection } from '@k
 import { actionableItems } from './attention'
 import {
   openAttentionItem, openConversationDraft, openInbox, selectConversation, selectTask, setAttentionOpen,
-  refreshAttentionSummaries, setDashboardOpen, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, useCore
+  refreshAttentionSummaries, setDashboardOpen, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, useCore,
+  clearInspectorFile, showConversationChanges, showInspectorFile, showTaskChanges
 } from './core-store'
+import { conversationSurface } from './components/chat-surface'
 
 const task = Task.parse({ id: 'task', title: 'Review me', details: '', status: 'review', conversationId: 'chat', repos: [], dependsOn: [], agent: 'claude', createdAt: 0, updatedAt: 0 })
 const chat: Conversation = {
@@ -14,6 +16,58 @@ const chat: Conversation = {
 }
 
 beforeEach(() => useCore.setState(useCore.getInitialState(), true))
+
+describe('inspector file navigation', () => {
+  it('opens a conversation file from its chat surface and leaves review on the full list', () => {
+    const conversation = { ...chat, taskId: null, workspacePath: '/project/api', projectPaths: ['/project/api', '/project/web'] }
+    selectConversation(conversation.id)
+    useCore.setState({ conversationInspectorTab: 'branch' })
+    const surface = conversationSurface(conversation)
+    surface.showFileChange('../web/src/app.ts')
+    expect(useCore.getState()).toMatchObject({
+      conversationInspectorOpen: true, conversationInspectorTab: 'changes',
+      inspectorFile: { kind: 'conversation', id: chat.id, project: '/project/web', file: '/project/web/src/app.ts' }
+    })
+    const previous = useCore.getState().inspectorFile?.revision
+    surface.showFileChange('../web/src/app.ts')
+    expect(useCore.getState().inspectorFile?.revision).not.toBe(previous)
+    surface.showChanges()
+    expect(useCore.getState()).toMatchObject({ conversationInspectorOpen: true, conversationInspectorTab: 'changes', inspectorFile: null })
+  })
+
+  it('opens task diffs and clears the selection when returning to the list', () => {
+    useCore.setState({ taskInspectorTab: 'plan', terminalPanelOpen: true })
+    showInspectorFile('task', task.id, '/project', '/wt/a.ts')
+    expect(useCore.getState()).toMatchObject({
+      inspectorOpen: true, taskInspectorTab: 'changes', terminalPanelOpen: false,
+      inspectorFile: { kind: 'task', id: task.id, project: '/project', file: '/wt/a.ts' }
+    })
+    clearInspectorFile()
+    expect(useCore.getState()).toMatchObject({ inspectorOpen: true, inspectorFile: null })
+    showInspectorFile('task', task.id, '/project', 'b.ts')
+    showTaskChanges()
+    expect(useCore.getState().inspectorFile).toBeNull()
+  })
+
+  it('does not carry file selection to a different owner or chat surface', () => {
+    selectTask(task.id)
+    showInspectorFile('task', task.id, '/project', 'a.ts')
+    selectTask(task.id)
+    expect(useCore.getState().inspectorFile?.file).toBe('a.ts')
+    selectTask('another')
+    expect(useCore.getState().inspectorFile).toBeNull()
+    selectConversation(chat.id)
+    showInspectorFile('conversation', chat.id, '/project', 'b.ts')
+    selectConversation('another')
+    expect(useCore.getState().inspectorFile).toBeNull()
+    showInspectorFile('conversation', 'another', '/project', 'b.ts')
+    selectTask(task.id)
+    expect(useCore.getState().inspectorFile).toBeNull()
+    showInspectorFile('conversation', chat.id, '/project', 'b.ts')
+    showConversationChanges()
+    expect(useCore.getState().inspectorFile).toBeNull()
+  })
+})
 
 describe('attention navigation', () => {
   it('closes every other main page when the aggregate opens', () => {

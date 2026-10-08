@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { checkChatResume, shortTaskId, type Task } from '@kando/protocol'
 import { usePlans, type PlanItem } from '../chat-state'
-import { loadConversation, perform, showBrowserPanel, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore, useWireLogShown } from '../core-store'
+import { loadConversation, perform, showBrowserPanel, showInspectorFile, showTaskChanges, showTaskPlan, useChatOptionsSupported, useCore, useWireLogShown } from '../core-store'
+import { locateInspectorFile } from '../inspector-file'
 import { AGENT_LABEL, reasonText, STATUS_LABEL } from '../labels'
 import { usePreferences } from '../preferences'
 import { waitingOn } from '../task-waiting'
@@ -35,6 +36,13 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
     inspector: 'task',
     showPlan: showTaskPlan,
     showChanges: showTaskChanges,
+    showFileChange: (path) => {
+      const conversation = task.conversationId ? useCore.getState().conversations[task.conversationId] : undefined
+      if (!conversation) return
+      const projects = task.repos.flatMap((repo) => repo.worktreePath ? [{ project: repo.path, folder: repo.worktreePath }] : [])
+      const found = locateInspectorFile(path, conversation.workspacePath, projects)
+      if (found) showInspectorFile('task', task.id, found.project, found.file)
+    },
     showBrowser: () => showBrowserPanel(task.conversationId),
     changes: task.repos.some((repo) => repo.worktreePath !== null) ? { kind: 'task', id: task.id } : null,
     changesHint: '任务 worktree 里还没提交的改动；点开检查器看',

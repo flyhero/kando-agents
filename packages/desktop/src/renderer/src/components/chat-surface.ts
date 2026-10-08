@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react'
 import type { ChatItem, Conversation } from '@kando/protocol'
 import type { PlanItem } from '../chat-state'
-import { showBrowserPanel, showConversationChanges, showConversationPlan } from '../core-store'
+import { showBrowserPanel, showConversationChanges, showConversationPlan, showInspectorFile } from '../core-store'
+import { locateInspectorFile } from '../inspector-file'
 import type { BranchTarget } from './BranchStatus'
 import { continueConversation } from './ConversationActions'
 
@@ -13,6 +14,7 @@ export type ChatSurface = {
   // The side panel on a plan (by item key; null for the newest), or on the changes.
   showPlan(key: string | null): void
   showChanges(): void
+  showFileChange(path: string): void
   // The browser panel, on this conversation's tab.
   showBrowser(): void
   // Whose uncommitted changes the chip counts, and what the chip says of them; null for none.
@@ -48,6 +50,10 @@ export function conversationSurface(conversation: Conversation, handoff: (() => 
     inspector: 'conversation',
     showPlan: showConversationPlan,
     showChanges: showConversationChanges,
+    showFileChange: (path) => {
+      const found = locateInspectorFile(path, conversation.workspacePath, conversation.projectPaths.map((folder) => ({ project: folder, folder })))
+      if (found) showInspectorFile('conversation', conversation.id, found.project, found.file)
+    },
     showBrowser: () => showBrowserPanel(conversation.id),
     changes: conversation.projectPaths.length > 0 ? { kind: 'conversation', id: conversation.id } : null,
     changesHint: '项目里还没提交的改动，也可能有你自己的；点开检查器看',
