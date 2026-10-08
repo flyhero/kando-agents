@@ -1,7 +1,8 @@
-import { useEffect, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { addQuote, useQuotes } from '../chat-quotes'
 import { selectedTextIn, type SelectedText } from '../text-selection'
+import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { CommentAddIcon } from './icons'
 
 // Where each comment's passage lies in the plan, by quote id, for its highlight. A range lasts
@@ -13,6 +14,12 @@ const DRAFT = 'kando-plan-draft'
 const BOX_WIDTH = 300
 const BOX_HEIGHT = 48
 const COMMENTED = 'kando-plan-comments'
+
+type SelectionMenu = { at: MenuPoint; text: string }
+
+function containsPoint(range: Range, x: number, y: number): boolean {
+  return [...range.getClientRects()].some((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
+}
 
 function mark(name: string, ranges: readonly Range[]): void {
   if (typeof CSS === 'undefined' || !('highlights' in CSS)) return
@@ -26,6 +33,8 @@ function mark(name: string, ranges: readonly Range[]): void {
 export function PlanComments({ conversationId, planKey, body }: { conversationId: string; planKey: string; body: RefObject<HTMLElement | null> }) {
   const [draft, setDraft] = useState<SelectedText | null>(null)
   const [comment, setComment] = useState('')
+  const [menu, setMenu] = useState<SelectionMenu | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
   const quotes = useQuotes(conversationId)
 
   // A new selection opens the box; with the box open, the focus in it must not close it.
@@ -47,6 +56,22 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     }
   }, [body, draft])
 
+  // The comment input takes focus after a selection, so the browser's live selection may no
+  // longer be available on a later right-click. The cloned range still identifies the passage.
+  useEffect(() => {
+    const element = body.current
+    if (!element) return
+    const open = (event: MouseEvent) => {
+      const selected = selectedTextIn(element, '.chat-plan-body')
+      const picked = selected ?? (draft && containsPoint(draft.range, event.clientX, event.clientY) ? draft : null)
+      if (!picked) return
+      event.preventDefault()
+      setMenu({ at: { x: event.clientX, y: event.clientY }, text: picked.text })
+    }
+    element.addEventListener('contextmenu', open)
+    return () => element.removeEventListener('contextmenu', open)
+  }, [body, draft])
+
   useEffect(() => {
     mark(DRAFT, draft ? [draft.range] : [])
     return () => mark(DRAFT, [])
@@ -66,7 +91,8 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     if (!draft) return
     const close = () => setDraft(null)
     const outside = (event: PointerEvent) => {
-      if (!(event.target instanceof Element && event.target.closest('.plan-comment-box'))) close()
+      if (event.button === 2 && containsPoint(draft.range, event.clientX, event.clientY)) return
+      if (!(event.target instanceof Element && event.target.closest('.plan-comment-box, .context-menu'))) close()
     }
     const element = body.current
     document.addEventListener('pointerdown', outside, true)
@@ -79,8 +105,8 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     }
   }, [draft, body])
 
-  if (!draft) return null
   const add = () => {
+    if (!draft) return
     const id = addQuote(conversationId, planKey, draft.text, comment)
     if (id) passages.set(id, draft.range)
     document.getSelection()?.removeAllRanges()
@@ -90,33 +116,48 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
   // window has no room below.
   const panel = body.current?.closest('.side-panel')?.getBoundingClientRect()
   const half = BOX_WIDTH / 2 + 8
-  const left = Math.min(Math.max(draft.x, (panel?.left ?? 0) + half), (panel?.right ?? window.innerWidth) - half)
-  const passage = draft.range.getBoundingClientRect()
-  const above = passage.bottom + BOX_HEIGHT + 16 > window.innerHeight
-  return createPortal(
-    <div className="plan-comment-box" data-above={above || undefined} style={{ left, top: above ? passage.top : passage.bottom }} role="dialog" aria-label="评论这段计划">
-      <input
-        className="plan-comment-input"
-        autoFocus
-        value={comment}
-        placeholder="评论这段，回车保存"
-        aria-label="评论"
-        onChange={(event) => setComment(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            add()
-          } else if (event.key === 'Escape') {
-            event.preventDefault()
-            setDraft(null)
-          }
-        }}
-      />
-      <button type="button" className="plan-comment-save" aria-label="保存评论" data-tooltip="保存评论（Enter）" data-tooltip-side="top-end" onClick={add}>
-        <CommentAddIcon />
-      </button>
-    </div>,
-    document.body
+  const left = draft ? Math.min(Math.max(draft.x, (panel?.left ?? 0) + half), (panel?.right ?? window.innerWidth) - half) : 0
+  const passage = draft?.range.getBoundingClientRect()
+  const above = passage ? passage.bottom + BOX_HEIGHT + 16 > window.innerHeight : false
+  return (
+    <>
+      {draft && passage && createPortal(
+        <div className="plan-comment-box" data-above={above || undefined} style={{ left, top: above ? passage.top : passage.bottom }} role="dialog" aria-label="评论这段计划">
+          <input
+            className="plan-comment-input"
+            autoFocus={!menu}
+            value={comment}
+            placeholder="评论这段，回车保存"
+            aria-label="评论"
+            onChange={(event) => setComment(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                add()
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                setDraft(null)
+              }
+            }}
+          />
+          <button type="button" className="plan-comment-save" aria-label="保存评论" data-tooltip="保存评论（Enter）" data-tooltip-side="top-end" onClick={add}>
+            <CommentAddIcon />
+          </button>
+        </div>,
+        document.body
+      )}
+      {menu && (
+        <ContextMenu at={menu.at} label="所选计划文字" onClose={closeMenu}>
+          <MenuItem
+            label="复制"
+            onSelect={() => {
+              closeMenu()
+              void navigator.clipboard.writeText(menu.text).catch(() => {})
+            }}
+          />
+        </ContextMenu>
+      )}
+    </>
   )
 }
