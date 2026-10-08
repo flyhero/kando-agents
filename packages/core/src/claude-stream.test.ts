@@ -221,6 +221,7 @@ describe('ClaudeStream state', () => {
     expect(answer).toMatchObject({ response: { response: { behavior: 'allow', updatedPermissions: [{ type: 'setMode', mode: 'bypassPermissions', destination: 'session' }] } } })
     driver.apply({ dir: 'out', at: 1, frame: answer })
     expect(ofKind(driver.items.list(), 'approval').at(-1)).toMatchObject({ resolution: 'allowedForSession', mode: 'bypass' })
+    expect(stateOf(driver)?.permissionMode).toBe('bypass')
   })
 
   it('records the mode a recorded plan was carried out in', () => {

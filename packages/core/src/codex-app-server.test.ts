@@ -372,8 +372,8 @@ describe('CodexAppServer commands', () => {
   }
 
   // A thread in plan mode whose first turn ended with a plan.
-  const planned = () => {
-    const driver = new CodexAppServer('stage-1', OPTIONS)
+  const planned = (options = OPTIONS) => {
+    const driver = new CodexAppServer('stage-1', options)
     handshake(driver, 'thread-1', { model: 'gpt-x', reasoningEffort: 'low' })
     expect(driver.setOption('permissionMode', 'plan')).toEqual([])
     driver.apply({ dir: 'option', at, option: 'permissionMode', value: 'plan' })
@@ -525,6 +525,22 @@ describe('CodexAppServer commands', () => {
     driver.apply({ dir: 'in', at, frame: { method: 'turn/completed', params: { turn: { id: 'turn-2', status: 'completed', error: null } } } })
     // Out of plan mode, later turns say nothing of it.
     expect(driver.send('next').wire).not.toHaveProperty('params.collaborationMode')
+  })
+
+  it('carries a plan out in the explicitly picked bypass mode', () => {
+    const plain = planned().driver
+    expect(() => plain.respond('plan:p1', { decision: 'allowForSession', mode: 'bypass' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+    expect(() => plain.respond('plan:p1', { decision: 'allow', mode: 'plan' })).toThrow(expect.objectContaining({ reason: 'chat-option-invalid' }))
+
+    const { driver } = planned({ ...OPTIONS, allowBypass: true })
+    const [execute] = driver.respond('plan:p1', { decision: 'allowForSession', mode: 'bypass' })
+    expect(execute).toMatchObject({
+      method: 'turn/start',
+      params: { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' }, collaborationMode: { mode: 'default' } }
+    })
+    driver.apply({ dir: 'out', at, frame: execute, ref: 'ref-2' })
+    expect(driver.items.get('a:plan:p1')).toMatchObject({ resolution: 'allowedForSession', mode: 'bypass' })
+    expect(modeOf(driver)).toBe('bypass')
   })
 
   it('sends a plan back with a note, takes a message as more planning, and lets it go on exit', () => {

@@ -1270,6 +1270,7 @@ export class ClaudeStream implements ChatDriver {
       const setsMode = z.array(z.looseObject({ mode: z.string().optional() })).catch([]).parse(answered.data.updatedPermissions ?? [])
       const named = setsMode.find((update) => update.mode)?.mode
       const mode = ChatPermissionMode.safeParse(named ? PERMISSION_MODES[named] ?? named : 'ask')
+      if (mode.success) this.permissionMode = mode.data
       // Older clients read only the resolution: anything freer than asking reads as going ahead.
       this.resolve(requestId, mode.success && mode.data !== 'ask' ? 'allowedForSession' : 'allowed', null, at, mode.success ? mode.data : null)
     } else if (answered.data.behavior === 'allow') {

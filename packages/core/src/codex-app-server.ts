@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { browserToolKind, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatItem, type ChatModel, type ChatOption, type ChatQuestion, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { browserToolKind, ChatPermissionMode, CODEX_IMAGE_VIEW, CONTEXT_COMPACTED, takeImageMarkers, type ChatDecision, type ChatDiff, type ChatImage, type ChatItem, type ChatModel, type ChatOption, type ChatQuestion, type ChatTodo, type ChatToolStatus, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { choiceDecisions, codexAnswerAllows, codexChoiceOf, codexChoices, type CodexChoice } from './approval-choices'
 import { describeBrowserTool, showBrowserInput } from './browser-tools'
 import { keepImageBlocks, markKeptImages, stripImageBytes } from './image-frames'
@@ -633,7 +633,11 @@ export class CodexAppServer implements ChatDriver {
       }
       // Its checkout stays read-only however the plan is answered.
       if (this.options.planOnly) throw new Rejection('plan-only', 'this stage may only plan')
-      return [this.turnStart(this.threadId, '按这个计划开始执行。', answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')]
+      const mode = answer.mode ?? (answer.decision === 'allowForSession' ? 'acceptEdits' : 'ask')
+      if (mode === PLAN_MODE || !this.state.current.permissionModes.includes(mode)) {
+        throw new Rejection('chat-option-invalid', `this stage offers no permission mode ${mode} to carry out a plan in`)
+      }
+      return [this.turnStart(this.threadId, '按这个计划开始执行。', mode)]
     }
     return [{ id: pending.rawId, result: this.answerBody(pending, answer) }]
   }
@@ -1384,8 +1388,9 @@ export class CodexAppServer implements ChatDriver {
       this.chosen.permissionMode = mode
       this.showMode(mode)
     }
-    const resolution = this.planning ? 'denied' : mode === 'acceptEdits' ? 'allowedForSession' : 'allowed'
-    plans.forEach((requestId) => this.resolve(requestId, resolution, null, at))
+    const resolution = this.planning ? 'denied' : mode === 'ask' ? 'allowed' : 'allowedForSession'
+    const carriedOutIn = ChatPermissionMode.safeParse(mode)
+    plans.forEach((requestId) => this.resolve(requestId, resolution, null, at, null, carriedOutIn.success ? carriedOutIn.data : null))
   }
 
   private resolve(
@@ -1393,7 +1398,8 @@ export class CodexAppServer implements ChatDriver {
     resolution: 'allowed' | 'allowedForSession' | 'denied' | 'cancelled' | 'answered',
     answers: Record<string, string[]> | null,
     at: number,
-    chosen: string | null = null
+    chosen: string | null = null,
+    mode: ChatPermissionMode | null = null
   ): void {
     const pending = this.pending.get(requestId)
     if (!pending) return
@@ -1402,7 +1408,7 @@ export class CodexAppServer implements ChatDriver {
     if (item?.kind === 'question') {
       this.items.put({ ...item, answers, resolution: resolution === 'answered' ? 'answered' : 'cancelled' }, at)
     } else if (item?.kind === 'approval') {
-      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution, ...(item.choices ? { chosen } : {}) }, at)
+      this.items.put({ ...item, resolution: resolution === 'answered' ? 'allowed' : resolution, ...(item.choices ? { chosen } : {}), ...(mode ? { mode } : {}) }, at)
     }
   }
 
