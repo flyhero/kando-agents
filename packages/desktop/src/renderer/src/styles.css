@@ -7410,24 +7410,6 @@ body.side-panel-resizing * {
 .environment-notice > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .environment-notice-action { font-weight: 600; }
 
-.environment-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  font-size: 13px;
-}
-.environment-summary[data-level='ok'] { color: var(--status-done); }
-.environment-summary[data-level='warning'] { color: var(--warning); }
-.environment-summary[data-level='danger'] { color: var(--danger); }
-.environment-summary .button { display: inline-flex; align-items: center; gap: 4px; }
-.environment-summary .button svg { width: 14px; height: 14px; }
-
-.environment-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .environment-pill {
   padding: 0 6px;
   border-radius: 4px;
@@ -7438,9 +7420,8 @@ body.side-panel-resizing * {
 .environment-pill[data-level='ok'] { background: color-mix(in srgb, var(--status-done) 14%, transparent); color: var(--status-done); }
 .environment-pill[data-level='warning'] { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
 .environment-pill[data-level='danger'] { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
-.environment-path { word-break: break-all; }
 
-/* Settings › 智能体: the agents found here, each on until turned off. */
+/* Settings › 智能体: every agent in one place, grouped by what Kando can do with it. */
 .agent-list { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .agent-list-head { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
 .agent-list-title { font-weight: 600; }
@@ -7454,6 +7435,14 @@ body.side-panel-resizing * {
 }
 .agent-list-refresh { margin-left: auto; }
 .agent-list-refresh svg { width: 14px; height: 14px; }
+.agent-group { margin-top: 12px; }
+.agent-group-head { display: flex; align-items: center; gap: 8px; padding-bottom: 2px; }
+.agent-group-title { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.agent-row-version { color: var(--text-muted); font-size: 12px; }
+.agent-row[data-off] .agent-row-head .settings-row-label { color: var(--text-muted); }
+/* Settings › 关于: Git's status, and how to install it when it is missing. */
+.git-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.git-status .environment-fix { margin: 0; }
 
 /* Settings › 聊天字体: the presets, then the installed family picked, each listed in itself. */
 .font-picker-control { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }

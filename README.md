@@ -72,9 +72,9 @@ pnpm dev:desktop
 
 ### 环境检查
 
-core 启动后会在自己的 PATH 里找 `git`、`claude` 和 `codex`，问一下版本，再看 Claude Code 和 Codex 有没有登录（只读本机的凭据文件，不访问网络）。找不到 Git、两个 Agent 一个都没装或都没登录时，左侧列表上方会有一条红色提醒，点开是 设置 → 环境：每个工具装没装、什么版本、从哪个路径找到的、登没登录，没装或没登录的给出要敲的命令，可以直接复制；装好或登录后点「重新检查」。只装一个 Agent 不算问题：新建任务、新会话和「默认 Agent」设置只列出装了的，没装的不能移交过去；已有任务选的 Agent 不在时仍然显示，标为「未安装」。页面底部列出 core 找工具用的目录：装在别处的，把它所在的目录加进登录 shell 的 PATH，再重启 Kando（打包的 App 启动 core 时用的就是登录 shell 的 PATH）。Windows 上 CLI 是 `.cmd` 垫片，只能看到装没装，问不到版本。
+core 启动后会在自己的 PATH 里找 `git`、`claude` 和 `codex`，问一下版本，再看 Claude Code 和 Codex 有没有登录（只读本机的凭据文件，不访问网络）。找不到 Git、两个 Agent 一个都没装或都没登录时，左侧列表上方会有一条红色提醒：Agent 的问题点开是 设置 → 智能体，Git 的问题点开是 设置 → 关于。「智能体」里所有 Agent 都在一处，分三组：「已安装」的每个显示版本（悬停看路径）、登没登录和启用开关，没登录的给出登录命令；「可安装」是 Kando 能运行但这台电脑没装的，变灰并给出安装命令；「暂未支持」见下段。命令都可以直接复制，装好或登录后点「重新检测」。「关于」里的 Git 一行显示版本和路径，没装时给出安装命令。只装一个 Agent 不算问题：新建任务、新会话和「默认 Agent」设置只列出装了的，没装的不能移交过去；已有任务选的 Agent 不在时仍然显示，标为「未安装」。「智能体」底部可以展开 core 找命令用的目录：装在别处的，把它所在的目录加进登录 shell 的 PATH，再重启 Kando（打包的 App 启动 core 时用的就是登录 shell 的 PATH）。Windows 上 CLI 是 `.cmd` 垫片，只能看到装没装，问不到版本。
 
-设置 → 智能体里的「已安装」还会显示 Kando 认识、但尚未接入聊天的 Agent：从 core 当前的 PATH 查找已知 CLI，并在 macOS 的 `/Applications` 和 `~/Applications` 查找已知应用。Cursor 应用和 `cursor-agent` 命令会合并成一项，各自标明安装位置；仅有应用也会显示。找到 CLI 后会限时执行 `--version`，分别显示命令已响应、版本检测失败或 Windows 命令垫片无法直接验证；这不检查登录，也不代表 Kando 已支持该 CLI 的聊天协议。每 5 分钟自动复查，也能手动「重新检测」；新增 PATH 目录仍需重启 Kando，才能让 core 和 daemon 都用到它。未接入的 Agent 标为「暂未支持」，不能选来运行任务或会话。新增产品时在 `packages/core/src/environment-check.ts` 的发现清单里登记可辨认的命令或应用名。
+设置 → 智能体里的「暂未支持」显示 Kando 认识、但尚未接入聊天的 Agent：从 core 当前的 PATH 查找已知 CLI，并在 macOS 的 `/Applications` 和 `~/Applications` 查找已知应用。Cursor 应用和 `cursor-agent` 命令会合并成一项，各自标明安装位置；仅有应用也会显示。找到 CLI 后会限时执行 `--version`，分别显示命令已响应、版本检测失败或 Windows 命令垫片无法直接验证；这不检查登录，也不代表 Kando 已支持该 CLI 的聊天协议。每 5 分钟自动复查，也能手动「重新检测」；新增 PATH 目录仍需重启 Kando，才能让 core 和 daemon 都用到它。未接入的 Agent 标为「暂未支持」，不能选来运行任务或会话。新增产品时在 `packages/core/src/environment-check.ts` 的发现清单里登记可辨认的命令或应用名。
 
 ### Agent 并发
 

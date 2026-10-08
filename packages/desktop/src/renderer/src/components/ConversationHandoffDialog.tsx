@@ -28,8 +28,8 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
     return <dialog ref={dialog} className="modal" onCancel={(event) => { event.preventDefault(); onClose() }}>
       <div className="modal-body">
         <header className="modal-header"><h2>没有可以移交的 Agent</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={onClose}>×</button></header>
-        <p className="muted">这台电脑上只找到了 {AGENT_LABEL[conversation.agent]}。装好另一个 agent 后，在 设置 → 环境 里重新检查，就可以移交了。</p>
-        <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>关闭</button><button type="button" className="button primary" onClick={() => { onClose(); setSettingsOpen(true, 'environment') }}>打开环境检查</button></footer>
+        <p className="muted">这台电脑上只找到了 {AGENT_LABEL[conversation.agent]}。装好另一个 Agent 后，在 设置 → 智能体 里重新检测，就可以移交了。</p>
+        <footer className="modal-footer"><button type="button" className="button ghost" onClick={onClose}>关闭</button><button type="button" className="button primary" onClick={() => { onClose(); setSettingsOpen(true, 'agents') }}>打开智能体设置</button></footer>
       </div>
     </dialog>
   }

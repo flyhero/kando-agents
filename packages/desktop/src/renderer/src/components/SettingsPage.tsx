@@ -23,13 +23,13 @@ import {
   GlobeIcon,
   InboxIcon,
   InfoIcon,
-  PulseIcon,
   SearchIcon,
   SparkIcon
 } from './icons'
 import { AgentStatsSettings } from './AgentStatsSettings'
 import { ChatCommandSettings } from './ChatCommandSettings'
-import { EnvironmentSettings } from './EnvironmentSettings'
+import { CopyButton } from './CopyButton'
+import { checkStatusText, INSTALL_HINT } from '../environment-text'
 import { settingsSectionOf } from './SourceInboxView'
 import { SourceSettingsSection } from './SourceSettingsSection'
 import { projectName } from './ProjectPicker'
@@ -397,6 +397,30 @@ function DebugSettings() {
 
 const CONNECTION_TEXT = { connected: '已连接', connecting: '连接中…', 'waiting-for-core': '等待 core 启动' } as const
 
+// Not an agent, but every task needs it for its worktree: what core found, and how to install it.
+function GitRow() {
+  const git = useCore((s) => s.environment?.checks.find((check) => check.tool === 'git'))
+  if (!git) return null
+  const missing = git.status === 'missing'
+  return (
+    <SettingsRow
+      label="Git"
+      description={missing ? '每个任务在自己的 worktree 里执行，没有 Git 就建不了。' : (git.path ?? undefined)}
+      control={() => (
+        <span className="git-status">
+          <span className="environment-pill" data-level={missing ? 'danger' : 'ok'}>{checkStatusText(git)}</span>
+          {missing && (
+            <span className="environment-fix">
+              <code>{INSTALL_HINT.git}</code>
+              <CopyButton text={INSTALL_HINT.git} label="复制命令" />
+            </span>
+          )}
+        </span>
+      )}
+    />
+  )
+}
+
 function AboutSettings() {
   const connection = useCore((s) => s.connection)
   const shortcuts = [
@@ -425,6 +449,7 @@ function AboutSettings() {
           </span>
         )}
       />
+      <GitRow />
       {shortcuts.map(([label, keys]) => (
         <SettingsRow key={label} label={label} control={() => <kbd className="settings-kbd">{keys}</kbd>} />
       ))}
@@ -475,8 +500,8 @@ const SECTIONS: readonly Section[] = [
     id: 'agents',
     group: '任务',
     title: '智能体',
-    description: '这台电脑上检测到的 Agent，以及新建和执行任务、开始会话时它们的默认行为。',
-    keywords: ['agent', '默认', '已安装', '检测', '启用', '禁用', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
+    description: '这台电脑上的 Agent：装没装、什么版本、登没登录，没装或没登录的给出要敲的命令；以及新建和执行任务、开始会话时它们的默认行为。',
+    keywords: ['agent', '默认', '已安装', '未安装', '安装', '登录', '版本', '检测', '环境', '检查', 'path', '找不到', '启用', '禁用', 'claude', 'codex', '执行', '聊天', '会话', '任务', '规划', '预约', '无人值守'],
     Icon: SparkIcon,
     Body: AgentSettings
   },
@@ -502,8 +527,8 @@ const SECTIONS: readonly Section[] = [
     id: 'about',
     group: '其他',
     title: '关于',
-    description: '项目地址、版本、连接状态与快捷键。',
-    keywords: ['项目地址', 'GitHub', '仓库', '版本', '协议', '连接', 'core', '快捷键'],
+    description: '项目地址、版本、连接状态、Git 与快捷键。',
+    keywords: ['项目地址', 'GitHub', '仓库', '版本', '协议', '连接', 'core', 'git', '环境', '快捷键'],
     Icon: InfoIcon,
     Body: AboutSettings
   }
@@ -518,17 +543,6 @@ const CHAT_COMMANDS_SECTION: Section = {
   keywords: ['命令', '斜杠', '/', '提示词', '模板', 'prompt', '聊天', '会话', '快捷'],
   Icon: ChatIcon,
   Body: ChatCommandSettings
-}
-
-// On a core that looks: what it found of git and the agent CLIs, and how to put a missing one there.
-const ENVIRONMENT_SECTION: Section = {
-  id: 'environment',
-  group: '其他',
-  title: '环境',
-  description: 'Kando 要用到的命令行工具：Git、Claude Code、Codex，装没装、什么版本、登没登录。新建任务和新会话只会列出装了的 Agent。装好或登录后点「重新检查」。',
-  keywords: ['环境', '检查', '安装', '登录', 'git', 'claude', 'codex', '版本', 'path', '找不到', '未安装'],
-  Icon: PulseIcon,
-  Body: EnvironmentSettings
 }
 
 // On a core that keeps a wire log: whether it does, and what it holds.
@@ -574,15 +588,14 @@ function matches(section: Section, needle: string): boolean {
 export function SettingsPage() {
   const sources = useCore((s) => s.sources)
   const browser = useBrowserSupported()
-  const environment = useCore((s) => s.environment !== null)
   const chatCommands = useChatCommandsSupported()
   const wireLog = useWireLogSupported()
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
     const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify()))
       .flatMap((section) => (section.id === 'agents' && chatCommands ? [section, CHAT_COMMANDS_SECTION] : [section]))
-    return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(environment ? [ENVIRONMENT_SECTION] : []), ...(wireLog ? [DEBUG_SECTION] : []), ...about]
-  }, [sources, browser, environment, chatCommands, wireLog])
+    return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(wireLog ? [DEBUG_SECTION] : []), ...about]
+  }, [sources, browser, chatCommands, wireLog])
   const [activeId, setActiveId] = useState(() => useCore.getState().settingsSection ?? SECTIONS[0]?.id ?? '')
   const [query, setQuery] = useState('')
   const needle = query.trim().toLowerCase()

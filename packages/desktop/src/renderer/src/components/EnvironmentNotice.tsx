@@ -4,14 +4,15 @@ import { problemText } from '../environment-text'
 import { PulseIcon } from './icons'
 
 // Shown over the lists while nothing can run: a missing git or agent is found out at the first
-// start otherwise, as an agent that fails. Clicking goes to the check, which says what to type.
+// start otherwise, as an agent that fails. Clicking goes to where it is fixed, which says what to
+// type: 关于 for Git, 智能体 for the agents.
 export function EnvironmentNotice() {
   const environment = useCore((s) => s.environment)
   if (!environment) return null
   const blocking = environmentProblems(environment).filter(blocksEverything)
   if (blocking.length === 0) return null
   return (
-    <button type="button" className="environment-notice" onClick={() => setSettingsOpen(true, 'environment')}>
+    <button type="button" className="environment-notice" onClick={() => setSettingsOpen(true, blocking[0]!.code === 'git-missing' ? 'about' : 'agents')}>
       <PulseIcon />
       <span>{problemText(blocking[0]!)}</span>
       <span className="environment-notice-action">查看</span>
