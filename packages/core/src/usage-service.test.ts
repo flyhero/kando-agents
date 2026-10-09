@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentUsage, UsageWindow } from '@kando/protocol'
-import { UsageService } from './usage-service'
+import { readableUsage, UsageService } from './usage-service'
 import { UsageFetchError, type UsageReading } from './usage-source'
 
 const window: UsageWindow = { kind: 'session', model: null, usedPercent: 40, windowMinutes: 300, resetsAt: null }
@@ -120,5 +120,20 @@ describe('UsageService.report', () => {
     await service.refresh()
     expect(reads).toBe(1)
     expect(events.filter((e) => e.agent === 'claude')).toHaveLength(1)
+  })
+})
+
+describe('readableUsage', () => {
+  const monthly: UsageWindow = { kind: 'monthly', model: null, usedPercent: 9, windowMinutes: 43_200, resetsAt: null }
+  const entry = (agent: AgentUsage['agent'], windows: UsageWindow[]): AgentUsage => ({ agent, status: 'ok', windows, plan: null, error: null, updatedAt: 0, resetCredits: null })
+  const list = [entry('claude', [window]), entry('cursor', [monthly])]
+
+  it("keeps a reading in a kind the client never named from it, and remembers what it named", () => {
+    const older = new Set(['session', 'weekly'])
+    expect(readableUsage(older, undefined, list).map((e) => e.agent)).toEqual(['claude'])
+    const newer = new Set(['session', 'weekly'])
+    expect(readableUsage(newer, ['session', 'weekly', 'monthly'], list).map((e) => e.agent)).toEqual(['claude', 'cursor'])
+    // A later call that names nothing (usage.refresh from the same client) keeps what it named.
+    expect(readableUsage(newer, undefined, list).map((e) => e.agent)).toEqual(['claude', 'cursor'])
   })
 })

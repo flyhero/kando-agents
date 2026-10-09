@@ -35,10 +35,11 @@ export class UsageFetchError extends Error {
 
 const TIMEOUT_MS = 10_000
 
-export async function fetchUsageJson(url: string, headers: Record<string, string>): Promise<unknown> {
+// A body makes it a POST, as an RPC-style endpoint wants.
+export async function fetchUsageJson(url: string, headers: Record<string, string>, body?: string): Promise<unknown> {
   let response: Response
   try {
-    response = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) })
+    response = await fetch(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS), ...(body === undefined ? {} : { method: 'POST', body }) })
   } catch (error) {
     throw new UsageFetchError('request-failed', error instanceof Error ? error.message : String(error))
   }

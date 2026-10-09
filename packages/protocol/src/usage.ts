@@ -1,9 +1,13 @@
 import { z } from 'zod'
 import { AgentKind } from './task'
 
-// session: the rolling 5-hour window · weekly: the 7-day window
-export const USAGE_WINDOW_KINDS = ['session', 'weekly'] as const
+// session: the rolling 5-hour window · weekly: the 7-day window · monthly: a billing month (Cursor).
+// A client names the kinds it reads (usage.list); core sends it no reading with another, since an
+// older client fails to parse the whole list over one unknown kind.
+export const USAGE_WINDOW_KINDS = ['session', 'weekly', 'monthly'] as const
 export const UsageWindowKind = z.enum(USAGE_WINDOW_KINDS)
+// What a client that names no kinds reads.
+export const LEGACY_USAGE_WINDOW_KINDS: readonly string[] = ['session', 'weekly']
 export type UsageWindowKind = z.infer<typeof UsageWindowKind>
 
 export const UsageWindow = z.object({
@@ -51,6 +55,10 @@ export const AgentUsage = z.object({
   resetCredits: ResetCredits.nullable().default(null)
 })
 export type AgentUsage = z.infer<typeof AgentUsage>
+
+export function usageReadable(kinds: ReadonlySet<string>, usage: AgentUsage): boolean {
+  return usage.windows.every((window) => kinds.has(window.kind))
+}
 
 export type UsageLevel = 'normal' | 'warning' | 'critical'
 

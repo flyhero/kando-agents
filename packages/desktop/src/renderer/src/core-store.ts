@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import {
   RpcError,
+  USAGE_WINDOW_KINDS,
   connectRpc,
   coreUrl,
   type AgentKind,
@@ -557,7 +558,7 @@ function byAgent(usage: AgentUsage[]): Partial<Record<AgentKind, AgentUsage>> {
 }
 
 export async function refreshUsage(): Promise<void> {
-  const usage = await perform((rpc) => rpc.call('usage.refresh', {}))
+  const usage = await perform((rpc) => rpc.call('usage.refresh', { windowKinds: [...USAGE_WINDOW_KINDS] }))
   if (usage) {
     useCore.setState({ usage: byAgent(usage) })
   }
@@ -852,7 +853,7 @@ export function startCoreConnection(): void {
         } catch (error) {
           summaryError = error instanceof Error ? error.message : String(error)
         }
-        const usage = await rpc.call('usage.list', {}).catch(() => null)
+        const usage = await rpc.call('usage.list', { windowKinds: [...USAGE_WINDOW_KINDS] }).catch(() => null)
         const sources = await rpc.call('sources.list', {})
         const inboxes = await rpc.call('sources.inbox', {})
         const terminals = await rpc.call('terminals.list', {}).catch(() => [])

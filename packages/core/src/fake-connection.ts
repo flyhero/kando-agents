@@ -1,4 +1,4 @@
-import { rpcNotificationSchemas, type RpcNotificationName, type RpcNotificationParams } from '@kando/protocol'
+import { LEGACY_USAGE_WINDOW_KINDS, rpcNotificationSchemas, type RpcNotificationName, type RpcNotificationParams } from '@kando/protocol'
 import type { FlowOwner } from './source-login-flow'
 
 // A client connection for tests: records what core sends it, and can be closed.
@@ -7,6 +7,7 @@ export type FakeConnection = FlowOwner & {
   watching: Set<string>
   browsing: Set<string>
   wiring: Set<string>
+  usageKinds: Set<string>
   notes: { name: RpcNotificationName; params: unknown }[]
   close(): void
   // The latest notification of one kind, read back through its schema.
@@ -21,6 +22,7 @@ export function fakeConnection(): FakeConnection {
     watching: new Set(),
     browsing: new Set(),
     wiring: new Set(),
+    usageKinds: new Set(LEGACY_USAGE_WINDOW_KINDS),
     notes,
     notify: (name, params) => {
       notes.push({ name, params })

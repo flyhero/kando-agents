@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { QUOTA_STALE_MS, quotaVerdict, tightestWindow, usageLevel, type AgentUsage, type UsageWindow } from './usage'
+import { LEGACY_USAGE_WINDOW_KINDS, QUOTA_STALE_MS, quotaVerdict, tightestWindow, usageLevel, usageReadable, type AgentUsage, type UsageWindow } from './usage'
 
 const window = (usedPercent: number, extra: Partial<UsageWindow> = {}): UsageWindow => ({
   kind: 'weekly',
@@ -74,5 +74,15 @@ describe('quotaVerdict', () => {
     expect(quotaVerdict(usage([window(10)], { status: 'error' }), NOW).stale).toBe(true)
     expect(quotaVerdict(usage([window(10)], { updatedAt: NOW - QUOTA_STALE_MS - 1 }), NOW).stale).toBe(true)
     expect(quotaVerdict(usage([window(10)], { updatedAt: NOW - QUOTA_STALE_MS }), NOW).stale).toBe(false)
+  })
+})
+
+describe('usageReadable', () => {
+  it('holds a reading back from a client that does not know one of its window kinds', () => {
+    const legacy = new Set(LEGACY_USAGE_WINDOW_KINDS)
+    expect(usageReadable(legacy, usage([window(10), window(20, { kind: 'session' })]))).toBe(true)
+    expect(usageReadable(legacy, usage([window(10, { kind: 'monthly' })], { agent: 'cursor' }))).toBe(false)
+    expect(usageReadable(new Set(['session', 'weekly', 'monthly']), usage([window(10, { kind: 'monthly' })], { agent: 'cursor' }))).toBe(true)
+    expect(usageReadable(legacy, usage([], { agent: 'cursor', status: 'signed-out' }))).toBe(true)
   })
 })

@@ -43,6 +43,8 @@ const IssueRef = InstanceRef.extend({ key: z.string().trim().min(1).max(160) })
 const FlowRef = z.object({ flowId: z.string().min(1).max(64) })
 const Ok = z.object({ ok: z.literal(true) })
 const ConversationRef = z.object({ id: z.string().uuid() })
+// The usage window kinds this client reads; an older client names none, and reads session and weekly.
+const UsageParams = z.object({ windowKinds: z.array(z.string()).optional() })
 // What core can do beyond this protocol version's baseline; an older core sends none.
 // chat-options: a chat stage's permission mode, model and effort can be changed (conversations.setOption).
 // chat-images: conversations.send takes images; an older core would drop them unnoticed.
@@ -409,9 +411,9 @@ export const rpcMethods = {
   // What older clients call projects.recent / projects.forget.
   'repos.recent': { params: z.object({}), result: z.array(z.string()) },
   'repos.forget': { params: z.object({ path: z.string().min(1) }), result: Ok },
-  'usage.list': { params: z.object({}), result: z.array(AgentUsage) },
+  'usage.list': { params: UsageParams, result: z.array(AgentUsage) },
   // Refetches now instead of waiting for the next poll; core rate-limits repeats.
-  'usage.refresh': { params: z.object({}), result: z.array(AgentUsage) },
+  'usage.refresh': { params: UsageParams, result: z.array(AgentUsage) },
   'agents.stats': { params: z.object({}), result: z.array(AgentStats) },
   'agents.conversationStats': { params: z.object({}), result: z.array(ConversationStats) },
   'dashboard.stats': { params: DashboardParams, result: DashboardStats },

@@ -161,8 +161,9 @@ function inlineWindows(windows: readonly UsageWindow[]): UsageWindow[] {
 
 function UsageSegment({ usage, now }: { usage: AgentUsage; now: number }) {
   const display = usePreferences((s) => s.usageDisplay)
-  const tightest = tightestWindow(usage.windows)
   const windows = inlineWindows(usage.windows)
+  // The meter follows the numbers beside it, so a model's cap moves it once it is shown.
+  const tightest = tightestWindow(windows)
   const cardId = useId()
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const [pinned, setPinned] = useState(false)
@@ -297,7 +298,7 @@ export function UsageBar() {
     <div className="statusbar-group" aria-label="Agent 用量额度">
       {known.length === 0 && <span className="statusbar-hint">正在读取用量额度…</span>}
       {known.length > 0 && shown.length === 0 && (
-        <span className="statusbar-hint">未检测到 Claude Code 或 Codex 的订阅登录，登录后这里会显示用量额度</span>
+        <span className="statusbar-hint">未检测到 Claude Code、Codex 或 Cursor 的登录，登录后这里会显示用量额度</span>
       )}
       {shown.map((entry) => (
         <UsageSegment key={entry.agent} usage={entry} now={now} />

@@ -41,7 +41,8 @@ export function windowLabel(window: UsageWindow): string {
   if (window.kind === 'session') {
     return '5h'
   }
-  return window.model ? `${window.model} 本周` : '本周'
+  const period = window.kind === 'monthly' ? '本月' : '本周'
+  return window.model ? `${window.model} ${period}` : period
 }
 
 export function resetText(window: UsageWindow, now: number): string {

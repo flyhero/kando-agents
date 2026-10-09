@@ -15,7 +15,7 @@ import type { SourceService } from './source-service'
 import type { RpcHandlers } from './rpc-server'
 import type { TaskService } from './task-service'
 import type { UsageLimitResumes } from './usage-limit-resume'
-import type { UsageService } from './usage-service'
+import { readableUsage, type UsageService } from './usage-service'
 import type { ConversationService } from './conversation-service'
 import type { TerminalCommandStore } from './terminal-commands'
 import type { ChatCommandStore } from './chat-commands'
@@ -327,8 +327,8 @@ export function createRpcHandlers(
       projects.forget(path)
       return OK
     },
-    'usage.list': () => usage.list(),
-    'usage.refresh': () => usage.refresh(),
+    'usage.list': ({ windowKinds }, connection) => readableUsage(connection.usageKinds, windowKinds, usage.list()),
+    'usage.refresh': async ({ windowKinds }, connection) => readableUsage(connection.usageKinds, windowKinds, await usage.refresh()),
     'agents.stats': () => runs.stats(),
     'agents.conversationStats': () => turns.stats(),
     'dashboard.stats': (params) => {

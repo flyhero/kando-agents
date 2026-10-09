@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseClaudeResets, parseClaudeUsage, parseCliVersion, rateLimitReport } from './claude-usage'
 import { parseCodexUsage, parseResetCredits } from './codex-usage'
+import { parseCursorPlan, parseCursorUsage } from './cursor-usage'
 
 describe('parseClaudeUsage', () => {
   it('maps the 5-hour and 7-day windows', () => {
@@ -193,5 +194,35 @@ describe('rateLimitReport', () => {
   it('asks for a fresh reading when the event carries no numbers', () => {
     expect(rateLimitReport({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning' } }, 7)).toEqual({ at: 7, windows: [], refresh: true })
     expect(rateLimitReport({ type: 'rate_limit_event' }, 7)).toBeNull()
+  })
+})
+
+describe('parseCursorUsage', () => {
+  // GetCurrentPeriodUsage as a Team plan answered it, trimmed: its money amounts say the included
+  // spend is used up, its percentages (what Cursor shows) say 9%.
+  const answer = {
+    billingCycleStart: '1790449720000',
+    billingCycleEnd: '1793041720000',
+    planUsage: { totalSpend: 2351, includedSpend: 2000, limit: 2000, autoPercentUsed: 5.466666666666667, apiPercentUsed: 30.075000000000003, totalPercentUsed: 9.404 },
+    spendLimitUsage: { pooledUsed: 0, limitType: 'team' },
+    displayMessage: "You've hit your usage limit"
+  }
+
+  it('reads the billing month by its percentages: the total, and the API share for models picked by name', () => {
+    expect(parseCursorUsage(answer)).toEqual([
+      { kind: 'monthly', model: null, usedPercent: 9.404, windowMinutes: 43_200, resetsAt: 1_793_041_720_000 },
+      { kind: 'monthly', model: 'API', usedPercent: 30.075000000000003, windowMinutes: 43_200, resetsAt: 1_793_041_720_000 }
+    ])
+  })
+
+  it('keeps to what is there: no plan usage, no cycle, a percentage past the cap', () => {
+    expect(parseCursorUsage({ enabled: true })).toEqual([])
+    expect(parseCursorUsage({ planUsage: { totalPercentUsed: 120 } })).toEqual([{ kind: 'monthly', model: null, usedPercent: 100, windowMinutes: 43_200, resetsAt: null }])
+    expect(parseCursorUsage({ billingCycleEnd: 'soon', planUsage: { totalPercentUsed: 'many', apiPercentUsed: 4 } })).toEqual([{ kind: 'monthly', model: 'API', usedPercent: 4, windowMinutes: 43_200, resetsAt: null }])
+  })
+
+  it('names the plan when GetPlanInfo does', () => {
+    expect(parseCursorPlan({ planInfo: { planName: 'Team', price: '$40/mo', includedUsagePeriod: 'INCLUDED_USAGE_PERIOD_MONTHLY' } })).toBe('Team')
+    expect(parseCursorPlan(null)).toBeNull()
   })
 })

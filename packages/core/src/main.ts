@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
+import { PROTOCOL_VERSION, usageReadable, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
 import { hasClaudeCredentials, readClaudeUsage } from './claude-usage'
 import { hasCodexCredentials, readCodexUsage } from './codex-usage'
+import { readCursorUsage } from './cursor-usage'
 import { EnvironmentService } from './environment-check'
 import { AgentRunStore } from './agent-run-store'
 import { ChatTurnStore } from './chat-turn-store'
@@ -168,8 +169,10 @@ const sources = new SourceService([jiraProvider(), githubProvider()], sourceConf
   listChanged: (list) => server?.broadcast('sources.listChanged', { sources: list })
 })
 
-const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage }, (entry) =>
-  server?.broadcast('usage.changed', { usage: entry })
+const usage = new UsageService({ claude: readClaudeUsage, codex: readCodexUsage, cursor: readCursorUsage }, (entry) =>
+  server?.connections.forEach((connection) => {
+    if (usageReadable(connection.usageKinds, entry)) connection.notify('usage.changed', { usage: entry })
+  })
 )
 
 const schedules = new ScheduleService(paths.database, {

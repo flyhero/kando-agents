@@ -1,9 +1,19 @@
-import { AGENT_KINDS, type AgentKind, type AgentUsage, type UsageWindow } from '@kando/protocol'
+import { AGENT_KINDS, usageReadable, type AgentKind, type AgentUsage, type UsageWindow } from '@kando/protocol'
 import { UsageFetchError, type UsageReport, type UsageSource } from './usage-source'
 
 const POLL_MS = 15 * 60_000
 // Manual refreshes and session exits come in bursts, and the provider endpoints are rate-limited too.
 const MIN_REFRESH_MS = 30_000
+
+// The readings one client is sent: those in the window kinds it reads (`kinds`, kept per client and
+// replaced by what it names), since an older client fails to parse a whole list over one it does not know.
+export function readableUsage(kinds: Set<string>, named: readonly string[] | undefined, list: AgentUsage[]): AgentUsage[] {
+  if (named) {
+    kinds.clear()
+    named.forEach((kind) => kinds.add(kind))
+  }
+  return list.filter((entry) => usageReadable(kinds, entry))
+}
 
 export class UsageService {
   private readonly usage = new Map<AgentKind, AgentUsage>()

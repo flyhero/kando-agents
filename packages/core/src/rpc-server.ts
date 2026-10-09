@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { WebSocketServer, WebSocket } from 'ws'
 import { ZodError } from 'zod'
 import {
+  LEGACY_USAGE_WINDOW_KINDS,
   RPC_ERROR,
   RpcRequest,
   isRpcMethod,
@@ -24,6 +25,8 @@ export type Connection = {
   readonly browsing: Set<string>
   // Conversations whose wire log this client follows (debug.wireEntries).
   readonly wiring: Set<string>
+  // The usage window kinds this client reads, as it last named them (usage.list).
+  readonly usageKinds: Set<string>
   notify<N extends RpcNotificationName>(name: N, params: RpcNotificationParams<N>): void
   // For state that belongs to this client alone, like a sign-in waiting on its answers.
   onClose(listener: () => void): () => void
@@ -118,6 +121,7 @@ export function startRpcServer(options: {
       watching: new Set(),
       wiring: new Set(),
       browsing: new Set(),
+      usageKinds: new Set(LEGACY_USAGE_WINDOW_KINDS),
       notify: (name, params) => send(JSON.stringify({ jsonrpc: '2.0', method: name, params })),
       onClose: (listener) => {
         closeListeners.add(listener)
