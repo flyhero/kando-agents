@@ -50,6 +50,9 @@ export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send
 
 export class TaskService {
   private readonly launching = new Set<string>()
+  private gitGuard: ((dirs: readonly string[]) => Promise<void>) | null = null
+  setGitGuard(guard: (dirs: readonly string[]) => Promise<void>): void { this.gitGuard = guard }
+  isLaunching(id: string): boolean { return this.launching.has(id) }
 
   constructor(
     private readonly store: TaskStore,
@@ -470,6 +473,7 @@ export class TaskService {
     }
     this.launching.add(task.id)
     try {
+      await this.gitGuard?.(task.repos.flatMap((repo) => [repo.path, ...(repo.worktreePath ? [repo.worktreePath] : [])]))
       return await run()
     } finally {
       this.launching.delete(task.id)

@@ -1,8 +1,9 @@
+import { GitInspector } from './GitInspector'
 import { useEffect, useState } from 'react'
 import type { RepoChanges, Task } from '@kando/protocol'
 import { pathShortener, type PlanItem } from '../chat-state'
 import { clearInspectorFile, setInspectorOpen, setTaskInspectorTab, showInspectorFile, showTaskPlan, useCore } from '../core-store'
-import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
+import { ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
@@ -13,6 +14,7 @@ import { EMPTY_FILE_TABS, updateFileTabs, useFileTabs } from '../file-tabs'
 // Read again whenever the task changes (every agent turn and exit), the window regains focus,
 // or the user refreshes. An older core without the method has nothing to show.
 function useTaskChanges(taskId: string, updatedAt: number, refreshCount: number): RepoChanges[] | null {
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const focusCount = useFocusCount()
   const [changes, setChanges] = useState<{ taskId: string; changes: RepoChanges[] } | null>(null)
@@ -27,7 +29,7 @@ function useTaskChanges(taskId: string, updatedAt: number, refreshCount: number)
     return () => {
       current = false
     }
-  }, [rpc, taskId, updatedAt, focusCount, refreshCount])
+  }, [rpc, taskId, updatedAt, focusCount, refreshCount, gitRevision])
   return changes?.taskId === taskId ? changes.changes : null
 }
 
@@ -67,6 +69,7 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
 }) {
   const conversationId = task.conversationId ?? ''
   const files = useFileTabs((state) => state[conversationId] ?? EMPTY_FILE_TABS)
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const wanted = useCore((state) => state.taskInspectorTab)
   const selectedPlan = useCore((state) => state.taskInspectorPlan)
@@ -80,6 +83,9 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
     updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
   }, [conversationId])
   const [refreshCount, setRefreshCount] = useState(0)
+  const [gitMaximized, setGitMaximized] = useState(false)
+  useEffect(() => { setGitMaximized(false) }, [wanted, task.id])
+
   const selected = useCore((state) => state.inspectorFile?.kind === 'task' && state.inspectorFile.id === task.id ? state.inspectorFile : null)
   const selectedFolder = task.repos.find((repo) => repo.path === selected?.project)?.worktreePath
   const changes = useTaskChanges(task.id, task.updatedAt, refreshCount)
@@ -93,7 +99,7 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
   return (
     <InspectorPanel
       label="任务检查器"
-      maximized={tab === 'files' && files.maximized}
+      maximized={(tab === 'files' && files.maximized) || (tab === 'branch' && gitMaximized)}
       ratio={widthRatio}
       onRatioChange={onWidthRatioChange}
       tabs={tabs}
@@ -110,7 +116,7 @@ export function TaskInspector({ task, widthRatio, onWidthRatioChange, plans = []
       ) : tab === 'plan' ? (
         <ChatPlanView conversationId={task.conversationId ?? null} plans={plans} selected={selectedPlan} onSelect={showTaskPlan} note={planNote} />
       ) : tab === 'branch' ? (
-        heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">任务还没有 worktree，也就没有分支。</p>
+        <GitInspector target={{ kind: 'task', id: task.id }} heads={heads} updatedAt={task.updatedAt} refresh={refreshCount} maximized={gitMaximized} onMaximize={() => setGitMaximized((value) => !value)} />
       ) : selected && rpc ? (
         <FileDiffView
           file={selectedFolder ? pathShortener([selectedFolder])(selected.file) : selected.file}

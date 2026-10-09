@@ -1,3 +1,4 @@
+import { GitService } from './git-service'
 import { CORE_FEATURES, PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import type { AgentRunStore } from './agent-run-store'
@@ -54,8 +55,14 @@ export function createRpcHandlers(
   schedules: ScheduleService,
   chatCommands: ChatCommandStore,
   routines: RoutineService,
-  wire: WireLog
+  wire: WireLog,
+  gitChanged: () => void = () => {}
 ): RpcHandlers {
+  const git = new GitService(service, conversations, gitChanged)
+  conversations.setGitGuard((dirs) => git.guardAgent(dirs))
+  service.setGitGuard((dirs) => git.guardAgent(dirs))
+  conversations.setGitPreparation((dirs, run) => git.withRepositories(dirs, run))
+  worktrees.setGitRemoval((dirs, run) => git.withRepositories(dirs, run))
   const files = new ConversationFiles((id) => conversations.get(id))
   const cliInstaller = new AgentCliInstaller(environment, terminals)
   const ports = new PortService(sessions, () => ({ terminals: terminals.list(), conversations: conversations.list(true), tasks: service.list() }))
@@ -79,6 +86,12 @@ export function createRpcHandlers(
     return result
   }
   return {
+    'git.status': (target) => git.status(target),
+    'git.history': ({ ref, offset, query, tips, ...target }) => git.history(target, ref, offset, query, tips),
+    'git.detail': ({ sha, parent, ...target }) => git.detail(target, sha, parent),
+    'git.diff': ({ base, sha, file, ...target }) => git.diff(target, base, sha, file),
+    'git.compare': ({ ref, direct, ...target }) => git.compare(target, ref, direct),
+    'git.execute': ({ action, ...target }) => git.execute(target, action),
     'system.hello': () => ({ protocolVersion: PROTOCOL_VERSION, serverVersion: packageJson.version, features: [...CORE_FEATURES] }),
     'files.resolve': ({ conversationId, path }) => files.resolve(conversationId, path),
     'files.read': ({ conversationId, path }) => files.read(conversationId, path),
@@ -177,11 +190,11 @@ export function createRpcHandlers(
     'conversations.branches': ({ id }) => conversations.branches(id),
     'conversations.branchOptions': ({ id }) => conversations.branchOptions(id),
     'projects.branches': ({ path }) => conversations.projectBranchOptions(path),
-    'conversations.switchBranch': ({ id, project, ref }) => conversations.switchBranch(id, project, ref),
-    'conversations.createBranch': ({ id, project, name }) => conversations.createBranch(id, project, name),
-    'conversations.commitPush': ({ id, project, message }) => conversations.commitPush(id, project, message),
-    'conversations.commit': ({ id, project, message }) => conversations.commit(id, project, message),
-    'conversations.push': ({ id, project }) => conversations.push(id, project),
+    'conversations.switchBranch': async ({ id, project, ref }) => { await git.execute({ kind: 'conversation', id, project }, { kind: 'switch', ref }); return conversations.get(id) },
+    'conversations.createBranch': async ({ id, project, name }) => { await git.execute({ kind: 'conversation', id, project }, { kind: 'create', name, ref: 'HEAD', checkout: true }); return conversations.get(id) },
+    'conversations.commitPush': async ({ id, project, message }) => { const result = await git.execute({ kind: 'conversation', id, project }, { kind: 'commit', message, push: true }); return { commit: result.commit ?? '', branch: result.branch ?? '', upstream: result.upstream ?? '' } },
+    'conversations.commit': async ({ id, project, message }) => { const result = await git.execute({ kind: 'conversation', id, project }, { kind: 'commit', message, push: false }); return { commit: result.commit ?? '', branch: result.branch ?? '' } },
+    'conversations.push': async ({ id, project }) => { const result = await git.execute({ kind: 'conversation', id, project }, { kind: 'push' }); return { branch: result.branch ?? '', upstream: result.upstream ?? '' } },
     'conversations.search': ({ query }) => conversations.search(query),
     'conversations.changes': ({ id }) => conversations.changes(id),
     'conversations.diff': ({ id, project, file }) => conversations.diff(id, project, file),

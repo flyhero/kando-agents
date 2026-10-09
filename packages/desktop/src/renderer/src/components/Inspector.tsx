@@ -30,6 +30,7 @@ export function useFocusCount(): number {
 // The files a task's worktrees or a conversation's projects have changed, whichever the target is;
 // read again as updatedAt and refresh move, and when the window regains focus.
 export function useChangedFiles(target: BranchTarget | null, updatedAt: number, refresh: number): ChangedFile[] | null {
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const focusCount = useFocusCount()
   const key = target ? `${target.kind}:${target.id}` : null
@@ -46,7 +47,7 @@ export function useChangedFiles(target: BranchTarget | null, updatedAt: number, 
     return () => {
       current = false
     }
-  }, [rpc, key, updatedAt, focusCount, refresh])
+  }, [rpc, key, updatedAt, focusCount, refresh, gitRevision])
   return files?.key === key ? files.files : null
 }
 

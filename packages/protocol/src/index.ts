@@ -1,6 +1,7 @@
 export * from './task'
 export * from './worktree'
 export * from './changes'
+export * from './git'
 export * from './terminal'
 export * from './ports'
 export * from './conversation'

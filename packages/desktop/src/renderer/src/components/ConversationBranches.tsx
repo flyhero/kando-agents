@@ -11,6 +11,7 @@ import { useOccludesBrowser } from '../browser-occlusion'
 // A conversation works in the user's own checkout: switching changes it for everything in the folder.
 function useBranchOptions(id: string, version: number): readonly ProjectBranches[] {
   const rpc = useCore((s) => s.rpc)
+  const gitRevision = useCore((s) => s.gitRevision)
   const [options, setOptions] = useState<readonly ProjectBranches[]>([])
   useEffect(() => {
     if (!rpc?.features.includes('conversation-branches')) return
@@ -21,7 +22,7 @@ function useBranchOptions(id: string, version: number): readonly ProjectBranches
     return () => {
       live = false
     }
-  }, [rpc, id, version])
+  }, [rpc, id, version, gitRevision])
   return options
 }
 
