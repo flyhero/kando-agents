@@ -1809,10 +1809,12 @@ button.task-tag:hover {
   background: transparent;
 }
 
-/* Placed by ContextMenu and MenuSubmenu, so they opt out of .menu's anchoring. */
+/* Placed by ContextMenu and MenuSubmenu, so they opt out of .menu's anchoring.
+   Above the plan comment box (z-index 50): a right-click on a selection opens both. */
 .context-menu,
 .submenu {
   position: fixed;
+  z-index: 60;
   min-width: 180px;
 }
 
@@ -6434,10 +6436,8 @@ body.side-panel-resizing * {
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
-  transform: translate(-50%, 8px);
+  transform: translateX(-50%);
 }
-
-.plan-comment-box[data-above] { transform: translate(-50%, calc(-100% - 8px)); }
 
 .plan-comment-input {
   flex: 1;
@@ -6915,9 +6915,14 @@ body.side-panel-resizing * {
 .chat-plan-line:hover { text-decoration: underline; }
 
 .chat-plan-view { display: flex; flex-direction: column; gap: 10px; }
-.chat-plan-view-status { font-size: 12px; color: var(--text-muted); }
-.chat-plan-view-status[data-waiting] { color: var(--warning); }
+.chat-plan-view-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.chat-plan-view-status-text { min-width: 0; }
+.chat-plan-view-status[data-waiting] > .chat-plan-view-status-text { color: var(--warning); }
 .chat-plan-view-status .chat-select { max-width: 100%; margin-left: -6px; }
+.chat-plan-view-actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
+.chat-plan-view-actions .tool-button { width: 24px; height: 24px; }
+.chat-plan-view-actions .tool-button svg { width: 14px; height: 14px; }
+.chat-plan-view-actions .tool-button[data-copied] { color: var(--status-done); }
 
 /* A new conversation before its first message: the agent in the middle, the projects above the
    input they go with. */

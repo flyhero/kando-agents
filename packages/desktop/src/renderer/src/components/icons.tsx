@@ -448,6 +448,16 @@ export function CopyIcon() {
   )
 }
 
+// Saving a copy: an arrow down into a tray.
+export function DownloadIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M3.5 13.2v2a1.3 1.3 0 0 0 1.3 1.3h10.4a1.3 1.3 0 0 0 1.3-1.3v-2" />
+      <path d="M10 3.2v8.2M6.6 8 10 11.4 13.4 8" />
+    </svg>
+  )
+}
+
 export function PencilIcon() {
   return (
     <svg {...stroked}>

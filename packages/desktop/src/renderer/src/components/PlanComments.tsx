@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { addQuote, useQuotes } from '../chat-quotes'
+import { PLAN_SELECTION_MENU, placeCommentBox } from '../plan-comment-place'
 import { selectedTextIn, type SelectedText } from '../text-selection'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { CommentAddIcon } from './icons'
@@ -10,9 +11,6 @@ import { CommentAddIcon } from './icons'
 const passages = new Map<string, Range>()
 
 const DRAFT = 'kando-plan-draft'
-// As .plan-comment-box is sized.
-const BOX_WIDTH = 300
-const BOX_HEIGHT = 48
 const COMMENTED = 'kando-plan-comments'
 
 type SelectionMenu = { at: MenuPoint; text: string }
@@ -34,6 +32,8 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
   const [draft, setDraft] = useState<SelectedText | null>(null)
   const [comment, setComment] = useState('')
   const [menu, setMenu] = useState<SelectionMenu | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const menuWasOpen = useRef(false)
   const closeMenu = useCallback(() => setMenu(null), [])
   const quotes = useQuotes(conversationId)
 
@@ -105,6 +105,17 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     }
   }, [draft, body])
 
+  // The menu takes focus while it is open. Closing it returns here, with the draft still written.
+  useEffect(() => {
+    if (menu) {
+      menuWasOpen.current = true
+      return
+    }
+    if (!menuWasOpen.current) return
+    menuWasOpen.current = false
+    input.current?.focus()
+  }, [menu])
+
   const add = () => {
     if (!draft) return
     const id = addQuote(conversationId, planKey, draft.text, comment)
@@ -112,18 +123,21 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     document.getSelection()?.removeAllRanges()
     setDraft(null)
   }
-  // Under the passage, centred on it, kept within the panel the plan is in; over it where the
-  // window has no room below.
   const panel = body.current?.closest('.side-panel')?.getBoundingClientRect()
-  const half = BOX_WIDTH / 2 + 8
-  const left = draft ? Math.min(Math.max(draft.x, (panel?.left ?? 0) + half), (panel?.right ?? window.innerWidth) - half) : 0
   const passage = draft?.range.getBoundingClientRect()
-  const above = passage ? passage.bottom + BOX_HEIGHT + 16 > window.innerHeight : false
+  const place = draft && passage ? placeCommentBox({
+    passage,
+    anchorX: draft.x,
+    panel: panel ? { left: panel.left, right: panel.right } : null,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    menu: menu ? { at: menu.at, ...PLAN_SELECTION_MENU } : null
+  }) : null
   return (
     <>
-      {draft && passage && createPortal(
-        <div className="plan-comment-box" data-above={above || undefined} style={{ left, top: above ? passage.top : passage.bottom }} role="dialog" aria-label="评论这段计划">
+      {draft && place && createPortal(
+        <div className="plan-comment-box" style={{ left: place.left, top: place.top }} role="dialog" aria-label="评论这段计划">
           <input
+            ref={input}
             className="plan-comment-input"
             autoFocus={!menu}
             value={comment}

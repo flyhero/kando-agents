@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef, type KeyboardEvent } from 'react'
 import { itemKey, type PlanItem } from '../chat-state'
 import { composeFeedback, setQuotes, useQuotes } from '../chat-quotes'
+import { planMarkdownFilename } from '../plan-markdown'
 import { QuoteCards } from './ChatQuoteCards'
 import { PlanComments } from './PlanComments'
 import { useChatSurface } from './chat-surface'
@@ -10,7 +11,7 @@ import { SchedulePicker } from './SchedulePicker'
 import { perform, useCore, usePlanModesSupported, useSchedulesSupported } from '../core-store'
 import { setPreference, usePreferences, type Preferences } from '../preferences'
 import { ContextMenu, type MenuPoint } from './ContextMenu'
-import { CheckIcon, ChevronDownIcon } from './icons'
+import { CheckIcon, ChevronDownIcon, CopyIcon, DownloadIcon } from './icons'
 import { createSchedule } from '../schedules'
 import { modeLabel } from './ChatOptionsBar'
 import type { AgentKind } from '@kando/protocol'
@@ -294,6 +295,41 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   )
 }
 
+function downloadMarkdown(filename: string, markdown: string): void {
+  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+function PlanMarkdownActions({ markdown, filename }: { markdown: string; filename: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+  return (
+    <span className="chat-plan-view-actions">
+      <button
+        type="button"
+        className="tool-button"
+        data-copied={copied || undefined}
+        aria-label={copied ? '已复制' : '复制 Markdown'}
+        data-tooltip={copied ? '已复制' : '复制 Markdown'}
+        onClick={() => void navigator.clipboard.writeText(markdown).then(() => setCopied(true), () => {})}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <button type="button" className="tool-button" aria-label="下载 Markdown" data-tooltip="下载 Markdown" onClick={() => downloadMarkdown(filename, markdown)}>
+        <DownloadIcon />
+      </button>
+    </span>
+  )
+}
+
 // The inspector's plan tab: the newest plan, or an earlier version the user picked. It shows beside
 // the chat rather than in it, so it is told how to pick a version and what its owner kept.
 // Text selected in it takes a comment, where the chat it belongs to is known.
@@ -311,21 +347,23 @@ export function ChatPlanView({ conversationId, plans, selected, onSelect, note =
   if (!plan) return <p className="inspector-empty muted">Agent 还没有提出计划。</p>
   const planKey = itemKey(plan)
   const comments = quotes.filter((quote) => quote.source === planKey).length
+  const version = plans.indexOf(plan) + 1
   return (
     <div className="chat-plan-view">
       <div className="chat-plan-view-status" data-waiting={plan.resolution === null || undefined}>
-        {plans.length > 1 ? (
-          <select className="chat-select" aria-label="计划的版本" value={itemKey(plan)} onChange={(event) => onSelect(event.target.value)}>
-            {plans.map((each, index) => <option key={itemKey(each)} value={itemKey(each)}>第 {index + 1} 版 · {said(each)}</option>)}
-          </select>
-        ) : said(plan)}
-        {plan.resolution === null && <span className="muted"> · 在对话下方确认</span>}
+        <div className="chat-plan-view-status-text">
+          {plans.length > 1 ? (
+            <select className="chat-select" aria-label="计划的版本" value={itemKey(plan)} onChange={(event) => onSelect(event.target.value)}>
+              {plans.map((each, index) => <option key={itemKey(each)} value={itemKey(each)}>第 {index + 1} 版 · {said(each)}</option>)}
+            </select>
+          ) : said(plan)}
+          {plan.resolution === null && <span className="muted"> · 在对话下方确认</span>}
+        </div>
+        {plan.detail && <PlanMarkdownActions markdown={plan.detail} filename={planMarkdownFilename(plan.detail, version, plans.length)} />}
       </div>
-      {conversationId && plan.detail && (
+      {conversationId && plan.detail && comments > 0 && (
         <p className="chat-plan-view-hint">
-          {comments > 0
-            ? `${comments} 条评论${plan.resolution === null ? '，在下方选「继续规划」交给 agent' : '，在输入框里，发送后 agent 据此修改'}`
-            : '选中计划里的文字可以评论'}
+          {comments} 条评论{plan.resolution === null ? '，在下方选「继续规划」交给 agent' : '，在输入框里，发送后 agent 据此修改'}
         </p>
       )}
       {plan.detail
