@@ -178,6 +178,14 @@
 }
 :root[data-theme='dark'] { color-scheme: dark; }
 
+/* Scrollbars as a thumb alone, on no track: the system's track would sit as a grey band down the
+   chat and every list. The thumb's inset keeps it clear of the content's edge. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background: var(--border-2); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--text-3); }
+
 
 * {
   box-sizing: border-box;
