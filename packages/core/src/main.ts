@@ -40,7 +40,9 @@ import { AwakeConfigStore } from './awake-config'
 import { ComputerAwakeService } from './computer-awake-service'
 import { ChatSettingsStore } from './chat-settings'
 import { WireLog } from './wire-log'
+import { timestampConsole } from './log-timestamps'
 
+timestampConsole()
 const paths = kandoPaths()
 await mkdir(paths.home, { recursive: true, mode: 0o700 })
 await mkdir(paths.worktrees, { recursive: true })
