@@ -54,11 +54,20 @@ export async function cursorCliInfo(command: string): Promise<{ version: string;
   return reading
 }
 
+// The environment check asks every five minutes (see EnvironmentService), so a launch takes its
+// last answer instead of waiting on `about` again: a second, up to the whole timeout when the CLI
+// starts cold. Only a missing, stale or signed-out answer is asked again, as the user may just
+// have signed in.
+const SIGN_IN_FRESH_MS = 10 * 60_000
+const signIns = new Map<string, { signedIn: boolean; at: number }>()
+
 export async function requireCursorCli(): Promise<string> {
   const command = await findCursorCli()
   if (!command) throw new Rejection('cursor-cli-missing', '未找到 Cursor CLI，请安装后重新检测')
   if (!(await cursorCliInfo(command)).compatible) throw new Rejection('cursor-upgrade-required', '请升级 Cursor CLI，Kando 需要支持 ACP 的版本')
-  if (await cursorSignedIn(command) === false) throw new Rejection('cursor-signed-out', '请在终端运行 agent login，登录 Cursor 后重试')
+  const seen = signIns.get(command)
+  const known = seen && Date.now() - seen.at < SIGN_IN_FRESH_MS ? seen.signedIn : null
+  if (known !== true && await cursorSignedIn(command) === false) throw new Rejection('cursor-signed-out', '请在终端运行 agent login，登录 Cursor 后重试')
   return command
 }
 
@@ -67,7 +76,10 @@ export async function cursorSignedIn(command: string): Promise<boolean | null> {
     const text = await output(command, ['about', '--format', 'json'])
     const start = text.indexOf('{')
     const account = z.looseObject({ userEmail: z.string().nullable() }).safeParse(JSON.parse(text.slice(start)))
-    return account.success ? Boolean(account.data.userEmail) : null
+    if (!account.success) return null
+    const signedIn = Boolean(account.data.userEmail)
+    signIns.set(command, { signedIn, at: Date.now() })
+    return signedIn
   } catch { return null }
 }
 

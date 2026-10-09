@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -48,5 +48,23 @@ describe('Cursor CLI identity and compatibility', () => {
     expect(await cursorSignedIn(unavailable)).toBeNull()
     const signedIn = executable('signed-in', "console.log(JSON.stringify({userEmail:'test@example.invalid'}))")
     expect(await cursorSignedIn(signedIn)).toBe(true)
+  })
+
+  it('launches on the sign-in the environment check last saw, and asks again once it is stale', async () => {
+    const asked = path.join(root, 'asked')
+    const cursor = executable('cursor-agent', `const fs=require('fs');if(process.argv[2]==='about')fs.appendFileSync(${JSON.stringify(asked)},'x');console.log(process.argv[2]==='--version'?'2026.10.01-release':process.argv[2]==='acp'?'Usage: cursor-agent acp':JSON.stringify({userEmail:'test@example.invalid'}))`)
+    vi.stubEnv('PATH', root)
+    const times = () => readFileSync(asked, 'utf8').length
+    expect(await cursorSignedIn(cursor)).toBe(true)
+    await requireCursorCli()
+    await requireCursorCli()
+    expect(times()).toBe(1)
+    vi.useFakeTimers({ now: Date.now() + 10 * 60_000, toFake: ['Date'] })
+    try {
+      await requireCursorCli()
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(times()).toBe(2)
   })
 })
