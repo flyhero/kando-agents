@@ -1,10 +1,15 @@
 import { z } from 'zod'
 import { ChatImage } from './chat'
 
-// The browser Kando hosts for its chat agents: one Chromium, tabs tagged by the conversation
-// they belong to. Every page is laid out at this size, so what the agent screenshots is what the
-// user sees in the live view, and a point in one maps straight onto the other.
+// The browser Kando hosts for its chat agents: the app's own Chromium, tabs tagged by the
+// conversation they belong to. A tab is laid out at the browser panel's size, so what the agent
+// screenshots is what the user sees; this is the size of one no panel has shown yet.
 export const BROWSER_VIEWPORT = { width: 1280, height: 800 } as const
+
+// A page size asked for over the panel's: the agent's for a narrow layout, the user's from the
+// panel's presets. null returns the tab to the panel's size.
+export const BrowserViewport = z.object({ width: z.number().int().min(320).max(3840), height: z.number().int().min(240).max(2160) })
+export type BrowserViewport = z.infer<typeof BrowserViewport>
 
 export const BrowserTabId = z.string().uuid()
 
@@ -22,16 +27,17 @@ export const BrowserTab = z.object({
   userDriving: z.boolean().default(false),
   // One of the agent's calls is under way on the tab.
   agentActing: z.boolean().default(false),
+  // The size the tab is held at, or null while it follows the panel.
+  viewport: BrowserViewport.nullable().default(null),
   createdAt: z.number()
 })
 export type BrowserTab = z.infer<typeof BrowserTab>
 
-// not-installed: Chromium has not been downloaded · installing: the download runs (percent when
-// known) · starting: the host or the browser is coming up · ready: tabs can be opened · error:
-// the last attempt failed (message says how). running: the host process is up.
+// app-closed: the desktop app, which runs the browser, is not up · starting: core is connecting
+// to it · ready: tabs can be opened · error: the last attempt failed (message says how).
+// running: core is connected to the app's browser host.
 export const BrowserStatus = z.object({
-  state: z.enum(['not-installed', 'installing', 'starting', 'ready', 'error']),
-  percent: z.number().int().min(0).max(100).optional(),
+  state: z.enum(['app-closed', 'starting', 'ready', 'error']),
   message: z.string().max(2000).optional(),
   running: z.boolean()
 })
@@ -92,53 +98,9 @@ export const BrowserConsole = z.object({
 })
 export type BrowserConsole = z.infer<typeof BrowserConsole>
 
-// Input the live view forwards to a tab, in the tab's CSS pixels; the host hands each to CDP as it
-// is. Modifiers are CDP's bitmask: Alt 1, Control 2, Meta 4, Shift 8.
-const Coordinate = z.number().finite()
-const Modifiers = z.number().int().min(0).max(15)
-export const BrowserInputEvent = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('mouse'),
-    action: z.enum(['pressed', 'released', 'moved']),
-    x: Coordinate,
-    y: Coordinate,
-    button: z.enum(['none', 'left', 'middle', 'right', 'back', 'forward']),
-    buttons: z.number().int().min(0).max(31),
-    clickCount: z.number().int().min(0).max(3),
-    modifiers: Modifiers
-  }),
-  z.object({ type: z.literal('wheel'), x: Coordinate, y: Coordinate, deltaX: Coordinate, deltaY: Coordinate, modifiers: Modifiers }),
-  z.object({
-    type: z.literal('key'),
-    action: z.enum(['down', 'up']),
-    key: z.string().max(32),
-    code: z.string().max(64),
-    windowsVirtualKeyCode: z.number().int().min(0).max(255),
-    // The character a printable key types; left out for keys that type nothing.
-    text: z.string().max(8).optional(),
-    modifiers: Modifiers
-  }),
-  // What an input method composed, or pasted text.
-  z.object({ type: z.literal('text'), text: z.string().max(10_000) })
-])
-export type BrowserInputEvent = z.infer<typeof BrowserInputEvent>
-
-// Frames the live view asks for: never larger than the viewport, JPEG at this quality.
-export const BrowserViewOptions = z.object({
-  maxWidth: z.number().int().min(160).max(BROWSER_VIEWPORT.width).optional(),
-  maxHeight: z.number().int().min(100).max(BROWSER_VIEWPORT.height).optional(),
-  quality: z.number().int().min(10).max(90).optional()
-})
-export type BrowserViewOptions = z.infer<typeof BrowserViewOptions>
-export const BROWSER_FRAME_QUALITY = 60
-
 // How long a navigation to a site the user has not cleared waits for their answer before the
 // agent is told to try again later. Under the agents' own tool timeouts.
 export const BROWSER_HOST_DECISION_WAIT_MS = 25_000
-
-// One screencast frame of a tab, a JPEG in base64; seq counts up per tab.
-export const BrowserFrame = z.object({ tabId: BrowserTabId, seq: z.number().int().nonnegative(), width: z.number().int(), height: z.number().int(), data: z.string() })
-export type BrowserFrame = z.infer<typeof BrowserFrame>
 
 // A bare host name goes to https, except what is plainly a local server. localhost:5173 reads as
 // a scheme to a URL parser, so only the schemes a page can have count as one.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BrowserInputEvent, browserHostOf, describeBrowserPage, isLocalHost, normalizeBrowserUrl, parseBrowserPage } from './browser'
+import { browserHostOf, describeBrowserPage, isLocalHost, normalizeBrowserUrl, parseBrowserPage } from './browser'
 import { browserToolKind, imageMarker, isBrowserTool, isPreviewImage, isPreviewTool, kandoToolName, takeImageMarkers, toolImagePath } from './chat'
 
 describe('isLocalHost', () => {
@@ -69,18 +69,6 @@ describe('image markers', () => {
     expect(takeImageMarkers('[kando-image nope 1x1]\nplain')).toEqual({ text: '[kando-image nope 1x1]\nplain', images: [] })
   })
 })
-
-describe('BrowserInputEvent', () => {
-  it('takes each kind of input and refuses what the live view never sends', () => {
-    expect(BrowserInputEvent.safeParse({ type: 'mouse', action: 'pressed', x: 1, y: 2, button: 'left', buttons: 1, clickCount: 1, modifiers: 0 }).success).toBe(true)
-    expect(BrowserInputEvent.safeParse({ type: 'wheel', x: 1, y: 2, deltaX: 0, deltaY: 120, modifiers: 8 }).success).toBe(true)
-    expect(BrowserInputEvent.safeParse({ type: 'key', action: 'down', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, text: 'a', modifiers: 0 }).success).toBe(true)
-    expect(BrowserInputEvent.safeParse({ type: 'text', text: '中文' }).success).toBe(true)
-    expect(BrowserInputEvent.safeParse({ type: 'key', action: 'down', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 16 }).success).toBe(false)
-    expect(BrowserInputEvent.safeParse({ type: 'text', text: 'x'.repeat(10_001) }).success).toBe(false)
-  })
-})
-
 describe('normalizeBrowserUrl', () => {
   it('leaves a URL with a scheme alone and gives the rest one', () => {
     expect(normalizeBrowserUrl('https://example.com')).toBe('https://example.com')
