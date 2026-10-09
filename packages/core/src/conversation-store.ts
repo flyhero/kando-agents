@@ -25,7 +25,8 @@ const ChatOptions = z.object({
   permissionMode: z.string().optional(),
   allowBypass: z.boolean().optional(),
   claude: AgentChoice.optional(),
-  codex: AgentChoice.optional()
+  codex: AgentChoice.optional(),
+  cursor: AgentChoice.optional()
 }).catch({})
 export type ChatOptions = z.infer<typeof ChatOptions>
 

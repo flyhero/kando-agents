@@ -49,6 +49,7 @@ export function chatCommand(
     mcp?: McpServer
   } = {}
 ): AgentCommand {
+  if (agent === 'cursor') return { command: 'cursor-agent', args: ['acp'] }
   if (agent === 'claude') {
     const { preferred = {}, planOnly, readable = [], mcp, forkAt } = launch
     const allowBypass = (launch.allowBypass ?? false) && !planOnly

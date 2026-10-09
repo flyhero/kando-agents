@@ -50,7 +50,8 @@ describe('environment check', () => {
       checks: [
         { tool: 'git', status: 'ok', version: '9.9.9', path: path.join(bin, 'git'), signedIn: null },
         { tool: 'claude', status: 'ok', version: '2.1.263', path: path.join(bin, 'claude'), signedIn: false },
-        { tool: 'codex', status: 'missing', version: null, path: null, signedIn: null }
+        { tool: 'codex', status: 'missing', version: null, path: null, signedIn: null },
+        { tool: 'cursor', status: 'missing', version: null, path: null, signedIn: null }
       ],
       detectedAgents: [{ id: 'claude', name: 'Claude Code', locations: [{ source: 'cli', path: path.join(bin, 'claude') }] }],
       searchPath: [bin],

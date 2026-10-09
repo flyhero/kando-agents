@@ -10,6 +10,24 @@ const notification = (method: string) => JSON.stringify({ jsonrpc: '2.0', method
 describe('kando MCP server', () => {
   const handle = createMcpHandler({ preview: checkPreviewFile })
 
+  it('acknowledges startup only after initialize and restricts a planning server to read-only tools', async () => {
+    let initialized = false
+    const readOnly = createMcpHandler({
+      preview: checkPreviewFile, planOnly: true,
+      initialized: async () => { initialized = true },
+      browser: { call: async () => ({ text: 'read' }) },
+      terminal: { call: async () => ({ text: 'read' }) }
+    })
+    const listed = await readOnly(frame('tools/list'))
+    expect(initialized).toBe(false)
+    expect(listed?.result).toMatchObject({ tools: expect.arrayContaining([expect.objectContaining({ name: 'show_preview' }), expect.objectContaining({ name: 'terminal_read' })]) })
+    for (const name of ['terminal_run', 'terminal_stop', 'browser_navigate', 'browser_click', 'browser_type']) {
+      expect((await readOnly(frame('tools/call', { name, arguments: {} })))?.error?.code).toBe(-32602)
+    }
+    await readOnly(frame('initialize'))
+    expect(initialized).toBe(true)
+  })
+
   it('answers the handshake with the client version and a tools capability', async () => {
     const response = await handle(frame('initialize', { protocolVersion: '2025-03-26', capabilities: {} }))
     expect(response?.result).toMatchObject({ protocolVersion: '2025-03-26', capabilities: { tools: {} } })
@@ -73,4 +91,3 @@ describe('kando MCP server', () => {
     expect((await handle('{oops'))?.error?.code).toBe(-32700)
   })
 })
-

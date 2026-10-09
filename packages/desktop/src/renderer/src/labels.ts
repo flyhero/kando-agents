@@ -18,7 +18,8 @@ export const STATUS_HINT: Record<TaskStatus, string> = {
 
 export const AGENT_LABEL: Record<AgentKind, string> = {
   claude: 'Claude Code',
-  codex: 'Codex'
+  codex: 'Codex',
+  cursor: 'Cursor'
 }
 
 const SOURCE_FAILURE_TEXT: Record<SourceFailure, string> = {

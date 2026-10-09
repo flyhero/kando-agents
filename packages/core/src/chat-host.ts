@@ -6,6 +6,7 @@ import { ChatLog, type LoggedRecord } from './chat-log'
 import type { KandoAsk, KandoResolution } from './kando-requests'
 import { ClaudeStream } from './claude-stream'
 import { CodexAppServer } from './codex-app-server'
+import { CursorAcp } from './cursor-acp'
 import type { SessionHost } from './daemon-client'
 import { LineFramer } from './line-framer'
 import { Rejection } from './rejection'
@@ -65,6 +66,8 @@ export function createDriver(stage: ChatStage): ChatDriver {
       return new ClaudeStream(stage.stageId, stage.options)
     case 'codex':
       return new CodexAppServer(stage.stageId, stage.options)
+    case 'cursor':
+      return new CursorAcp(stage.stageId, stage.options)
   }
 }
 
@@ -140,7 +143,7 @@ export class ChatHost {
       live.started = null
       throw error
     }
-    if (started) await this.withinStartTimeout(started)
+    if (started) await this.withinStartTimeout(started, stage.agent === 'cursor' ? 60_000 : START_TIMEOUT_MS)
   }
 
   // Drops a stage that never got going without logging its end.
@@ -366,9 +369,11 @@ export class ChatHost {
       if (reply.text) await this.send(conversationId, reply.text, [], true, busy && live.driver.canSteer())
       return
     }
-    const sent = live.driver.respond(requestId, answer).map((frame) => this.write(live, frame))
+    const frames = live.driver.respond(requestId, answer)
+    const sent = frames.map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
+    await this.waitForOptions(live, frames)
   }
 
   // A plan waiting after its turn (as Codex's does) has no turn to end: it is put aside instead.
@@ -392,6 +397,23 @@ export class ChatHost {
     const sent = frames.map((frame) => this.write(live, frame))
     this.flush(live)
     await Promise.all(sent)
+    await this.waitForOptions(live, frames)
+  }
+
+  private async waitForOptions(live: Live, frames: readonly unknown[]): Promise<void> {
+    if (live.driver.optionResult) {
+      const until = Date.now() + 20_000
+      for (const frame of frames) {
+        while (true) {
+          const result = live.driver.optionResult(frame)
+          if (result.error) throw new Rejection('chat-option-failed', result.error)
+          if (!result.pending) break
+          if (this.liveOf(live.conversationId) !== live) throw new Rejection('chat-not-running')
+          if (Date.now() >= until) throw new Rejection('chat-option-timeout', 'Agent 未确认配置变更')
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+      }
+    }
   }
 
   private running(conversationId: string): Live {
@@ -534,9 +556,9 @@ export class ChatHost {
     }
   }
 
-  private withinStartTimeout(started: Promise<void>): Promise<void> {
+  private withinStartTimeout(started: Promise<void>, timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Rejection('chat-start-timeout', 'the agent did not start in time')), START_TIMEOUT_MS)
+      const timer = setTimeout(() => reject(new Rejection('chat-start-timeout', 'the agent did not start in time')), timeoutMs)
       timer.unref()
       started.then(resolve, reject).finally(() => clearTimeout(timer))
     })

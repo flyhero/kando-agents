@@ -12,6 +12,8 @@ import { setPreference, usePreferences, type Preferences } from '../preferences'
 import { ContextMenu, type MenuPoint } from './ContextMenu'
 import { CheckIcon, ChevronDownIcon } from './icons'
 import { createSchedule } from '../schedules'
+import { modeLabel } from './ChatOptionsBar'
+import type { AgentKind } from '@kando/protocol'
 
 // Approving later, once the quota is back: an empty scheduled message approves the plan waiting.
 function SchedulePlanButton({ conversationId }: { conversationId: string }) {
@@ -61,21 +63,21 @@ function isRunMode(mode: string): mode is RunMode {
 function status(plan: PlanItem): string {
   if (plan.resolution === null) return '等你确认'
   if ((plan.resolution === 'allowed' || plan.resolution === 'allowedForSession') && plan.mode && isRunMode(plan.mode)) {
-    return `按计划执行，${RUN_MODE[plan.mode].label}`
+    return `按计划执行，${plan.tool === 'cursor/create_plan' ? 'Agent' : RUN_MODE[plan.mode].label}`
   }
   return RESOLUTION[plan.resolution]
 }
 
 // The execute button's mode: the one picked last, where the stage offers it; otherwise auto, then
 // accepting edits. The arrow beside it opens the others the stage offers.
-function RunModeButton({ modes, mode, disabled, onRun }: { modes: readonly RunMode[]; mode: RunMode; disabled: boolean; onRun: () => void }) {
+function RunModeButton({ modes, mode, disabled, onRun, agent }: { modes: readonly RunMode[]; mode: RunMode; disabled: boolean; onRun: () => void; agent: AgentKind }) {
   const arrow = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<MenuPoint | null>(null)
   const close = useCallback(() => setAt(null), [])
   return (
     <span className="plan-run">
       <button type="button" className="button primary plan-run-main" disabled={disabled} onClick={onRun}>
-        执行 · {RUN_MODE[mode].label}<kbd>↵</kbd>
+        执行 · {agent === 'cursor' ? modeLabel(agent, mode) : RUN_MODE[mode].label}<kbd>↵</kbd>
       </button>
       <button
         ref={arrow}
@@ -108,8 +110,8 @@ function RunModeButton({ modes, mode, disabled, onRun }: { modes: readonly RunMo
               }}
             >
               <span className="plan-run-mode-text">
-                <span className="menu-item-title">{RUN_MODE[each].label}</span>
-                <span className="menu-item-path">{RUN_MODE[each].hint}</span>
+                <span className="menu-item-title">{agent === 'cursor' ? modeLabel(agent, each) : RUN_MODE[each].label}</span>
+                <span className="menu-item-path">{agent === 'cursor' ? '使用 Cursor 原生 Agent 模式执行' : RUN_MODE[each].hint}</span>
               </span>
               {each === mode && <span className="menu-check"><CheckIcon /></span>}
             </button>
@@ -156,10 +158,11 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
   const { savePlan } = surface
   // Not in a routine's chat, whose follow-ups nobody is told of (ChatComposer).
   const routine = useCore((s) => Boolean(s.conversations[conversationId]?.routineId))
-  const schedulable = useSchedulesSupported() && !savePlan && !routine
+  const agent = useCore((s) => s.conversations[conversationId]?.agent ?? 'claude')
+  const schedulable = useSchedulesSupported() && agent !== 'cursor' && !savePlan && !routine
   const runModes = RUN_MODES.filter((mode) => modes.includes(mode))
   const picked = usePreferences((s) => s.planRunMode)
-  const runMode: RunMode = runModes.includes(picked) ? picked : runModes.includes('auto') ? 'auto' : 'acceptEdits'
+  const runMode: RunMode = runModes.includes(picked) ? picked : runModes.includes('auto') ? 'auto' : runModes[0] ?? 'ask'
   const modesSupported = usePlanModesSupported() && runModes.length > 0
   const choices: PlanChoice[] = savePlan ? ['save', 'revise', 'stop'] : modesSupported ? ['run', 'revise', 'stop'] : ['allow', 'allowForSession', 'revise', 'stop']
   const [choice, setChoice] = useState<PlanChoice>(choices[0] ?? 'revise')
@@ -280,7 +283,7 @@ export function ChatPlanCard({ conversationId, item, modes }: { conversationId: 
       <div className="chat-approve-footer">
         <span className="chat-approve-hint">数字键选择 · Enter 提交 · Esc 停下</span>
         {choice === 'run'
-          ? <RunModeButton modes={runModes} mode={runMode} disabled={busy || saving} onRun={() => void submit()} />
+          ? <RunModeButton modes={runModes} mode={runMode} disabled={busy || saving} onRun={() => void submit()} agent={agent} />
           : (
             <button type="button" className="button primary" disabled={busy || saving} onClick={() => void submit()}>
               {SUBMIT_LABEL[choice]}<kbd>↵</kbd>

@@ -12,7 +12,7 @@ export class UsageService {
   private timer: ReturnType<typeof setInterval> | undefined
 
   constructor(
-    private readonly sources: Record<AgentKind, UsageSource>,
+    private readonly sources: Partial<Record<AgentKind, UsageSource>>,
     private readonly emit: (usage: AgentUsage) => void,
     private readonly now: () => number = Date.now
   ) {}
@@ -40,7 +40,7 @@ export class UsageService {
       return Promise.resolve(this.list())
     }
     this.lastRefresh = this.now()
-    this.inFlight = Promise.all(AGENT_KINDS.map((agent) => this.refreshAgent(agent))).finally(() => {
+    this.inFlight = Promise.all(AGENT_KINDS.filter((agent) => this.sources[agent]).map((agent) => this.refreshAgent(agent))).finally(() => {
       this.inFlight = null
     })
     return this.inFlight
@@ -82,7 +82,9 @@ export class UsageService {
 
   private async read(agent: AgentKind): Promise<AgentUsage> {
     try {
-      const reading = await this.sources[agent]()
+      const source = this.sources[agent]
+      if (!source) throw new Error(`no usage source for ${agent}`)
+      const reading = await source()
       return reading.signedIn
         ? {
             agent,

@@ -53,7 +53,7 @@ export function RoutineEditor({ routine, template = null, onClose }: { routine: 
   const mode = useCore((s) => s.chatSettings?.unattendedMode ?? 'acceptEdits')
   const rpc = useCore((s) => s.rpc)
   const optionsSupported = useChatOptionsSupported()
-  const installed = useInstalledAgents()
+  const installed = useInstalledAgents().filter((agent) => agent !== 'cursor')
   const [title, setTitle] = useState(routine?.title ?? template?.title ?? '')
   const [text, setText] = useState(routine?.target.text ?? template?.text ?? '')
   const [agent, setAgent] = useState<RoutineAgent>(routine?.target.agent ?? installed[0] ?? 'claude')

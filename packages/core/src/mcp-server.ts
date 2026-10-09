@@ -46,6 +46,8 @@ const PREVIEW_TOOL = {
 } as const
 
 export type McpTools = {
+  planOnly?: boolean
+  initialized?: () => Promise<void>
   // Checks the file may be shown (it exists, and is a page, an SVG or a picture); throws with the reason if not.
   preview: (path: string) => Promise<void>
   // The browser tools, there when the server was started for a conversation.
@@ -80,7 +82,7 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 // arguments are the model's to fix, so they come back as a tool error it can read.
 type ToolEntry = { spec: object & { name: string }; run(args: Record<string, unknown>): Promise<McpResult> }
 
-function toolTable({ preview, browser, terminal }: McpTools): ToolEntry[] {
+function toolTable({ preview, browser, terminal, planOnly }: McpTools): ToolEntry[] {
   const entries: ToolEntry[] = [
     {
       spec: PREVIEW_TOOL,
@@ -100,6 +102,7 @@ function toolTable({ preview, browser, terminal }: McpTools): ToolEntry[] {
   ]
   if (browser) {
     for (const { kind, ...spec } of BROWSER_TOOL_SPECS) {
+      if (planOnly && !spec.annotations.readOnlyHint) continue
       entries.push({
         spec,
         run: async (raw) => {
@@ -112,6 +115,7 @@ function toolTable({ preview, browser, terminal }: McpTools): ToolEntry[] {
   }
   if (terminal) {
     for (const { kind, ...spec } of TERMINAL_TOOL_SPECS) {
+      if (planOnly && !spec.annotations.readOnlyHint) continue
       entries.push({
         spec,
         run: async (raw) => {
@@ -148,6 +152,7 @@ export function createMcpHandler(tools: McpTools) {
     switch (method) {
       case 'initialize': {
         const requested = InitializeParams.safeParse(params)
+        await tools.initialized?.()
         return reply({
           protocolVersion: requested.success ? requested.data.protocolVersion : FALLBACK_PROTOCOL_VERSION,
           capabilities: { tools: {} },
@@ -184,7 +189,7 @@ export async function checkPreviewFile(path: string): Promise<void> {
 // A server started for a conversation has the browser tools, acting for that conversation alone;
 // one without has the preview tool alone. Each call connects anew, so a core restart between calls
 // is harmless.
-export async function serveMcp(home: string | undefined, conversationId?: string): Promise<void> {
+export async function serveMcp(home: string | undefined, conversationId?: string, planOnly = false, initialized?: () => Promise<void>): Promise<void> {
   const withCore = async <T>(work: (rpc: RpcConnection) => Promise<T>): Promise<T> => {
     const endpoint = await readCoreEndpoint(home)
     if (!endpoint) {
@@ -198,6 +203,8 @@ export async function serveMcp(home: string | undefined, conversationId?: string
     }
   }
   const handle = createMcpHandler({
+    planOnly,
+    initialized,
     preview: checkPreviewFile,
     ...(conversationId ? {
       browser: browserToolsOverCore(withCore, conversationId, new AttachmentStore(kandoPaths(home).attachments)),

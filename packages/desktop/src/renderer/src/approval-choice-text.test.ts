@@ -6,6 +6,11 @@ const grant = (overrides: Partial<ApprovalGrant>): ApprovalGrant => ({ kind: 'ru
 const choice = (grants: ApprovalGrant[], decision: ApprovalChoice['decision'] = 'allowForSession'): ApprovalChoice => ({ id: 'c', decision, grants })
 
 describe('approval choice text', () => {
+  it('preserves a provider label without claiming that its persistent choice ends with this session', () => {
+    const native = { ...choice([grant({ kind: 'other', scope: 'agent', values: ['Allow always'] })]), label: 'Allow always' }
+    expect(choiceText(native).label).toBe('Allow always')
+    expect(choiceText(native).note).not.toContain('重启后就失效')
+  })
   it('says what a choice remembers, for how long and where it is kept', () => {
     expect(choiceText(choice([grant({ values: ['Bash(git fetch *)'], scope: 'local' })]))).toEqual({
       label: '允许，本项目以后以 git fetch 开头的命令不再问',

@@ -88,6 +88,11 @@ describe('questionAnswers', () => {
     options: [{ label: 'Go', description: null }, { label: 'TypeScript', description: null }]
   }
 
+  it('presents Cursor option ids as labels, including options with identical labels', () => {
+    const native = { ...question, options: [{ id: 'one', label: 'Same', description: null }, { id: 'two', label: 'Same', description: null }] }
+    expect(questionAnswers(native, ['two', 'custom answer'])).toEqual([{ text: 'Same', typed: false }, { text: 'custom answer', typed: true }])
+  })
+
   it('tells the options picked from words of the user\'s own', () => {
     expect(questionAnswers(question, ['Go', 'Rust'])).toEqual([{ text: 'Go', typed: false }, { text: 'Rust', typed: true }])
   })

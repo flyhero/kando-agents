@@ -128,7 +128,7 @@ export function InstalledAgentsSettings() {
     return check && check.status !== 'missing' ? [{ kind, check }] : []
   })
   const missing = AGENT_KINDS.filter((kind) => checkOf(kind)?.status === 'missing')
-  const other = environment?.detectedAgents?.filter((agent) => agent.id !== 'claude' && agent.id !== 'codex') ?? []
+  const other = environment?.detectedAgents?.filter((agent) => !AGENT_KINDS.some((kind) => kind === agent.id)) ?? []
   const enabledCount = found.filter(({ kind }) => !disabled.includes(kind)).length
   const recheck = async () => {
     setChecking(true)

@@ -2,6 +2,7 @@ import type { ChatDecision, ChatImage, ChatItem, ChatOption, ChatPermissionMode,
 import type { AttachmentFile } from './attachment-store'
 import type { ChatItems } from './chat-items'
 import type { UsageReport } from './usage-source'
+import type { McpServer } from './agent-command'
 
 // What happened in a chat stage, in order: a frame from the agent or to it, a note Kando made,
 // the process ending. A stage's log holds these, and replaying them rebuilds the stage.
@@ -49,6 +50,7 @@ export type ChatAnswer = { decision: ChatDecision; choice?: string; mode?: ChatP
 // Where and how a chat stage's agent works; the driver speaks for Kando within these bounds.
 export type ChatStageOptions = {
   cwd: string
+  mcp?: McpServer
   // The conversation's other projects, which the agent may also write to.
   extraDirs: readonly string[]
   // The provider session (Claude session, Codex thread) to continue, if any.
@@ -102,6 +104,8 @@ export interface ChatDriver {
   waitingPlans?(): string[]
   // Frames that switch an option, after checking the stage offers the value (a Rejection if not).
   setOption(option: ChatOption, value: string): unknown[]
+  // Providers whose configuration responses acknowledge a switch, rather than just the write.
+  optionResult?(frame: unknown): { pending: boolean; error: string | null }
   // The queued message, once the agent is ready and idle to take it.
   queuedToSend(): { text: string; images: ChatImage[]; ref: string } | null
   // What of an incoming frame to keep in the log, or null for nothing: streamed deltas are

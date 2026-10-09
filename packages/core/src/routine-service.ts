@@ -148,7 +148,7 @@ export class RoutineService {
   pickAgent(routine: Routine): AgentKind {
     if (routine.target.agent !== 'auto') return routine.target.agent
     const now = this.now()
-    const ranked = AGENT_KINDS.map((agent) => ({ agent, verdict: quotaVerdict(this.deps.usage.list().find((usage) => usage.agent === agent), now) }))
+    const ranked = AGENT_KINDS.filter((agent) => agent !== 'cursor').map((agent) => ({ agent, verdict: quotaVerdict(this.deps.usage.list().find((usage) => usage.agent === agent), now) }))
     ranked.sort((a, b) => {
       const byState = QUOTA_RANK[a.verdict.state] - QUOTA_RANK[b.verdict.state]
       if (byState !== 0) return byState
@@ -230,6 +230,7 @@ export class RoutineService {
     if (!title) throw new Rejection('invalid-params', 'a routine needs a title')
     if (!isValidSchedule(fields.schedule)) throw new Rejection('routine-invalid-schedule', 'the schedule names no time')
     const { target } = fields
+    if (target.agent === 'cursor') throw new Rejection('cursor-unattended-unsupported', 'Cursor 暂不支持无人值守运行')
     if (!target.text && !target.images?.length) throw new Rejection('routine-no-prompt', 'a routine needs an instruction or images')
     // The agent picked at start chooses its own model.
     const cleaned = target.agent === 'auto' ? { ...target, model: undefined, effort: undefined } : target

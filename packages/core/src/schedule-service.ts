@@ -160,6 +160,7 @@ export class ScheduleService {
   // continues the stopped turn and carries the user's message, under one id, so nothing goes twice.
   create(target: RequestedTarget, notBefore: number | null): ScheduledRun {
     const { title, agent } = this.describe(target)
+    if (agent === 'cursor') throw new Rejection('cursor-unattended-unsupported', 'Cursor 暂不支持无人值守运行')
     if (target.kind === 'task') {
       const blocker = this.deps.tasks.scheduleBlocker(target.taskId)
       if (blocker) throw new Rejection(blocker)
@@ -189,6 +190,7 @@ export class ScheduleService {
   createResume(conversationId: string, limit: LimitRef, resetsAt: number | null): ScheduledRun {
     const target: ScheduledTarget = { kind: 'resume', conversationId, ...limit }
     const { title, agent } = this.describe(target)
+    if (agent === 'cursor') throw new Rejection('cursor-unattended-unsupported', 'Cursor 暂不支持无人值守运行')
     const open = this.openFor(conversationId)
     const user = open.find((run) => run.target.kind === 'conversation')
     if (user) {
@@ -269,6 +271,7 @@ export class ScheduleService {
   // The run for one occurrence of a routine, with the agent it spends; null when that occurrence
   // already has its run, so a routine moved on late, or twice, cannot start twice.
   insertRoutineRun(routine: Routine, dueAt: number, agent: AgentKind): ScheduledRun | null {
+    if (agent === 'cursor') throw new Rejection('cursor-unattended-unsupported', 'Cursor 暂不支持无人值守运行')
     return this.insertForRoutine(routine, dueAt, agent, 'waiting', null)
   }
 
@@ -430,6 +433,11 @@ export class ScheduleService {
       const agent = this.agentOf(run)
       if (agent === null) {
         this.settle(run, { status: 'cancelled', error: this.goneReason(run), settled_at: this.now() })
+        this.limitChanged(run)
+        continue
+      }
+      if (agent === 'cursor') {
+        this.settle(run, { status: 'failed', error: 'cursor-unattended-unsupported', settled_at: this.now() })
         this.limitChanged(run)
         continue
       }

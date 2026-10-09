@@ -42,7 +42,7 @@ export function ConversationDraft() {
   // Kept per agent, so switching back finds the mode picked for it.
   const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>(DEFAULT_START_MODES)
   // A model or effort left unpicked is the agent's own default, which the start does not pass.
-  const [picks, setPicks] = useState<Record<AgentKind, { model?: string; effort?: string }>>({ claude: {}, codex: {} })
+  const [picks, setPicks] = useState<Record<AgentKind, { model?: string; effort?: string }>>({ claude: {}, codex: {}, cursor: {} })
   // Each agent's models, asked for once it is picked; absent while asking, null when core cannot say.
   const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
   const rpc = useCore((s) => s.rpc)

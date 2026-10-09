@@ -3,6 +3,7 @@ import { access, constants } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
+import { cursorCliInfo, cursorSignedIn, findCursorCli } from './cursor-cli'
 import { ENVIRONMENT_TOOLS, type DetectedAgent, type Environment, type EnvironmentCheck, type EnvironmentTool } from '@kando/protocol'
 
 const execFileAsync = promisify(execFile)
@@ -138,12 +139,17 @@ export class EnvironmentService {
       discoverOtherAgents(pathEnv, platform, applicationDirs)
     ])
     const detectedAgents: DetectedAgent[] = [
-      ...checks.flatMap((check) => check.tool !== 'git' && check.path ? [{
-        id: check.tool,
-        name: check.tool === 'claude' ? 'Claude Code' : 'Codex',
-        locations: [{ source: 'cli' as const, path: check.path }]
-      }] : []),
-      ...otherAgents
+      ...checks.flatMap((check) => {
+        if (check.tool === 'git' || !check.path) return []
+        const discovered = otherAgents.find((agent) => agent.id === check.tool)
+        return [{
+          ...discovered,
+          id: check.tool,
+          name: check.tool === 'claude' ? 'Claude Code' : check.tool === 'cursor' ? 'Cursor' : 'Codex',
+          locations: [...(discovered?.locations ?? []), ...(!discovered?.locations.some((location) => location.source === 'cli' && location.path === check.path) ? [{ source: 'cli' as const, path: check.path }] : [])]
+        }]
+      }),
+      ...otherAgents.filter((agent) => !checks.some((check) => check.tool === agent.id && check.path))
     ]
     const previous = this.last
     this.last = { checks, detectedAgents, searchPath: pathEnv.split(delimiter).filter(Boolean), checkedAt: this.now() }
@@ -154,6 +160,12 @@ export class EnvironmentService {
 
   private async checkTool(tool: EnvironmentTool): Promise<EnvironmentCheck> {
     const { pathEnv, platform, signedIn } = this.options
+    if (tool === 'cursor') {
+      const command = await findCursorCli(pathEnv, platform)
+      if (!command) return { tool, status: 'missing', version: null, path: null, signedIn: null }
+      const info = await cursorCliInfo(command).catch(() => null)
+      return { tool, status: info?.compatible ? 'ok' : 'unknown', version: info?.version ?? null, path: command, signedIn: await cursorSignedIn(command) }
+    }
     const path = await findOnPath(tool, pathEnv, platform)
     if (!path) return { tool, status: 'missing', version: null, path: null, signedIn: null }
     // A .cmd shim only a shell can run; the version goes unasked rather than through one.

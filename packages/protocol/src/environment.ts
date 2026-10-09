@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 // What Kando needs on the machine to run a task: git for the worktrees, and at least one agent CLI.
-export const ENVIRONMENT_TOOLS = ['git', 'claude', 'codex'] as const
+export const ENVIRONMENT_TOOLS = ['git', 'claude', 'codex', 'cursor'] as const
 export const EnvironmentTool = z.enum(ENVIRONMENT_TOOLS)
 export type EnvironmentTool = z.infer<typeof EnvironmentTool>
 

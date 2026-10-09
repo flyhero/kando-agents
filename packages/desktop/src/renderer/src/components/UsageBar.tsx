@@ -15,7 +15,7 @@ import { usePreferences } from '../preferences'
 import { formatClock, formatDuration, percentText, resetText, shownPercent, useNow, windowLabel } from '../usage-format'
 import { AgentIcon } from './icons'
 
-const AGENT_CLI: Record<AgentKind, string> = { claude: 'claude', codex: 'codex' }
+const AGENT_CLI: Record<AgentKind, string> = { claude: 'claude', codex: 'codex', cursor: 'agent' }
 
 function errorText(usage: AgentUsage): string {
   return usage.error === 'auth-expired'
@@ -52,7 +52,8 @@ function clearsText(clears: readonly UsageWindow['kind'][]): string {
 // Where a reset can actually be used: Claude's cannot be from a terminal.
 const WHERE_TO_USE: Record<AgentKind, string> = {
   claude: '在 claude.ai 网页版或 Claude Desktop 的 设置 → Usage 里使用',
-  codex: '在 Codex 的用量设置里使用'
+  codex: '在 Codex 的用量设置里使用',
+  cursor: '在 Cursor 的用量设置里查看'
 }
 
 function ResetCreditList({ agent, credits, now }: { agent: AgentKind; credits: ResetCredits; now: number }) {

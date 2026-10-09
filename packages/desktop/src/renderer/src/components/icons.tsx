@@ -1,4 +1,5 @@
 import type { AgentKind } from '@kando/protocol'
+import cursorMark from '../assets/cursor.svg'
 
 // Line icons on a 20px grid; they take the button's text color.
 const stroked = {
@@ -115,6 +116,15 @@ function CodexMark() {
   )
 }
 
+// Official favicon from https://cursor.com/docs-static/favicon.svg, kept unaltered.
+function CursorMark() {
+  return (
+    <svg className="agent-mark agent-mark-cursor" viewBox="0 0 512 512" aria-hidden="true">
+      <image href={cursorMark} width="512" height="512" />
+    </svg>
+  )
+}
+
 function NoAgentMark() {
   return (
     <svg className="agent-mark agent-mark-none" {...stroked} strokeDasharray="2.4 2.2">
@@ -129,6 +139,8 @@ export function AgentIcon({ agent }: { agent: AgentKind | null }) {
       return <ClaudeMark />
     case 'codex':
       return <CodexMark />
+    case 'cursor':
+      return <CursorMark />
     case null:
       return <NoAgentMark />
   }

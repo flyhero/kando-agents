@@ -60,13 +60,15 @@ export type ApprovalGrant = z.infer<typeof ApprovalGrant>
 // through beyond this call. A plain allow or deny grants nothing.
 export const ApprovalChoice = z.object({
   id: z.string(),
+  label: z.string().optional(),
   decision: ChatDecision.catch('deny'),
   grants: z.array(ApprovalGrant)
 })
 export type ApprovalChoice = z.infer<typeof ApprovalChoice>
 
 // Kando's names for how freely an agent may act; each agent maps them onto its own settings and
-// offers the ones it has. ask: confirm each call · acceptEdits: file edits go through (Codex:
+// offers the ones it has. Cursor maps ask to Agent, plan to Plan and readOnly to native Ask;
+// these names do not imply an OS sandbox. Others: ask: confirm each call · acceptEdits: file edits go through (Codex:
 // on-request) · plan: read and plan only · auto: the agent's own judgement · readOnly: a read-only
 // sandbox · bypass: nothing asked, nothing sandboxed.
 export const CHAT_PERMISSION_MODES = ['ask', 'acceptEdits', 'plan', 'auto', 'readOnly', 'bypass'] as const
@@ -128,7 +130,7 @@ export const ChatQuestion = z.object({
   id: z.string(),
   header: z.string(),
   question: z.string(),
-  options: z.array(z.object({ label: z.string(), description: z.string().nullable() })),
+  options: z.array(z.object({ id: z.string().optional(), label: z.string(), description: z.string().nullable() })),
   multiSelect: z.boolean()
 })
 export type ChatQuestion = z.infer<typeof ChatQuestion>
@@ -353,7 +355,7 @@ export const CONTEXT_COMPACTED = '对话上下文已压缩'
 
 // A plan from plan mode waits as an approval: Claude's ExitPlanMode call, or the plan a Codex
 // plan-mode turn ended with.
-export const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan'])
+export const PLAN_TOOLS: ReadonlySet<string> = new Set(['ExitPlanMode', 'plan', 'cursor/create_plan'])
 
 // A plain check rather than a type guard: a plan has the approval type of any other approval.
 export function isPlanApproval(item: ChatItem): boolean {

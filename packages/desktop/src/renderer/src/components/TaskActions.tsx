@@ -242,7 +242,7 @@ function StartButton({ task, dependencies }: { task: Task; dependencies: readonl
 // Carrying the task out later, unattended: once its time comes and its agent has quota again.
 // Once scheduled, the button says when and leads to the page of scheduled runs.
 function ScheduleButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
-  const supported = useSchedulesSupported()
+  const supported = useSchedulesSupported() && task.agent !== 'cursor'
   const scheduled = useCore((s) => openRunForTask(s.schedules, task.id))
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])

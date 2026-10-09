@@ -338,7 +338,7 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
       const option = question.options[Number(event.key) - 1]
       if (option) {
         event.preventDefault()
-        choose(option.label)
+        choose(option.id ?? option.label)
       }
     } else if (event.key === '0' && !free) {
       event.preventDefault()
@@ -408,17 +408,17 @@ export function ChatQuestionCard({ conversationId, item }: { conversationId: str
         aria-labelledby={`${item.requestId}-question`}
       >
         {question.options.map((option, at) => {
-          const on = chosen.includes(option.label)
+          const on = chosen.includes(option.id ?? option.label)
           return (
             <button
-              key={option.label}
+              key={option.id ?? option.label}
               type="button"
               data-option
               role={question.multiSelect ? 'checkbox' : 'radio'}
               aria-checked={on}
               className="chat-ask-option"
               disabled={busy}
-              onClick={() => choose(option.label)}
+              onClick={() => choose(option.id ?? option.label)}
             >
               <span className="chat-ask-key" data-multi={question.multiSelect || undefined}>{at < 9 ? at + 1 : ''}</span>
               <span className="chat-ask-text">

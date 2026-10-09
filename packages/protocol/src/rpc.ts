@@ -22,7 +22,7 @@ import { Routine, RoutineFields, RoutineList } from './routine'
 import { WireEntry, WirePage, WireUsage } from './wire'
 
 // Bump only for breaking changes; additive optional fields keep the version.
-export const PROTOCOL_VERSION = 10
+export const PROTOCOL_VERSION = 11
 
 const TaskRef = z.object({ id: z.string().min(1) })
 const TaskTitle = z.string().trim().min(1).max(200)
@@ -215,7 +215,8 @@ export const rpcMethods = {
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },
   // Ends the running turn; the agent stays up for the next message.
   'conversations.interrupt': { params: ConversationRef, result: Ok },
-  // Answers an approval or question item. answers maps a question id to the chosen labels.
+  // Answers an approval or question item. answers maps a question id to option ids, or labels
+  // when the provider supplies none.
   'conversations.respond': {
     params: ConversationRef.extend({
       requestId: z.string().min(1).max(200),

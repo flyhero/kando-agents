@@ -378,7 +378,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
         )}
         {/* A routine's chat is out of the list and its follow-ups light nothing: a run scheduled
             here would finish unseen. Running again belongs to the routine's own schedule. */}
-        {schedulesSupported && !conversation.routineId && (
+        {schedulesSupported && conversation.agent !== 'cursor' && !conversation.routineId && (
           <ScheduleSendButton
             conversationId={id}
             text={written}

@@ -397,6 +397,8 @@ export type QuestionAnswer = { text: string; typed: boolean }
 export function questionAnswers(question: ChatQuestion, answers: readonly string[]): QuestionAnswer[] {
   const labels = new Set(question.options.map((option) => option.label))
   return answers.flatMap((answer) => {
+    const option = question.options.find((option) => option.id === answer)
+    if (option) return [{ text: option.label, typed: false }]
     if (labels.has(answer)) return [{ text: answer, typed: false }]
     const parts = answer.split(', ')
     const typedFrom = parts.findIndex((part) => !labels.has(part))

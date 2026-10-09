@@ -14,6 +14,9 @@ import { ConversationStore } from './conversation-store'
 import { folderChanges, folderDiff, folderHead } from './conversation-changes'
 import { CLAUDE_MODE_NAMES } from './claude-stream'
 import { CODEX_MODES } from './codex-app-server'
+import { CURSOR_MODES } from './cursor-acp'
+import { cursorCatalog, requireCursorCli } from './cursor-cli'
+import { cursorMcpReadyFile, cursorMcpServer, prepareCursorMcp, waitForCursorMcp } from './cursor-mcp'
 import type { McpServer } from './agent-command'
 import { chatCommand, handoffPrompt, handoffPromptPath } from './conversation-command'
 import { searchSnippet } from './conversation-search'
@@ -329,7 +332,7 @@ export class ConversationService {
     const worktreesRoot = worktree ? this.worktreesRoot : null
     if (worktree && (!worktreesRoot || projectPaths.length === 0)) throw new Rejection('missing-repo', 'a worktree needs a project to lay out')
     // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
-    if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : CODEX_MODES))) {
+    if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : agent === 'cursor' ? CURSOR_MODES : CODEX_MODES))) {
       throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
     }
     if (!this.capacityAvailable(agent)) throw new Rejection('agent-capacity')
@@ -569,7 +572,7 @@ export class ConversationService {
       // Kando picks a Claude session id before launch, so a run that died before its first prompt
       // left an id Claude never saved. Only a session that recorded messages can be resumed, and
       // only from the folder it ran in: moved elsewhere, Claude starts afresh from a handoff.
-      const resumable = !(launch.moved && agent === 'claude')
+      const resumable = !(launch.moved && (agent === 'claude' || agent === 'cursor'))
       const saved = resumable && previous?.providerSessionId && (agent !== 'claude' || this.store.hasProviderMessages(id, previous.providerSessionId))
         ? previous.providerSessionId : null
       const providerSessionId = saved ?? (agent === 'claude' ? randomUUID() : null)
@@ -597,7 +600,7 @@ export class ConversationService {
   // agent can (Claude's session from the same folder, Codex's thread), else a fresh start. The chat
   // it continues is already copied, so no handoff file is written.
   private async startFork(current: Conversation, agent: AgentKind, fork: ForkPoint): Promise<Conversation> {
-    const native = fork.providerSessionId !== null && fork.at !== null
+    const native = agent !== 'cursor' && fork.providerSessionId !== null && fork.at !== null
     const providerSessionId = native ? fork.providerSessionId : agent === 'claude' ? randomUUID() : null
     // Without a session to fork, the copied chat reaches the agent the way a handoff does.
     let handoffPath: string | null = null
@@ -624,6 +627,7 @@ export class ConversationService {
     const { id } = current
     const { agent } = stage
     const { options } = this.chatStage(current, stage, forkAt)
+    const cursorReady = agent === 'cursor' ? cursorMcpReadyFile(this.sessionsRoot, id, stage.id) : null
     const command = chatCommand(agent, stage.providerSessionId, resume, handoffPath, options.extraDirs, {
       preferred: options.preferred,
       allowBypass: options.allowBypass,
@@ -633,9 +637,15 @@ export class ConversationService {
       ...(this.mcp ? { mcp: this.mcp(id) } : {})
     })
     let sessionId: string
-    this.wire?.record(id, stage.id, [{ dir: 'spawn', text: JSON.stringify({ command: command.command, args: command.args, cwd: current.workspacePath }) }])
     try {
-      ({ sessionId } = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} }))
+      if (cursorReady) {
+        command.command = await requireCursorCli()
+        if (!options.mcp) throw new Rejection('cursor-mcp-unavailable', 'Cursor 需要 Kando MCP 配置')
+        await prepareCursorMcp(cursorReady)
+      }
+      this.wire?.record(id, stage.id, [{ dir: 'spawn', text: JSON.stringify({ command: command.command, args: command.args, cwd: current.workspacePath }) }])
+      const spawned = await this.daemon.request('spawnPipe', { command: command.command, args: command.args, cwd: current.workspacePath, env: {} })
+      sessionId = spawned.sessionId
     } catch (error) {
       this.store.deleteStage(stage.id)
       throw error instanceof Rejection && error.reason === 'unknown-method'
@@ -646,6 +656,7 @@ export class ConversationService {
     this.changed(this.store.update(id, { agent, sessionId }))
     try {
       await this.chats.open(this.chatStage(current, stage, forkAt), sessionId, 0, true)
+      if (cursorReady) await waitForCursorMcp(cursorReady)
       if (handoffPath) await this.chats.send(id, handoffPrompt(handoffPath))
     } catch (error) {
       // A stage that never started leaves nothing to resume, so it goes, log and all.
@@ -675,6 +686,9 @@ export class ConversationService {
   // session the fork made, which the stage then holds.
   private chatStage(conversation: Conversation, stage: ConversationStage, forkAt: string | null = null): ChatStage {
     const chosen = this.store.chatOptions(conversation.id)
+    const mcp = this.mcp?.(conversation.id)
+    let permissionMode = chosen.permissionMode
+    if (stage.agent === 'cursor' && (!permissionMode || !(permissionMode in CURSOR_MODES))) permissionMode = 'ask'
     return {
       conversationId: conversation.id,
       stageId: stage.id,
@@ -682,6 +696,7 @@ export class ConversationService {
       ended: stage.endedAt != null,
       options: {
         cwd: conversation.workspacePath,
+        ...(mcp ? { mcp: stage.agent === 'cursor' ? cursorMcpServer(mcp, cursorMcpReadyFile(this.sessionsRoot, conversation.id, stage.id), stage.planOnly ?? false) : mcp } : {}),
         extraDirs: conversation.projectPaths.slice(1),
         resume: stage.providerSessionId,
         fork: forkAt,
@@ -689,7 +704,7 @@ export class ConversationService {
         planOnly: stage.planOnly ?? false,
         allowBypass: !stage.planOnly && (chosen.allowBypass ?? false),
         promptSuggestions: this.promptSuggestions,
-        preferred: { permissionMode: chosen.permissionMode, ...chosen[stage.agent] },
+        preferred: { permissionMode, ...chosen[stage.agent] },
         keepImage: (data) => this.keepImage(data)
       }
     }
@@ -707,6 +722,12 @@ export class ConversationService {
     }
     await this.chats.setOption(id, option, value)
     if (option === 'permissionMode') return
+    if (agent === 'cursor') {
+      const stage = this.store.activeStage(id)
+      const state = stage ? this.chats.items(this.chatStage(conversation, stage)).findLast((item) => item.kind === 'state') : null
+      if (state?.kind === 'state') this.store.setChatOptions(id, { cursor: { model: state.model ?? undefined, effort: state.effort ?? undefined } })
+      return
+    }
     const chosen = this.store.chatOptions(id)
     this.store.setChatOptions(id, { [agent]: { ...chosen[agent], [option]: value } })
   }
@@ -723,7 +744,7 @@ export class ConversationService {
     const model = (name: string | null | undefined) => state.models.find((each) => each.id === name)
     if (option === 'permissionMode') {
       // Bypass is for the start to allow, which asks the user's setting again.
-      if (value !== 'bypass' && !state.permissionModes.includes(value)) throw new Rejection('chat-option-invalid', `${agent} offers no permission mode ${value}`)
+      if ((value !== 'bypass' || agent === 'cursor') && !state.permissionModes.includes(value)) throw new Rejection('chat-option-invalid', `${agent} offers no permission mode ${value}`)
       this.store.setChatOptions(id, { permissionMode: value })
     } else if (option === 'model') {
       const picked = model(value)
@@ -745,7 +766,7 @@ export class ConversationService {
     const known = this.catalogs.get(agent)
     if (known) return known
     const found = this.catalogFromStages(agent)
-    const catalog = found ? Promise.resolve(found) : probeChatCatalog(
+    const catalog = found ? Promise.resolve(found) : agent === 'cursor' ? cursorCatalog(this.sessionsRoot).catch(() => null) : probeChatCatalog(
       createDriver({ conversationId: '', stageId: 'catalog', agent, options: { cwd: this.sessionsRoot, extraDirs: [], resume: null } }),
       chatCommand(agent, null, false, null),
       this.sessionsRoot
@@ -804,6 +825,7 @@ export class ConversationService {
   // images go with the text; a message of pictures alone is sent as it is, not as the go-ahead.
   async runScheduled(id: string, text: string, images: readonly string[], mode: UnattendedMode, ready: () => Promise<unknown>, ref: string): Promise<void> {
     const conversation = this.get(id)
+    if (conversation.agent === 'cursor') throw new Rejection('cursor-unattended-unsupported', 'Cursor 暂不支持无人值守运行')
     const plan = this.waitingPlan(conversation)
     if (plan) {
       await this.chats.respond(id, plan.requestId, { decision: 'allowForSession' })
@@ -925,6 +947,7 @@ export class ConversationService {
       ? this.chats.items(this.chatStage(conversation, stage)).find((each) => each.kind === 'approval' && each.requestId === requestId)
       : undefined
     await this.chats.respond(id, requestId, answer)
+    if (stage?.agent === 'cursor' && answer.decision === 'deny' && answer.message) await this.chats.send(id, answer.message, [], true)
     if (conversation.taskId && stage && item?.kind === 'approval' && isPlanApproval(item) && item.detail && answer.decision !== 'deny') {
       this.emit({ type: 'planApproved', taskId: conversation.taskId, plan: { markdown: item.detail, agent: stage.agent, stageId: stage.id, requestId } })
     }

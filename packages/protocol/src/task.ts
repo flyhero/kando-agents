@@ -10,7 +10,7 @@ export const TASK_STATUSES = ['pending', 'running', 'review', 'done', 'abandoned
 export const TaskStatus = z.enum(TASK_STATUSES)
 export type TaskStatus = z.infer<typeof TaskStatus>
 
-export const AGENT_KINDS = ['claude', 'codex'] as const
+export const AGENT_KINDS = ['claude', 'codex', 'cursor'] as const
 export const AgentKind = z.enum(AGENT_KINDS)
 export type AgentKind = z.infer<typeof AgentKind>
 

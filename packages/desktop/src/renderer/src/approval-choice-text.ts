@@ -64,6 +64,7 @@ function grantsText(grants: readonly ApprovalGrant[]): string {
 
 // A choice's row: what it does, and where what it remembers is kept. A plain deny has its own row.
 export function choiceText(choice: ApprovalChoice): { label: string; note: string | null } {
+  if (choice.label) return { label: choice.label, note: choice.grants.length ? [...new Set(choice.grants.map((grant) => SCOPE_NOTE[grant.scope]))].join('；') : null }
   if (choice.grants.length === 0) return { label: choice.decision === 'deny' ? '拒绝' : '允许这一次', note: null }
   const notes = [...new Set(choice.grants.map((grant) => SCOPE_NOTE[grant.scope]))]
   return { label: `${choice.decision === 'deny' ? '拒绝' : '允许'}，${grantsText(choice.grants)}`, note: notes.join('；') }
@@ -83,6 +84,8 @@ export function isPlainDeny(choice: ApprovalChoice): boolean {
 // How an answered approval went, when it was answered with a choice that remembered something.
 export function chosenText(item: ApprovalItem): string | null {
   const choice = item.chosen ? item.choices?.find((each) => each.id === item.chosen) : undefined
-  if (!choice || choice.grants.length === 0) return null
+  if (!choice) return null
+  if (choice.label) return `${choice.decision === 'deny' ? '已拒绝' : '已允许'} · ${choice.label}`
+  if (choice.grants.length === 0) return null
   return `${choice.decision === 'deny' ? '已拒绝' : '已允许'}，${grantsText(choice.grants)}`
 }

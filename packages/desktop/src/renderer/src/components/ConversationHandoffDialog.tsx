@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Conversation } from '@kando/protocol'
+import type { AgentKind, Conversation } from '@kando/protocol'
 import { dismissError, perform, setSettingsOpen, useCore } from '../core-store'
-import { otherInstalledAgent, useInstalledAgents } from '../installed-agents'
+import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { AgentQuotaHint, confirmQuota } from './AgentQuota'
 import { startOptions } from './ConversationActions'
@@ -15,7 +15,9 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
   const mustConfirm = conversation.sessionId !== null && conversation.chat?.turn !== 'idle'
   const error = useCore((s) => s.error)
   // Another agent that is installed here; none, and there is nowhere to hand off to.
-  const target = otherInstalledAgent(conversation.agent, useInstalledAgents())
+  const targets = useInstalledAgents().filter((agent) => agent !== conversation.agent)
+  const [selected, setSelected] = useState<AgentKind | null>(null)
+  const target = targets.find((agent) => agent === selected) ?? targets[0] ?? null
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
     if (!target || busy || (mustConfirm && !confirmed) || !confirmQuota(target)) return
@@ -37,6 +39,7 @@ export function ConversationHandoffDialog({ conversation, onClose }: { conversat
     <div className="modal-body">
       <header className="modal-header"><h2>移交给 {AGENT_LABEL[target]}</h2><button type="button" className="icon-button modal-close" aria-label="关闭" onClick={onClose}>×</button></header>
       <p className="muted">会传递可见消息、补充说明和所选项目目录（无项目时为 Kando 托管目录）。隐藏推理和 provider 私有上下文无法移交；新 Agent 应检查文件、Git 状态和测试结果。</p>
+      <label className="modal-field"><span className="modal-label">目标 Agent</span><select className="input" value={target} onChange={(event) => { const next = targets.find((agent) => agent === event.target.value); if (next) setSelected(next) }}>{targets.map((agent) => <option key={agent} value={agent}>{AGENT_LABEL[agent]}</option>)}</select></label>
       <AgentQuotaHint agent={target} />
       <label className="modal-field"><span className="modal-label">补充说明 <span className="modal-optional">[可选]</span></span>
         <textarea className="input modal-textarea" rows={4} value={note} onChange={(event) => setNote(event.target.value)} />

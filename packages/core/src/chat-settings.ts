@@ -9,7 +9,7 @@ const DEFAULTS = {
   promptSuggestions: true,
   unattendedMode: 'acceptEdits',
   maxConcurrentAgents: 20,
-  agentConcurrency: { claude: DEFAULT_AGENT_CONCURRENCY, codex: DEFAULT_AGENT_CONCURRENCY },
+  agentConcurrency: { claude: DEFAULT_AGENT_CONCURRENCY, codex: DEFAULT_AGENT_CONCURRENCY, cursor: DEFAULT_AGENT_CONCURRENCY },
   wireLog: false
 } satisfies Required<ChatSettings>
 const Saved = z.object({
@@ -38,6 +38,7 @@ export class ChatSettingsStore {
       console.error('[kando-core] unreadable chat settings; using the defaults', error)
     }
     this.settings = Saved.parse(saved ?? {})
+    this.settings.agentConcurrency = { ...DEFAULTS.agentConcurrency, ...this.settings.agentConcurrency }
     return this.settings
   }
 

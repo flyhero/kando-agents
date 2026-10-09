@@ -30,7 +30,7 @@ const Preferences = z.object({
   notifications: z.boolean().catch(true),
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.
-  defaultAgent: z.enum(['recent', 'claude', 'codex', 'none']).catch('recent'),
+  defaultAgent: z.enum(['recent', 'claude', 'codex', 'cursor', 'none']).catch('recent'),
   // The permission mode a plan is carried out in, as last picked; where the stage lacks it, auto,
   // then accepting edits.
   planRunMode: z.enum(['auto', 'acceptEdits', 'ask', 'bypass']).catch('auto'),
