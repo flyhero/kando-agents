@@ -15,6 +15,7 @@ describe('startModes', () => {
     expect(startModes('claude', model(), true)).toEqual(['ask', 'acceptEdits', 'plan', 'bypass'])
     expect(startModes('claude', undefined, false)).toEqual(['ask', 'acceptEdits', 'plan'])
     expect(startModes('codex', model(), false)).toEqual(['acceptEdits', 'ask', 'plan', 'readOnly'])
+    expect(startModes('codex', model(true), false)).toEqual(['acceptEdits', 'ask', 'plan', 'readOnly'])
   })
 
   it('defaults each agent independently and falls back when Claude auto is unavailable', () => {

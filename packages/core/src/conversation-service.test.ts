@@ -688,6 +688,24 @@ describe('ConversationService', () => {
     await expect(service.delete(started.id)).rejects.toMatchObject({ reason: 'task-conversation' })
   })
 
+  it('drops a previous reasoning override when the next task stage selects another model', async () => {
+    const first = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new', model: 'sonnet', effort: 'high' })
+    await service.stop(first.id)
+    const next = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new', model: 'haiku' })
+    expect(next.chatOptions).toMatchObject({ model: 'haiku', effort: null })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--model', 'haiku']))
+    expect(daemon.spawns.at(-1)?.args).not.toContain('--effort')
+  })
+
+  it('can explicitly return a task stage to the agent and model defaults', async () => {
+    const first = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new', model: 'sonnet', effort: 'high' })
+    await service.stop(first.id)
+    const next = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new', model: null, effort: null })
+    expect(next.chatOptions).toMatchObject({ model: null, effort: null })
+    expect(daemon.spawns.at(-1)?.args).not.toContain('--model')
+    expect(daemon.spawns.at(-1)?.args).not.toContain('--effort')
+  })
+
   it('keeps a plan-only stage read-only across a core restart, and keeps its plan when asked', async () => {
     const web = mkdtempSync(path.join(root, 'web-'))
     const planning = await service.startForTask(task, { cwd: root, extraDirs: [web], planOnly: true, session: 'new', allowBypass: true })

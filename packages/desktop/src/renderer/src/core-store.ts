@@ -89,6 +89,7 @@ export type CoreState = {
   // What core found of git and the agent CLIs; null until it says, or on a core that does not look.
   environment: Environment | null
   newTaskOpen: boolean
+  taskLaunchId: string | null
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
   settingsSection: string | null
@@ -161,6 +162,7 @@ export const useCore = create<CoreState>()(() => ({
   chatSettings: null,
   environment: null,
   newTaskOpen: false,
+  taskLaunchId: null,
   settingsOpen: false,
   settingsSection: null,
   inboxOpen: false,

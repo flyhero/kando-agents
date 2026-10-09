@@ -209,6 +209,61 @@ describe('TaskService', () => {
     expect(told(task.id)).not.toContain('我确认之后再开始修改代码')
   })
 
+  it('starts with the selected model, effort and mode, keeping them across a restart', async () => {
+    // Populate the catalog from a fake stage, without probing an installed CLI.
+    await conversations.create('claude', [])
+    const task = readyTask('Small edit', [initRepo('app')])
+    const running = await service.start(task.id, false, undefined, { permissionMode: 'acceptEdits', model: 'sonnet', effort: 'high' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--model', 'sonnet', '--effort', 'high']))
+    expect(told(task.id)).toContain('直接开始实现')
+    expect(told(task.id)).not.toContain('我确认之后再开始修改代码')
+    expect(told(task.id)).not.toContain('无人值守')
+    await settle()
+    await conversations.stopForTask(task.id)
+    await service.resumeChat(task.id)
+    expect(conversations.get(running.conversationId ?? '').chatOptions).toMatchObject({ permissionMode: 'acceptEdits', model: 'sonnet', effort: 'high' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--model', 'sonnet', '--effort', 'high']))
+  })
+
+  it('rejects invalid selections before creating a task worktree or conversation', async () => {
+    await conversations.create('claude', [])
+    const task = readyTask('Invalid config', [initRepo('app')])
+    for (const options of [
+      { model: 'missing-model' },
+      { model: 'haiku', effort: 'high' },
+      { permissionMode: 'readOnly' as const },
+      { permissionMode: 'bypass' as const }
+    ]) {
+      await expect(service.start(task.id, false, undefined, options)).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    }
+    expect(service.get(task.id)).toMatchObject({ status: 'pending', conversationId: null, repos: [{ worktreePath: null }] })
+    expect(existsSync(path.join(dir, 'worktrees', task.id.slice(0, 8)))).toBe(false)
+  })
+
+  it('rejects direct execution while dependencies are unfinished, but accepts a planning model', async () => {
+    await conversations.create('claude', [])
+    const repo = initRepo('app')
+    const dependency = readyTask('Schema', [repo])
+    const task = service.update({ id: readyTask('Use schema', [repo]).id, dependsOn: [dependency.id] })
+    await expect(service.start(task.id, false, undefined, { permissionMode: 'acceptEdits' })).rejects.toMatchObject({ reason: 'dependencies-unfinished' })
+    expect(service.get(task.id).conversationId).toBeNull()
+    const planning = await service.start(task.id, false, undefined, { permissionMode: 'plan', model: 'sonnet', effort: 'low' })
+    expect(planning.status).toBe('pending')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--model', 'sonnet', '--effort', 'low']))
+    await settle()
+    service.move(dependency.id, 'done')
+    const running = await service.start(task.id)
+    expect(running.status).toBe('running')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--model', 'sonnet', '--effort', 'low']))
+  })
+
+  it('honors an explicitly allowed bypass mode without forcing a plan', async () => {
+    const task = readyTask('Trusted edit', [initRepo('app')])
+    await service.start(task.id, true, undefined, { permissionMode: 'bypass' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'bypassPermissions']))
+    expect(told(task.id)).toContain('直接开始实现')
+  })
+
   describe('run records', () => {
     const verdicts = (taskId: string) => runs.forTask(taskId).map(({ kind, endedBy, outcome }) => ({ kind, endedBy, outcome }))
 

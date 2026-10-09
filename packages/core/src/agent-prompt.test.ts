@@ -135,6 +135,19 @@ describe('chatStartPrompt', () => {
     expect(prompt).toContain('先对照现在的代码核对一遍')
     expect(prompt).toContain('<saved-plan>\n1. 调用 issue()\n</saved-plan>')
   })
+
+  it('executes directly without telling an interactive task to run unattended', () => {
+    const prompt = chatStartPrompt(task, workspace, [], null, undefined, null, false, 'acceptEdits')
+    expect(prompt).toContain('直接开始实现')
+    expect(prompt).not.toContain('我确认之后再开始修改代码')
+    expect(prompt).not.toContain('无人值守')
+  })
+
+  it('asks for analysis rather than implementation in read-only mode', () => {
+    const prompt = chatStartPrompt(task, workspace, [], null, undefined, null, false, 'readOnly')
+    expect(prompt).toContain('这次只读，不要修改文件')
+    expect(prompt).not.toContain('开始实现')
+  })
 })
 
 describe('chatPlanPrompt for a task waiting on others', () => {

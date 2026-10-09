@@ -76,7 +76,7 @@ export function defaultStartMode(agent: AgentKind, offered: readonly ChatPermiss
 // Those, with auto where the model takes it (as the agent's catalog says) and bypass where the
 // settings allow it, in the order a running chat lists them.
 export function startModes(agent: AgentKind, model: ChatModel | undefined, allowBypass: boolean): ChatPermissionMode[] {
-  return [...START_MODES[agent], ...(model?.autoMode && agent !== 'cursor' ? ['auto' as const] : []), ...(allowBypass && agent !== 'cursor' ? ['bypass' as const] : [])]
+  return [...START_MODES[agent], ...(model?.autoMode && agent === 'claude' ? ['auto' as const] : []), ...(allowBypass && agent !== 'cursor' ? ['bypass' as const] : [])]
 }
 
 const EFFORT_LABEL: Record<string, string> = {

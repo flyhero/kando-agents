@@ -3,6 +3,7 @@ import { mkdir, realpath, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { checkEditAdditionalProjects, checkSwitchBranch, isPlanApproval, MAX_TASK_REPOS, type AgentKind, type ChatCatalog, type ChatImage, type ChatItem, type ChatOption, type ChatSettings, type CommitPushResult, type CommitResult, type PushResult, type Conversation, type ConversationMessage, type ConversationSearchHit, type ConversationStage, type FileDiff, type FolderChanges, type ProjectBranches, type ProjectHead, type ChatDecision, type UnattendedMode, isKandoRequest } from '@kando/protocol'
 import type { DaemonEvent, SessionInfo } from '@kando/protocol/node'
+import type { TaskLaunchOptions } from '@kando/protocol'
 import type { RunMeasure } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
 import type { ChatAnswer, StageMessage } from './chat-driver'
@@ -47,7 +48,7 @@ export type ChatStageRef = { conversationId: string; taskId: string | null; stag
 // How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
 // while it only plans), and whether it goes on with the last session or takes one of its own (a first
 // start, or planning giving way to carrying the plan out).
-export type TaskChatLaunch = {
+export type TaskChatLaunch = TaskLaunchOptions & {
   cwd: string
   extraDirs: readonly string[]
   planOnly: boolean
@@ -55,8 +56,6 @@ export type TaskChatLaunch = {
   // Files the agent may read without asking, such as the task's images.
   readable?: readonly string[]
   allowBypass?: boolean
-  // What a new stage starts in instead of planning first: a scheduled run's unattended mode.
-  permissionMode?: string
 }
 
 // What a stage's start takes beyond the agent: see TaskChatLaunch; moved says the agent works
@@ -341,17 +340,8 @@ export class ConversationService {
     const { permissionMode, model, effort, worktree = false, branch } = start
     const worktreesRoot = worktree ? this.worktreesRoot : null
     if (worktree && (!worktreesRoot || projectPaths.length === 0)) throw new Rejection('missing-repo', 'a worktree needs a project to lay out')
-    // Before the agent lists what it offers, only the modes it has at all; bypass still needs allowing.
-    if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : agent === 'cursor' ? CURSOR_MODES : CODEX_MODES))) {
-      throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
-    }
     if (!this.capacityAvailable(agent)) throw new Rejection('agent-capacity')
-    if (model || effort) {
-      const models = (await this.chatCatalog(agent))?.models ?? []
-      const picked = models.find((each) => each.id === (model ?? models.find((one) => one.isDefault)?.id))
-      if (model && !picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${model}`)
-      if (effort && !picked?.efforts.includes(effort)) throw new Rejection('chat-option-invalid', `the model takes no effort ${effort}`)
-    }
+    await this.validateStartOptions(agent, { permissionMode, model, effort })
     const resolved = await resolveProjects(projectPaths)
     const { picked } = resolved
     const primary = resolved.projects[0]
@@ -416,6 +406,20 @@ export class ConversationService {
     return conversation
   }
 
+  // Validate before preparing a workspace or replacing a task's existing stage.
+  async validateStartOptions(agent: AgentKind, options: { permissionMode?: string; model?: string | null; effort?: string | null }): Promise<void> {
+    const { permissionMode, model, effort } = options
+    if (permissionMode && !(permissionMode in (agent === 'claude' ? CLAUDE_MODE_NAMES : agent === 'cursor' ? CURSOR_MODES : CODEX_MODES))) {
+      throw new Rejection('chat-option-invalid', `${agent} has no permission mode ${permissionMode}`)
+    }
+    if (model || effort) {
+      const models = (await this.chatCatalog(agent))?.models ?? []
+      const picked = models.find((each) => each.id === (model ?? models.find((one) => one.isDefault)?.id))
+      if (model && !picked) throw new Rejection('chat-option-invalid', `${agent} lists no model ${model}`)
+      if (effort && !picked?.efforts.includes(effort)) throw new Rejection('chat-option-invalid', `the model takes no effort ${effort}`)
+    }
+  }
+
   // A task's chat: made on the task's first start, then moved to wherever its agent works next.
   // Resolves once the agent can take a message, which the task then sends.
   async startForTask(task: { id: string; title: string; agent: AgentKind }, launch: TaskChatLaunch): Promise<Conversation> {
@@ -440,6 +444,15 @@ export class ConversationService {
     if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
     // A stage of its own plans first; one going on keeps the mode it was left in.
     if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: launch.permissionMode ?? 'plan' })
+    if (launch.model !== undefined || launch.effort !== undefined) {
+      const previous = this.store.chatOptions(id)[task.agent] ?? {}
+      this.store.setChatOptions(id, { [task.agent]: {
+        model: launch.model === undefined ? previous.model : launch.model ?? undefined,
+        effort: launch.effort === undefined
+          ? (launch.model !== undefined && launch.model !== previous.model ? undefined : previous.effort)
+          : launch.effort ?? undefined
+      } })
+    }
     return this.start(id, task.agent, '', false, {
       fresh: launch.session === 'new',
       moved,

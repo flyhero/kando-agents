@@ -120,12 +120,9 @@ function quotaAllows(taskId: string): boolean {
   return !agent || confirmQuota(agent)
 }
 
-// Starting in the chat view needs the user at the chat: the agent's plan comes back there.
-async function startTask(taskId: string, bypassable: boolean): Promise<void> {
-  if (!quotaAllows(taskId)) return
-  if (await perform((rpc) => rpc.call('tasks.start', { id: taskId, ...bypassOption(bypassable) }))) {
-    showChatFor(taskId)
-  }
+// Both the toolbar and context menu open the same launch configuration.
+async function startTask(taskId: string): Promise<void> {
+  useCore.setState({ taskLaunchId: taskId })
 }
 
 async function submitTask(taskId: string): Promise<void> {
@@ -215,10 +212,8 @@ function RedoButton({ task }: { task: Task }) {
   )
 }
 
-// Planning comes first either way: in the task's worktree when it can run, read-only otherwise.
-// While it only plans, the button returns to that chat.
+// While a task can only plan and already has a chat, return to it instead of launching again.
 function StartButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
-  const bypassable = useChatOptionsSupported()
   const blocker = checkStart(task, dependencies)
   if (blocker === 'planning') {
     return (
@@ -234,7 +229,7 @@ function StartButton({ task, dependencies }: { task: Task; dependencies: readonl
       className="run-button"
       Icon={plan ? ChatIcon : PlayIcon}
       reason={blocker && blockerText(blocker, unfinished(dependencies))}
-      launch={() => startTask(task.id, bypassable)}
+      launch={() => startTask(task.id)}
     />
   )
 }
@@ -468,7 +463,7 @@ export function TaskContextMenu({ task, at, onClose, onRename }: {
   if (task.status === 'pending' && startBlocker !== 'planning') {
     const label = startKind(dependencies) === 'plan' ? '开始规划' : '开始执行'
     actions.push(
-      <MenuItem key="start" label={label} hint={hint(startBlocker)} disabled={startBlocker !== null} onSelect={pick(() => void startTask(task.id, bypassable))} />
+      <MenuItem key="start" label={label} hint={hint(startBlocker)} disabled={startBlocker !== null} onSelect={pick(() => void startTask(task.id))} />
     )
   }
   if (task.status === 'running') {

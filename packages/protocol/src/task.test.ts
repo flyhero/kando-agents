@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkSavePlan, checkStart, checkSubmit, isStartRef, startKind, type Task } from './task'
+import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkSavePlan, checkStart, checkStartMode, checkSubmit, isStartRef, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -105,6 +105,15 @@ describe('a task in the chat view', () => {
   const ready = { repos: [{ path: '/code/app', worktreePath: null, branch: null, startRef: null, start: null }], agent: 'claude' as const }
   const done = [{ status: 'done' as const }]
   const unfinished = [{ status: 'done' as const }, { status: 'review' as const }]
+
+  it('allows only planning until dependencies are accepted', () => {
+    expect(checkStartMode(unfinished, 'plan')).toBeNull()
+    for (const mode of ['ask', 'acceptEdits', 'auto', 'bypass', 'readOnly']) {
+      expect(checkStartMode(unfinished, mode)).toBe('dependencies-unfinished')
+      expect(checkStartMode(done, mode)).toBeNull()
+      expect(checkStartMode([], mode)).toBeNull()
+    }
+  })
 
   it('starts by planning, carrying the plan out only once what it builds on is done', () => {
     expect(startKind(done)).toBe('execute')

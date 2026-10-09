@@ -9,6 +9,7 @@ import {
   checkSavePlan,
   checkScheduleTask,
   checkStart,
+  checkStartMode,
   checkSubmit,
   imageLabel,
   isStartRef,
@@ -24,6 +25,7 @@ import {
   type RpcParsedParams,
   type SourceSnapshot,
   type Task,
+  type TaskLaunchOptions,
   type TaskImage,
   type TaskRepo,
   type TaskSource,
@@ -44,7 +46,7 @@ import { normalizeRepoPath, prepareRefineWorkspace, prepareWorkspace, projectHea
 export type TaskEvent = { type: 'changed'; task: Task } | { type: 'deleted'; id: string }
 
 // What a task needs of its chat.
-export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get' | 'runUsage' | 'capacityAvailable'>
+export type TaskConversations = Pick<ConversationService, 'startForTask' | 'send' | 'savePlan' | 'stopForTask' | 'deleteForTask' | 'get' | 'runUsage' | 'capacityAvailable' | 'validateStartOptions'>
 
 export class TaskService {
   private readonly launching = new Set<string>()
@@ -318,11 +320,10 @@ export class TaskService {
     return this.changed(this.get(successor.id))
   }
 
-  // A task started in the chat view plans first. Once everything it builds on is done, it does so in
-  // its worktree and carries the plan out there; before that, only read-only in its projects,
-  // keeping the plan for when it can run. Resolves once the first message is on its way.
+  // Planning is the default; direct execution uses the chosen permission mode. Before dependencies
+  // are accepted, the task can only plan read-only. Resolves once the first message is on its way.
   // unattended: a scheduled run, which carries the task out in that mode without planning first.
-  async start(id: string, allowBypass?: boolean, unattended?: UnattendedMode): Promise<Task> {
+  async start(id: string, allowBypass?: boolean, unattended?: UnattendedMode, options: TaskLaunchOptions = {}): Promise<Task> {
     const chats = this.requireChats()
     const task = this.get(id)
     const dependencies = this.dependenciesOf(task)
@@ -336,13 +337,18 @@ export class TaskService {
     }
     if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
+      const permissionMode = unattended ?? options.permissionMode ?? 'plan'
+      const modeBlocker = checkStartMode(dependencies, permissionMode)
+      if (modeBlocker) throw new Rejection(modeBlocker)
+      if (permissionMode === 'bypass' && !allowBypass && unattended !== 'bypass') throw new Rejection('chat-option-invalid', '全部放行需要先在设置中开启')
+      await chats.validateStartOptions(agent, { ...options, permissionMode })
       const images = await this.images(task)
       const imageIds = this.chatImageIds(task, images.prompt)
       if (startKind(dependencies) === 'plan') {
         const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot)
         const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'new',
-          readable: images.readable, allowBypass
+          readable: images.readable, allowBypass, ...options, permissionMode
         })
         await chats.send(conversation.id, chatPlanPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt), imageIds)
         return this.changed(this.get(task.id))
@@ -352,12 +358,12 @@ export class TaskService {
       this.store.update(task.id, { repos: workspace.repos })
       const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.readable,
-        allowBypass: unattended === 'bypass' || allowBypass, permissionMode: unattended
+        allowBypass: unattended === 'bypass' || allowBypass, ...options, permissionMode
       })
       // The planning agent stopped for the new stage, so nothing reads there any more.
       await removePlanningCheckouts(task.id, this.worktreesRoot)
       this.save(task.id, { status: 'running', awaitingInput: false })
-      const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan, unattended !== undefined)
+      const prompt = chatStartPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt, task.plan, unattended !== undefined, permissionMode)
       await chats.send(conversation.id, prompt, imageIds)
       return this.changed(this.get(task.id))
     })

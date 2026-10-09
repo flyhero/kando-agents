@@ -171,6 +171,10 @@ export function startKind(dependencies: readonly Pick<Task, 'status'>[]): StartK
   return dependencies.every((dependency) => dependency.status === 'done') ? 'execute' : 'plan'
 }
 
+export function checkStartMode(dependencies: readonly Pick<Task, 'status'>[], mode: string): 'dependencies-unfinished' | null {
+  return mode !== 'plan' && startKind(dependencies) === 'plan' ? 'dependencies-unfinished' : null
+}
+
 // planning: the task's read-only chat is open and it still cannot run; it goes on by message.
 export type StartBlocker = 'not-pending' | 'missing-repo' | 'missing-agent' | 'planning'
 

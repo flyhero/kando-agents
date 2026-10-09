@@ -6,7 +6,7 @@ import { AgentUsage } from './usage'
 import { AgentStats, ConversationStats } from './agent-stats'
 import { DashboardParams, DashboardStats } from './dashboard'
 import { CommitPushResult, CommitResult, Conversation, ConversationMessage, ConversationSearchHit, ConversationStage, ProjectBranches, ProjectHead, PushResult } from './conversation'
-import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings } from './chat'
+import { ChatCatalog, ChatDecision, ChatItemList, ChatOption, ChatPermissionMode, ChatSettings, TaskLaunchOptions } from './chat'
 import { FileDiff, FolderChanges, RepoChanges } from './changes'
 import { Terminal, TerminalCommand, TerminalCommandFields, TerminalOutput, TerminalRun } from './terminal'
 import { PortList, PortRef } from './ports'
@@ -56,7 +56,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options'] as const
+// task-launch-options: tasks.start accepts the first stage's mode, model and reasoning effort.
 // deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
@@ -124,7 +125,7 @@ export const rpcMethods = {
   // or only plans while its dependencies are unfinished. resumeChat readies its agent before a
   // message, reopening a finished task as continuing does. submit hands a running one in for
   // review. savePlan keeps a plan-only stage's plan for when the task can run.
-  'tasks.start': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
+  'tasks.start': { params: TaskRef.extend({ allowBypass: AllowBypass }).extend(TaskLaunchOptions.shape), result: Task },
   'tasks.resumeChat': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
   'tasks.submit': { params: TaskRef, result: Task },
   'tasks.savePlan': { params: TaskRef.extend({ stageId: z.string().uuid(), requestId: z.string().min(1).max(200) }), result: Task },

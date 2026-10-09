@@ -75,6 +75,14 @@ export const CHAT_PERMISSION_MODES = ['ask', 'acceptEdits', 'plan', 'auto', 'rea
 export const ChatPermissionMode = z.enum(CHAT_PERMISSION_MODES)
 export type ChatPermissionMode = z.infer<typeof ChatPermissionMode>
 
+export const TaskLaunchOptions = z.object({
+  permissionMode: ChatPermissionMode.optional(),
+  // null resets a previous task stage's choice to the agent/model default.
+  model: z.string().trim().min(1).max(200).nullable().optional(),
+  effort: z.string().trim().min(1).max(200).nullable().optional()
+})
+export type TaskLaunchOptions = z.infer<typeof TaskLaunchOptions>
+
 export const CHAT_OPTIONS = ['permissionMode', 'model', 'effort'] as const
 export const ChatOption = z.enum(CHAT_OPTIONS)
 export type ChatOption = z.infer<typeof ChatOption>

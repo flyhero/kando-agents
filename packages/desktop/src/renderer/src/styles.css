@@ -4234,6 +4234,18 @@ body.side-panel-resizing * {
   outline-offset: 2px;
 }
 
+.task-launch-dialog { width: min(420px, calc(100vw - 32px)); border-radius: var(--radius-lg); }
+.task-launch-dialog .modal-body { padding: 24px; gap: 16px; }
+.task-launch-dialog .modal-header h2 { font-size: 16px; font-weight: 600; }
+.task-launch-dialog .modal-footer { justify-content: flex-end; }
+.task-launch-name { margin: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.task-launch-fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.task-launch-field { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: 12px; }
+.task-launch-field > span { color: var(--text-muted); }
+.task-launch-field .input { width: 100%; min-width: 0; }
+.task-launch-description { margin: 0; font-size: 12px; line-height: 1.5; }
+.task-launch-dialog .modal-close svg { width: 16px; height: 16px; }
+
 .toast {
   position: fixed;
   z-index: 100;

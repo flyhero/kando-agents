@@ -202,10 +202,8 @@ export const SCHEDULED_GO_TEXT = '按上面定下的计划开始实现。'
 // What a scheduled run is told first: it starts with nobody there to answer.
 export const UNATTENDED_NOTE = '这是我预约的无人值守运行，现在没有人能回答你：不要停下来等我确认，直接做下去；做完后运行相关的检查和测试，总结做了什么、还有什么没做。遇到必须由我决定的问题，写清楚问题和你的建议后停下。'
 
-// A task's chat opens with what running it would be told, and asks for a plan first: the chat shows
-// it for the user to approve before any code changes. A plan kept while the task waited on its
-// dependencies comes along, to be checked against the code as it now is. A scheduled run goes
-// ahead without asking.
+// The opening request follows the selected mode; a saved plan comes along to be checked against
+// the current code. Only scheduled runs get the unattended instruction.
 export function chatStartPrompt(
   task: Pick<Task, 'title' | 'details' | 'source' | 'sourceSnapshot'>,
   workspace: Workspace,
@@ -213,7 +211,8 @@ export function chatStartPrompt(
   predecessor: Predecessor | null = null,
   images: PromptImages = NO_IMAGES,
   plan: Pick<TaskPlan, 'markdown'> | null = null,
-  unattended = false
+  unattended = false,
+  mode = 'plan'
 ): string {
   const sections = [
     agentPrompt(task, workspace, dependencies, predecessor, images),
@@ -222,7 +221,11 @@ export function chatStartPrompt(
       : null,
     unattended
       ? `先阅读相关代码，${plan ? '按上面的计划' : '按任务要求'}实现。${UNATTENDED_NOTE}`
-      : '请先阅读相关代码，有不清楚的地方先问我，然后给出实现计划；我确认之后再开始修改代码。'
+      : mode === 'plan'
+        ? '请先阅读相关代码，有不清楚的地方先问我，然后给出实现计划；我确认之后再开始修改代码。'
+        : mode === 'readOnly'
+          ? '请阅读相关代码，分析任务并给出结论或建议。这次只读，不要修改文件或执行会改变项目的命令。'
+          : `请先阅读相关代码，${plan ? '核对并按上面的计划' : '按任务要求'}直接开始实现，不需要另行等待计划确认；操作权限按当前模式处理。做完后运行相关检查和测试，说明结果。`
   ]
   return sections.filter((section) => section !== null).join('\n\n')
 }

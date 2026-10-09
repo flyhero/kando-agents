@@ -26,6 +26,7 @@ import { AttentionEntry } from './components/AttentionEntry'
 import { AttentionView } from './components/AttentionView'
 import { WindowBrand } from './components/WindowBrand'
 import { ErrorToast } from './components/ErrorToast'
+import { TaskLaunchDialog } from './components/TaskLaunchDialog'
 import { usePreferences } from './preferences'
 import { usePortPolling } from './port-state'
 
@@ -38,6 +39,7 @@ export function App() {
   const view = useCore((s) => s.view)
   const error = useCore((s) => s.error)
   const newTaskOpen = useCore((s) => s.newTaskOpen)
+  const taskLaunchId = useCore((s) => s.taskLaunchId)
   const settingsOpen = useCore((s) => s.settingsOpen)
   const worktreesOpen = useCore((s) => s.worktreesOpen)
   const schedulesOpen = useCore((s) => s.schedulesOpen)
@@ -173,8 +175,9 @@ export function App() {
       {!settingsOpen && !maximizedUtility && <WindowBrand />}
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}
+      {taskLaunchId && <TaskLaunchDialog key={taskLaunchId} taskId={taskLaunchId} />}
       {loginOpen && <SourceLoginDialog />}
-      {error && !newTaskOpen && <ErrorToast message={error} />}
+      {error && !newTaskOpen && !taskLaunchId && <ErrorToast message={error} />}
     </div>
   )
 }
