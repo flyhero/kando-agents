@@ -48,6 +48,11 @@ const valuesOf = (config: Config): z.infer<typeof OptionValue>[] => config.optio
 })
 const kandoMode = (mode: string): ChatPermissionMode | null => mode === 'agent' ? 'ask' : mode === 'plan' ? 'plan' : mode === 'ask' ? 'readOnly' : null
 const nativeMode = (mode: string) => mode === 'ask' ? 'agent' : mode === 'readOnly' ? 'ask' : mode
+const toolName = (update: Pick<z.infer<typeof Update>, 'kind' | 'rawInput'>, old: string | undefined): string => {
+  const raw = z.looseObject({ tool: z.string().optional(), toolName: z.string().optional(), providerIdentifier: z.string().optional() }).safeParse(update.rawInput).data
+  if (raw?.providerIdentifier && raw.toolName) return `${raw.providerIdentifier}.${raw.toolName}`
+  return raw?.toolName ?? raw?.tool ?? (update.kind === 'execute' ? 'commandExecution' : update.kind === 'edit' ? 'fileChange' : old ?? update.kind ?? 'tool')
+}
 const PermissionOutcome = z.looseObject({ outcome: z.looseObject({ outcome: z.string(), optionId: z.string().optional() }) })
 type Pending = { rawId: string | number; itemId: string; kind: 'permission' | 'question' | 'plan'; options?: z.infer<typeof Permission>['options'] }
 type Request = { method: string; params: unknown }
@@ -521,7 +526,7 @@ export class CursorAcp implements ChatDriver {
     const output = takeImageMarkers(blocks.map((block) => Content.safeParse(block).data?.text ?? '').filter(Boolean).join('\n'))
     const raw = z.looseObject({ command: z.string().optional(), path: z.string().optional(), tool: z.string().optional(), toolName: z.string().optional(), providerIdentifier: z.string().optional(), args: z.unknown().optional() }).safeParse(update.rawInput).data
     const input = raw?.providerIdentifier && raw.toolName ? raw.args ?? update.rawInput : update.rawInput
-    const name = raw?.providerIdentifier && raw.toolName ? `${raw.providerIdentifier}.${raw.toolName}` : raw?.toolName ?? raw?.tool ?? (update.kind === 'execute' ? 'commandExecution' : update.kind === 'edit' ? 'fileChange' : old?.name ?? update.kind ?? 'tool')
+    const name = toolName(update, old?.name)
     const status = update.status === 'completed' ? 'done' : update.status === 'failed' ? 'failed' : old?.status ?? 'running'
     const exitCode = z.looseObject({ exitCode: z.number().int().nullish() }).safeParse(update.rawOutput).data?.exitCode ?? null
     this.items.put({
@@ -549,12 +554,14 @@ export class CursorAcp implements ChatDriver {
     if (frame.method === 'session/request_permission') {
       const request = Permission.safeParse(frame.params)
       if (request.success) {
-        this.tool({ ...request.data.toolCall, sessionUpdate: 'tool_call' }, null, at)
         const itemId = `a:${id}`
         const tool = request.data.toolCall
+        // A subagent's call reaches Kando only as this request, never with its result: a card made
+        // from it would run until the turn ends. Its approval stands alone, as Claude's does.
+        if (tool.toolCallId && this.items.get(`tool:${tool.toolCallId}`)?.kind === 'tool') this.tool({ ...tool, sessionUpdate: 'tool_call' }, null, at)
         this.pending.set(id, { rawId: frame.id, itemId, kind: 'permission', options: request.data.options })
         const toolItem = tool.toolCallId ? this.items.get(`tool:${tool.toolCallId}`) : null
-        this.items.put({ id: itemId, kind: 'approval', requestId: id, tool: toolItem?.kind === 'tool' ? toolItem.name : tool.kind ?? 'tool', title: tool.title ?? 'Cursor 工具调用', detail: tool.rawInput === undefined ? null : clip(JSON.stringify(tool.rawInput)), toolItemId: tool.toolCallId ? `tool:${tool.toolCallId}` : null, decisions: ['allow', 'deny'], choices: request.data.options.map((option) => ({ id: option.optionId, label: option.name, decision: option.kind === 'allow_once' ? 'allow' : option.kind === 'allow_always' ? 'allowForSession' : 'deny', grants: option.kind.endsWith('_always') ? [{ kind: 'other', values: [option.name], scope: 'agent', behavior: option.kind === 'reject_always' ? 'deny' : 'allow' }] : [] })), resolution: null }, at)
+        this.items.put({ id: itemId, kind: 'approval', requestId: id, tool: toolItem?.kind === 'tool' ? toolItem.name : toolName(tool, undefined), title: tool.title ?? 'Cursor 工具调用', detail: tool.rawInput === undefined ? null : clip(JSON.stringify(tool.rawInput)), toolItemId: tool.toolCallId ? `tool:${tool.toolCallId}` : null, decisions: ['allow', 'deny'], choices: request.data.options.map((option) => ({ id: option.optionId, label: option.name, decision: option.kind === 'allow_once' ? 'allow' : option.kind === 'allow_always' ? 'allowForSession' : 'deny', grants: option.kind.endsWith('_always') ? [{ kind: 'other', values: [option.name], scope: 'agent', behavior: option.kind === 'reject_always' ? 'deny' : 'allow' }] : [] })), resolution: null }, at)
         return
       }
     } else if (frame.method === 'cursor/ask_question') {

@@ -246,6 +246,23 @@ describe('Cursor ACP', () => {
     expect(driver.activity()).toBe('awaiting')
   })
 
+  it('shows a subagent command only as its approval, since its result never reaches the parent session', () => {
+    const driver = opened(); const id = prompt(driver)
+    update(driver, { sessionUpdate: 'tool_call', toolCallId: 'main', kind: 'execute', title: '`cat README.md`', status: 'pending', rawInput: { command: 'cat README.md' } })
+    receive(driver, { id: 1, method: 'session/request_permission', params: { sessionId: 'session', toolCall: { toolCallId: 'main', title: '`cat README.md`', kind: 'execute', status: 'pending' }, options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }] } })
+    send(driver, driver.respond(items(driver, 'approval')[0]!.requestId, { decision: 'allow', choice: 'allow-once' })[0])
+    update(driver, { sessionUpdate: 'tool_call_update', toolCallId: 'main', status: 'completed', rawOutput: { exitCode: 0 } })
+    update(driver, { sessionUpdate: 'tool_call', toolCallId: 'task', kind: 'other', title: 'Task: Research', status: 'pending' })
+    receive(driver, { id: 2, method: 'session/request_permission', params: { sessionId: 'session', toolCall: { toolCallId: 'inner', title: '`rg -n session`', kind: 'execute', status: 'pending', content: [{ type: 'content', content: { type: 'text', text: 'Not in allowlist: rg' } }] }, options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }] } })
+    const inner = items(driver, 'approval')[1]!
+    expect(inner).toMatchObject({ tool: 'commandExecution', title: '`rg -n session`', toolItemId: 'tool:inner', resolution: null })
+    send(driver, driver.respond(inner.requestId, { decision: 'allow', choice: 'allow-once' })[0])
+    update(driver, { sessionUpdate: 'tool_call_update', toolCallId: 'task', status: 'completed' })
+    receive(driver, { id, result: { stopReason: 'end_turn' } })
+    expect(items(driver, 'tool').map((tool) => [tool.id, tool.status])).toEqual([['tool:main', 'done'], ['tool:task', 'done']])
+    expect(items(driver, 'approval').map((approval) => approval.resolution)).toEqual(['allowed', 'allowed'])
+  })
+
   it('streams while a question waits and returns stable question/option IDs', () => {
     const driver = opened(); prompt(driver)
     receive(driver, { id: 'question', method: 'cursor/ask_question', params: { toolCallId: 'ask', title: 'Choose', questions: [{ id: 'q', prompt: 'Which?', options: [{ id: 'first', label: 'Same' }, { id: 'second', label: 'Same' }], allowMultiple: true }] } })
