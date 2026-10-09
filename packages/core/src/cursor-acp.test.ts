@@ -22,8 +22,9 @@ function opened(options = OPTIONS, modern = false): CursorAcp {
   const driver = new CursorAcp('stage', options)
   due(driver)
   receive(driver, { id: 'cursor-init', result: { protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } } } })
-  modelsRead(driver); due(driver)
+  due(driver)
   receive(driver, { id: 'cursor-session', result: { sessionId: 'session', modes, models, ...(modern ? { configOptions: [modeConfig] } : {}) } })
+  modelsRead(driver)
   for (const frame of due(driver)) {
     const request = Request.parse(frame)
     const wanted = options.planOnly ? 'plan' : options.preferred?.permissionMode === 'readOnly' ? 'ask' : 'agent'
@@ -92,7 +93,6 @@ describe('Cursor ACP', () => {
     const driver = new CursorAcp('stage', OPTIONS)
     expect(due(driver)).toMatchObject([{ method: 'initialize', params: { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } } }])
     receive(driver, { id: 'cursor-init', result: { protocolVersion: 1 } })
-    modelsRead(driver)
     expect(due(driver)).toMatchObject([{ method: 'session/new', params: { cwd: '/work/repo', mcpServers: [{ name: 'kando', command: 'node', args: OPTIONS.mcp?.args, env: [] }] } }])
   })
 
@@ -142,9 +142,9 @@ describe('Cursor ACP', () => {
     due(driver)
     receive(driver, { id: 'cursor-init', result: { protocolVersion: 1 } })
     due(driver)
-    receive(driver, { id: 'cursor-models', result: listed })
-    due(driver)
     receive(driver, { id: 'cursor-session', result: { sessionId: 'session', modes, models: sessionModels, configOptions: [modeConfig, modelConfig, fast] } })
+    due(driver)
+    receive(driver, { id: 'cursor-models', result: listed })
     expect(items(driver, 'state')[0]?.models.find((model) => model.id === 'gpt-5.6-sol')?.efforts).toEqual(['none', 'high'])
     const [effort] = driver.setOption('effort', 'high')
     expect(effort).toMatchObject({ method: 'session/set_config_option', params: { configId: 'reasoning', value: 'high' } })
@@ -169,15 +169,29 @@ describe('Cursor ACP', () => {
     due(driver)
     receive(driver, { id: 'cursor-init', result: { protocolVersion: 1 } })
     due(driver)
-    receive(driver, { id: 'cursor-models', result: listed })
-    due(driver)
     receive(driver, { id: 'cursor-session', result: { sessionId: 'session', configOptions: [modeConfig, modelConfig] } })
+    expect(due(driver)).toMatchObject([{ method: 'cursor/list_available_models' }])
+    expect(driver.ready()).toBe(false)
+    receive(driver, { id: 'cursor-models', result: listed })
     const [model, ...rest] = due(driver)
     expect(model).toMatchObject({ method: 'session/set_config_option', params: { configId: 'model', value: 'gpt-5.6-sol' } })
     expect(rest).toEqual([])
     receive(driver, { id: Request.parse(model).id, result: { configOptions: [{ ...modelConfig, currentValue: 'gpt-5.6-sol' }] } })
     const [effort] = due(driver)
     expect(effort).toMatchObject({ id: 'cursor-initial-effort', method: 'session/set_config_option', params: { configId: 'reasoning', value: 'high' } })
+  })
+
+  it('resumes without setting again what the loaded session already runs with', () => {
+    const modelConfig = { id: 'model', name: 'Model', category: 'model', currentValue: 'model-1', options: [{ value: 'auto', name: 'Auto' }, { value: 'model-1', name: 'Model One' }] }
+    const driver = new CursorAcp('stage', { ...OPTIONS, resume: 'old', preferred: { permissionMode: 'plan', model: 'model-1' } })
+    due(driver)
+    receive(driver, { id: 'cursor-init', result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } })
+    due(driver)
+    receive(driver, { id: 'cursor-session', result: { configOptions: [{ ...modeConfig, currentValue: 'plan' }, modelConfig] } })
+    modelsRead(driver)
+    expect(due(driver)).toEqual([])
+    expect(driver.ready()).toBe(true)
+    expect(items(driver, 'state')[0]).toMatchObject({ permissionMode: 'plan', model: 'model-1' })
   })
 
   it('keeps streamed text, thinking and tools in order and persists complete messages only once', () => {
@@ -282,7 +296,6 @@ describe('Cursor ACP', () => {
   it('does not start a new session after load failure, and filters replayed history while keeping configuration', () => {
     const driver = new CursorAcp('stage', { ...OPTIONS, resume: 'old' })
     due(driver); receive(driver, { id: 'cursor-init', result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } })
-    modelsRead(driver)
     expect(due(driver)).toMatchObject([{ method: 'session/load', params: { sessionId: 'old' } }])
     receive(driver, { method: 'session/update', params: { sessionId: 'old', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'old text' } } } })
     receive(driver, { id: 'cursor-session', error: { code: -32602, message: 'Session old not found' } })
@@ -293,13 +306,12 @@ describe('Cursor ACP', () => {
 
   it('loads without a returned session ID and declares capability limits before sending', () => {
     const driver = new CursorAcp('stage', { ...OPTIONS, resume: 'old' })
-    due(driver); receive(driver, { id: 'cursor-init', result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } }); modelsRead(driver); due(driver)
+    due(driver); receive(driver, { id: 'cursor-init', result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } }); due(driver)
     receive(driver, { id: 'cursor-session', result: { modes, models } })
     expect(driver.providerSessionId()).toBe('old')
     expect(() => driver.send('image', [{ id: 'image', width: 1, height: 1, mime: 'image/png', path: '/image', read: () => new Uint8Array() }])).toThrow()
     const extra = new CursorAcp('stage', { ...OPTIONS, extraDirs: ['/other'] })
     due(extra); receive(extra, { id: 'cursor-init', result: { protocolVersion: 1 } })
-    modelsRead(extra)
     expect(extra.due()).toEqual([])
     expect(extra.failure()).toContain('附加项目')
   })

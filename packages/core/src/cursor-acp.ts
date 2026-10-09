@@ -132,8 +132,8 @@ export class CursorAcp implements ChatDriver {
     if (!this.initSent) return [...frames, rpc('cursor-init', 'initialize', { protocolVersion: 1, clientInfo: { name: 'kando', version: '1' }, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, _meta: { parameterizedModelPicker: true } } })]
     if (!this.initialized) return frames
     if (this.auth && !this.authenticated) return this.authSent ? frames : [...frames, rpc('cursor-auth', 'authenticate', { methodId: 'cursor_login' })]
-    if (!this.modelsRead) return this.modelsSent ? frames : [...frames, rpc('cursor-models', 'cursor/list_available_models', {})]
-    if (this.catalogOnly) return frames
+    const models = this.modelsSent ? [] : [rpc('cursor-models', 'cursor/list_available_models', {})]
+    if (this.catalogOnly) return this.modelsRead ? frames : [...frames, ...models]
     if (!this.sessionSent) {
       if (this.options.resume && !this.load) { this.startError = '此 Cursor CLI 不支持恢复会话，请升级'; return frames }
       if (this.options.extraDirs.length && !this.directories) { this.startError = '此 Cursor CLI 不支持附加项目目录'; return frames }
@@ -145,13 +145,17 @@ export class CursorAcp implements ChatDriver {
         mcpServers: mcp ? [{ name: 'kando', command: mcp.command, args: mcp.args, env: [] }] : []
       })]
     }
+    // Asked once the session is open, the catalog takes about a second; asked first, it also
+    // waits out the CLI's own startup. The saved choices wait for it: it names reasoning levels.
+    if (!this.setup) return frames
+    if (!this.modelsRead) return [...frames, ...models]
     return [...frames, ...this.initial.values()].filter((frame) => {
       const id = Frame.safeParse(frame).data?.id
       return id === undefined || !this.requests.has(keyOf(id))
     })
   }
 
-  ready(): boolean { return this.session !== null && this.setup && this.initial.size === 0 && !this.startError && !this.exited }
+  ready(): boolean { return this.session !== null && this.setup && this.modelsRead && this.initial.size === 0 && !this.startError && !this.exited }
   failure(): string | null { return this.startError ?? (this.exited && !this.session ? 'Cursor 进程已退出' : null) }
   activity(): ChatTurnActivity { return this.pending.size || this.kando.pending ? 'awaiting' : this.turn || this.changing() ? 'running' : 'idle' }
   providerSessionId(): string | null { return this.session }
@@ -323,6 +327,10 @@ export class CursorAcp implements ChatDriver {
       const listed = ModelCatalog.safeParse(frame.result)
       if (listed.success) this.readModels(listed.data.models)
       if (this.catalogOnly) this.state.set({ models: this.models })
+      else if (this.setup) {
+        this.nextInitial(at)
+        this.publishConfig()
+      }
       return
     }
     if (frame.error) {
@@ -352,7 +360,8 @@ export class CursorAcp implements ChatDriver {
       this.setup = true
       const preferred = { ...this.options.preferred, ...(this.options.planOnly ? { permissionMode: 'plan' } : {}) }
       this.initialChoices = (['permissionMode', 'model', 'effort'] as const).flatMap((option) => preferred[option] ? [{ option, value: preferred[option] }] : [])
-      this.nextInitial(at)
+      // A log from before the catalog came second has it already.
+      if (this.modelsRead) this.nextInitial(at)
     } else if (request.method === 'session/prompt') {
       const stop = z.looseObject({ stopReason: z.string().optional() }).safeParse(frame.result).data?.stopReason
       // Some CLI releases report provider failures as a text chunk followed by end_turn.
@@ -377,6 +386,8 @@ export class CursorAcp implements ChatDriver {
       const choice = this.initialChoices.shift()
       if (!choice) return
       const { option, value } = choice
+      // A resumed session keeps what it last ran with; setting it again costs a round trip.
+      if (this.current(option) === (option === 'permissionMode' ? nativeMode(value) : value)) continue
       try {
         const requestId = `cursor-initial-${option}`
         this.initial.set(keyOf(requestId), this.change(option, value, requestId))
@@ -386,6 +397,11 @@ export class CursorAcp implements ChatDriver {
         else this.items.notice('warning', `Cursor 未采用保存的 ${option}: ${value}`, at)
       }
     }
+  }
+
+  private current(option: ChatOption): string | null {
+    const category = option === 'permissionMode' ? 'mode' : option === 'model' ? 'model' : 'thought_level'
+    return this.config.find((entry) => entry.category === category)?.currentValue ?? null
   }
 
   private readModels(models: { value: string; name: string; configOptions: Config[] }[]): void {
@@ -448,7 +464,7 @@ export class CursorAcp implements ChatDriver {
       models: model ? valuesOf(model).map((entry) => ({ id: entry.value, label: entry.name, description: entry.description ?? null, efforts: this.models.find((one) => one.id === entry.value)?.efforts ?? (entry.value === model.currentValue && effort ? valuesOf(effort).map((one) => one.value) : []), isDefault: entry.value === model.currentValue })) : [],
       effort: effort?.currentValue ?? null
     })
-    if (this.options.planOnly && mode && mode.currentValue !== 'plan' && this.setup && !this.initial.size) this.startError = 'Cursor 离开了仅规划模式'
+    if (this.options.planOnly && mode && mode.currentValue !== 'plan' && this.setup && !this.initial.size && !this.initialChoices.length) this.startError = 'Cursor 离开了仅规划模式'
   }
 
   private update(update: z.infer<typeof Update>, frame: Frame, at: number): void {
