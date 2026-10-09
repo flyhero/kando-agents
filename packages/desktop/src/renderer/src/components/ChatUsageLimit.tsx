@@ -9,6 +9,11 @@ import { useChatSurface } from './chat-surface'
 
 export type UsageLimitItem = Extract<ChatItem, { kind: 'usageLimit' }>
 
+export function usageLimitOpen(item: UsageLimitItem, now: number): boolean {
+  const waiting = item.status === 'waiting' || item.status === 'retrying'
+  return waiting && (item.resetsAt === null || item.resetsAt > now)
+}
+
 // What became of a turn the usage limit stopped, in the conversation's flow: one line, as a
 // request's is, saying when it goes on or went on.
 export function usageLimitText(item: UsageLimitItem, now: number): string {
@@ -20,6 +25,7 @@ export function usageLimitText(item: UsageLimitItem, now: number): string {
     case 'waiting':
       if (item.autoContinue && item.continueAt !== null) return `额度已用完 · 将在${formatClock(item.continueAt, now)} 自动继续`
   }
+  if (item.resetsAt !== null && item.resetsAt <= now) return '额度已恢复'
   return item.resetsAt === null ? '额度已用完' : `额度已用完 · ${formatClock(item.resetsAt, now)} 恢复`
 }
 
@@ -111,6 +117,7 @@ export function ChatUsageLimitCard({ conversation, item }: { conversation: Conve
 export function ChatUsageLimitEntry({ conversationId, item }: { conversationId: string; item: UsageLimitItem }) {
   const conversation = useCore((s) => s.conversations[conversationId])
   const supported = useUsageLimitSupported()
-  const open = item.status === 'waiting' || item.status === 'retrying'
+  const now = useNow(30_000)
+  const open = usageLimitOpen(item, now)
   return conversation && supported && open ? <ChatUsageLimitCard conversation={conversation} item={item} /> : <ChatUsageLimitLine item={item} />
 }
