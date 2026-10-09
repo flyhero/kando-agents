@@ -5,6 +5,7 @@ import * as actions from './actions'
 import { chromiumInstalled, installChromium } from './chromium'
 import { HostError } from './host-error'
 import { HostGate } from './host-gate'
+import { freeProfile } from './profile-lock'
 import { Screencast } from './screencast'
 import { startHostServer, type HostServer } from './server'
 import { TabRegistry, type Tab } from './tabs'
@@ -62,6 +63,8 @@ export async function startBrowserHost(paths: KandoPaths, exit: (code: number) =
     setStatus({ state: 'starting', running: true })
     launching = (async () => {
       try {
+        const ended = await freeProfile(paths.browserProfile)
+        if (ended !== null) console.error(`[browser-host] ended browser host ${ended}, which still held the profile`)
         // The full build in its new headless mode, which real sites and logins tolerate; the
         // profile keeps cookies across hosts. Chromium's automation banner has no window to show in.
         const launched = await chromium.launchPersistentContext(paths.browserProfile, {
