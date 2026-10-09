@@ -1,5 +1,5 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type AgentKind, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
+import { cursorProviderError, isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type AgentKind, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
 import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
 import { ChatBrowserCard, ChatShotCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
@@ -278,13 +278,17 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
   switch (item.kind) {
     case 'user':
       return <UserMessage item={item} />
-    case 'assistant':
+    case 'assistant': {
+      // A stored reply can still end in Cursor's raw transport error. Say what happened instead.
+      const failure = item.streaming ? null : cursorProviderError(item.text)
+      const text = failure ? failure.rest : item.text
       return (
         <div className="chat-assistant" data-streaming={item.streaming || undefined}>
-          <ChatMarkdown text={item.text} highlight={!item.streaming} runnable={!item.streaming} />
-          {completedAt !== undefined && item.text && (
+          {text && <ChatMarkdown text={text} highlight={!item.streaming} runnable={!item.streaming} />}
+          {failure && <div className="chat-notice" data-level="warning">{failure.detail}</div>}
+          {completedAt !== undefined && text && (
             <div className="chat-message-actions">
-              <CopyButton text={item.text} label="复制回复" />
+              <CopyButton text={text} label="复制回复" />
               <MessageTime at={completedAt} />
               {ending && <span className="chat-turn chat-turn-inline" data-state={ending.state}>{turnText(ending)}</span>}
               <ForkButton item={item} />
@@ -292,6 +296,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
           )}
         </div>
       )
+    }
     case 'reasoning':
       return <Reasoning item={item} />
     case 'tool':

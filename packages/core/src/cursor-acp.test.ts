@@ -87,7 +87,22 @@ describe('Cursor ACP', () => {
     const driver = opened(); const id = prompt(driver)
     update(driver, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '\n\nError: RetriableError: [resource_exhausted] Error' } })
     receive(driver, { id, result: { stopReason: 'end_turn' } })
-    expect(items(driver, 'turn')[0]).toMatchObject({ state: 'failed', error: expect.stringContaining('resource_exhausted') })
+    expect(items(driver, 'assistant')[0]?.text).toBe('')
+    expect(items(driver, 'turn')[0]).toMatchObject({ state: 'failed', error: 'Cursor 这一会儿忙不过来，或额度用完了' })
+    expect(items(driver, 'notice')[0]).toMatchObject({
+      level: 'warning',
+      text: expect.stringContaining('再发一次'),
+      action: { kind: 'retryCursorTurn' }
+    })
+  })
+
+  it('keeps the reply written before a timeout and explains how to send it again', () => {
+    const driver = opened(); const id = prompt(driver)
+    update(driver, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '先看一下分支。\n\nError: RetriableError: [deadline_exceeded] bidi_append_deadline_exceeded: append seqno=14 (6 bytes) exceeded 60001ms deadline' } })
+    receive(driver, { id, result: { stopReason: 'end_turn' } })
+    expect(items(driver, 'assistant')[0]?.text).toBe('先看一下分支。')
+    expect(items(driver, 'turn')[0]).toMatchObject({ state: 'failed', error: 'Cursor 连接超时，回复没有写完' })
+    expect(items(driver, 'notice')[0]?.text).toContain('再发一次刚才的话')
   })
   it('initializes without delegating filesystem or terminal ownership and binds the conversation MCP', () => {
     const driver = new CursorAcp('stage', OPTIONS)

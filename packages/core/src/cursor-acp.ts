@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { takeImageMarkers, type ChatImage, type ChatItem, type ChatModel, type ChatOption, type ChatPermissionMode, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
+import { cursorProviderError, takeImageMarkers, type ChatImage, type ChatItem, type ChatModel, type ChatOption, type ChatPermissionMode, type ChatTurnActivity, type ChatTurnState } from '@kando/protocol'
 import { ChatItems, clip } from './chat-items'
 import { StageState } from './chat-stage-state'
 import { ChatQueue } from './chat-queue'
@@ -364,10 +364,18 @@ export class CursorAcp implements ChatDriver {
       if (this.modelsRead) this.nextInitial(at)
     } else if (request.method === 'session/prompt') {
       const stop = z.looseObject({ stopReason: z.string().optional() }).safeParse(frame.result).data?.stopReason
-      // Some CLI releases report provider failures as a text chunk followed by end_turn.
-      const providerError = /^\s*Error: (?:RetriableError|ConnectError): \[[a-z_]+\][^\n]*\s*$/.test(this.turn?.text ?? '') ? this.turn?.text.trim() ?? null : null
-      const error = stop === 'refusal' ? 'Cursor 拒绝了请求' : providerError
+      // Some CLI releases report provider failures as a text chunk followed by end_turn, after any
+      // reply they already wrote. The raw line is not the answer.
+      const provider = this.peelProviderError(at)
+      const ref = this.turn?.ref ?? null
+      const error = stop === 'refusal' ? 'Cursor 拒绝了请求' : provider?.summary ?? null
       this.finish(this.stopping || stop === 'cancelled' ? 'interrupted' : error ? 'failed' : 'completed', error, at)
+      if (provider && ref) {
+        this.items.notice('warning', provider.detail, at, {
+          id: `cursor-provider:${ref}`,
+          action: { kind: 'retryCursorTurn', userItemId: `u:${ref}` }
+        })
+      }
     } else {
       const parsed = Configs.safeParse(frame.result)
       if (parsed.data?.configOptions) this.catalog(parsed.data, this.modelChange(request))
@@ -575,6 +583,25 @@ export class CursorAcp implements ChatDriver {
       if (item?.kind === 'approval' || item?.kind === 'question') this.items.put({ ...item, resolution: 'cancelled' }, at)
     }
     this.pending.clear()
+  }
+
+  // Drops a trailing Cursor transport error from the reply, so the turn can say what happened.
+  private peelProviderError(at: number): { summary: string; detail: string } | null {
+    const turn = this.turn
+    if (!turn) return null
+    const found = cursorProviderError(turn.text)
+    if (!found) return null
+    turn.text = found.rest
+    const items = this.items.list()
+    for (let index = items.length - 1; index >= 0; index--) {
+      const item = items[index]
+      if (item?.kind !== 'assistant') continue
+      const piece = cursorProviderError(item.text)
+      if (!piece) continue
+      this.items.put({ ...item, text: piece.rest, streaming: false }, at)
+      break
+    }
+    return found
   }
 
   private finish(state: ChatTurnState, error: string | null, at: number): void {

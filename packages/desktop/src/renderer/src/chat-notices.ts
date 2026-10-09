@@ -1,4 +1,4 @@
-import { CONTEXT_COMPACTED } from '@kando/protocol'
+import { CONTEXT_COMPACTED, cursorProviderError } from '@kando/protocol'
 
 export function isCompaction(text: string): boolean {
   return text === CONTEXT_COMPACTED
@@ -7,6 +7,8 @@ export function isCompaction(text: string): boolean {
 // Claude Code once said when a usage limit lifts only as epoch seconds after a bar; say the local
 // time instead.
 export function readableNotice(text: string): string {
+  const provider = cursorProviderError(text.trim())
+  if (provider && !provider.rest) return provider.summary
   return text.replace(/Claude AI usage limit reached\|(\d{10})/g, (_match, seconds: string) => {
     const at = new Date(Number(seconds) * 1000)
     const time = `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`
