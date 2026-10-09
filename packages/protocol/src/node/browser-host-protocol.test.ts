@@ -22,6 +22,7 @@ describe('browser host protocol', () => {
 
   it('checks action parameters against the shared shapes', () => {
     expect(browserHostSchemas.click.params.safeParse({ tabId: '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e', ref: 'e12' }).success).toBe(true)
+    expect(browserHostSchemas.click.params.safeParse({ tabId: '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e', ref: 'f1e12' }).success).toBe(true)
     expect(browserHostSchemas.click.params.safeParse({ tabId: '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e', ref: '12' }).success).toBe(false)
   })
 })

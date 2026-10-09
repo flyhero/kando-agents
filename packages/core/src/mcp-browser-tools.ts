@@ -58,7 +58,7 @@ export const BROWSER_ARGUMENTS: Record<BrowserToolKind, z.ZodType<Record<string,
 }
 
 const tabIdProperty = { tabId: { type: 'string', description: '标签页 id，可选；不给就用当前标签页' } }
-const refProperty = (what: string) => ({ ref: { type: 'string', description: `${what}在 browser_snapshot 里的 ref，如 e12` } })
+const refProperty = (what: string) => ({ ref: { type: 'string', description: `${what}在 browser_snapshot 里的 ref，如 e12 或 f1e12` } })
 
 type ToolSpec = {
   name: string
@@ -101,7 +101,7 @@ export const BROWSER_TOOL_SPECS: ReadonlyArray<ToolSpec & { kind: BrowserToolKin
     name: browserToolName('snapshot'),
     title: '读取页面快照',
     description:
-      '读取当前标签页的无障碍树快照（YAML），每个可交互元素带一个 ref（如 e12）。' +
+      '读取当前标签页的无障碍树快照（YAML），每个可交互元素带一个 ref（如 e12，页面跳转过后形如 f1e12）。' +
       '点击、输入等工具都用这个 ref 指定元素；页面变化后要重新 snapshot，旧的 ref 会失效。比截图更省、更准，优先用它。',
     inputSchema: { type: 'object', properties: { ...tabIdProperty }, additionalProperties: false },
     annotations: readOnly

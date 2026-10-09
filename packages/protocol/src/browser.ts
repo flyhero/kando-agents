@@ -44,7 +44,9 @@ export const BrowserStatus = z.object({
 export type BrowserStatus = z.infer<typeof BrowserStatus>
 
 // An element reference from an AI-mode aria snapshot ([ref=e12]); stale once the page changes.
-export const SnapshotRef = z.string().regex(/^e\d+$/)
+// After the tab's main frame has navigated, Playwright numbers the document it is on (f1e12),
+// so a ref from the page before cannot be taken for one on this page.
+export const SnapshotRef = z.string().regex(/^(?:f\d+)?e\d+$/)
 
 export const BrowserUrl = z.string().trim().min(1).max(4096)
 // Where a navigation goes: a URL, or a step through the tab's own history.

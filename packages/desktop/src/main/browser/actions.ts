@@ -125,9 +125,11 @@ export async function wait(page: Page, params: Params<'wait'>): Promise<void> {
   if (params.seconds) await page.waitForTimeout(params.seconds * 1000)
 }
 
-// A JPEG of the viewport, of the page down to a cap, or of one element.
+// A JPEG of the viewport, of the page down to a cap, or of one element. In CSS pixels: the
+// page renders at the screen's density for the user, but the model reads a picture that matches
+// the layout it acts on, at a quarter of the bytes.
 export async function screenshot(page: Page, params: { fullPage?: boolean; ref?: string }): Promise<Buffer> {
-  const options = { type: 'jpeg' as const, quality: SCREENSHOT_QUALITY, timeout: ACTION_TIMEOUT_MS }
+  const options = { type: 'jpeg' as const, quality: SCREENSHOT_QUALITY, scale: 'css' as const, timeout: ACTION_TIMEOUT_MS }
   if (params.ref) {
     const ref = params.ref
     return withElement(ref, () => refLocator(page, ref).screenshot(options))

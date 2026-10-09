@@ -3,7 +3,7 @@ import path from 'node:path'
 import { WebContentsView, type WebContents } from 'electron'
 import { chromium } from 'playwright-core'
 import { BROWSER_HOST_PROTOCOL_VERSION, writePrivateJson, type BrowserHostResult } from '@kando/protocol/node'
-import { normalizeBrowserUrl, type BrowserNavigateTo, type BrowserStatus, type BrowserViewport } from '@kando/protocol'
+import { BROWSER_VIEWPORT, normalizeBrowserUrl, type BrowserNavigateTo, type BrowserStatus, type BrowserViewport } from '@kando/protocol'
 import * as actions from './actions'
 import { HostError } from './host-error'
 import { HostGate } from './host-gate'
@@ -46,7 +46,10 @@ export async function startBrowserHost(slot: WindowSlot, hostFile: string): Prom
   }
 
   const open = async (conversationId: string | null, viewport: BrowserViewport | null): Promise<Tab> => {
-    const view = new WebContentsView({ webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false } })
+    // A tab off the panel still lays out, paints and runs its frames: the agent's clicks wait
+    // on an element being visible and still, which a throttled or sizeless page never is.
+    const view = new WebContentsView({ webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } })
+    view.setBounds({ x: 0, y: 0, ...BROWSER_VIEWPORT })
     const contents = view.webContents
     await contents.loadURL('about:blank')
     const proxy = await startTabProxy(contents)
