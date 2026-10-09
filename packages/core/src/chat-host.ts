@@ -34,9 +34,7 @@ export type ChatSink = {
   offset(stageId: string, end: number): void
   // The agent's account limits, as it reported them while running.
   usage(stage: ChatStage, report: UsageReport): void
-  // Cursor starts a fresh ACP process for every prompt. A queued prompt asks the owner to rotate
-  // the process before taking it; a stalled prompt asks it to tear the process down in stages.
-  cursorPending?(conversationId: string): void
+  // A Cursor prompt with no event for a while asks the owner to tear the process down in stages.
   cursorStalled?(conversationId: string, sessionId: string): void
 }
 
@@ -70,7 +68,6 @@ type Live = ChatStage & {
   // A process this stage just started: the stderr it wrote before core attached goes to the wire log too.
   freshStderr: boolean
   cursorTurn: CursorTurnTrace | null
-  cursorPendingRef: string | null
 }
 
 // Where the raw traffic goes, for the user to debug with; it records nothing while switched off.
@@ -146,8 +143,7 @@ export class ChatHost {
       started: null,
       lastActive: records.at(-1)?.at ?? this.now(),
       freshStderr: records.length === 0,
-      cursorTurn: null,
-      cursorPendingRef: null
+      cursorTurn: null
     }
     this.lives.set(sessionId, live)
     this.history.delete(stage.stageId)
@@ -321,46 +317,6 @@ export class ChatHost {
       return
     }
     this.record(live, { dir: 'queue', at: this.now(), text: null, ref: entry.ref, release: true })
-    this.pump(live)
-    this.flush(live)
-  }
-
-  // Removes the next Cursor prompt from its old process before the conversation starts a fresh
-  // ACP process for it. The queue record makes the transfer survive chat replay.
-  takeCursorPending(conversationId: string): { message: ChatQueued; remaining: ChatQueued[] } | null {
-    const live = this.running(conversationId)
-    if (live.agent !== 'cursor') return null
-    const pending = live.driver.queuedToSend()
-    if (!pending) return null
-    const queued = this.queued(live)
-    this.record(live, { dir: 'queue', at: this.now(), text: null, ref: pending.ref })
-    for (const entry of queued) {
-      if (entry.ref !== pending.ref) this.record(live, { dir: 'queue', at: this.now(), text: null, ref: entry.ref })
-    }
-    live.cursorPendingRef = null
-    this.flush(live)
-    return {
-      message: { ...pending, held: false },
-      remaining: queued.filter((entry) => entry.ref !== pending.ref)
-    }
-  }
-
-  // Carries the rest of a Cursor queue into the process that took its first message. A failed
-  // turn's held messages stay held until the user explicitly releases them.
-  restoreCursorPending(conversationId: string, entries: readonly ChatQueued[]): void {
-    if (entries.length === 0) return
-    const live = this.running(conversationId)
-    if (live.agent !== 'cursor') return
-    for (const entry of entries) {
-      this.record(live, {
-        dir: 'queue',
-        at: this.now(),
-        text: entry.text,
-        ref: entry.ref,
-        held: entry.held,
-        ...(entry.images.length ? { images: [...entry.images] } : {})
-      })
-    }
     this.pump(live)
     this.flush(live)
   }
@@ -547,17 +503,7 @@ export class ChatHost {
       void this.write(live, frame).catch(ignore)
     }
     const queued = live.driver.queuedToSend()
-    if (!queued) {
-      live.cursorPendingRef = null
-      return
-    }
-    if (live.agent === 'cursor') {
-      if (live.cursorPendingRef !== queued.ref) {
-        live.cursorPendingRef = queued.ref
-        queueMicrotask(() => this.sink.cursorPending?.(live.conversationId))
-      }
-      return
-    }
+    if (!queued) return
     try {
       void this.dispatch(live, live.driver.send(queued.text, this.files(queued.images)), queued.ref, queued.images).catch(ignore)
     } catch (error) {

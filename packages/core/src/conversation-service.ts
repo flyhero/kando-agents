@@ -120,7 +120,6 @@ export class ConversationService {
   private readonly stopping = new Set<string>()
   private readonly exitWaiters = new Map<string, () => void>()
   private readonly cursorStops = new Map<string, Promise<void>>()
-  private readonly cursorPending = new Set<string>()
   private readonly cursorActions = new Map<string, Promise<void>>()
   // Kando's own questions waiting on the user, by request id.
   private readonly asks = new Map<string, { resolve: (decision: ChatDecision) => void; reject: (error: Error) => void }>()
@@ -156,7 +155,6 @@ export class ConversationService {
       },
       offset: (stageId, end) => this.store.setChatOffset(stageId, end),
       usage: (stage, report) => this.emit({ type: 'usage', agent: stage.agent, report }),
-      cursorPending: (conversationId) => { void this.sendCursorPending(conversationId) },
       cursorStalled: (_conversationId, sessionId) => {
         this.stopping.add(sessionId)
         // ChatHost dispatches session/cancel immediately after this callback; begin its grace
@@ -842,13 +840,8 @@ export class ConversationService {
   }
 
   private async sendNow(id: string, text: string, imageIds: readonly string[], queue: boolean, steer: boolean, ref?: string): Promise<void> {
-    const conversation = this.get(id)
+    this.get(id)
     if (ref && this.sentRef(id, ref, 0)) return
-    // A ready Cursor process that has already taken a prompt belongs to that completed turn. The
-    // next turn resumes its ACP session in a fresh process before anything is sent.
-    if (conversation.agent === 'cursor' && this.chats.idle(id) && this.cursorStageHasPrompt(conversation)) {
-      await this.restartCursor(id)
-    }
     const note = this.switchNote(id)
     await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer, ref)
     if (note) this.store.setSwitchedBranches(id, {})
@@ -863,45 +856,6 @@ export class ConversationService {
       return await result
     } finally {
       if (this.cursorActions.get(id) === tail) this.cursorActions.delete(id)
-    }
-  }
-
-  private cursorStageHasPrompt(conversation: Conversation): boolean {
-    const stage = this.store.activeStage(conversation.id)
-    return stage !== null && this.chats.items(this.chatStage(conversation, stage)).some((item) => item.kind === 'user')
-  }
-
-  private async restartCursor(id: string): Promise<void> {
-    const current = this.get(id)
-    if (current.agent !== 'cursor') return
-    if (current.sessionId) await this.stop(id)
-    await this.start(id, 'cursor', '', false)
-  }
-
-  // Cursor's driver releases a queued prompt only when the old turn is idle. Move it out of that
-  // stage, resume the native session in a new process, then send it exactly once.
-  private async sendCursorPending(id: string): Promise<void> {
-    if (this.cursorPending.has(id)) return
-    this.cursorPending.add(id)
-    try {
-      while (await this.withCursorAction(id, async () => {
-        const current = this.store.get(id)
-        if (!current || current.agent !== 'cursor' || !current.sessionId || this.chats.activity(id) !== 'idle') return false
-        const transferred = this.chats.takeCursorPending(id)
-        if (!transferred) return false
-        await this.restartCursor(id)
-        const { message, remaining } = transferred
-        await this.sendNow(id, message.text, message.images.map((image) => image.id), false, false, message.ref)
-        this.chats.restoreCursorPending(id, remaining)
-        return true
-      })) {
-        // A very short turn may finish before its remaining queue has been restored. Drain it now;
-        // a normal running turn exits on the next pass and calls us again when it finishes.
-      }
-    } catch (error) {
-      console.error(`[kando-core] sending queued Cursor turn ${id} failed`, error)
-    } finally {
-      this.cursorPending.delete(id)
     }
   }
 

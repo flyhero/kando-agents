@@ -223,7 +223,7 @@ export const rpcMethods = {
   // Switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },
-  // Ends the running turn. Cursor's one-process-per-turn connection is also torn down.
+  // Ends the running turn. Cursor's process goes with it; the next message starts another.
   'conversations.interrupt': { params: ConversationRef, result: Ok },
   // Answers an approval or question item. answers maps a question id to option ids, or labels
   // when the provider supplies none.

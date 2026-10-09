@@ -69,28 +69,19 @@ beforeEach(() => {
 
 afterEach(() => { vi.useRealTimers(); vi.mocked(requireCursorCli).mockReset().mockResolvedValue('/fake/cursor-agent'); projects.close(); store.close(); tasks.close(); rmSync(root, { recursive: true, force: true }) })
 
-it('runs every Cursor turn in a fresh ACP process and restores the native session', async () => {
+const prompts = (sessionId: string) => daemon.written(sessionId).map((frame) => Frame.parse(frame)).filter((frame) => frame.method === 'session/prompt').map((frame) => JSON.stringify(frame.params))
+
+it('keeps one Cursor process for consecutive turns', async () => {
   const created = await service.create('cursor', [])
   await service.send(created.id, 'first turn'); await settle()
-  const providerSessionId = service.stages(created.id).at(-1)?.providerSessionId
-
   await service.send(created.id, 'second turn'); await settle()
 
-  expect(daemon.spawns).toHaveLength(2)
-  expect(daemon.written('pipe-1')).toEqual(expect.arrayContaining([
-    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'first turn' })] }) })
-  ]))
-  expect(daemon.written('pipe-2')).toEqual(expect.arrayContaining([
-    expect.objectContaining({ method: 'session/load', params: expect.objectContaining({ sessionId: providerSessionId }) }),
-    expect.objectContaining({
-      method: 'session/prompt',
-      params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'second turn' })] })
-    })
-  ]))
-  expect(daemon.killed).toContainEqual({ sessionId: 'pipe-1', force: false })
+  expect(daemon.spawns).toHaveLength(1)
+  expect(prompts('pipe-1')).toEqual([expect.stringContaining('first turn'), expect.stringContaining('second turn')])
+  expect(daemon.killed).toEqual([])
 })
 
-it('carries multiple queued messages across their per-turn Cursor processes', async () => {
+it('sends queued messages through the running Cursor process in order', async () => {
   answerPrompt = false
   const created = await service.create('cursor', [])
   await service.send(created.id, 'first')
@@ -99,13 +90,26 @@ it('carries multiple queued messages across their per-turn Cursor processes', as
 
   answerPrompt = true
   daemon.emit('pipe-1', { id: 'cursor-prompt-1', result: { stopReason: 'end_turn' } })
-  await vi.waitFor(() => expect(daemon.spawns).toHaveLength(3))
+  await vi.waitFor(() => expect(prompts('pipe-1')).toHaveLength(3))
+  expect(prompts('pipe-1')).toEqual([expect.stringContaining('first'), expect.stringContaining('second'), expect.stringContaining('third')])
+  expect(daemon.spawns).toHaveLength(1)
+})
+
+it('lets an idle Cursor process go after half an hour, and resumes its session after', async () => {
+  const created = await service.create('cursor', [])
+  await service.send(created.id, 'first turn'); await settle()
+  const providerSessionId = service.stages(created.id).at(-1)?.providerSessionId
+  await service.releaseIdle(Date.now() + 29 * 60_000)
+  expect(service.get(created.id).sessionId).toBe('pipe-1')
+  await service.releaseIdle(Date.now() + 31 * 60_000)
+  expect(service.get(created.id).sessionId).toBeNull()
+
+  await service.continue(created.id)
+  await service.send(created.id, 'after a break'); await settle()
   expect(daemon.written('pipe-2')).toEqual(expect.arrayContaining([
-    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'second' })] }) })
+    expect.objectContaining({ method: 'session/load', params: expect.objectContaining({ sessionId: providerSessionId }) })
   ]))
-  expect(daemon.written('pipe-3')).toEqual(expect.arrayContaining([
-    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'third' })] }) })
-  ]))
+  expect(prompts('pipe-2')).toEqual([expect.stringContaining('after a break')])
 })
 
 it('stops a silent Cursor turn and retries it only after the user asks', async () => {
