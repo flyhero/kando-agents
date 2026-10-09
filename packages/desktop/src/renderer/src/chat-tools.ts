@@ -24,7 +24,14 @@ const TOOL_LABEL: Record<string, string> = {
   TodoWrite: '待办',
   ExitPlanMode: '计划',
   // Kando's own question about a site its browser is to open, shown among the approvals.
-  [BROWSER_HOST_TOOL]: '打开网站'
+  [BROWSER_HOST_TOOL]: '打开网站',
+  // Cursor names a call only by its ACP kind.
+  read: '读取',
+  search: '搜索',
+  fetch: '读取网页',
+  delete: '删除文件',
+  move: '移动文件',
+  think: '思考'
 }
 
 // Kando's browser tools, in words.
@@ -63,7 +70,8 @@ const TOOL_ICONS: Record<string, ToolIconKind> = {
   Bash: 'terminal', commandExecution: 'terminal',
   Grep: 'search', Glob: 'search', WebSearch: 'search', webSearch: 'search',
   WebFetch: 'browser', [BROWSER_HOST_TOOL]: 'browser', imageView: 'image',
-  Task: 'agent', Agent: 'agent', spawnAgent: 'agent', TodoWrite: 'list', ExitPlanMode: 'list'
+  Task: 'agent', Agent: 'agent', spawnAgent: 'agent', TodoWrite: 'list', ExitPlanMode: 'list',
+  read: 'read', search: 'search', fetch: 'browser', delete: 'edit', move: 'edit'
 }
 
 export function toolIconKind(name: string): ToolIconKind {
@@ -93,7 +101,10 @@ const TOOL_KIND: Record<string, { kind: string; say: (count: number) => string }
   webSearch: { kind: 'search', say: (count) => `搜索 ${count} 次` },
   Bash: { kind: 'command', say: (count) => `运行 ${count} 个命令` },
   commandExecution: { kind: 'command', say: (count) => `运行 ${count} 个命令` },
-  WebFetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` }
+  WebFetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` },
+  read: { kind: 'read', say: (count) => `读取 ${count} 个文件` },
+  search: { kind: 'search', say: (count) => `搜索 ${count} 次` },
+  fetch: { kind: 'fetch', say: (count) => `读取 ${count} 个网页` }
 }
 
 // A burst of clicks, typing and waiting reads as one thing done in the browser.

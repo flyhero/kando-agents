@@ -47,6 +47,12 @@ describe('toolIconKind', () => {
     expect(['imageView', 'mcp__kando__browser_screenshot', 'kando.show_preview'].map(toolIconKind)).toEqual(['image', 'image', 'image'])
   })
 
+  it('recognizes the kinds Cursor names its calls by', () => {
+    expect(['read', 'search', 'fetch', 'delete', 'move'].map(toolIconKind)).toEqual(['read', 'search', 'browser', 'edit', 'edit'])
+    expect(['read', 'search', 'fetch'].map(toolLabel)).toEqual(['读取', '搜索', '读取网页'])
+    expect(runSummary(['read', 'read', 'search'].map((name) => ({ name })))).toBe('读取 2 个文件，搜索 1 次')
+  })
+
   it('keeps unfamiliar third-party tools recognizable as tools', () => {
     expect(toolIconKind('mcp__github__create_pull_request')).toBe('tool')
   })
