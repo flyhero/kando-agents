@@ -129,6 +129,57 @@ describe('Cursor ACP', () => {
     expect(() => driver.setOption('effort', 'high')).toThrow()
   })
 
+  it('sets a reasoning level from the model catalog when the session has not listed one', () => {
+    const reasoning = { id: 'reasoning', name: 'Reasoning', category: 'thought_level', currentValue: 'medium', options: [{ value: 'none', name: 'None' }, { value: 'high', name: 'High' }] }
+    const fast = { id: 'fast', name: 'Fast', category: 'model_config', currentValue: 'true', options: [{ value: 'true', name: 'Fast' }] }
+    const listed = { models: [
+      { value: 'composer-2.5', name: 'Composer 2.5', configOptions: [fast] },
+      { value: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', configOptions: [reasoning, fast] }
+    ] }
+    const sessionModels = { currentModelId: 'gpt-5.6-sol', availableModels: [{ modelId: 'composer-2.5', name: 'Composer 2.5' }, { modelId: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }] }
+    const modelConfig = { id: 'model', name: 'Model', category: 'model', currentValue: 'gpt-5.6-sol', options: [{ value: 'composer-2.5', name: 'Composer 2.5' }, { value: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }] }
+    const driver = new CursorAcp('stage', OPTIONS)
+    due(driver)
+    receive(driver, { id: 'cursor-init', result: { protocolVersion: 1 } })
+    due(driver)
+    receive(driver, { id: 'cursor-models', result: listed })
+    due(driver)
+    receive(driver, { id: 'cursor-session', result: { sessionId: 'session', modes, models: sessionModels, configOptions: [modeConfig, modelConfig, fast] } })
+    expect(items(driver, 'state')[0]?.models.find((model) => model.id === 'gpt-5.6-sol')?.efforts).toEqual(['none', 'high'])
+    const [effort] = driver.setOption('effort', 'high')
+    expect(effort).toMatchObject({ method: 'session/set_config_option', params: { configId: 'reasoning', value: 'high' } })
+    send(driver, effort)
+    receive(driver, { id: Request.parse(effort).id, result: {} })
+    expect(items(driver, 'state')[0]).toMatchObject({ model: 'gpt-5.6-sol', effort: 'high' })
+    update(driver, { sessionUpdate: 'config_option_update', configOptions: [{ ...fast, currentValue: 'false' }] })
+    expect(items(driver, 'state')[0]?.effort).toBe('high')
+    const [model] = driver.setOption('model', 'composer-2.5')
+    send(driver, model)
+    receive(driver, { id: Request.parse(model).id, result: { configOptions: [modeConfig, { ...modelConfig, currentValue: 'composer-2.5' }, fast] } })
+    expect(items(driver, 'state')[0]).toMatchObject({ model: 'composer-2.5', effort: null })
+    expect(() => driver.setOption('effort', 'high')).toThrow()
+  })
+
+  it('applies a saved reasoning level only after the model is confirmed', () => {
+    const reasoning = { id: 'reasoning', name: 'Reasoning', category: 'thought_level', currentValue: 'medium', options: [{ value: 'high', name: 'High' }] }
+    const listed = { models: [{ value: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', configOptions: [reasoning] }, { value: 'composer-2.5', name: 'Composer 2.5', configOptions: [] }] }
+    const sessionModels = { currentModelId: 'composer-2.5', availableModels: [{ modelId: 'composer-2.5', name: 'Composer 2.5' }, { modelId: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }] }
+    const modelConfig = { id: 'model', name: 'Model', category: 'model', currentValue: 'composer-2.5', options: sessionModels.availableModels.map((model) => ({ value: model.modelId, name: model.name })) }
+    const driver = new CursorAcp('stage', { ...OPTIONS, preferred: { model: 'gpt-5.6-sol', effort: 'high' } })
+    due(driver)
+    receive(driver, { id: 'cursor-init', result: { protocolVersion: 1 } })
+    due(driver)
+    receive(driver, { id: 'cursor-models', result: listed })
+    due(driver)
+    receive(driver, { id: 'cursor-session', result: { sessionId: 'session', configOptions: [modeConfig, modelConfig] } })
+    const [model, ...rest] = due(driver)
+    expect(model).toMatchObject({ method: 'session/set_config_option', params: { configId: 'model', value: 'gpt-5.6-sol' } })
+    expect(rest).toEqual([])
+    receive(driver, { id: Request.parse(model).id, result: { configOptions: [{ ...modelConfig, currentValue: 'gpt-5.6-sol' }] } })
+    const [effort] = due(driver)
+    expect(effort).toMatchObject({ id: 'cursor-initial-effort', method: 'session/set_config_option', params: { configId: 'reasoning', value: 'high' } })
+  })
+
   it('keeps streamed text, thinking and tools in order and persists complete messages only once', () => {
     const driver = opened()
     const id = prompt(driver)

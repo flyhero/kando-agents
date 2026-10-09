@@ -80,6 +80,7 @@ export function startModes(agent: AgentKind, model: ChatModel | undefined, allow
 }
 
 const EFFORT_LABEL: Record<string, string> = {
+  none: '无',
   minimal: '最低',
   low: '低',
   medium: '中',

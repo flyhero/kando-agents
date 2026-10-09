@@ -51,6 +51,7 @@ const nativeMode = (mode: string) => mode === 'ask' ? 'agent' : mode === 'readOn
 const PermissionOutcome = z.looseObject({ outcome: z.looseObject({ outcome: z.string(), optionId: z.string().optional() }) })
 type Pending = { rawId: string | number; itemId: string; kind: 'permission' | 'question' | 'plan'; options?: z.infer<typeof Permission>['options'] }
 type Request = { method: string; params: unknown }
+type ThoughtLevel = { id: string; name: string; values: z.infer<typeof OptionValue>[] }
 
 // Every transition comes from a log record, including outbound frames. Reattaching to a live
 // daemon process therefore restores pending requests without repeating the handshake.
@@ -74,6 +75,8 @@ export class CursorAcp implements ChatDriver {
   private modelsSent = false
   private modelsRead = false
   private models: ChatModel[] = []
+  // Reasoning is per model and often absent from the session snapshot. The catalog names the option.
+  private readonly thoughts = new Map<string, ThoughtLevel>()
   private setup = false
   private auth = false
   private load = false
@@ -186,13 +189,32 @@ export class CursorAcp implements ChatDriver {
 
   private change(option: ChatOption, value: string, id: string): unknown {
     if (option === 'permissionMode' && this.options.planOnly && value !== 'plan') throw new Rejection('plan-only', '此阶段只能规划')
-    const category = option === 'permissionMode' ? 'mode' : option === 'effort' ? 'thought_level' : 'model'
+    if (option === 'effort') return this.changeEffort(value, id)
+    const category = option === 'permissionMode' ? 'mode' : 'model'
     const config = this.config.find((entry) => entry.category === category)
     const wanted = option === 'permissionMode' ? nativeMode(value) : value
     if (!config || !valuesOf(config).some((entry) => entry.value === wanted)) throw new Rejection('chat-option-invalid', `Cursor 没有提供 ${option}: ${value}`)
     if (option === 'permissionMode' && !(value in CURSOR_MODES)) throw new Rejection('chat-option-invalid', `Cursor 不支持 ${value}`)
     if (this.modern.has(category)) return rpc(id, 'session/set_config_option', { sessionId: this.session, configId: config.id, value: wanted })
     return rpc(id, category === 'mode' ? 'session/set_mode' : 'session/set_model', { sessionId: this.session, ...(category === 'mode' ? { modeId: wanted } : { modelId: wanted }) })
+  }
+
+  // The session lists a level only after one is set. Until then the catalog's id is what the CLI accepts.
+  private changeEffort(value: string, id: string): unknown {
+    const modelId = this.config.find((entry) => entry.category === 'model')?.currentValue
+    const live = this.config.find((entry) => entry.category === 'thought_level')
+    const catalog = modelId ? this.thoughts.get(modelId) : undefined
+    const configId = live?.id ?? catalog?.id
+    const allowed = live ? valuesOf(live) : catalog?.values ?? []
+    if (!configId || !allowed.some((entry) => entry.value === value)) throw new Rejection('chat-option-invalid', `Cursor 没有提供 effort: ${value}`)
+    return rpc(id, 'session/set_config_option', { sessionId: this.session, configId, value })
+  }
+
+  private modelChange(request: Request): boolean {
+    if (request.method === 'session/set_model') return true
+    if (request.method !== 'session/set_config_option') return false
+    const configId = z.looseObject({ configId: z.string().optional() }).safeParse(request.params).data?.configId
+    return configId !== undefined && configId === this.config.find((entry) => entry.category === 'model')?.id
   }
 
   respond(requestId: string, answer: ChatAnswer): unknown[] {
@@ -299,7 +321,7 @@ export class CursorAcp implements ChatDriver {
     if (request.method === 'cursor/list_available_models') {
       this.modelsRead = true
       const listed = ModelCatalog.safeParse(frame.result)
-      if (listed.success) this.models = listed.data.models.map((model) => ({ id: model.value, label: model.name, description: null, efforts: model.configOptions.filter((config) => config.category === 'thought_level').flatMap((config) => valuesOf(config).map((value) => value.value)), isDefault: false }))
+      if (listed.success) this.readModels(listed.data.models)
       if (this.catalogOnly) this.state.set({ models: this.models })
       return
     }
@@ -339,13 +361,8 @@ export class CursorAcp implements ChatDriver {
       this.finish(this.stopping || stop === 'cancelled' ? 'interrupted' : error ? 'failed' : 'completed', error, at)
     } else {
       const parsed = Configs.safeParse(frame.result)
-      if (parsed.data?.configOptions) this.catalog(parsed.data)
-      else {
-        const value = z.looseObject({ configId: z.string().optional(), value: z.string().optional(), modeId: z.string().optional(), modelId: z.string().optional() }).safeParse(request.params).data
-        const category = request.method === 'session/set_mode' ? 'mode' : request.method === 'session/set_model' ? 'model' : null
-        this.config = this.config.map((entry) => entry.id === value?.configId || (category && entry.category === category) ? { ...entry, currentValue: value?.value ?? value?.modeId ?? value?.modelId ?? entry.currentValue } : entry)
-        this.publishConfig()
-      }
+      if (parsed.data?.configOptions) this.catalog(parsed.data, this.modelChange(request))
+      else this.acknowledgeConfig(request)
       if (String(frame.id).startsWith('cursor-plan-mode-')) {
         const planId = decodeURIComponent(String(frame.id).slice('cursor-plan-mode-'.length))
         const pending = this.pending.get(planId)
@@ -371,8 +388,23 @@ export class CursorAcp implements ChatDriver {
     }
   }
 
-  private catalog(opened: z.infer<typeof Opened>): void {
+  private readModels(models: { value: string; name: string; configOptions: Config[] }[]): void {
+    this.thoughts.clear()
+    this.models = models.map((model) => {
+      const thought = model.configOptions.find((config) => config.category === 'thought_level')
+      const values = thought ? valuesOf(thought) : []
+      if (thought && values.length) this.thoughts.set(model.value, { id: thought.id, name: thought.name, values })
+      return { id: model.value, label: model.name, description: null, efforts: values.map((entry) => entry.value), isDefault: false }
+    })
+  }
+
+  // A model switch answers with the whole config. A level the new model lacks is left out, and the
+  // previous model's level must not stay selected. A one-option update is not that answer.
+  private catalog(opened: z.infer<typeof Opened>, dropThought = false): void {
     const config = opened.configOptions ?? []
+    if (dropThought && !config.some((entry) => entry.category === 'thought_level')) {
+      this.config = this.config.filter((entry) => entry.category !== 'thought_level')
+    }
     this.modern = new Set([...this.modern, ...config.flatMap((entry) => entry.category ? [entry.category] : [])])
     const modes = opened.modes
     const models = opened.models
@@ -382,6 +414,26 @@ export class CursorAcp implements ChatDriver {
     ]
     const next = [...config, ...legacy.filter((entry) => !config.some((one) => one.category === entry.category))]
     this.config = [...this.config.filter((entry) => !next.some((one) => one.id === entry.id || one.category === entry.category)), ...next]
+    this.publishConfig()
+  }
+
+  // An ack that only echoes the request still has to show the level just chosen.
+  private acknowledgeConfig(request: Request): void {
+    const value = z.looseObject({ configId: z.string().optional(), value: z.string().optional(), modeId: z.string().optional(), modelId: z.string().optional() }).safeParse(request.params).data
+    const category = request.method === 'session/set_mode' ? 'mode' : request.method === 'session/set_model' ? 'model' : null
+    const nextValue = value?.value ?? value?.modeId ?? value?.modelId
+    const dropping = this.modelChange(request)
+    let config = this.config.map((entry) => entry.id === value?.configId || (category && entry.category === category) ? { ...entry, currentValue: nextValue ?? entry.currentValue } : entry)
+    if (dropping) config = config.filter((entry) => entry.category !== 'thought_level')
+    const configId = value?.configId
+    if (configId && nextValue && !config.some((entry) => entry.id === configId)) {
+      const thought = this.thoughts.get(config.find((entry) => entry.category === 'model')?.currentValue ?? '')
+      if (thought?.id === configId) {
+        config = [...config, { id: thought.id, name: thought.name, category: 'thought_level', currentValue: nextValue, options: thought.values }]
+        this.modern.add('thought_level')
+      }
+    }
+    this.config = config
     this.publishConfig()
   }
 
