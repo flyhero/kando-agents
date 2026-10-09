@@ -55,6 +55,11 @@ const toolName = (update: Pick<z.infer<typeof Update>, 'kind' | 'rawInput'>, old
   if (raw?._toolName === 'task') return 'Task'
   return raw?.toolName ?? raw?.tool ?? (update.kind === 'execute' ? 'commandExecution' : update.kind === 'edit' ? 'fileChange' : old ?? update.kind ?? 'tool')
 }
+// A subagent Cursor forwards (the subagents capability): announced on its parent's session with
+// the Task call it runs for, and ended there; a subagent's own subagents name no Task call.
+const SubagentSpawned = z.looseObject({ subagentSessionId: z.string(), _meta: z.looseObject({ cursor: z.looseObject({ toolCallId: z.string().optional() }).optional() }).optional() })
+const SubagentState = z.looseObject({ subagentSessionId: z.string(), state: z.string() })
+type Subagent = { card: string; text: string; said: string }
 const PermissionOutcome = z.looseObject({ outcome: z.looseObject({ outcome: z.string(), optionId: z.string().optional() }) })
 type Pending = { rawId: string | number; itemId: string; kind: 'permission' | 'question' | 'plan'; options?: z.infer<typeof Permission>['options'] }
 type Request = { method: string; params: unknown }
@@ -100,6 +105,7 @@ export class CursorAcp implements ChatDriver {
   private turn: { id: string; ref: string; began: number; text: string; block: string | null; blocks: number } | null = null
   private messages: StageMessage[] = []
   private execution: { text: string; images: ChatImage[]; ref: string } | null = null
+  private subagents = new Map<string, Subagent>()
 
   constructor(private readonly stageId: string, private readonly options: ChatStageOptions, private readonly catalogOnly = false) {
     this.items = new ChatItems(stageId)
@@ -136,7 +142,7 @@ export class CursorAcp implements ChatDriver {
     if (this.exited) return []
     const frames = [...this.owed.values()]
     if (this.startError) return frames
-    if (!this.initSent) return [...frames, rpc('cursor-init', 'initialize', { protocolVersion: 1, clientInfo: { name: 'kando', version: '1' }, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, _meta: { parameterizedModelPicker: true } } })]
+    if (!this.initSent) return [...frames, rpc('cursor-init', 'initialize', { protocolVersion: 1, clientInfo: { name: 'kando', version: '1' }, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false, _meta: { parameterizedModelPicker: true, subagents: true } } })]
     if (!this.initialized) return frames
     if (this.auth && !this.authenticated) return this.authSent ? frames : [...frames, rpc('cursor-auth', 'authenticate', { methodId: 'cursor_login' })]
     const models = this.modelsSent ? [] : [rpc('cursor-models', 'cursor/list_available_models', {})]
@@ -261,6 +267,9 @@ export class CursorAcp implements ChatDriver {
     const parsed = Frame.safeParse(frame)
     if (!parsed.success) return null
     const id = parsed.data.id
+    // Of a subagent's session, only what its card shows: its words, its calls, its own subagents.
+    const subagent = parsed.data.method === 'session/update' ? z.looseObject({ sessionId: z.string(), update: Update }).safeParse(parsed.data.params).data : undefined
+    if (subagent && subagent.sessionId !== this.session && this.subagents.has(subagent.sessionId) && !['agent_message_chunk', 'tool_call', 'subagent_spawned'].includes(subagent.update.sessionUpdate)) return null
     const kept = id === undefined ? this.kept.get(JSON.stringify(frame)) : undefined
     this.kept.delete(JSON.stringify(frame))
     // ACP has no final full-text message: every delta is needed for recovery.
@@ -319,7 +328,12 @@ export class CursorAcp implements ChatDriver {
     if (frame.method && frame.id !== undefined) { this.reverse(frame, at); return }
     if (frame.method === 'session/update') {
       const update = z.looseObject({ sessionId: z.string(), update: Update }).safeParse(frame.params)
-      if (!update.success || (this.session && update.data.sessionId !== this.session)) return
+      if (!update.success) return
+      if (this.session && update.data.sessionId !== this.session) {
+        const subagent = this.subagents.get(update.data.sessionId)
+        if (subagent && this.turn) this.subagentUpdate(subagent, update.data.update, at)
+        return
+      }
       this.update(update.data.update, frame, at)
       return
     }
@@ -505,7 +519,11 @@ export class CursorAcp implements ChatDriver {
       } else this.items.append(previous.id, text)
       if (kind === 'assistant') this.turn.text += text
     } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') this.tool(update, frame, at)
-    else if (update.sessionUpdate === 'plan') this.state.setTodos((update.entries ?? []).map((entry) => ({ content: entry.content, status: entry.status === 'completed' ? 'completed' : entry.status === 'in_progress' ? 'in_progress' : 'pending', activeForm: null })), this.turn.ref, at)
+    else if (update.sessionUpdate === 'subagent_spawned') this.spawned(update, null)
+    else if (update.sessionUpdate === 'subagent_state_update') {
+      const subagent = this.subagents.get(SubagentState.safeParse(update).data?.subagentSessionId ?? '')
+      if (subagent) this.report(subagent, at)
+    } else if (update.sessionUpdate === 'plan') this.state.setTodos((update.entries ?? []).map((entry) => ({ content: entry.content, status: entry.status === 'completed' ? 'completed' : entry.status === 'in_progress' ? 'in_progress' : 'pending', activeForm: null })), this.turn.ref, at)
   }
 
   private tool(update: z.infer<typeof Update>, frame: Frame | null, at: number): void {
@@ -540,11 +558,37 @@ export class CursorAcp implements ChatDriver {
       id, kind: 'tool', name, title: raw?.command ?? raw?.path ?? task?.description ?? update.title ?? old?.title ?? name,
       input: input === undefined || (subagent && old) ? old?.input ?? null : clip(JSON.stringify(input)), status,
       output: output.text ? clip(output.text) : update.rawOutput !== undefined && !subagent ? clip(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) : old?.output ?? null,
-      ...(timing ? { metrics: { tools: 0, tokens: 0, durationMs: timing.durationMs } } : old?.metrics ? { metrics: old.metrics } : {}),
+      ...(timing ? { metrics: { tools: old?.metrics?.tools ?? 0, tokens: 0, durationMs: timing.durationMs } } : old?.metrics ? { metrics: old.metrics } : {}),
       diffs: content.some((entry) => entry.type === 'diff') ? content.flatMap((entry) => entry.type === 'diff' && entry.path ? [{ path: entry.path, change: entry.oldText == null ? 'add' as const : 'update' as const, patch: clip(`--- ${entry.path}\n+++ ${entry.path}\n@@\n${(entry.oldText ?? '').split('\n').map((line) => `-${line}`).join('\n')}\n${(entry.newText ?? '').split('\n').map((line) => `+${line}`).join('\n')}`, 50_000) }] : []) : old?.diffs ?? [],
       ...(images.length || output.images.length ? { images: [...images, ...output.images] } : old?.images ? { images: old.images } : {}),
       ...(name === 'commandExecution' && (status === 'done' || status === 'failed') ? { execution: { status: status === 'done' ? 'completed' as const : 'failed' as const, exitCode } } : old?.execution ? { execution: old.execution } : {})
     }, at)
+  }
+
+  private spawned(update: z.infer<typeof Update>, parent: Subagent | null): void {
+    const spawned = SubagentSpawned.safeParse(update).data
+    const call = spawned?._meta?.cursor?.toolCallId
+    const card = parent?.card ?? (call ? `tool:${call}` : null)
+    if (spawned && card) this.subagents.set(spawned.subagentSessionId, { card, text: '', said: '' })
+  }
+
+  // A subagent's own steps stay out of the chat, as Claude's and Codex's do: its card counts its
+  // calls and reports its last words, which are what Cursor hands back to the parent agent.
+  private subagentUpdate(subagent: Subagent, update: z.infer<typeof Update>, at: number): void {
+    if (update.sessionUpdate === 'agent_message_chunk') subagent.text += Content.safeParse(update.content).data?.text ?? ''
+    else if (update.sessionUpdate === 'subagent_spawned') this.spawned(update, subagent)
+    else if (update.sessionUpdate === 'tool_call') {
+      if (subagent.text.trim()) subagent.said = subagent.text
+      subagent.text = ''
+      const card = this.items.get(subagent.card)
+      if (card?.kind === 'tool') this.items.put({ ...card, metrics: { tools: (card.metrics?.tools ?? 0) + 1, tokens: 0, durationMs: card.metrics?.durationMs ?? 0 } }, at)
+    }
+  }
+
+  private report(subagent: Subagent, at: number): void {
+    const card = this.items.get(subagent.card)
+    const report = (subagent.text.trim() ? subagent.text : subagent.said).trim()
+    if (card?.kind === 'tool' && report) this.items.put({ ...card, output: clip(report) }, at)
   }
 
   private reverse(frame: Frame, at: number): void {
@@ -560,7 +604,7 @@ export class CursorAcp implements ChatDriver {
       return
     }
     const scope = z.looseObject({ sessionId: z.string().optional() }).safeParse(frame.params).data?.sessionId
-    if (!this.turn || (scope && scope !== this.session)) {
+    if (!this.turn || (scope && scope !== this.session && !this.subagents.has(scope))) {
       this.owed.set(id, result(frame.id, { outcome: { outcome: 'cancelled' } })); return
     }
     if (frame.method === 'session/request_permission') {

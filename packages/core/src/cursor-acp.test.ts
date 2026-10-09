@@ -276,6 +276,81 @@ describe('Cursor ACP', () => {
     for (const item of driver.items.list()) expect(ChatItem.safeParse(item).success).toBe(true)
   })
 
+  // Recorded from cursor-agent 2026.10.01 with the subagents capability: the parent's session id
+  // is rewritten to the test's, each subagent keeps its own.
+  const recorded = (file: string): unknown[] => readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  const play = (driver: CursorAcp, file: string, choice: string) => {
+    for (const frame of recorded(file)) {
+      receive(driver, frame)
+      const request = Request.safeParse(frame).data
+      if (request?.method === 'session/request_permission') send(driver, driver.respond(items(driver, 'approval').at(-1)!.requestId, { decision: choice.startsWith('reject') ? 'deny' : 'allow', choice })[0])
+      else due(driver)
+    }
+  }
+
+  it('asks Cursor to forward subagents and reports each one on its Task card without its steps', () => {
+    expect(new CursorAcp('stage', OPTIONS).due()).toMatchObject([{ method: 'initialize', params: { clientCapabilities: { _meta: { subagents: true } } } }])
+    const driver = opened(); const id = prompt(driver)
+    play(driver, 'cursor-subagents.jsonl', 'allow-once')
+    receive(driver, { id, result: { stopReason: 'end_turn' } })
+    expect(items(driver, 'tool').map((tool) => [tool.name, tool.title, tool.status, tool.metrics?.tools])).toEqual([['Task', 'Read notes/a.txt', 'done', 2], ['Task', 'Fetch example.com title', 'done', 1]])
+    const [read, fetch] = items(driver, 'tool')
+    expect(read?.output).toContain('alpha first line')
+    expect(fetch?.output).toContain('Example Domain')
+    // The web fetch asks on the subagent's own session, and is the user's to answer, not cancelled.
+    expect(items(driver, 'approval')).toMatchObject([{ title: 'Allow web fetch?', detail: '子 Agent 的请求：URL: https://example.com', resolution: 'allowed' }])
+    expect(items(driver, 'assistant').map((item) => item.text).join('')).not.toContain('The fetch tool turns the page into markdown')
+    for (const item of driver.items.list()) expect(ChatItem.safeParse(item).success).toBe(true)
+  })
+
+  it('logs of a subagent only its words and calls, which rebuild the same card', () => {
+    const driver = opened(); const id = prompt(driver)
+    const log: unknown[] = []
+    for (const frame of recorded('cursor-subagents.jsonl')) {
+      receive(driver, frame)
+      const kept = driver.logged(frame)
+      if (kept !== null) log.push(kept)
+      const request = Request.safeParse(frame).data
+      if (request?.method === 'session/request_permission') send(driver, driver.respond(items(driver, 'approval').at(-1)!.requestId, { decision: 'allow', choice: 'allow-once' })[0])
+      else due(driver)
+    }
+    const dropped = recorded('cursor-subagents.jsonl').length - log.length
+    expect(dropped).toBeGreaterThan(0)
+    expect(log.some((frame) => JSON.stringify(frame).includes('agent_thought_chunk') && !JSON.stringify(frame).includes('"sessionId":"session"'))).toBe(false)
+    const rebuilt = opened(); const again = prompt(rebuilt)
+    for (const frame of log) {
+      receive(rebuilt, frame)
+      const request = Request.safeParse(frame).data
+      if (request?.method === 'session/request_permission') send(rebuilt, rebuilt.respond(items(rebuilt, 'approval').at(-1)!.requestId, { decision: 'allow', choice: 'allow-once' })[0])
+      else due(rebuilt)
+    }
+    receive(driver, { id, result: { stopReason: 'end_turn' } }); receive(rebuilt, { id: again, result: { stopReason: 'end_turn' } })
+    expect(items(rebuilt, 'tool').map((tool) => [tool.output, tool.metrics])).toEqual(items(driver, 'tool').map((tool) => [tool.output, tool.metrics]))
+  })
+
+  it("marks a subagent's command approvals, which come on the parent's session", () => {
+    const driver = opened(); const id = prompt(driver)
+    play(driver, 'cursor-subagent-approvals.jsonl', 'reject-once')
+    receive(driver, { id, result: { stopReason: 'end_turn' } })
+    expect(items(driver, 'approval').map((item) => [item.tool, item.title, item.detail, item.resolution])).toEqual([
+      ['commandExecution', 'date +%Y', '子 Agent 的请求：Not in allowlist: date', 'denied'],
+      ['commandExecution', 'uname -s', '子 Agent 的请求：Not in allowlist: uname', 'denied']
+    ])
+    expect(items(driver, 'tool').map((tool) => [tool.name, tool.status])).toEqual([['Task', 'done'], ['Task', 'done']])
+  })
+
+  it('keeps what a stopped subagent said so far', () => {
+    const driver = opened(); prompt(driver)
+    update(driver, { sessionUpdate: 'tool_call', toolCallId: 'task', title: 'Task: Research', kind: 'other', status: 'pending', rawInput: { _toolName: 'task', prompt: 'Look', description: 'Research' } })
+    update(driver, { sessionUpdate: 'subagent_spawned', subagentSessionId: 'child', name: 'generalPurpose', task: 'Look', _meta: { cursor: { toolCallId: 'task' } } })
+    receive(driver, { method: 'session/update', params: { sessionId: 'child', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Found the store in chat-log.ts' } } } })
+    receive(driver, { method: 'session/update', params: { sessionId: 'child', update: { sessionUpdate: 'tool_call', toolCallId: 'inner', title: 'Read chat-log.ts', kind: 'read' } } })
+    driver.interrupt().forEach((frame) => send(driver, frame))
+    update(driver, { sessionUpdate: 'subagent_state_update', subagentSessionId: 'child', state: 'cancelled' })
+    receive(driver, { id: 'cursor-prompt-1', result: { stopReason: 'cancelled' } })
+    expect(items(driver, 'tool')).toMatchObject([{ name: 'Task', status: 'interrupted', output: 'Found the store in chat-log.ts', metrics: { tools: 1 } }])
+  })
+
   it('streams while a question waits and returns stable question/option IDs', () => {
     const driver = opened(); prompt(driver)
     receive(driver, { id: 'question', method: 'cursor/ask_question', params: { toolCallId: 'ask', title: 'Choose', questions: [{ id: 'q', prompt: 'Which?', options: [{ id: 'first', label: 'Same' }, { id: 'second', label: 'Same' }], allowMultiple: true }] } })
