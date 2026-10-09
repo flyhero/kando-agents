@@ -107,8 +107,9 @@ export async function startBrowserHost(slot: WindowSlot, hostFile: string): Prom
       const outcome = gate.takeOutcome(tab.id)
       if (outcome !== 'done') return { tab: registry.describe(tab), outcome, snapshot: null }
       const message = error instanceof Error ? error.message : String(error)
-      // A slow page still shows what it has; anything else is a failure the agent should know.
-      if (!/Timeout/i.test(message)) throw new HostError('browser-navigation-failed', message.split('\n')[0] ?? message)
+      // A slow page still shows what it has; anything else is a failure the agent should know,
+      // in Chromium's words (net::ERR_NAME_NOT_RESOLVED at https://…), without Playwright's.
+      if (!/Timeout/i.test(message)) throw new HostError('browser-navigation-failed', (message.split('\n')[0] ?? message).replace(/^page\.\w+: /, ''))
     }
     await registry.refreshTitle(tab)
     return { tab: registry.describe(tab), outcome: 'done', snapshot: await actions.snapshot(page) }

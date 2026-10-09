@@ -118,7 +118,6 @@ const REASON_TEXT: Record<string, string> = {
   'browser-tab-not-found': '标签页已经关闭',
   'browser-not-watching': '先打开这个会话的浏览器面板',
   'browser-user-driving': '你正在操作这个标签页',
-  'browser-navigation-failed': '页面打不开',
   'browser-ref-not-found': '页面上找不到这个元素了',
   'chat-not-running': '这条会话的 Agent 没有以聊天界面运行',
   'chat-session': '这不是终端面板里的 shell，不能连接',
@@ -168,6 +167,8 @@ const REASON_TEXT: Record<string, string> = {
 // Reasons whose message says what went wrong in the agent's own words, kept after the summary.
 const REASON_WITH_DETAIL: Record<string, string> = {
   'chat-start-failed': 'Agent 没能以聊天界面启动',
+  // Chromium's own word on it (net::ERR_NAME_NOT_RESOLVED, a certificate), which says what to fix.
+  'browser-navigation-failed': '页面打不开',
   'git-commit-failed': '提交失败',
   'git-push-failed': '提交已经保留在本地，但推送失败'
 }
