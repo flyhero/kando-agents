@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { SourceId } from '@kando/protocol'
-import { readJsonIfExists, writePrivateJson } from './private-file'
+import { readJsonIfExists, writePrivateJson } from '@kando/protocol/node'
 
 export const InstanceConfig = z.object({
   provider: SourceId,

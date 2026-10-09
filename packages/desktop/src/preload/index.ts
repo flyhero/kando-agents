@@ -18,5 +18,20 @@ contextBridge.exposeInMainWorld('kando', {
     const handler = (_event: IpcRendererEvent, target: unknown) => listener(target)
     ipcRenderer.on('kando:notification-click', handler)
     return () => ipcRenderer.removeListener('kando:notification-click', handler)
+  },
+  // The built-in browser's tab on show, placed over the panel by main.
+  browserShow: (tabId: string | null): Promise<unknown> => ipcRenderer.invoke('kando:browser-show', tabId),
+  browserBounds: (bounds: { x: number; y: number; width: number; height: number }): void => ipcRenderer.send('kando:browser-bounds', bounds),
+  browserOccluded: (occluded: boolean): Promise<unknown> => ipcRenderer.invoke('kando:browser-occluded', occluded),
+  browserFocus: (tabId: string, focus: boolean): Promise<unknown> => ipcRenderer.invoke('kando:browser-focus', { tabId, focus }),
+  onBrowserFocused: (listener: (event: unknown) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
+    ipcRenderer.on('kando:browser-focused', handler)
+    return () => ipcRenderer.removeListener('kando:browser-focused', handler)
+  },
+  onBrowserShortcut: (listener: (event: unknown) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
+    ipcRenderer.on('kando:browser-shortcut', handler)
+    return () => ipcRenderer.removeListener('kando:browser-shortcut', handler)
   }
 })

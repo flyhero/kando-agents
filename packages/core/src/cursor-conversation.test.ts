@@ -10,7 +10,7 @@ import { fakeChatDaemon } from './fake-chat-agent'
 import { ProjectRegistry } from './project-registry'
 import { TaskStore } from './task-store'
 import { requireCursorCli } from './cursor-cli'
-import { writePrivateJson } from './private-file'
+import { writePrivateJson } from '@kando/protocol/node'
 
 vi.mock('./cursor-cli', () => ({ requireCursorCli: vi.fn(async () => '/fake/cursor-agent'), cursorCatalog: vi.fn(async () => null) }))
 const Frame = z.looseObject({ id: z.union([z.number(), z.string()]).optional(), method: z.string().optional(), params: z.unknown().optional() })

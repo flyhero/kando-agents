@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { readJsonIfExists, writePrivateJson } from './private-file'
+import { readJsonIfExists, writePrivateJson } from '@kando/protocol/node'
 
 // A secret a provider signed in with. `payload` is opaque to core: only its provider reads it.
 export const CredentialRecord = z.object({

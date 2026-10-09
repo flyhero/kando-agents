@@ -3,8 +3,15 @@ import { homedir } from 'node:os'
 import { extname, isAbsolute, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protocol, shell, type OpenDialogOptions } from 'electron'
 import { z } from 'zod'
-import { readCoreEndpoint } from '@kando/protocol/node'
+import { kandoPaths, readCoreEndpoint } from '@kando/protocol/node'
 import { ensureBackend } from './backend'
+import { startBrowserHost, type BrowserHost } from './browser/browser-host'
+import { WindowSlot } from './browser/window-slot'
+
+// The built-in browser: its tabs live here, in main, so a window closing or its renderer going
+// never touches a page an agent is on. The slot puts the one on show into the current window.
+const slot = new WindowSlot()
+let browserHost: BrowserHost | null = null
 
 // Files an agent wrote, served to the preview frames in the chat: kando-preview://file/<path>.
 // Registered before the app is ready, as a standard scheme so relative links inside a page resolve.
@@ -44,7 +51,8 @@ async function servePreview(request: Request): Promise<Response> {
 }
 
 // Main stays thin: tasks, git and PTYs live in core/daemon, so the window
-// can close or crash without touching running agents.
+// can close or crash without touching running agents. Browser tabs are the one exception, and
+// they are kept apart from the window for the same reason.
 function createWindow(): void {
   // On macOS the sidebar and pane headers take the title bar's place; the renderer
   // mirrors this check (desktop-bridge applyTitleBar) to lay out around the lights.
@@ -93,7 +101,33 @@ function createWindow(): void {
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  slot.attachWindow(win)
 }
+
+// The browser panel's say over the tab on show: which one, where it sits, whether something is
+// over it. Bounds arrive as the renderer's CSS pixels; the window's zoom turns them into points.
+const Bounds = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().min(0), height: z.number().finite().min(0) })
+ipcMain.handle('kando:browser-show', (_event, tabId: unknown) => {
+  const id = typeof tabId === 'string' ? tabId : null
+  slot.show(id, id ? (browserHost?.viewOf(id) ?? null) : null, id ? (browserHost?.viewportOf(id) ?? null) : null)
+})
+ipcMain.on('kando:browser-bounds', (event, bounds: unknown) => {
+  const parsed = Bounds.safeParse(bounds)
+  if (!parsed.success) return
+  const zoom = event.sender.getZoomFactor()
+  const { x, y, width, height } = parsed.data
+  slot.setBounds({ x: Math.round(x * zoom), y: Math.round(y * zoom), width: Math.round(width * zoom), height: Math.round(height * zoom) })
+})
+ipcMain.handle('kando:browser-occluded', (_event, occluded: unknown) => {
+  slot.setOccluded(occluded === true)
+})
+ipcMain.handle('kando:browser-focus', (event, request: unknown) => {
+  const parsed = z.object({ tabId: z.string(), focus: z.boolean() }).safeParse(request)
+  if (!parsed.success) return
+  const view = browserHost?.viewOf(parsed.data.tabId)
+  if (parsed.data.focus) view?.webContents.focus()
+  else event.sender.focus()
+})
 
 // Re-read on every call: core rewrites the file with a new port/token on restart.
 ipcMain.handle('kando:core-endpoint', () => readCoreEndpoint())
@@ -194,11 +228,25 @@ void app.whenReady().then(() => {
   protocol.handle(PREVIEW_SCHEME, servePreview)
   void ensureBackend()
   createWindow()
+  startBrowserHost(slot, kandoPaths().browserHostFile).then(
+    (host) => { browserHost = host },
+    (error: unknown) => console.error('[kando] the browser host did not start', error)
+  )
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
+})
+
+// The tabs go with the app, and the host file with them, so core sees the browser as closed
+// rather than finding a port nothing answers on.
+let quitting = false
+app.on('before-quit', (event) => {
+  if (quitting || !browserHost) return
+  event.preventDefault()
+  quitting = true
+  void browserHost.shutdown().finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

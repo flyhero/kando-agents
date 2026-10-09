@@ -3,7 +3,9 @@ import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
 
 // Everything lives in devDependencies so electron-vite bundles it (including the
-// TS-source @kando/protocol) instead of externalizing it into a runtime require.
+// TS-source @kando/protocol) instead of externalizing it into a runtime require. playwright-core
+// is the one exception: it reaches for optional native modules (kerberos) the bundler cannot
+// resolve, so it stays a dependency, required at run time from the app's own node_modules.
 
 const CSP = [
   "default-src 'self'",
@@ -35,7 +37,7 @@ function productionCsp(): Plugin {
 }
 
 export default defineConfig({
-  main: {},
+  main: { build: { rollupOptions: { external: ['playwright-core'] } } },
   preload: {},
   renderer: {
     plugins: [react(), productionCsp()]

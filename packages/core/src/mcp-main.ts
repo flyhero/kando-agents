@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util'
 import { RpcError } from '@kando/protocol'
 import { serveMcp } from './mcp-server'
-import { writePrivateJson } from './private-file'
+import { writePrivateJson } from '@kando/protocol/node'
 
 // Kando's MCP server, a process of its own that an agent starts over stdio: core configures it
 // for every chat (see mcpCommand), and it reaches core over RPC like any other client.

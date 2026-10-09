@@ -2,7 +2,7 @@ import { rm } from 'node:fs/promises'
 import { z } from 'zod'
 import { DEFAULT_INSTANCE } from '@kando/protocol'
 import type { CredentialStore } from './credential-store'
-import { readJsonIfExists } from './private-file'
+import { readJsonIfExists } from '@kando/protocol/node'
 import type { SourceConfigStore } from './source-config'
 
 const LegacyJiraConfig = z.object({ site: z.string(), email: z.string(), token: z.string(), jql: z.string() })

@@ -8,7 +8,7 @@ import { BrowserService, type BrowserEvent } from './browser-service'
 import { fakeBrowserHost } from './fake-browser-host'
 import { fakeChatDaemon } from './fake-chat-agent'
 import { fakeConnection, until } from './fake-connection'
-import { readJsonIfExists } from './private-file'
+import { readJsonIfExists } from '@kando/protocol/node'
 
 const CONV_A = '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e'
 const CONV_B = '1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'

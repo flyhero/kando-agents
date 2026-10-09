@@ -153,8 +153,7 @@ export async function ensureBackend(): Promise<void> {
     // The Electron binary doubles as the Node that runs them; each strips or scopes the flag
     // before anything of the user's inherits it.
     ELECTRON_RUN_AS_NODE: '1',
-    KANDO_MCP_JS: join(backend, 'mcp.mjs'),
-    KANDO_BROWSER_HOST_JS: join(backend, 'browser-host.mjs')
+    KANDO_MCP_JS: join(backend, 'mcp.mjs')
   }
   const launch = (name: 'daemon' | 'core') => {
     const log = openSync(join(logs, `${name}.log`), 'a')

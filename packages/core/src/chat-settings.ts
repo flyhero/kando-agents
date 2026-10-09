@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { ChatSettings, UnattendedMode } from '@kando/protocol'
-import { readJsonIfExists, writePrivateJson } from './private-file'
+import { readJsonIfExists, writePrivateJson } from '@kando/protocol/node'
 
 // Suggestions on, as in Claude Code itself; scheduled runs let edits through but still ask for
 // anything else. Each field falls back on its own, so one bad value resets nothing else.

@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, it } from 'vitest'
 import { cursorMcpReadyFile, cursorMcpServer, prepareCursorMcp, waitForCursorMcp } from './cursor-mcp'
-import { writePrivateJson } from './private-file'
+import { writePrivateJson } from '@kando/protocol/node'
 
 it('binds readiness and MCP argv to each conversation and stage without editing project configuration', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'kando-cursor-mcp-'))

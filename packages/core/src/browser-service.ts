@@ -32,7 +32,7 @@ import { connectBrowserHost, type HostConnect, type HostLink } from './browser-h
 import { BrowserViews } from './browser-view'
 import { clip } from './chat-items'
 import type { SessionHost } from './daemon-client'
-import { readJsonIfExists, writePrivateJson } from './private-file'
+import { readJsonIfExists, writePrivateJson } from '@kando/protocol/node'
 import { Rejection } from './rejection'
 import type { Connection } from './rpc-server'
 
