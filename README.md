@@ -34,24 +34,19 @@ Kando 读作「看到」。它是一块看板：你在上面记下要做的事�
 │  daemon  持有所有 agent 进程（stdio 管道）   │
 │          和终端面板的 shell（node-pty）      │
 │          core / 桌面端重启，agent 不会断     │
-└────────────────┬───────────────────────────┘
-                 │ spawnPipe
-┌────────────────▼───────────────────────────┐
-│  browser-host  Kando 托管的 Chromium        │
-│          （playwright-core），core 经本地    │
-│          WebSocket 驱动；标签页按会话隔离     │
 └────────────────────────────────────────────┘
 ```
+
+内置浏览器不在这条链上：标签页由桌面端主进程持有（Electron 的 `WebContentsView`），core 经本地 WebSocket 驱动它，地址写在 `~/.kando/browser/host.json`。
 
 | 包 | 职责 |
 |---|---|
 | `packages/protocol` | 唯一的类型来源：Task / Conversation 模型、状态流转规则、RPC 方法与通知的 zod schema、客户端。`/node` 子入口放路径、端点发现、daemon 协议 |
 | `packages/core` | 独立的任务与会话存储及业务逻辑；任务创建 git worktree；通过 daemon 启动 Agent CLI；另有给 Agent 用的 MCP 服务（`mcp-main.ts`，预览和浏览器工具），由 Agent 作为独立进程启动 |
 | `packages/daemon` | 进程宿主，独立进程：Agent 跑在 stdio 管道上，终端面板的 shell 跑在 PTY 里；缓存最近输出，供重新连接时回放 |
-| `packages/desktop` | Electron 桌面端：看板、详情编辑、聊天界面、终端面板 |
-| `packages/browser-host` | 浏览器宿主，daemon 托管的独立进程：用 playwright-core 跑一个 Chromium，给 Agent 的浏览器工具和检查器的实时画面提供页面 |
+| `packages/desktop` | Electron 桌面端：看板、详情编辑、聊天界面、终端面板；主进程还持有内置浏览器的标签页，并用 playwright-core 替 Agent 驱动它们 |
 
-运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`、`browser/`（Chromium 下载、浏览器 profile）。
+运行时数据在 `~/.kando/`（可用 `KANDO_HOME` 覆盖）：`kando.db`、`core.json`（端口与 token，权限 0600）、`worktrees/`、`sessions/`、`browser/`（`host.json`，桌面端写的浏览器宿主地址）。
 
 ## 快速开始
 
@@ -166,12 +161,12 @@ Claude Code 以 `claude -p --input-format stream-json --output-format stream-jso
 
 聊天界面里的 Agent 可以用 Kando 托管的浏览器看页面：Kando 的 MCP 服务给每个聊天会话提供一组 `browser_*` 工具——`browser_navigate` 打开页面，`browser_snapshot` 读无障碍树快照（每个可交互元素带 ref），`browser_click` / `browser_type` / `browser_press` / `browser_hover` / `browser_scroll` / `browser_select` 按 ref 操作，`browser_wait` 等待，`browser_screenshot` 截图，`browser_console` 读控制台和失败的请求，`browser_tabs` 管标签页。截图会显示在对话的卡片里。
 
-- **安装**：第一次使用时下载 Chromium（playwright-core 的构建，约 150MB）到 `~/.kando/browser/ms-playwright`，设置 → 集成 → 浏览器 里能看进度，也能手动点「安装」；源码运行可以先 `pnpm browser:install`。
-- **隔离与登录态**：一个 Chromium 进程、一份持久 profile（`~/.kando/browser/profile`，权限 700），所以登录态在所有会话间共享；标签页按会话隔离，Agent 只看到自己会话的标签页，删除会话时它的标签页一并关闭。
+- **运行位置**：浏览器就是 Kando 应用自带的 Chromium，标签页由桌面端主进程持有：关窗口、刷新界面都不影响它，退出应用才结束。应用没开时，Agent 的浏览器工具会提示先打开 Kando。不用下载任何东西。
+- **隔离与登录态**：所有标签页共用一份持久会话（Electron 的 `persist:kando-browser` 分区），所以登录态在所有会话间共享；标签页按会话隔离，Agent 只看到自己会话的标签页，删除会话时它的标签页一并关闭。
 - **站点确认**：`localhost`、`127.0.0.1`、`[::1]`、`*.localhost`、`*.test` 直接打开；其他站点在一个会话里第一次访问时，对话里弹出确认卡：允许一次、本会话允许或拒绝。25 秒没有回答时 Agent 会收到「等待用户确认」，你回答后它再试一次就能打开。门禁拦的是顶层导航（Agent 的打开、你在画面里点的链接、重定向都算），页面自己加载的资源不拦。
 - **浏览器面板**：状态栏右下角的浏览器按钮（或 Ctrl+Shift+`）打开右侧的浏览器面板，和终端面板一样可以拖宽、最大化。它列出所有会话的标签页（标签上带会话名），也能用「＋」开你自己的标签页：这种标签页不属于任何会话，Agent 看不到，打开什么站点也不会问你。Agent 打开页面时，对话里出现一张页面卡片（标题、地址、「打开」按钮），浏览器在后台跑，点「打开」才展开面板并选中那个标签页；在 设置 → 集成 → 浏览器 里可以改成 Agent 第一次用浏览器时自动打开。
-- **实时画面**：面板里是选中标签页的实时画面。可以直接在画面里点击、输入（Esc 回到应用，Shift+Esc 发给页面）、改地址、后退刷新，也能关标签页、截图存成图片。你操作时标签页标为「你在操作」，Agent 对它的调用会被拒绝并被告知等待，5 秒没动作或点「交还给 Agent」后恢复。
-- **进程**：浏览器宿主 `packages/browser-host` 由 core 通过 daemon 启动，和聊天 Agent 一样在 core、桌面端重启后重新接上，标签页和登录态都还在；重启 daemon 会结束它，下次用到时自动再起。没有标签页 10 分钟后它自己退出。
+- **页面**：面板里直接显示选中的标签页本身，铺满面板，和普通浏览器一样可以点击、输入（Esc 回到应用，Shift+Esc 把 Esc 发给页面）、改地址、后退刷新，也能关标签页、截图存成图片。地址栏右侧可以把页面固定成手机、平板等尺寸，固定尺寸的页面在面板里等比居中显示；Agent 调用 `browser_navigate` 或 `browser_tabs new` 时也可以传 `viewport`，之后一直保持到再改。你操作时标签页标为「你在操作」，Agent 对它的调用会被拒绝并被告知等待，5 秒没动作或点「交还给 Agent」后恢复。
+- **升级**：早期版本下载到 `~/.kando/browser/` 的 Chromium 和 profile，在新版 core 第一次启动时自动删除；网站需要重新登录。
 - **Codex**：Codex 对 MCP 工具不弹自己的确认，所以站点确认是它唯一的闸；Claude Code 对打开页面和点击、输入会弹它自己的确认，只读的快照、截图、滚动、等待、控制台和标签页列表已放行。
 
 ### 多项目与依赖

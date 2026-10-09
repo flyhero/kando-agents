@@ -10,7 +10,7 @@ catalog:
   ws: 8.21.3
   zod: 4.6.5
   # playwright-core only: the playwright package's install script downloads browsers at
-  # install time, where Kando fetches Chromium on first use into ~/.kando.
+  # install time, and the app drives its own Chromium.
   playwright-core: 1.63.0
 
 # Native modules only load in plain-Node processes (daemon), never in Electron,
