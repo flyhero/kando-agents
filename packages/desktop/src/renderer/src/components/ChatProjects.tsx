@@ -28,22 +28,21 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
   if (!primary) return null
   const note = blockerNote(conversation, supported)
   const full = conversation.projectPaths.length >= MAX_TASK_REPOS
+  const availableRecent = recent.filter((each) => !conversation.projectPaths.includes(each))
   const open = async () => {
     const box = button.current?.getBoundingClientRect()
     if (!box) return
     setAt({ x: box.left, y: box.top })
     if (note) return
     const found = await perform((rpc) => rpc.call('projects.recent', {}))
-    setRecent((found ?? []).filter((each) => !conversation.projectPaths.includes(each)))
+    setRecent(found ?? [])
   }
   const apply = async (next: readonly string[]) => {
-    setAt(null)
     setBusy(true)
     await perform((rpc) => rpc.call('conversations.setAdditionalProjects', { id: conversation.id, projectPaths: [...next] }))
     setBusy(false)
   }
   const browse = async () => {
-    setAt(null)
     const picked = await pickFolder(parentDir(primary))
     if (picked) await apply([...extras, picked])
   }
@@ -86,7 +85,7 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
               aria-checked="true"
               className="menu-item chat-projects-item"
               title={note ?? `${extra}\n点一下移除`}
-              disabled={note !== null}
+              disabled={note !== null || busy}
               onClick={() => void apply(extras.filter((each) => each !== extra))}
             >
               <FolderIcon />
@@ -94,7 +93,7 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
               <span className="menu-check"><CheckIcon /></span>
             </button>
           ))}
-          {note === null && recent.map((each) => (
+          {note === null && availableRecent.map((each) => (
             <button
               key={each}
               type="button"
@@ -102,7 +101,7 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
               aria-checked="false"
               className="menu-item chat-projects-item"
               title={each}
-              disabled={full}
+              disabled={full || busy}
               onClick={() => void apply([...extras, each])}
             >
               <FolderIcon />
@@ -113,12 +112,12 @@ export function ChatProjects({ conversation }: { conversation: Conversation }) {
           {note === null && canPickFolder() && (
             <>
               <div className="menu-separator" role="separator" />
-              <button type="button" role="menuitem" className="menu-item" disabled={full} onClick={() => void browse()}>
+              <button type="button" role="menuitem" className="menu-item" disabled={full || busy} onClick={() => void browse()}>
                 选择文件夹…
               </button>
             </>
           )}
-          {note === null && extras.length === 0 && recent.length === 0 && !canPickFolder() && <p className="menu-note">没有最近用过的项目</p>}
+          {note === null && extras.length === 0 && availableRecent.length === 0 && !canPickFolder() && <p className="menu-note">没有最近用过的项目</p>}
           {footer && <p className="menu-note">{footer}</p>}
         </ContextMenu>
       )}
