@@ -1,6 +1,6 @@
 {
   "name": "@kando/protocol",
-  "version": "0.12.28",
+  "version": "0.12.29",
   "private": true,
   "type": "module",
   "exports": {

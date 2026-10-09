@@ -1,6 +1,6 @@
 {
   "name": "@kando/desktop",
-  "version": "0.12.28",
+  "version": "0.12.29",
   "private": true,
   "description": "Kando desktop client",
   "repository": {
