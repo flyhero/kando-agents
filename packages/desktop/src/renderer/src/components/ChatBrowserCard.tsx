@@ -4,6 +4,7 @@ import { useImageUrl } from '../attachment-images'
 import { useBrowserTabs, ALL_TABS } from '../browser-state'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
+import { latestBrowserPages } from '../chat-browser'
 import { toolLabel } from '../chat-tools'
 import { showBrowserTab, useCore } from '../core-store'
 import { ChatPaths, ChevronRightIcon, ToolStatus, clipped } from './chat-tool-parts'
@@ -12,6 +13,7 @@ import { LocalImageViewer } from './ChatMarkdown'
 import { ImageViewer } from './ImageViewer'
 import { ChatToolIcon } from './ChatToolIcon'
 import { ChatToolInput } from './ChatToolInput'
+import { ChatToolRun } from './ChatToolCard'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
@@ -52,7 +54,7 @@ function outputBeside(output: string | null, shown: boolean): string | null {
 function hostLine(url: string): string {
   try {
     const parsed = new URL(url)
-    return parsed.host ? `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}` : url
+    return parsed.host ? `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}${parsed.search}${parsed.hash}` : url
   } catch {
     return url
   }
@@ -61,11 +63,11 @@ function hostLine(url: string): string {
 // A page the agent opened: its title and address, and the way to see it. The browser works in
 // the background; 打开 brings the panel up on this tab. A navigation that did not come to a page
 // (the user was asked, or refused) says so instead.
-function ChatPageCard({ item }: { item: ToolItem }) {
+function ChatPageCard({ item, disclosureKey = itemKey(item) }: { item: ToolItem; disclosureKey?: string }) {
   const page = item.output ? parseBrowserPage(item.output) : null
   const open = useCore((s) => s.browserPanelOpen)
   const shown = useBrowserTabs((s) => s[ALL_TABS]?.selectedId)
-  const [viewing, setViewing] = useDisclosure(`card:${itemKey(item)}`)
+  const [viewing, setViewing] = useDisclosure(`card:${disclosureKey}`)
   const label = typeof item.title === 'string' && item.title ? item.title : '页面'
   const current = page !== null && open && shown === page.id
   return (
@@ -74,7 +76,7 @@ function ChatPageCard({ item }: { item: ToolItem }) {
         <ChatToolIcon name={item.name} status={item.status} />
         <div className="chat-page-text">
           <div className="chat-page-title">{page ? (page.title || hostLine(page.url)) : label}</div>
-          <div className="chat-page-sub muted">
+          <div className="chat-page-sub muted" title={page?.url}>
             {page ? <><span className="mono">{hostLine(page.url)}</span> · {current ? '显示在浏览器面板里' : '在浏览器里打开了'}</> : item.status === 'running' ? '正在打开…' : (item.output?.split('\n')[0] ?? '')}
           </div>
         </div>
@@ -89,9 +91,22 @@ function ChatPageCard({ item }: { item: ToolItem }) {
   )
 }
 
+// A turn's browser work stays inspectable without repeating its entry point after every refresh.
+export function ChatBrowserRun({ tools }: { tools: readonly ToolItem[] }) {
+  const first = tools[0]
+  return (
+    <div className="chat-browser-work">
+      <ChatToolRun tools={tools} summary={`浏览器操作 ${tools.length} 次`} />
+      {latestBrowserPages(tools).map(({ item, page }) => (
+        <ChatPageCard key={page.id} item={item} disclosureKey={`browser:${first ? itemKey(first) : ''}:${page.id}`} />
+      ))}
+    </div>
+  )
+}
+
 // A browser call that brought back a picture: what it did on the page, and the page as it looked.
 export function ChatBrowserCard({ item }: { item: ToolItem }) {
-  if (browserToolKind(item.name) === 'navigate') return <ChatPageCard item={item} />
+  if (browserToolKind(item.name) === 'navigate' && !item.images?.length) return <ChatPageCard item={item} />
   return <ChatShotCard item={item} />
 }
 

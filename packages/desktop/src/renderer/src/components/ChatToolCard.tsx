@@ -164,15 +164,15 @@ function ToolLine({ tool }: { tool: ToolItem }) {
 }
 
 // Only execution exceptions reach the group header; exit results stay in each call's details.
-export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
+export function ChatToolRun({ tools, summary }: { tools: readonly ToolItem[]; summary?: string }) {
   const [only] = tools
   const [open, setOpen] = useDisclosure(`run:${only ? itemKey(only) : ''}`)
   const shorten = useContext(ChatPaths)
   const running = tools.find((tool) => tool.status === 'running')
   const finished = useJustFinished(Boolean(running))
-  if (tools.length === 1 && only) return <ToolLine tool={only} />
+  if (tools.length === 1 && only && summary === undefined) return <ToolLine tool={only} />
   const outcome = toolRunStatus(tools)
-  const headline = runHeadline(tools)
+  const headline = summary === undefined ? runHeadline(tools) : { text: summary, described: false }
   // The rail beside the open list fills as the calls finish, top down.
   const settled = tools.filter((tool) => tool.status !== 'running').length
   return (
@@ -189,7 +189,7 @@ export function ChatToolRun({ tools }: { tools: readonly ToolItem[] }) {
       </button>
       {open && (
         <div className="chat-tool-run-lines" style={{ '--chat-rail': `${(settled / tools.length) * 100}%` }}>
-          {tools.map((tool) => <ToolLine key={tool.id} tool={tool} />)}
+          {tools.map((tool) => <ToolLine key={itemKey(tool)} tool={tool} />)}
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import {
   appendText,
   chatBlocks,
   finalReplies,
+  foldRowKeys,
   mergeItems,
   pathShortener,
   prependChatPage,
@@ -111,13 +112,13 @@ describe('chatBlocks', () => {
   const base = { stageId: 'chat-stage', revision: 1, at: 0 }
   const user = (id: string): ChatItem => ({ ...base, id, kind: 'user', text: 'go', images: [] })
   const reply = (id: string): ChatItem => ({ ...base, id, kind: 'assistant', text: id, streaming: false })
-  const tool = (id: string, name = 'Read', diffs: { path: string; change: 'update'; patch: string }[] = []): ChatItem =>
+  const tool = (id: string, name = 'Read', diffs: { path: string; change: 'update'; patch: string }[] = []): Extract<ChatItem, { kind: 'tool' }> =>
     ({ ...base, id, kind: 'tool', name, title: id, input: null, status: 'done', output: null, diffs })
   const thought = (id: string, value: string): ChatItem => ({ ...base, id, kind: 'reasoning', text: value, streaming: false })
   const turn = (id: string): ChatItem => ({ ...base, id, kind: 'turn', state: 'completed', error: null, durationMs: 70_800 })
   const blocksOf = (items: ChatItem[]) => chatBlocks(items.map((item) => ({ kind: 'item' as const, item })))
   const shape = (blocks: ReturnType<typeof chatBlocks>): unknown[] => blocks.map((block) =>
-    block.kind === 'tools' ? `tools:${block.tools.map((each) => each.id).join('+')}`
+    block.kind === 'tools' || block.kind === 'browser' ? `${block.kind}:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'edits' ? `edits:${block.path}:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'agents' ? `agents:${block.tools.map((each) => each.id).join('+')}`
       : block.kind === 'fold' ? { fold: shape(block.blocks) }
@@ -128,6 +129,53 @@ describe('chatBlocks', () => {
     const edit = tool('e', 'Edit', [{ path: 'a.ts', change: 'update', patch: '+x' }])
     expect(shape(blocksOf([user('u'), tool('a'), tool('b', 'Bash'), edit, tool('c'), reply('r')])))
       .toEqual(['u', 'tools:a+b', 'e', 'tools:c', 'r'])
+  })
+
+  it('collects browser history across commands and narration, leaving screenshots separate', () => {
+    const shot = { ...tool('shot', 'mcp__kando__browser_screenshot'), images: [{ id: `${'a'.repeat(64)}.png`, width: 2, height: 1 }] }
+    const items = [user('u'), tool('open', 'mcp__kando__browser_navigate'), tool('cmd', 'Bash'), reply('checking'),
+      tool('click', 'kando.browser_click'), shot, tool('refresh', 'kando.browser_navigate'), reply('answer')]
+    expect(shape(blocksOf(items))).toEqual(['u', 'tools:cmd', 'checking', 'shot', 'browser:open+click+refresh', 'answer'])
+    const browser = blocksOf(items).find((block) => block.kind === 'browser')
+    expect(browser?.key).toBe('browser:item:chat-stage/open')
+    expect(foldRowKeys(browser ? [browser] : [])).toEqual([
+      'run:chat-stage/open', 'call:chat-stage/open', 'call:chat-stage/click', 'call:chat-stage/refresh'
+    ])
+    expect(items).toHaveLength(8)
+  })
+
+  it('keeps browser entry points visible after completion without counting them twice in the work fold', () => {
+    const items = [user('u'), { ...tool('open', 'kando.browser_navigate'), at: 100 },
+      { ...tool('cmd'), at: 200 }, { ...tool('click', 'kando.browser_click'), at: 300 },
+      { ...reply('answer'), at: 400 }, { ...turn('end'), at: 500 }]
+    expect(shape(blocksOf(items))).toEqual(['u', { fold: ['tools:cmd'] }, 'browser:open+click', 'answer', 'end'])
+    expect(blocksOf(items).find((block) => block.kind === 'fold')).toMatchObject({ steps: 1, workMs: 200 })
+    expect(shape(chatBlocks(items.map((item) => ({ kind: 'item' as const, item })), { foldTurns: false })))
+      .toEqual(['u', 'tools:cmd', 'browser:open+click', 'answer', 'end'])
+  })
+
+  it('does not promote narration before the last browser operation to the final answer', () => {
+    expect(shape(blocksOf([user('u'), tool('open', 'kando.browser_navigate'), reply('checking'),
+      tool('click', 'kando.browser_click'), turn('end')])))
+      .toEqual(['u', { fold: ['checking'] }, 'browser:open+click', 'end'])
+  })
+
+  it('does not merge browser histories across users, turn endings or stages', () => {
+    const open = (id: string) => tool(id, 'kando.browser_navigate')
+    expect(shape(blocksOf([user('u'), open('a'), turn('t'), open('b'), user('u2'), open('c'),
+      { ...open('d'), stageId: 'next' }])))
+      .toEqual(['u', 'browser:a', 't', 'browser:b', 'u2', 'browser:c', 'browser:d'])
+    expect(shape(chatBlocks([
+      { kind: 'item', item: open('a') }, { kind: 'stage', stage: stage('next', 1) },
+      { kind: 'item', item: { ...open('b'), stageId: 'next' } }
+    ]))).toEqual(['browser:a', 'stage:next', 'browser:b'])
+  })
+
+  it('retains running, failed and denied browser calls in inspectable history', () => {
+    const navigate = tool('open', 'kando.browser_navigate')
+    const calls = [navigate, { ...navigate, id: 'running', status: 'running' as const },
+      { ...navigate, id: 'failed', status: 'failed' as const }, { ...navigate, id: 'denied', status: 'denied' as const }]
+    expect(blocksOf(calls)).toEqual([{ kind: 'browser', key: 'browser:item:chat-stage/open', tools: calls }])
   })
 
   it('gives a call that looked at a picture, or brought one back, a card of its own', () => {

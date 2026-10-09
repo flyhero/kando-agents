@@ -185,6 +185,7 @@ type TurnReply = { key: string; text: string }
 export type ChatBlock =
   | { kind: 'entry'; key: string; entry: TimelineEntry }
   | { kind: 'tools'; key: string; tools: ToolItem[] }
+  | { kind: 'browser'; key: string; tools: ToolItem[] }
   | { kind: 'agents'; key: string; tools: ToolItem[] }
   | { kind: 'edits'; key: string; path: string; tools: ToolItem[] }
   // steps: the calls the turn made on the way, and workMs how long the work ran before the answer
@@ -195,8 +196,7 @@ export type ChatBlock =
 // A call that changed files keeps its own card, with its diff, and subagents sent off together have
 // theirs; the rest run together.
 // A preview the agent asked for is its own card, never one of a run; so is a call that brought
-// back a picture (a screenshot) or looked at one on disk, which wants room to be seen, and a page
-// the browser opened, whose card is the way to the browser panel.
+// back a picture (a screenshot) or looked at one on disk, which wants room to be seen.
 function runTool(entry: TimelineEntry): ToolItem | null {
   return entry.kind === 'item' && entry.item.kind === 'tool' && entry.item.diffs.length === 0 && !isSubagent(entry.item.name) && !isPreviewTool(entry.item.name) && !entry.item.images?.length && !toolImagePath(entry.item) && browserToolKind(entry.item.name) !== 'navigate' && terminalToolKind(entry.item.name) !== 'run'
     ? entry.item
@@ -214,7 +214,7 @@ function editedFile(tool: ToolItem): string | null {
 }
 
 function toolsOf(block: ChatBlock): ToolItem[] {
-  if (block.kind === 'tools' || block.kind === 'edits' || block.kind === 'agents') return block.tools
+  if (block.kind === 'tools' || block.kind === 'browser' || block.kind === 'edits' || block.kind === 'agents') return block.tools
   if (block.kind === 'fold') return block.blocks.flatMap(toolsOf)
   const item = itemOf(block)
   return item?.kind === 'tool' ? [item] : []
@@ -248,6 +248,8 @@ function itemOf(block: ChatBlock): ChatItem | null {
 // What a finished turn tucks away: the work on the way to its answer. What the user was asked, a
 // plan, and anything that went wrong stay in view.
 function foldable(block: ChatBlock): boolean {
+  // The browser's history is already folded; its page remains a way into the browser panel.
+  if (block.kind === 'browser') return false
   const item = itemOf(block)
   if (!item) return block.kind !== 'entry'
   switch (item.kind) {
@@ -315,9 +317,10 @@ function unfoldedTurn(body: ChatBlock[], end: ChatBlock): ChatBlock[] {
 export function foldRowKeys(blocks: readonly ChatBlock[]): string[] {
   return blocks.flatMap((block) => {
     switch (block.kind) {
-      case 'tools': {
+      case 'tools':
+      case 'browser': {
         const [first] = block.tools
-        const run = block.tools.length > 1 && first ? [`run:${itemKey(first)}`] : []
+        const run = (block.kind === 'browser' || block.tools.length > 1) && first ? [`run:${itemKey(first)}`] : []
         return [...run, ...block.tools.map((tool) => `call:${itemKey(tool)}`)]
       }
       case 'edits': {
@@ -344,9 +347,27 @@ export function foldRowKeys(blocks: readonly ChatBlock[]): string[] {
 
 export function chatBlocks(entries: readonly TimelineEntry[], { foldTurns = true }: { foldTurns?: boolean } = {}): ChatBlock[] {
   const runs: ChatBlock[] = []
+  let browser: Extract<ChatBlock, { kind: 'browser' }> | null = null
+  let stageId: string | null = null
   for (const entry of entries) {
+    if (entry.kind === 'stage' || entry.item.stageId !== stageId || entry.item.kind === 'user' || entry.item.kind === 'turn') browser = null
+    stageId = entry.kind === 'stage' ? entry.stage.id : entry.item.stageId
     // Claude often thinks without saying anything it keeps.
     if (entry.kind === 'item' && entry.item.kind === 'reasoning' && !entry.item.streaming && !entry.item.text.trim()) continue
+    const call = entry.kind === 'item' && entry.item.kind === 'tool' ? entry.item : null
+    // Pictures and diffs keep their own cards; navigation and interaction share one turn's history.
+    if (call && browserToolKind(call.name) && !call.images?.length && call.diffs.length === 0) {
+      if (browser) {
+        browser.tools.push(call)
+        // Keep the summary at its latest activity, so earlier narration cannot become the answer.
+        runs.splice(runs.indexOf(browser), 1)
+        runs.push(browser)
+      } else {
+        browser = { kind: 'browser', key: `browser:${entryKey(entry)}`, tools: [call] }
+        runs.push(browser)
+      }
+      continue
+    }
     const tool = runTool(entry)
     const subagent = subagentTool(entry)
     const last = runs.at(-1)
