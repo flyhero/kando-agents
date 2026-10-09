@@ -30,6 +30,8 @@ export function fakeChatDaemon() {
     deliver: (_event: DaemonEvent) => {},
     // Whether a new session answers the initialize request by itself.
     answerInit: true,
+    // A stubborn process lets stop-sequence tests observe escalation before ending it explicitly.
+    exitOnKill: true,
     // What a session prints for each user message; by default a reply and a finished turn.
     reply: (sessionId: string, text: string) => {
       fake.emit(sessionId, { type: 'assistant', uuid: `uuid-${text}`, message: { id: `msg-${text}`, content: [{ type: 'text', text: `echo: ${text}` }] }, parent_tool_use_id: null })
@@ -104,7 +106,7 @@ export function fakeChatDaemon() {
     resize: () => ({ ok: true }),
     kill: ({ sessionId, force }) => {
       killed.push({ sessionId, force: force ?? false })
-      queueMicrotask(() => fake.exit(sessionId, force ? 137 : 143))
+      if (fake.exitOnKill) queueMicrotask(() => fake.exit(sessionId, force ? 137 : 143))
       return { ok: true }
     },
     attach: ({ sessionId }) => {

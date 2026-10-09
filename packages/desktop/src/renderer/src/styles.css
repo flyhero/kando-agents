@@ -5919,6 +5919,14 @@ body.side-panel-resizing * {
   white-space: pre-wrap;
 }
 .chat-notice[data-level='warning'] { color: var(--warning); }
+.chat-notice-actionable { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chat-notice-actionable > span { min-width: 0; }
+.chat-notice-action {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  background: var(--surface);
+  color: var(--text);
+}
 /* A notice longer than a line: a chevron, and the first line until it is opened. */
 .chat-notice-long { display: flex; align-items: flex-start; gap: 4px; }
 .chat-notice-toggle { flex-shrink: 0; padding: 1px 0 0; border: 0; background: none; color: inherit; cursor: pointer; }

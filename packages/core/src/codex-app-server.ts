@@ -486,7 +486,10 @@ export class CodexAppServer implements ChatDriver {
         break
       }
       case 'note':
-        this.items.notice(record.level, record.text, record.at)
+        this.items.notice(record.level, record.text, record.at, {
+          ...(record.id !== undefined ? { id: record.id } : {}),
+          ...(record.action !== undefined ? { action: record.action } : {})
+        })
         break
       case 'option':
         this.choose(record.option, record.value)

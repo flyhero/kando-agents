@@ -21,6 +21,7 @@ let store: ConversationStore
 let projects: ProjectRegistry
 let service: ConversationService
 let daemon: ReturnType<typeof fakeChatDaemon>
+let answerPrompt: boolean
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 beforeEach(() => {
@@ -28,6 +29,7 @@ beforeEach(() => {
   const database = path.join(root, 'kando.db')
   tasks = new TaskStore(database); store = new ConversationStore(database); projects = new ProjectRegistry(database)
   mkdirSync(path.join(root, 'attachments'))
+  answerPrompt = true
   daemon = fakeChatDaemon()
   service = new ConversationService(store, daemon, path.join(root, 'sessions'), () => {}, projects, new AttachmentStore(path.join(root, 'attachments')), (id) => ({ command: 'node', args: ['mcp', '--conversation', id] }))
   daemon.deliver = (event) => {
@@ -53,6 +55,7 @@ beforeEach(() => {
         reply({ sessionId: opened.sessionId ?? `cursor-${write.sessionId}`, modes })
       } else if (frame.method === 'session/set_mode') reply({})
       else if (frame.method === 'session/prompt') {
+        if (!answerPrompt) continue
         const prompt = z.object({ sessionId: z.string(), prompt: z.array(z.object({ text: z.string() })) }).parse(frame.params)
         queueMicrotask(() => {
           daemon.emit(write.sessionId, { method: 'session/update', params: { sessionId: prompt.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `echo: ${prompt.prompt[0]?.text}` } } } })
@@ -64,7 +67,100 @@ beforeEach(() => {
   }
 })
 
-afterEach(() => { vi.mocked(requireCursorCli).mockReset().mockResolvedValue('/fake/cursor-agent'); projects.close(); store.close(); tasks.close(); rmSync(root, { recursive: true, force: true }) })
+afterEach(() => { vi.useRealTimers(); vi.mocked(requireCursorCli).mockReset().mockResolvedValue('/fake/cursor-agent'); projects.close(); store.close(); tasks.close(); rmSync(root, { recursive: true, force: true }) })
+
+it('runs every Cursor turn in a fresh ACP process and restores the native session', async () => {
+  const created = await service.create('cursor', [])
+  await service.send(created.id, 'first turn'); await settle()
+  const providerSessionId = service.stages(created.id).at(-1)?.providerSessionId
+
+  await service.send(created.id, 'second turn'); await settle()
+
+  expect(daemon.spawns).toHaveLength(2)
+  expect(daemon.written('pipe-1')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'first turn' })] }) })
+  ]))
+  expect(daemon.written('pipe-2')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'session/load', params: expect.objectContaining({ sessionId: providerSessionId }) }),
+    expect.objectContaining({
+      method: 'session/prompt',
+      params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'second turn' })] })
+    })
+  ]))
+  expect(daemon.killed).toContainEqual({ sessionId: 'pipe-1', force: false })
+})
+
+it('carries multiple queued messages across their per-turn Cursor processes', async () => {
+  answerPrompt = false
+  const created = await service.create('cursor', [])
+  await service.send(created.id, 'first')
+  await service.send(created.id, 'second', [], true)
+  await service.send(created.id, 'third', [], true)
+
+  answerPrompt = true
+  daemon.emit('pipe-1', { id: 'cursor-prompt-1', result: { stopReason: 'end_turn' } })
+  await vi.waitFor(() => expect(daemon.spawns).toHaveLength(3))
+  expect(daemon.written('pipe-2')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'second' })] }) })
+  ]))
+  expect(daemon.written('pipe-3')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'session/prompt', params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'third' })] }) })
+  ]))
+})
+
+it('stops a silent Cursor turn and retries it only after the user asks', async () => {
+  vi.useFakeTimers()
+  answerPrompt = false
+  const created = await service.create('cursor', [])
+  await service.send(created.id, 'do this once')
+
+  await vi.advanceTimersByTimeAsync(30_000)
+  const notice = service.chatPage(created.id).items.find((item) => item.kind === 'notice' && item.action?.kind === 'retryCursorTurn')
+  expect(notice).toMatchObject({
+    kind: 'notice',
+    level: 'warning',
+    action: { kind: 'retryCursorTurn' }
+  })
+  expect(daemon.written('pipe-1')).toEqual(expect.arrayContaining([expect.objectContaining({ method: 'session/cancel' })]))
+  expect(daemon.spawns).toHaveLength(1)
+
+  await vi.advanceTimersByTimeAsync(2_000)
+  expect(daemon.killed).toContainEqual({ sessionId: 'pipe-1', force: false })
+
+  answerPrompt = true
+  await service.retryCursorTurn(created.id, notice!.stageId, notice!.id)
+  await vi.runAllTimersAsync()
+  expect(daemon.spawns).toHaveLength(2)
+  expect(daemon.written('pipe-2')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: 'session/load' }),
+    expect.objectContaining({
+      method: 'session/prompt',
+      params: expect.objectContaining({ prompt: [expect.objectContaining({ text: 'do this once' })] })
+    })
+  ]))
+  expect(service.chatItem(created.id, notice!.stageId, notice!.id)).toMatchObject({ action: null })
+})
+
+it('cancels a user-stopped Cursor turn before terminating its process', async () => {
+  vi.useFakeTimers()
+  answerPrompt = false
+  daemon.exitOnKill = false
+  const created = await service.create('cursor', [])
+  await service.send(created.id, 'keep working')
+
+  const interrupted = service.interrupt(created.id)
+  await vi.advanceTimersByTimeAsync(1_999)
+  expect(daemon.written('pipe-1')).toEqual(expect.arrayContaining([expect.objectContaining({ method: 'session/cancel' })]))
+  expect(daemon.killed).toEqual([])
+  await vi.advanceTimersByTimeAsync(1)
+  expect(daemon.killed).toEqual([{ sessionId: 'pipe-1', force: false }])
+  await vi.advanceTimersByTimeAsync(1_999)
+  expect(daemon.killed).toHaveLength(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(daemon.killed).toContainEqual({ sessionId: 'pipe-1', force: true })
+  daemon.exit('pipe-1', 137)
+  await interrupted
+})
 
 it('uses conversation-bound MCP on new and load, preserves native resume and forks with visible history into a new session', async () => {
   const created = await service.create('cursor', [])

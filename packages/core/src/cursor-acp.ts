@@ -104,8 +104,13 @@ export class CursorAcp implements ChatDriver {
         if (record.dir === 'in') this.receive(parsed.data, record.at)
         else this.sent(parsed.data, record.at, record.ref, record.images ?? [])
       }
-    } else if (record.dir === 'queue') this.queue.apply(record)
-    else if (record.dir === 'note') this.items.notice(record.level, record.text, record.at)
+    } else if (record.dir === 'queue') {
+      if (record.text === null && record.ref === this.execution?.ref) this.execution = null
+      this.queue.apply(record)
+    } else if (record.dir === 'note') this.items.notice(record.level, record.text, record.at, {
+      ...(record.id !== undefined ? { id: record.id } : {}),
+      ...(record.action !== undefined ? { action: record.action } : {})
+    })
     else if (record.dir === 'ask' || record.dir === 'answer') this.kando.apply(record)
     else if (record.dir === 'exit') {
       this.exited = true

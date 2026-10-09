@@ -160,6 +160,7 @@ export function createRpcHandlers(
       return OK
     },
     'conversations.retryUsageLimit': async ({ id, stageId, itemId }) => { await limits.retry(id, stageId, itemId); return OK },
+    'conversations.retryCursorTurn': async ({ id, stageId, itemId }) => { await conversations.retryCursorTurn(id, stageId, itemId); return OK },
     'conversations.interrupt': async ({ id }) => { await conversations.interrupt(id); return OK },
     'conversations.respond': async ({ id, requestId, ...answer }) => { await conversations.respond(id, requestId, answer); return OK },
     // Read after subscribing, so an item that changes in between reaches the client either way.

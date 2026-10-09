@@ -64,8 +64,13 @@ export class ChatItems {
     }
   }
 
-  notice(level: 'info' | 'warning' | 'error', text: string, at: number): void {
-    this.put({ id: `n:${++this.notices}`, kind: 'notice', level, text }, at)
+  notice(
+    level: 'info' | 'warning' | 'error',
+    text: string,
+    at: number,
+    options: { id?: string; action?: { kind: 'retryCursorTurn'; userItemId: string } | null } = {}
+  ): void {
+    this.put({ id: options.id ?? `n:${++this.notices}`, kind: 'notice', level, text, ...(options.action !== undefined ? { action: options.action } : {}) }, at)
   }
 
   // Follows a turn that failed on the account's usage limit: limit:<ref> after turn:<ref>. What is

@@ -10,12 +10,19 @@ export type ChatRecord =
   | { dir: 'in'; at: number; frame: unknown }
   // ref names the item an outgoing user message becomes, images what it showed the agent.
   | { dir: 'out'; at: number; frame: unknown; ref?: string; images?: ChatImage[] }
-  | { dir: 'note'; at: number; level: 'info' | 'warning' | 'error'; text: string }
+  | {
+      dir: 'note'
+      at: number
+      level: 'info' | 'warning' | 'error'
+      text: string
+      id?: string
+      action?: { kind: 'retryCursorTurn'; userItemId: string } | null
+    }
   // The user switched an option; an agent that takes options per turn applies it from here.
   | { dir: 'option'; at: number; option: ChatOption; value: string }
   // A message to wait for the turn to end (ref names its user item); text null with a ref drops
   // that one, or with release lets a held one go; text null alone drops them all.
-  | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[]; release?: boolean }
+  | { dir: 'queue'; at: number; text: string | null; ref?: string; images?: ChatImage[]; release?: boolean; held?: boolean }
   | { dir: 'exit'; at: number; code: number | null; stderr: string }
   // Kando asked the user something mid-chat (the site its browser may open), and what they answered.
   | { dir: 'ask'; at: number; requestId: string; ask: { kind: 'browser-host'; host: string; url: string } | { kind: 'terminal-run'; command: string; cwd: string } }

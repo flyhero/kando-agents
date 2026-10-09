@@ -425,7 +425,10 @@ export class ClaudeStream implements ChatDriver {
         this.sent(record.frame, record.at, record.ref, record.images ?? [])
         break
       case 'note':
-        this.items.notice(record.level, record.text, record.at)
+        this.items.notice(record.level, record.text, record.at, {
+          ...(record.id !== undefined ? { id: record.id } : {}),
+          ...(record.action !== undefined ? { action: record.action } : {})
+        })
         break
       case 'queue':
         this.queue.apply(record)

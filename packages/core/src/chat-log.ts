@@ -10,9 +10,16 @@ const LogLine = z.discriminatedUnion('dir', [
   // end: the output offset just past this frame's line, so a restart knows where to pick up.
   z.object({ dir: z.literal('in'), at: z.number(), frame: z.unknown(), end: z.number().optional() }),
   z.object({ dir: z.literal('out'), at: z.number(), frame: z.unknown(), ref: z.string().optional(), images: Images }),
-  z.object({ dir: z.literal('note'), at: z.number(), level: Level, text: z.string() }),
+  z.object({
+    dir: z.literal('note'),
+    at: z.number(),
+    level: Level,
+    text: z.string(),
+    id: z.string().optional(),
+    action: z.object({ kind: z.literal('retryCursorTurn'), userItemId: z.string() }).nullable().optional()
+  }),
   z.object({ dir: z.literal('option'), at: z.number(), option: ChatOption, value: z.string() }),
-  z.object({ dir: z.literal('queue'), at: z.number(), text: z.string().nullable(), ref: z.string().optional(), images: Images }),
+  z.object({ dir: z.literal('queue'), at: z.number(), text: z.string().nullable(), ref: z.string().optional(), images: Images, release: z.boolean().optional(), held: z.boolean().optional() }),
   z.object({ dir: z.literal('exit'), at: z.number(), code: z.number().nullable(), stderr: z.string() }),
   z.object({ dir: z.literal('ask'), at: z.number(), requestId: z.string(), ask: z.object({ kind: z.literal('browser-host'), host: z.string(), url: z.string() }) }),
   z.object({

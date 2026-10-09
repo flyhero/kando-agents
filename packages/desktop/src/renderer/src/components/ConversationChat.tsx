@@ -237,19 +237,38 @@ function InitialMessageEntry({ id, agent, message }: { id: string; agent: AgentK
 type NoticeItem = Extract<ChatItem, { kind: 'notice' }>
 
 // A notice is one line, opening onto the rest; where the context was compacted is a divider.
-function ChatNotice({ item }: { item: NoticeItem }) {
+function ChatNotice({ conversationId, item }: { conversationId: string; item: NoticeItem }) {
   const [open, setOpen] = useDisclosure(`notice:${itemKey(item)}`)
+  const [retrying, setRetrying] = useState(false)
   if (isCompaction(item.text)) return <div className="chat-divider" role="separator">上下文已压缩</div>
   const text = readableNotice(item.text)
   const { first, more } = noticeSummary(text)
-  if (!more) return <div className="chat-notice" data-level={item.level}>{text}</div>
+  const retry = item.action?.kind === 'retryCursorTurn' ? async () => {
+    setRetrying(true)
+    try {
+      await perform((rpc) => rpc.call('conversations.retryCursorTurn', {
+        id: conversationId,
+        stageId: item.stageId,
+        itemId: item.id
+      }))
+    } finally {
+      setRetrying(false)
+    }
+  } : null
+  const action = retry && (
+    <button type="button" className="button chat-notice-action" disabled={retrying} onClick={() => void retry()}>
+      {retrying ? '正在重连…' : '重新连接并重试'}
+    </button>
+  )
+  if (!more) return <div className="chat-notice chat-notice-actionable" data-level={item.level}><span>{text}</span>{action}</div>
   // The words stay out of the button, so an error's output can be selected and copied.
   return (
-    <div className="chat-notice chat-notice-long" data-level={item.level}>
+    <div className="chat-notice chat-notice-long chat-notice-actionable" data-level={item.level}>
       <button type="button" className="chat-notice-toggle" aria-expanded={open} aria-label={open ? '收起' : '展开全文'} onClick={() => setOpen(!open)}>
         <span className="chat-tool-chevron" aria-hidden="true"><ChevronRightIcon /></span>
       </button>
       <div className="chat-notice-text" data-open={open || undefined} onClick={open ? undefined : () => setOpen(true)}>{open ? text : first}</div>
+      {action}
     </div>
   )
 }
@@ -286,7 +305,7 @@ function Item({ conversationId, item, completedAt, blockKey }: { conversationId:
     case 'turn':
       return <div className="chat-turn" data-state={item.state}>{turnText(item)}</div>
     case 'notice':
-      return <ChatNotice item={item} />
+      return <ChatNotice conversationId={conversationId} item={item} />
     case 'todos':
       return <ChatTodosLine item={item} />
     case 'usageLimit':

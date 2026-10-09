@@ -237,7 +237,17 @@ export const ChatItem = z.discriminatedUnion('kind', [
     // at: Claude's id for the turn's last message, Codex's id for the turn. Older cores leave it out.
     providerRef: z.string().nullable().optional()
   }),
-  Base.extend({ kind: z.literal('notice'), level: z.enum(['info', 'warning', 'error']).catch('info'), text: z.string() }),
+  Base.extend({
+    kind: z.literal('notice'),
+    level: z.enum(['info', 'warning', 'error']).catch('info'),
+    text: z.string(),
+    // A newer core may offer a narrowly scoped recovery action. Optional so older clients can
+    // still read the notice, and nullable once the action has been used.
+    action: z.object({
+      kind: z.literal('retryCursorTurn'),
+      userItemId: z.string()
+    }).nullable().optional()
+  }),
   // The turn before it (turn:<ref> for limit:<ref>) failed because the account's usage limit was
   // reached. The agent's words come from the stage; what is done about it is core's, kept apart.
   Base.extend({

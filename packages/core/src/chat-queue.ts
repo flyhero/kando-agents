@@ -12,13 +12,13 @@ export class ChatQueue {
   // A queue record from the log: a message to wait, one released from being held, one dropped,
   // or, with no ref, every one dropped.
   apply(record: Extract<ChatRecord, { dir: 'queue' }>): void {
-    if (record.text !== null && record.ref) this.add(record.text, record.ref, record.images)
+    if (record.text !== null && record.ref) this.add(record.text, record.ref, record.images, record.held)
     else if (record.release && record.ref) this.release(record.ref)
     else this.drop(record.ref)
   }
 
-  add(text: string, ref: string, images: readonly ChatImage[] = []): void {
-    this.entries = [...this.entries.filter((entry) => entry.ref !== ref), { text, images: [...images], ref, held: false }]
+  add(text: string, ref: string, images: readonly ChatImage[] = [], held = false): void {
+    this.entries = [...this.entries.filter((entry) => entry.ref !== ref), { text, images: [...images], ref, held }]
   }
 
   drop(ref: string | undefined): void {

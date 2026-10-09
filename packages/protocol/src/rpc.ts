@@ -214,10 +214,16 @@ export const rpcMethods = {
     params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1).max(300) }),
     result: Ok
   },
+  // Reconnects a Cursor ACP process after its current turn produced no events, then resends the
+  // original user message only after an explicit click.
+  'conversations.retryCursorTurn': {
+    params: ConversationRef.extend({ stageId: z.string().uuid(), itemId: z.string().min(1).max(300) }),
+    result: Ok
+  },
   // Switches one of the stage's options to a value its state item offers. The
   // conversation remembers it for its next start.
   'conversations.setOption': { params: ConversationRef.extend({ option: ChatOption, value: z.string().trim().min(1).max(200) }), result: Ok },
-  // Ends the running turn; the agent stays up for the next message.
+  // Ends the running turn. Cursor's one-process-per-turn connection is also torn down.
   'conversations.interrupt': { params: ConversationRef, result: Ok },
   // Answers an approval or question item. answers maps a question id to option ids, or labels
   // when the provider supplies none.
