@@ -15,6 +15,12 @@ const START_WAIT_MS = 15_000
 // A GUI app inherits launchd's PATH, which has no homebrew or ~/.local: the agents and the
 // user's shell live there, so ask the login shell once and pass the result down.
 function loginShellPath(): Promise<string> {
+  if (process.platform === 'win32') {
+    const parts = (process.env.PATH ?? '').split(';').filter(Boolean)
+    const cursorBin = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'cursor-agent') : null
+    if (cursorBin && !parts.some((part) => part.toLowerCase() === cursorBin.toLowerCase())) parts.push(cursorBin)
+    return Promise.resolve(parts.join(';'))
+  }
   const shell = process.env.SHELL || '/bin/zsh'
   return new Promise((resolve) => {
     execFile(shell, ['-l', '-c', 'echo -n "$PATH"'], { timeout: 3000 }, (error, stdout) => {

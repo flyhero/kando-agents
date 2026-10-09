@@ -19,7 +19,7 @@ async function output(command: string, args: string[]): Promise<string> {
 
 // The generic `agent` name also belongs to unrelated programs.
 export async function findCursorCli(pathEnv = process.env.PATH ?? '', platform = process.platform): Promise<string | null> {
-  const extensions = platform === 'win32' ? ['.exe'] : ['']
+  const extensions = platform === 'win32' ? ['.exe', '.cmd', '.bat', '.ps1'] : ['']
   for (const name of ['cursor-agent', 'agent']) {
     for (const directory of pathEnv.split(delimiter).filter(Boolean)) {
       for (const extension of extensions) {

@@ -4,7 +4,7 @@ import { actionableItems } from './attention'
 import {
   openAttentionItem, openConversationDraft, openInbox, selectConversation, selectTask, setAttentionOpen,
   refreshAttentionSummaries, setDashboardOpen, setSchedulesOpen, setSettingsOpen, setWorktreesOpen, useCore,
-  clearInspectorFile, showConversationChanges, showInspectorFile, showTaskChanges
+  clearInspectorFile, installAgentCli, showConversationChanges, showInspectorFile, showTaskChanges
 } from './core-store'
 import { conversationSurface } from './components/chat-surface'
 
@@ -16,6 +16,22 @@ const chat: Conversation = {
 }
 
 beforeEach(() => useCore.setState(useCore.getInitialState(), true))
+
+describe('CLI installation terminal', () => {
+  it('keeps settings open while showing the daemon terminal without duplicating an announced tab', async () => {
+    const sent: Array<{ id: number; method: string; params: unknown }> = []
+    const client = createRpcClient((frame) => sent.push(JSON.parse(frame)))
+    const rpc: RpcConnection = { ...client, features: ['agent-cli-installation'], close: () => {}, closed: new Promise(() => {}) }
+    useCore.setState({ rpc, settingsOpen: true })
+    const opening = installAgentCli('cursor')
+    const terminal = { id: '00000001-0000-4000-8000-000000000000', sessionId: 'install', cwd: '/home', title: '安装 Cursor CLI', createdAt: 0 }
+    useCore.setState({ terminals: [terminal] })
+    expect(sent[0]).toMatchObject({ method: 'system.installAgentCli', params: { agent: 'cursor' } })
+    rpc.receive(JSON.stringify({ jsonrpc: '2.0', id: sent[0]?.id, result: terminal }))
+    expect(await opening).toEqual(terminal)
+    expect(useCore.getState()).toMatchObject({ settingsOpen: true, terminalPanelOpen: true, activeTerminalId: terminal.id, terminals: [terminal] })
+  })
+})
 
 describe('inspector file navigation', () => {
   it('opens a conversation file from its chat surface and leaves review on the full list', () => {

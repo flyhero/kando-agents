@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { kandoToolName } from './chat'
 
-// A terminal in the app's own panel: a shell the user opened, or a command an agent runs there.
+// A terminal in the app's panel: a shell, an agent command, or a user-started CLI installer.
 export const Terminal = z.object({
   id: z.string().uuid(),
   sessionId: z.string(),
@@ -9,8 +9,8 @@ export const Terminal = z.object({
   title: z.string(),
   createdAt: z.number(),
   // A terminal an agent opened to run a command: the conversation it belongs to, the command, and
-  // once the command ends, its exit code; it stays until the user closes it. Null, or left out by
-  // an older core, for the user's own shells.
+  // once the command ends, its exit code; it stays until the user closes it. User-started CLI
+  // installers have a command without a conversation. Interactive shells have neither.
   conversationId: z.string().nullable().optional(),
   command: z.string().nullable().optional(),
   exited: z.boolean().optional(),

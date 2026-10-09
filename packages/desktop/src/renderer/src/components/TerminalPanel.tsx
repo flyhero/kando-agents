@@ -56,14 +56,14 @@ function QuoteToChatButton({ terminal }: { terminal: Terminal | undefined }) {
   )
 }
 
-// An agent's terminal says whose it is and how its command ended.
+// Finite commands show how they ended; agent terminals also show whose they are.
 function TabLabel({ terminal }: { terminal: Terminal }) {
   const owner = useCore((s) => (terminal.conversationId ? s.conversations[terminal.conversationId] : undefined))
-  if (!terminal.conversationId) return <>{terminal.title}</>
+  if (!terminal.command) return <>{terminal.title}</>
   const failed = terminal.exited && terminal.exitCode !== 0
   return (
     <>
-      <span className="terminal-tab-agent" aria-hidden="true"><AgentIcon agent={owner?.agent ?? null} /></span>
+      {terminal.conversationId && <span className="terminal-tab-agent" aria-hidden="true"><AgentIcon agent={owner?.agent ?? null} /></span>}
       {/* Before the command, which a narrow tab cuts short. */}
       {terminal.exited && <span className="terminal-tab-exit" data-failed={failed || undefined}>{failed ? terminal.exitCode ?? '已结束' : '✓'}</span>}
       {terminal.title}
@@ -72,9 +72,9 @@ function TabLabel({ terminal }: { terminal: Terminal }) {
 }
 
 function tabTitle(terminal: Terminal, owner: string | null): string {
-  if (!terminal.conversationId) return terminal.cwd
+  if (!terminal.command) return terminal.cwd
   const ended = terminal.exited ? `\n已结束${terminal.exitCode === null || terminal.exitCode === undefined ? '' : `，退出码 ${terminal.exitCode}`}` : ''
-  return `${owner ?? '会话'} 的 Agent 运行：${terminal.command ?? terminal.title}\n${terminal.cwd}${ended}`
+  return `${terminal.conversationId ? `${owner ?? '会话'} 的 Agent 运行：` : ''}${terminal.command}\n${terminal.cwd}${ended}`
 }
 
 // The app's own terminals: the user's shells, and commands agents run where the user can watch.

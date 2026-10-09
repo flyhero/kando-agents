@@ -54,6 +54,7 @@ describe('environment check', () => {
         { tool: 'cursor', status: 'missing', version: null, path: null, signedIn: null }
       ],
       detectedAgents: [{ id: 'claude', name: 'Claude Code', locations: [{ source: 'cli', path: path.join(bin, 'claude') }] }],
+      cliInstallations: [],
       searchPath: [bin],
       checkedAt: 1000
     })
@@ -69,6 +70,25 @@ describe('environment check', () => {
     now += 10 * 60_000
     fakeTool('codex', 'codex-cli 0.156.1')
     expect((await service.check()).checks[2]).toMatchObject({ tool: 'codex', version: '0.156.1' })
+  })
+
+  it.skipIf(process.platform === 'win32')('refreshes after a pending look so a completed install is not missed', async () => {
+    fakeTool('claude', '2.1.263 (Claude Code)')
+    let started = () => {}
+    let release = () => {}
+    let calls = 0
+    const checking = new Promise<void>((resolve) => { started = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const service = new EnvironmentService({ pathEnv: bin, platform: process.platform, applicationDirs: [root], signedIn: {
+      claude: async () => { if (++calls === 1) { started(); await gate } return true }
+    } })
+    const beforeInstall = service.check()
+    await checking
+    fakeTool('cursor-agent', 'cursor 1.0.0')
+    const afterInstall = service.check(true)
+    release()
+    expect((await beforeInstall).checks.find((each) => each.tool === 'cursor')?.status).toBe('missing')
+    expect((await afterInstall).checks.find((each) => each.tool === 'cursor')?.path).toBe(path.join(bin, 'cursor-agent'))
   })
 
   it.skipIf(process.platform === 'win32')('calls a tool that will not say its version found but unknown', async () => {
@@ -87,6 +107,7 @@ describe('environment check', () => {
     expect((await service.check()).detectedAgents).toEqual([
       { id: 'cursor', name: 'Cursor', locations: [{ source: 'application', path: application }] }
     ])
+    expect((await service.check()).cliInstallations).toEqual([{ agent: 'cursor', shell: 'bash', command: 'curl https://cursor.com/install -fsS | bash' }])
 
     fakeTool('cursor-agent', 'cursor 1.0.0')
     fakeTool('gemini', 'gemini 1.0.0')
@@ -98,6 +119,26 @@ describe('environment check', () => {
       { id: 'gemini', name: 'Gemini CLI', locations: [{ source: 'cli', path: path.join(bin, 'gemini') }],
         cliCheck: { status: 'responded', version: '1.0.0', reason: null } }
     ])
+    expect((await service.check()).cliInstallations).toEqual([])
+  })
+
+  it.each([
+    { platform: 'win32', application: 'cursor/Cursor.exe', shell: 'powershell' },
+    { platform: 'linux', application: 'cursor/cursor', shell: 'bash' }
+  ] as const)('finds an app without its CLI on $platform', async ({ platform, application, shell }) => {
+    const file = path.join(root, application)
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, '', { mode: 0o755 })
+    const service = new EnvironmentService({ pathEnv: bin, platform, applicationDirs: [root], signedIn: {} })
+    const environment = await service.check()
+    expect(environment.detectedAgents).toEqual([{ id: 'cursor', name: 'Cursor', locations: expect.arrayContaining([{ source: 'application', path: file }]) }])
+    expect(environment.cliInstallations).toEqual([expect.objectContaining({ agent: 'cursor', shell })])
+    if (platform === 'win32') {
+      writeFileSync(path.join(bin, 'cursor-agent.cmd'), '@echo off\r\n')
+      const installed = await service.check(true)
+      expect(installed.checks.find((each) => each.tool === 'cursor')).toMatchObject({ status: 'unknown', path: path.join(bin, 'cursor-agent.cmd') })
+      expect(installed.cliInstallations).toEqual([])
+    }
   })
 
   it.skipIf(process.platform === 'win32')('reports a CLI that does not answer --version without claiming it works', async () => {

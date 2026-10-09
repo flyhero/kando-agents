@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { Terminal, type TerminalOutput } from '@kando/protocol'
+import { Terminal, type AgentCliInstallation, type TerminalOutput } from '@kando/protocol'
 import type { SessionInfo } from '@kando/protocol/node'
 import type { SessionHost } from './daemon-client'
 import { Rejection } from './rejection'
@@ -109,6 +109,23 @@ export class TerminalService {
     return { ...terminal, exited: false, exitCode: null }
   }
 
+  // A user-started installer is a finite command, retained just like an agent's command.
+  async installCli(installation: AgentCliInstallation): Promise<Terminal> {
+    const shell = installation.shell === 'powershell'
+      ? { command: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-Command', `$ErrorActionPreference = 'Stop'; ${installation.command}`] }
+      : { command: '/bin/bash', args: ['-o', 'pipefail', '-c', installation.command] }
+    const cwd = os.homedir()
+    const { sessionId } = await this.daemon.request('spawn', { ...shell, cwd, env: {}, cols: 120, rows: 32 })
+    const terminal = { id: randomUUID(), sessionId, cwd, title: '安装 Cursor CLI', createdAt: this.now(), command: installation.command }
+    this.db.prepare('INSERT INTO terminals (id, session_id, cwd, title, created_at, command) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(terminal.id, sessionId, cwd, terminal.title, terminal.createdAt, terminal.command)
+    this.changed()
+    // A missing shell or download tool can end before the spawn reply reaches core.
+    const attached = await this.daemon.request('attach', { sessionId }).catch(() => null)
+    if (attached?.exited) this.handleExit(sessionId, attached.exitCode)
+    return this.list().find((each) => each.id === terminal.id) ?? { ...terminal, exited: attached?.exited ?? false, exitCode: attached?.exitCode ?? null }
+  }
+
   // The end of what an agent's command printed, as plain text, and whether it still runs.
   async read(conversationId: string, id: string, tail = DEFAULT_TAIL): Promise<TerminalOutput> {
     const row = this.agentTerminal(conversationId, id)
@@ -142,23 +159,21 @@ export class TerminalService {
     else await this.daemon.request('kill', { sessionId: terminal.sessionId }).catch(() => {})
   }
 
-  // `exit` in the shell closes its tab, as a terminal app would. An agent's command ending keeps
-  // its tab, with the exit code, so its output can still be read.
+  // Interactive shells close on exit; finite commands keep their output and exit code.
   handleExit(sessionId: string, exitCode: number | null = null): void {
     const row = this.rows().find((each) => each.sessionId === sessionId)
     if (!row) return
-    if (row.conversationId === null) return this.remove(sessionId)
+    if (row.command === null) return this.remove(sessionId)
     this.db.prepare('UPDATE terminals SET exited = 1, exit_code = ? WHERE session_id = ?').run(exitCode, sessionId)
     this.changed()
   }
 
-  // A shell the daemon no longer runs is gone; an agent's command stays while the daemon still
-  // holds what it printed.
+  // Finished commands stay while the daemon still holds their output.
   reconcile(sessions: readonly SessionInfo[]): void {
     const known = new Map(sessions.map((session) => [session.sessionId, session]))
     for (const row of this.rows()) {
       const session = known.get(row.sessionId)
-      if (!session || (session.exited && row.conversationId === null)) this.remove(row.sessionId)
+      if (!session || (session.exited && row.command === null)) this.remove(row.sessionId)
       else if (session.exited && row.exited === 0) this.handleExit(row.sessionId, session.exitCode)
     }
   }

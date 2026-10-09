@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AgentKind } from './task'
 
 // What Kando needs on the machine to run a task: git for the worktrees, and at least one agent CLI.
 export const ENVIRONMENT_TOOLS = ['git', 'claude', 'codex', 'cursor'] as const
@@ -37,10 +38,19 @@ export const DetectedAgent = z.object({
 })
 export type DetectedAgent = z.infer<typeof DetectedAgent>
 
+// Offered by core only when an application exists without its agent CLI.
+export const AgentCliInstallation = z.object({
+  agent: AgentKind,
+  command: z.string().min(1),
+  shell: z.enum(['bash', 'powershell'])
+})
+export type AgentCliInstallation = z.infer<typeof AgentCliInstallation>
+
 export const Environment = z.object({
   checks: z.array(EnvironmentCheck),
   // Older cores only report checks for the two agents they can run.
   detectedAgents: z.array(DetectedAgent).optional(),
+  cliInstallations: z.array(AgentCliInstallation).optional(),
   // The directories looked in, in order: the PATH core starts agents with.
   searchPath: z.array(z.string()),
   checkedAt: z.number()

@@ -56,7 +56,7 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation'] as const
 // deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
@@ -88,6 +88,7 @@ export const rpcMethods = {
   'system.setChatSettings': { params: ChatSettings.partial(), result: ChatSettings },
   // What of git and the agent CLIs core finds on its path; the last answer, unless asked to look again.
   'system.environment': { params: z.object({ refresh: z.boolean().optional() }), result: Environment },
+  'system.installAgentCli': { params: z.object({ agent: AgentKind }), result: Terminal },
   // A conversation's wire log: one stage's page (the newest stage without stageId), and the stages that have one.
   'debug.wire': { params: ConversationRef.extend({ stageId: z.string().optional(), before: z.number().int().nonnegative().optional() }), result: WirePage },
   // New entries of the conversation's wire log arrive as debug.wireEntries while watched.

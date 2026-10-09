@@ -348,6 +348,18 @@ export async function openTerminal(cwd = contextFolder(useCore.getState())): Pro
   return terminal
 }
 
+export async function installAgentCli(agent: AgentKind): Promise<Terminal | null> {
+  const terminal = await perform((rpc) => rpc.call('system.installAgentCli', { agent }))
+  if (terminal) {
+    useCore.setState((s) => ({
+      terminals: s.terminals.some((each) => each.id === terminal.id) ? s.terminals : [...s.terminals, terminal],
+      activeTerminalId: terminal.id,
+      ...shownUtilityPanel(s, 'terminal')
+    }))
+  }
+  return terminal
+}
+
 // The list updates when core says so, through terminals.changed.
 export function closeTerminal(id: string): void {
   void perform((rpc) => rpc.call('terminals.close', { id }))

@@ -26,6 +26,7 @@ import type { EnvironmentService } from './environment-check'
 import type { ScheduleService } from './schedule-service'
 import type { RoutineService } from './routine-service'
 import { AgentTerminals } from './agent-terminals'
+import { AgentCliInstaller } from './agent-cli-installation'
 import { dashboardSince, summarizeDashboard } from './dashboard-stats'
 import { PortService } from './port-service'
 import type { WireLog } from './wire-log'
@@ -56,6 +57,7 @@ export function createRpcHandlers(
   wire: WireLog
 ): RpcHandlers {
   const files = new ConversationFiles((id) => conversations.get(id))
+  const cliInstaller = new AgentCliInstaller(environment, terminals)
   const ports = new PortService(sessions, () => ({ terminals: terminals.list(), conversations: conversations.list(true), tasks: service.list() }))
   // An agent's own terminals: run in the conversation's folder unless it names another, and
   // asked about in the chat where the agent asks nothing for MCP tools.
@@ -112,6 +114,7 @@ export function createRpcHandlers(
     'debug.wireUsage': () => wire.usage(),
     'debug.clearWire': () => wire.clear(),
     'system.environment': ({ refresh }) => environment.check(refresh ?? false),
+    'system.installAgentCli': ({ agent }) => cliInstaller.install(agent),
     'tasks.list': ({ status }) => service.list(status),
     'tasks.get': ({ id }) => service.get(id),
     'tasks.create': (params) => service.createTask(params),

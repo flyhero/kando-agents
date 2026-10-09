@@ -222,9 +222,11 @@ daemon.onEvent((event) => {
     browser.handleData(event)
     attached.forEach((c) => c.notify('sessions.data', { sessionId, data: event.data, offset: event.offset }))
   } else if (event.event === 'exit') {
+    const installation = terminals.list().some((terminal) => terminal.sessionId === sessionId && !terminal.conversationId && terminal.command)
     attached.forEach((c) => c.notify('sessions.exit', { sessionId, exitCode: event.exitCode }))
     conversations.handleExit(sessionId, event.exitCode)
     terminals.handleExit(sessionId, event.exitCode)
+    if (installation) void environment.check(true).catch((error: unknown) => console.error('[kando-core] post-install detection failed', error))
     browser.handleExit(sessionId)
     // An agent that ended is when the numbers most likely moved.
     void usage.refresh()
@@ -241,6 +243,7 @@ daemon.onConnect(() => {
     .then(async ({ sessions }) => {
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
+      void environment.check(true).catch((error: unknown) => console.error('[kando-core] agent discovery failed', error))
       await browser.reconcile(sessions)
       // What came due while core or the daemon was away goes now, not at the next tick.
       await schedules.tick()

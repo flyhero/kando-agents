@@ -1,7 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
-import { AGENT_KINDS, type AgentKind, type DetectedAgent, type EnvironmentCheck } from '@kando/protocol'
-import { refreshEnvironment, useCore } from '../core-store'
-import { INSTALL_HINT, SIGN_IN_HINT, TOOL_ROLE } from '../environment-text'
+import { AGENT_KINDS, type AgentCliInstallation, type AgentKind, type DetectedAgent, type EnvironmentCheck } from '@kando/protocol'
+import { installAgentCli, refreshEnvironment, showTerminal, useCore } from '../core-store'
+import { checkStatusText, INSTALL_HINT, SIGN_IN_HINT, TOOL_ROLE } from '../environment-text'
 import { AGENT_LABEL } from '../labels'
 import { setPreference, usePreferences } from '../preferences'
 import { CopyButton } from './CopyButton'
@@ -43,6 +43,7 @@ function AgentRow({ kind, check, enabled, last }: { kind: AgentKind; check: Envi
             <span className="environment-pill" data-level={check.signedIn ? 'ok' : 'warning'}>{check.signedIn ? '已登录' : '未登录'}</span>
           )}
         </div>
+        {check.status === 'unknown' && <p className="settings-row-description">{checkStatusText(check)}。请检查 CLI 是否能正常启动{kind === 'cursor' ? '，并使用支持 ACP 的版本' : ''}。</p>}
         {check.signedIn === false && <Fix label="登录：" command={SIGN_IN_HINT[kind]} />}
       </div>
       <div className="settings-row-control">
@@ -59,17 +60,36 @@ function AgentRow({ kind, check, enabled, last }: { kind: AgentKind; check: Envi
 }
 
 // One Kando can run but this machine does not have: dimmed, with what to type to install it.
-function MissingAgentRow({ kind }: { kind: AgentKind }) {
+function MissingAgentRow({ kind, installation }: { kind: AgentKind; installation?: AgentCliInstallation }) {
+  const [opening, setOpening] = useState(false)
+  const terminal = useCore((s) => installation ? s.terminals.findLast((each) => !each.conversationId && each.command === installation.command) : undefined)
+  const running = terminal && !terminal.exited
+  const failed = terminal?.exited && terminal.exitCode !== 0
+  const install = async () => {
+    if (opening) return
+    if (running) { showTerminal(terminal.id); return }
+    setOpening(true)
+    try { await installAgentCli(kind) } finally { setOpening(false) }
+  }
   return (
     <div className="settings-row agent-row" data-off>
       <span className="agent-row-icon" aria-hidden="true"><AgentIcon agent={kind} /></span>
       <div className="settings-row-text">
         <div className="agent-row-head">
           <span className="settings-row-label">{AGENT_LABEL[kind]}</span>
-          <span className="agent-row-pill">未安装</span>
+          <span className="agent-row-pill">{installation ? '未找到 CLI' : '未安装'}</span>
         </div>
-        <p className="settings-row-description">{TOOL_ROLE[kind]}</p>
-        <Fix label="安装：" command={INSTALL_HINT[kind]} />
+        <p className="settings-row-description">{installation ? `已检测到 ${AGENT_LABEL[kind]} App，安装 CLI 后即可在 Kando 中使用。` : TOOL_ROLE[kind]}</p>
+        <Fix label="安装：" command={installation?.command ?? INSTALL_HINT[kind]} />
+        {installation && (
+          <div className="agent-install-actions">
+            <button type="button" className="button" disabled={opening} onClick={() => void install()}>
+              {opening ? '正在打开终端…' : running ? '查看安装进度' : failed ? '重试安装' : '在终端安装'}
+            </button>
+            {terminal?.exited && <button type="button" className="button ghost" onClick={() => showTerminal(terminal.id)}>查看安装输出</button>}
+            {terminal?.exited && <span className="settings-row-description">{failed ? `安装失败（退出码 ${terminal.exitCode ?? '未知'}），可查看输出后重试。` : '安装命令已完成；若仍未检测到 CLI，请检查 PATH 后重新检测。'}</span>}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -120,6 +140,7 @@ function Group({ title, count, children }: { title: string; count: number; child
 // run yet. Git, which is not an agent, is under 关于.
 export function InstalledAgentsSettings() {
   const environment = useCore((s) => s.environment)
+  const installationSupported = useCore((s) => s.rpc?.features.includes('agent-cli-installation') ?? false)
   const disabled = usePreferences((s) => s.disabledAgents)
   const [checking, setChecking] = useState(false)
   const checkOf = (kind: AgentKind) => environment?.checks.find((each) => each.tool === kind)
@@ -154,7 +175,7 @@ export function InstalledAgentsSettings() {
         ))}
       </Group>
       <Group title="可安装" count={missing.length}>
-        {missing.map((kind) => <MissingAgentRow key={kind} kind={kind} />)}
+        {missing.map((kind) => <MissingAgentRow key={kind} kind={kind} installation={installationSupported ? environment?.cliInstallations?.find((each) => each.agent === kind) : undefined} />)}
       </Group>
       <Group title="暂未支持" count={other.length}>
         <p className="settings-row-description agent-list-note">在这台电脑上找到了，但还不能在 Kando 里运行；命令能响应版本，不代表已登录或支持聊天。</p>
@@ -164,7 +185,7 @@ export function InstalledAgentsSettings() {
         <details className="environment-search-path">
           <summary>Kando 在这些目录里找命令（{environment.searchPath.length} 个）</summary>
           <p className="settings-row-description">
-            这是 core 启动时的 PATH，Agent 也用它启动；macOS 上还会看 /Applications 和 ~/Applications 里的应用。装在别处的，把它所在的目录加进登录 shell 的 PATH，再重启 Kando。
+            这是 core 启动时的 PATH，Agent 也用它启动；还会检查系统常见目录中的 App。CLI 装在别处的，把它所在的目录加进 PATH，再重启 Kando。
           </p>
           <ul className="mono">
             {environment.searchPath.map((dir) => (

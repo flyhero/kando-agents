@@ -10,11 +10,12 @@ import { commandShell, plainOutput, TerminalService, userShell } from './termina
 
 type Handlers = { [M in DaemonMethod]: (params: DaemonParams<M>) => DaemonResult<M> }
 
-function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: string[]; released: string[]; buffers: Map<string, string> } {
+function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: string[]; released: string[]; buffers: Map<string, string>; exited: Map<string, number> } {
   const spawns: DaemonParams<'spawn'>[] = []
   const killed: string[] = []
   const released: string[] = []
   const buffers = new Map<string, string>()
+  const exited = new Map<string, number>()
   const handlers: Handlers = {
     portsList: () => [],
     portsStop: () => ({ ok: true }),
@@ -28,7 +29,7 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
       killed.push(sessionId)
       return { ok: true }
     },
-    attach: ({ sessionId }) => ({ sessionId, buffer: buffers.get(sessionId) ?? '', bufferStart: 0, endOffset: 0, exited: false, exitCode: null }),
+    attach: ({ sessionId }) => ({ sessionId, buffer: buffers.get(sessionId) ?? '', bufferStart: 0, endOffset: 0, exited: exited.has(sessionId), exitCode: exited.get(sessionId) ?? null }),
     list: () => ({ sessions: [] }),
     spawnPipe: () => { throw new Error('unused') },
     release: ({ sessionId }) => {
@@ -40,7 +41,7 @@ function fakeDaemon(): SessionHost & { spawns: DaemonParams<'spawn'>[]; killed: 
     info: () => ({ version: '0.0.0', pid: process.pid }),
     retire: () => ({ retired: false, live: 0 })
   }
-  return { spawns, killed, released, buffers, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
+  return { spawns, killed, released, buffers, exited, request: async (method, params) => handlers[method](params), onEvent: () => () => {} }
 }
 
 describe('TerminalService', () => {
@@ -125,6 +126,29 @@ describe('TerminalService', () => {
     expect(service.list()).toEqual([expect.objectContaining({ id: run.id, exited: true, exitCode: 1 })])
     service.reconcile([])
     expect(service.list()).toEqual([])
+  })
+
+  it.each(['bash', 'powershell'] as const)('keeps a user installer in its own %s tab across exit and core restart', async (shell) => {
+    const command = shell === 'bash' ? 'curl https://cursor.com/install -fsS | bash' : "irm 'https://cursor.com/install?win32=true' | iex"
+    const run = await service.installCli({ agent: 'cursor', shell, command })
+    expect(daemon.spawns[0]).toMatchObject(shell === 'bash'
+      ? { command: '/bin/bash', args: ['-o', 'pipefail', '-c', command] }
+      : { command: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-Command', `$ErrorActionPreference = 'Stop'; ${command}`] })
+    expect(run).toMatchObject({ command, title: '安装 Cursor CLI', conversationId: null, exited: false })
+    await expect(service.read('conv-1', run.id)).rejects.toMatchObject({ reason: 'terminal-not-found' })
+    const restarted = new TerminalService(database, daemon, () => {})
+    restarted.reconcile([{ sessionId: run.sessionId, exited: true, exitCode: 7 }])
+    expect(restarted.list()).toEqual([expect.objectContaining({ id: run.id, command, exited: true, exitCode: 7 })])
+    await restarted.kill(run.id)
+    expect(daemon.released).toEqual([run.sessionId])
+    restarted.close()
+  })
+
+  it('retains an installer that already failed before its spawn reply instead of leaving it running', async () => {
+    daemon.exited.set('session-1', 127)
+    const run = await service.installCli({ agent: 'cursor', shell: 'bash', command: 'curl https://cursor.com/install -fsS | bash' })
+    expect(run).toMatchObject({ exited: true, exitCode: 127 })
+    expect(service.list()).toEqual([run])
   })
 
   it('reads output as plain text, a redrawn line as it last stood', () => {

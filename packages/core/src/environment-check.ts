@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process'
-import { access, constants } from 'node:fs/promises'
+import { access, constants, stat } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
+import { agentCliInstallations } from './agent-cli-installation'
 import { cursorCliInfo, cursorSignedIn, findCursorCli } from './cursor-cli'
 import { ENVIRONMENT_TOOLS, type DetectedAgent, type Environment, type EnvironmentCheck, type EnvironmentTool } from '@kando/protocol'
 
@@ -12,7 +13,7 @@ const VERSION_TIMEOUT_MS = 5_000
 // Looked again only when asked, or this long after: an install does not come and go.
 const RESULT_TTL_MS = 5 * 60_000
 // What a CLI on Windows is called, in the order a shell tries them.
-const WINDOWS_EXTENSIONS = ['.exe', '.cmd', '.bat']
+const WINDOWS_EXTENSIONS = ['.exe', '.cmd', '.bat', '.ps1']
 
 // Add a product here when its executable or application bundle can be identified reliably.
 // Integration into Kando's chat is separate from discovery.
@@ -62,12 +63,15 @@ async function discoverOtherAgents(pathEnv: string, platform: NodeJS.Platform, a
   const discovered = await Promise.all(OTHER_AGENTS.map(async ({ id, name, commands, applications }) => {
     const commandPaths = await Promise.all(commands.map((command) => findOnPath(command, pathEnv, platform)))
     const commandPath = commandPaths.find((path): path is string => path !== null)
-    const appPaths = platform === 'darwin'
-      ? await Promise.all(applications.flatMap((app) => applicationDirs.map(async (dir) => {
-        const path = join(dir, app)
-        return await access(join(path, 'Contents', 'Info.plist')).then(() => path, () => null)
-      })))
-      : []
+    const appNames = platform === 'darwin' ? applications : id !== 'cursor' ? [] :
+      platform === 'win32' ? ['cursor/Cursor.exe'] :
+        platform === 'linux' ? ['cursor/cursor', 'Cursor/cursor', 'cursor', 'Cursor.AppImage'] : []
+    const appPaths = await Promise.all(appNames.flatMap((app) => applicationDirs.map(async (dir) => {
+      const path = join(dir, app)
+      if (platform === 'darwin') return await access(join(path, 'Contents', 'Info.plist')).then(() => path, () => null)
+      const info = await stat(path).catch(() => null)
+      return info?.isFile() && (platform === 'win32' || Boolean(info.mode & 0o111)) ? path : null
+    })))
     const locations: DetectedAgent['locations'] = [
       ...commandPaths.filter((path): path is string => path !== null).map((path) => ({ source: 'cli' as const, path })),
       ...appPaths.filter((path): path is string => path !== null).map((path) => ({ source: 'application' as const, path }))
@@ -81,7 +85,7 @@ async function discoverOtherAgents(pathEnv: string, platform: NodeJS.Platform, a
 }
 
 async function probeAgentCli(file: string, platform: NodeJS.Platform): Promise<NonNullable<DetectedAgent['cliCheck']>> {
-  if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
+  if (platform === 'win32' && /\.(cmd|bat|ps1)$/i.test(file)) {
     return { status: 'unverified', version: null, reason: 'windows-shim' }
   }
   try {
@@ -108,7 +112,8 @@ export class EnvironmentService {
   }
 
   check(refresh = false): Promise<Environment> {
-    if (this.pending) return this.pending
+    // An explicit refresh after installation must not reuse a look that started before it.
+    if (this.pending) return refresh ? this.pending.then(() => this.check(true)) : this.pending
     if (!refresh && this.last && this.now() - this.last.checkedAt < RESULT_TTL_MS) return Promise.resolve(this.last)
     this.pending = this.look().finally(() => {
       this.pending = null
@@ -133,7 +138,13 @@ export class EnvironmentService {
 
   private async look(): Promise<Environment> {
     const { pathEnv, platform } = this.options
-    const applicationDirs = this.options.applicationDirs ?? (platform === 'darwin' ? ['/Applications', join(homedir(), 'Applications')] : [])
+    const applicationDirs = this.options.applicationDirs ?? (
+      platform === 'darwin' ? ['/Applications', join(homedir(), 'Applications')] :
+        platform === 'win32' ? [
+          ...(process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Programs')] : []),
+          ...[process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter((dir): dir is string => Boolean(dir))
+        ] : platform === 'linux' ? ['/usr/share', '/opt', '/usr/bin', '/usr/local/bin', join(homedir(), '.local/share'), join(homedir(), '.local/bin'), join(homedir(), 'Applications')] : []
+    )
     const [checks, otherAgents] = await Promise.all([
       Promise.all(ENVIRONMENT_TOOLS.map((tool) => this.checkTool(tool))),
       discoverOtherAgents(pathEnv, platform, applicationDirs)
@@ -152,7 +163,8 @@ export class EnvironmentService {
       ...otherAgents.filter((agent) => !checks.some((check) => check.tool === agent.id && check.path))
     ]
     const previous = this.last
-    this.last = { checks, detectedAgents, searchPath: pathEnv.split(delimiter).filter(Boolean), checkedAt: this.now() }
+    const cliInstallations = agentCliInstallations({ checks, detectedAgents }, platform)
+    this.last = { checks, detectedAgents, cliInstallations, searchPath: pathEnv.split(delimiter).filter(Boolean), checkedAt: this.now() }
     if (!previous || JSON.stringify({ checks: previous.checks, detectedAgents: previous.detectedAgents, searchPath: previous.searchPath }) !==
       JSON.stringify({ checks, detectedAgents, searchPath: this.last.searchPath })) this.options.changed?.(this.last)
     return this.last
