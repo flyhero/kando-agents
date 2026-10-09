@@ -3,7 +3,7 @@ import { z } from 'zod'
 import {
   browserActions,
   browserToolName,
-  BrowserUrl,
+  BrowserUrl, BrowserViewport,
   describeBrowserPage,
   imageMarker,
   RpcError,
@@ -26,12 +26,21 @@ export type BrowserTools = {
 
 const TabId = z.string().uuid().optional()
 const History = z.enum(['back', 'forward', 'reload'])
+const Viewport = BrowserViewport.optional()
+const viewportProperty = {
+  viewport: {
+    type: 'object',
+    properties: { width: { type: 'integer' }, height: { type: 'integer' } },
+    required: ['width', 'height'],
+    description: '页面尺寸（像素），默认跟随 Kando 的浏览器面板；要看手机布局时给 390×844 这类值，之后一直保持到再改'
+  }
+}
 
 // Each tool's arguments; checked before anything is asked of core, so a mistake comes back as
 // text the model can act on.
 export const BROWSER_ARGUMENTS: Record<BrowserToolKind, z.ZodType<Record<string, unknown>>> = {
   navigate: z
-    .object({ url: BrowserUrl.optional(), history: History.optional(), tabId: TabId })
+    .object({ url: BrowserUrl.optional(), history: History.optional(), tabId: TabId, viewport: Viewport })
     .refine((args) => (args.url === undefined) !== (args.history === undefined), { message: 'url 和 history 二选一' }),
   snapshot: z.object({ tabId: TabId }),
   screenshot: z.object({ tabId: TabId, fullPage: z.boolean().optional(), ref: SnapshotRef.optional() }),
@@ -44,7 +53,7 @@ export const BROWSER_ARGUMENTS: Record<BrowserToolKind, z.ZodType<Record<string,
   wait: browserActions.wait
     .extend({ tabId: TabId })
     .refine((args) => args.text !== undefined || args.textGone !== undefined || args.seconds !== undefined, { message: 'text、textGone、seconds 至少给一个' }),
-  tabs: z.object({ action: z.enum(['list', 'new', 'switch', 'close']).default('list'), tabId: TabId, url: BrowserUrl.optional() }),
+  tabs: z.object({ action: z.enum(['list', 'new', 'switch', 'close']).default('list'), tabId: TabId, url: BrowserUrl.optional(), viewport: Viewport }),
   console: z.object({ tabId: TabId, sinceNavigation: z.boolean().optional() })
 }
 
@@ -77,6 +86,7 @@ export const BROWSER_TOOL_SPECS: ReadonlyArray<ToolSpec & { kind: BrowserToolKin
       properties: {
         url: { type: 'string', description: '要打开的 URL；没写协议时本地地址用 http，其他用 https' },
         history: { type: 'string', enum: ['back', 'forward', 'reload'], description: '不打开新地址，而是在历史里移动' },
+        ...viewportProperty,
         ...tabIdProperty
       },
       additionalProperties: false
@@ -224,7 +234,8 @@ export const BROWSER_TOOL_SPECS: ReadonlyArray<ToolSpec & { kind: BrowserToolKin
       properties: {
         action: { type: 'string', enum: ['list', 'new', 'switch', 'close'], description: '默认 list' },
         tabId: { type: 'string', description: 'switch、close 要操作的标签页' },
-        url: { type: 'string', description: 'new 时打开的地址' }
+        url: { type: 'string', description: 'new 时打开的地址' },
+        ...viewportProperty
       },
       additionalProperties: false
     },
@@ -277,9 +288,10 @@ function consoleText(output: BrowserConsole): string {
 function failureText(error: unknown): string {
   if (error instanceof RpcError && error.reason) {
     switch (error.reason) {
-      case 'browser-not-installed':
-      case 'browser-installing':
-        return '浏览器正在下载 Chromium（第一次使用要几分钟），稍后再试。'
+      case 'browser-app-closed':
+        return '浏览器在 Kando 应用里运行，现在应用没有打开。请用户打开 Kando 应用后再试。'
+      case 'browser-app-outdated':
+        return `${error.message}。`
       case 'browser-tab-not-found':
         return '标签页不存在，先用 browser_tabs 看一下有哪些。'
       case 'browser-ref-not-found':
@@ -346,14 +358,15 @@ export function browserToolsOverCore(
       case 'navigate': {
         const { url, history, tabId } = args
         const tabs = typeof tabId === 'string' ? null : await rpc.call('browser.tabs', { conversationId })
+        const viewport = Viewport.parse(args.viewport)
         if (tabs && tabs.length === 0 && typeof url === 'string') {
-          const opened = await rpc.call('browser.open', { conversationId, url })
+          const opened = await rpc.call('browser.open', { conversationId, url, ...(viewport ? { viewport } : {}) })
           currentTab = opened.tab.id
           return navigationText(opened, hostOf(url, opened.tab))
         }
         const id = await tabFor(rpc, tabId)
         const to = typeof url === 'string' ? { url } : { history: History.parse(history) }
-        const result = await rpc.call('browser.navigate', { conversationId, tabId: id, to })
+        const result = await rpc.call('browser.navigate', { conversationId, tabId: id, to, ...(viewport ? { viewport } : {}) })
         return navigationText(result, hostOf(typeof url === 'string' ? url : undefined, result.tab))
       }
       case 'snapshot':
@@ -379,7 +392,8 @@ export function browserToolsOverCore(
       case 'tabs': {
         const { action, tabId, url } = args
         if (action === 'new') {
-          const opened = await rpc.call('browser.open', { conversationId, ...(typeof url === 'string' ? { url } : {}) })
+          const viewport = Viewport.parse(args.viewport)
+          const opened = await rpc.call('browser.open', { conversationId, ...(typeof url === 'string' ? { url } : {}), ...(viewport ? { viewport } : {}) })
           currentTab = opened.tab.id
           return navigationText(opened, hostOf(typeof url === 'string' ? url : undefined, opened.tab))
         }

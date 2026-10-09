@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
+import path from 'node:path'
 import { PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import { removeCoreEndpoint, kandoPaths, writeCoreEndpoint } from '@kando/protocol/node'
@@ -10,7 +11,7 @@ import { AgentRunStore } from './agent-run-store'
 import { ChatTurnStore } from './chat-turn-store'
 import { AttachmentStore } from './attachment-store'
 import { AttachmentUploads } from './attachment-uploads'
-import { browserHostCommand } from './browser-host-command'
+import { watchBrowserHostFile } from './browser-host-file'
 import { BrowserService, WATCH_ALL } from './browser-service'
 import { CredentialStore } from './credential-store'
 import { DaemonClient } from './daemon-client'
@@ -113,9 +114,7 @@ const conversations = new ConversationService(
 )
 
 const browser = new BrowserService(
-  daemon,
   paths,
-  () => browserHostCommand(paths.home),
   attachments,
   (id, host, url) => conversations.askHost(id, host, url),
   (event) => {
@@ -128,6 +127,14 @@ const browser = new BrowserService(
     }
   }
 )
+// The desktop app runs the browser; core follows its host file to connect, and connects now in
+// case the app is already up. Earlier versions kept a Chromium download and profile beside it.
+watchBrowserHostFile(paths.browserHostFile, () => browser.hostFileChanged())
+browser.hostFileChanged()
+for (const stale of ['ms-playwright', 'profile']) {
+  const dir = path.join(paths.browser, stale)
+  void stat(dir).then(() => rm(dir, { recursive: true, force: true }).then(() => console.log(`[kando-core] removed ${dir}: the browser now runs in the app`)), () => {})
+}
 
 const service = new TaskService(
   store,
@@ -221,7 +228,6 @@ daemon.onEvent((event) => {
   const attached = [...(server?.connections ?? [])].filter((c) => c.attached.has(sessionId))
   if (event.event === 'data') {
     conversations.handleData(event)
-    browser.handleData(event)
     attached.forEach((c) => c.notify('sessions.data', { sessionId, data: event.data, offset: event.offset }))
   } else if (event.event === 'exit') {
     const installation = terminals.list().some((terminal) => terminal.sessionId === sessionId && !terminal.conversationId && terminal.command)
@@ -229,7 +235,6 @@ daemon.onEvent((event) => {
     conversations.handleExit(sessionId, event.exitCode)
     terminals.handleExit(sessionId, event.exitCode)
     if (installation) void environment.check(true).catch((error: unknown) => console.error('[kando-core] post-install detection failed', error))
-    browser.handleExit(sessionId)
     // An agent that ended is when the numbers most likely moved.
     void usage.refresh()
     refreshAwake()
@@ -246,7 +251,6 @@ daemon.onConnect(() => {
       await conversations.reconcile(sessions)
       terminals.reconcile(sessions)
       void environment.check(true).catch((error: unknown) => console.error('[kando-core] agent discovery failed', error))
-      await browser.reconcile(sessions)
       // What came due while core or the daemon was away goes now, not at the next tick.
       await schedules.tick()
     })

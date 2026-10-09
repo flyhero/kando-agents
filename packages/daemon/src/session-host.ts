@@ -40,8 +40,6 @@ type Session = {
   output: OutputBuffer
   stderr: OutputBuffer | null
   exitCode: number | null
-  // A browser host: replacing the daemon need not wait for it.
-  disposable: boolean
 }
 
 export type DaemonHandlers = {
@@ -63,12 +61,6 @@ const NO_AWAKE: AwakeController = {
 // What the daemon is and how it leaves, for info and retire.
 type Lifecycle = { version: string; leave(): void }
 const NO_LIFECYCLE: Lifecycle = { version: '0.0.0', leave() {} }
-
-// The browser host is core's to start again whenever it needs one, so it keeps no daemon from
-// being replaced; anything else running does (an agent, a shell in the terminal panel).
-function disposable(launch: { args: readonly string[] }): boolean {
-  return launch.args.some((arg) => /(^|\/)browser-host(\.mjs|\/src\/main\.ts)$/.test(arg))
-}
 
 export function createSessionHost(emit: (event: DaemonEvent) => void, awake: AwakeController = NO_AWAKE, lifecycle: Lifecycle = NO_LIFECYCLE): {
   handlers: DaemonHandlers
@@ -96,11 +88,10 @@ export function createSessionHost(emit: (event: DaemonEvent) => void, awake: Awa
     }
   }
 
-  function track(io: SessionIo, start: (events: ProcessEvents) => HostedProcess, isDisposable = false): { sessionId: string } {
+  function track(io: SessionIo, start: (events: ProcessEvents) => HostedProcess): { sessionId: string } {
     const output = new OutputBuffer(io === 'pty' ? PTY_SCROLLBACK_CHARS : PIPE_OUTPUT_CHARS)
     const stderr = io === 'pipe' ? new OutputBuffer(PIPE_STDERR_CHARS) : null
-    const session: Session = { id: randomUUID(), io, process: NOT_STARTED, output, stderr, exitCode: null, disposable: false }
-    session.disposable = isDisposable
+    const session: Session = { id: randomUUID(), io, process: NOT_STARTED, output, stderr, exitCode: null }
     const sessionId = session.id
     sessions.set(sessionId, session)
     try {
@@ -132,7 +123,7 @@ export function createSessionHost(emit: (event: DaemonEvent) => void, awake: Awa
       return track('pty', (events) => startPty(launch, cols, rows, events))
     },
     spawnPipe(launch) {
-      return track('pipe', (events) => startPipe(launch, events), disposable(launch))
+      return track('pipe', (events) => startPipe(launch, events))
     },
     write({ sessionId, data }) {
       const session = getSession(sessionId)
@@ -184,7 +175,7 @@ export function createSessionHost(emit: (event: DaemonEvent) => void, awake: Awa
       return { version: lifecycle.version, pid: process.pid }
     },
     retire() {
-      const live = [...sessions.values()].filter((session) => session.exitCode === null && !session.disposable).length
+      const live = [...sessions.values()].filter((session) => session.exitCode === null).length
       // After the answer has gone out.
       if (live === 0) setTimeout(() => lifecycle.leave(), 50)
       return { retired: live === 0, live }

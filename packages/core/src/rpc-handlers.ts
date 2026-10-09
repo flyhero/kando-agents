@@ -1,4 +1,4 @@
-import { BROWSER_VIEWPORT, CORE_FEATURES, PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
+import { CORE_FEATURES, PROTOCOL_VERSION, type ChatItem } from '@kando/protocol'
 import packageJson from '../package.json' with { type: 'json' }
 import type { AgentRunStore } from './agent-run-store'
 import type { ChatTurnStore } from './chat-turn-store'
@@ -188,8 +188,9 @@ export function createRpcHandlers(
     // The agent's side: its MCP server is launched for one conversation and names it here. The
     // token in core.json already grants everything, so this scopes correctness, not trust.
     'browser.tabs': ({ conversationId }) => browser.tabsOf(conversationId),
-    'browser.open': ({ conversationId, url }) => browser.open(conversationId, url),
-    'browser.navigate': ({ conversationId, tabId, to }) => browser.navigate(conversationId, tabId, to),
+    'browser.open': ({ conversationId, url, viewport }) => browser.open(conversationId, url, viewport),
+    'browser.navigate': ({ conversationId, tabId, to, viewport }) => browser.navigate(conversationId, tabId, to, viewport),
+    'browser.setViewport': ({ conversationId, tabId, viewport }) => browser.setViewport(conversationId, tabId, viewport),
     'browser.snapshot': ({ conversationId, tabId }) => browser.snapshot(conversationId, tabId),
     'browser.screenshot': ({ conversationId, tabId, ...options }) => browser.screenshot(conversationId, tabId, options),
     'browser.click': ({ conversationId, tabId, ...params }) => browser.click(conversationId, tabId, params),
@@ -206,34 +207,18 @@ export function createRpcHandlers(
     },
     // The user's side.
     'browser.status': () => browser.status(),
-    'browser.install': () => browser.install(),
     'browser.watch': ({ conversationId }, connection) => browser.watch(connection, conversationId),
-    'browser.unwatch': async ({ conversationId }, connection) => {
-      await browser.unwatch(connection, conversationId)
+    'browser.unwatch': ({ conversationId }, connection) => {
+      browser.unwatch(connection, conversationId)
       return OK
     },
     'browser.watchAll': (_params, connection) => browser.watchAll(connection),
-    'browser.unwatchAll': async (_params, connection) => {
-      await browser.unwatchAll(connection)
-      return OK
-    },
-    'browser.view.start': async ({ tabId, ...options }, connection) => {
-      await browser.startView(connection, tabId, options)
-      return { viewport: { ...BROWSER_VIEWPORT } }
-    },
-    'browser.view.stop': async ({ tabId }, connection) => {
-      await browser.views.stop(connection, tabId)
-      return OK
-    },
-    'browser.view.ack': ({ tabId, seq }, connection) => {
-      browser.views.ack(connection, tabId, seq)
-      return OK
-    },
-    'browser.input': async ({ tabId, event }, connection) => {
-      await browser.input(connection, tabId, event)
+    'browser.unwatchAll': (_params, connection) => {
+      browser.unwatchAll(connection)
       return OK
     },
     'browser.userNavigate': ({ tabId, to }, connection) => browser.userNavigate(connection, tabId, to),
+    'browser.userViewport': ({ tabId, viewport }, connection) => browser.userViewport(connection, tabId, viewport),
     'browser.newTab': ({ conversationId, url }, connection) => browser.newTab(connection, conversationId ?? null, url),
     'browser.closeTab': async ({ tabId }, connection) => {
       await browser.closeTab(connection, tabId)

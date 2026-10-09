@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -6,65 +6,54 @@ import type { ChatDecision } from '@kando/protocol'
 import { AttachmentStore } from './attachment-store'
 import { BrowserService, type BrowserEvent } from './browser-service'
 import { fakeBrowserHost } from './fake-browser-host'
-import { fakeChatDaemon } from './fake-chat-agent'
 import { fakeConnection, until } from './fake-connection'
-import { readJsonIfExists } from '@kando/protocol/node'
+import { Rejection } from './rejection'
+import { writePrivateJson } from '@kando/protocol/node'
 
 const CONV_A = '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e'
 const CONV_B = '1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
 
 describe('BrowserService', () => {
   let root: string
-  let daemon: ReturnType<typeof fakeChatDaemon>
+  let hostFile: string
   let host: ReturnType<typeof fakeBrowserHost>
   let events: BrowserEvent[]
   let asks: Array<{ conversationId: string; host: string; url: string; answer: (decision: ChatDecision) => void; drop: () => void }>
   let service: BrowserService
   let now: number
 
-  beforeEach(() => {
+  // The service as main.ts makes it, over the fake host's link.
+  const make = (ask: (conversationId: string, host: string, url: string) => Promise<ChatDecision>, onEvent: (event: BrowserEvent) => void = () => {}) =>
+    new BrowserService({ browserHostFile: hostFile }, new AttachmentStore(path.join(root, 'attachments')), ask, onEvent, (endpoint) => host.connect(endpoint), () => now)
+
+  beforeEach(async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'kando-browser-'))
     mkdirSync(path.join(root, 'attachments'))
     mkdirSync(path.join(root, 'browser'))
-    daemon = fakeChatDaemon()
+    hostFile = path.join(root, 'browser', 'host.json')
     host = fakeBrowserHost()
     events = []
     asks = []
     now = 1_800_000_000_000
-    service = new BrowserService(
-      daemon,
-      { home: root, browser: path.join(root, 'browser'), browserBinaries: path.join(root, 'browser', 'ms-playwright'), browserHostFile: path.join(root, 'browser', 'host.json') },
-      () => ['node', 'host.mjs'],
-      new AttachmentStore(path.join(root, 'attachments')),
+    // The app is up: it has written where its host listens.
+    await writePrivateJson(hostFile, host.endpoint())
+    service = make(
       (conversationId, hostName, url) => new Promise((resolve, reject) => asks.push({ conversationId, host: hostName, url, answer: resolve, drop: () => reject(new Error('gone')) })),
-      (event) => events.push(event),
-      (endpoint) => host.connect(endpoint),
-      () => now
+      (event) => events.push(event)
     )
-    // The daemon's output reaches the service the way main.ts routes it, and the fake host
-    // prints its listening line as soon as it is spawned.
-    daemon.deliver = (event) => {
-      if (event.event === 'data') service.handleData(event)
-      if (event.event === 'exit') service.handleExit(event.sessionId)
-    }
-    const spawn = daemon.spawns
-    const seen = spawn.length
-    void until(() => (spawn.length > seen ? true : undefined)).then(() => daemon.emit(`pipe-${spawn.length}`, host.listening()))
   })
 
   afterEach(() => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('starts the host through the daemon, records its session, and opens tabs for a conversation', async () => {
+  it('connects to the app\'s host through the host file, and opens tabs for a conversation', async () => {
     const opened = await service.open(CONV_A, 'http://localhost:5173/')
-    expect(daemon.spawns[0]).toMatchObject({ command: 'node', args: ['host.mjs'], env: { KANDO_HOME: root } })
-    expect(await readJsonIfExists(path.join(root, 'browser', 'host.json'))).toEqual({ sessionId: 'pipe-1' })
     expect(opened).toMatchObject({ outcome: 'done', tab: { conversationId: CONV_A, url: 'http://localhost:5173/', active: true, userDriving: false, agentActing: false } })
     expect(opened.snapshot).toContain('[ref=e1]')
     expect(service.tabsOf(CONV_A)).toHaveLength(1)
     expect(service.tabsOf(CONV_B)).toEqual([])
-    expect(events.find((event) => event.type === 'status')).toMatchObject({ status: { state: 'ready', running: true } })
+    expect(events.findLast((event) => event.type === 'status')).toMatchObject({ status: { state: 'ready', running: true } })
     expect(events.filter((event) => event.type === 'tabs' && event.conversationId === CONV_A).length).toBeGreaterThan(0)
   })
 
@@ -99,17 +88,8 @@ describe('BrowserService', () => {
 
   it('treats a question that cannot be asked as a refusal, and leaves the page alone', async () => {
     const opened = await service.open(CONV_A, 'http://localhost:5173/')
-    const silent = new BrowserService(
-      daemon,
-      { home: root, browser: path.join(root, 'browser'), browserBinaries: '', browserHostFile: path.join(root, 'browser', 'host.json') },
-      () => ['node'],
-      new AttachmentStore(root),
-      () => { throw new Error('no chat is running') },
-      () => {},
-      (endpoint) => host.connect(endpoint),
-      () => now
-    )
-    await silent.reconcile([{ sessionId: 'pipe-1', exited: false, exitCode: null, io: 'pipe' }])
+    const silent = make(() => { throw new Error('no chat is running') })
+    await silent.status()
     const refused = await silent.navigate(CONV_A, opened.tab.id, { url: 'https://example.com/' })
     expect(refused).toMatchObject({ outcome: 'denied', tab: { url: 'http://localhost:5173/' } })
     expect(host.calls.filter((call) => call.method === 'navigate')).toHaveLength(1)
@@ -119,7 +99,7 @@ describe('BrowserService', () => {
     const connection = fakeConnection()
     const opened = await service.open(CONV_A, 'http://localhost:5173/')
     service.watch(connection, CONV_A)
-    await service.input(connection, opened.tab.id, { type: 'text', text: 'hi' })
+    await service.userNavigate(connection, opened.tab.id, { history: 'reload' })
     expect(service.tabOf(opened.tab.id)?.userDriving).toBe(true)
     await expect(service.click(CONV_A, opened.tab.id, { ref: 'e1' })).rejects.toMatchObject({ reason: 'browser-user-driving' })
     const went = await service.userNavigate(connection, opened.tab.id, { url: 'https://example.com/' })
@@ -129,7 +109,7 @@ describe('BrowserService', () => {
     expect(service.tabOf(opened.tab.id)?.userDriving).toBe(false)
     await expect(service.click(CONV_A, opened.tab.id, { ref: 'e1' })).resolves.toBeDefined()
     const stranger = fakeConnection()
-    await expect(service.input(stranger, opened.tab.id, { type: 'text', text: 'x' })).rejects.toMatchObject({ reason: 'browser-not-watching' })
+    await expect(service.userViewport(stranger, opened.tab.id, null)).rejects.toMatchObject({ reason: 'browser-not-watching' })
   })
 
   it('stores a screenshot as an attachment and names it for the chat', async () => {
@@ -139,39 +119,49 @@ describe('BrowserService', () => {
     expect(shot.image.id).toMatch(/^[0-9a-f]{64}\.png$/)
   })
 
-  it('forgets every tab when the host goes, and starts another on the next call', async () => {
+  it('forgets every tab when the app goes, and connects again once it is back', async () => {
     const opened = await service.open(CONV_A, 'http://localhost:5173/')
     host.drop()
     expect(service.tabsOf(CONV_A)).toEqual([])
-    expect(events.at(-1)).toMatchObject({ type: 'status', status: { running: false } })
+    expect(events.at(-1)).toMatchObject({ type: 'status', status: { state: 'app-closed', running: false } })
     await expect(service.snapshot(CONV_A, opened.tab.id)).rejects.toMatchObject({ reason: 'browser-tab-not-found' })
-    await until(() => (existsSync(path.join(root, 'browser', 'host.json')) ? undefined : true))
-    const seen = daemon.spawns.length
-    void until(() => (daemon.spawns.length > seen ? true : undefined)).then(() => daemon.emit(`pipe-${daemon.spawns.length}`, host.listening(2)))
+    // The app is gone: its file with it, and nothing answers until it is back.
+    rmSync(hostFile)
+    await expect(service.status()).resolves.toMatchObject({ state: 'app-closed', running: false, message: expect.stringContaining('Kando 应用') })
+    await expect(service.open(CONV_A)).rejects.toMatchObject({ reason: 'browser-app-closed' })
     host = fakeBrowserHost()
-    await expect(service.status()).resolves.toMatchObject({ running: true })
-    expect(daemon.spawns).toHaveLength(2)
+    await writePrivateJson(hostFile, host.endpoint(2))
+    service.hostFileChanged()
+    await until(() => {
+      const last = events.at(-1)
+      return last?.type === 'status' && last.status.running ? true : undefined
+    })
+    await expect(service.status()).resolves.toMatchObject({ state: 'ready', running: true })
   })
 
-  it('takes a host an earlier core left running, found through host.json', async () => {
-    await service.open(CONV_A, 'http://localhost:5173/')
-    const again = new BrowserService(
-      daemon,
-      { home: root, browser: path.join(root, 'browser'), browserBinaries: path.join(root, 'browser', 'ms-playwright'), browserHostFile: path.join(root, 'browser', 'host.json') },
-      () => ['node', 'host.mjs'],
-      new AttachmentStore(path.join(root, 'attachments')),
-      () => Promise.reject(new Error('unused')),
-      () => {},
-      host.connect,
-      () => now
-    )
-    await again.reconcile([{ sessionId: 'pipe-1', exited: false, exitCode: null, io: 'pipe' }])
-    expect(again.tabsOf(CONV_A)).toHaveLength(1)
-    expect(daemon.spawns).toHaveLength(1)
+  it('reads a file an app of another version left, or a port nothing answers on, as no app', async () => {
+    await writePrivateJson(hostFile, { ...host.endpoint(), protocolVersion: 1 })
+    await expect(service.status()).resolves.toMatchObject({ running: false, message: expect.stringContaining('一起升级') })
+    await writePrivateJson(hostFile, host.endpoint())
+    // A file an app left as it crashed names a port nothing answers on: the client refuses.
+    const stale = new BrowserService({ browserHostFile: hostFile }, new AttachmentStore(root), () => Promise.reject(new Error('unused')), () => {}, () => Promise.reject(new Rejection('browser-unavailable', 'browser host refused: ECONNREFUSED')), () => now)
+    await expect(stale.open(CONV_A)).rejects.toMatchObject({ reason: 'browser-app-closed' })
+    await expect(stale.status()).resolves.toMatchObject({ state: 'app-closed', running: false })
+  })
 
-    const gone = new BrowserService(daemon, { home: root, browser: path.join(root, 'browser'), browserBinaries: '', browserHostFile: path.join(root, 'browser', 'host.json') }, () => ['node'], new AttachmentStore(root), () => Promise.reject(new Error('unused')), () => {}, host.connect, () => now)
-    await gone.reconcile([])
-    expect(await readJsonIfExists(path.join(root, 'browser', 'host.json'))).toBeUndefined()
+  it('holds a tab at a size for the agent or the user, and lets it follow the panel again', async () => {
+    const opened = await service.open(CONV_A, 'http://localhost:5173/', { width: 390, height: 844 })
+    expect(opened.tab.viewport).toEqual({ width: 390, height: 844 })
+    const widened = await service.setViewport(CONV_A, opened.tab.id, { width: 1280, height: 800 })
+    expect(widened.viewport).toEqual({ width: 1280, height: 800 })
+    expect(host.calls.at(-1)).toMatchObject({ method: 'viewport', params: { tabId: opened.tab.id, viewport: { width: 1280, height: 800 } } })
+    const panel = fakeConnection()
+    service.watchAll(panel)
+    const freed = await service.userViewport(panel, opened.tab.id, null)
+    expect(freed.viewport).toBeNull()
+    expect(service.tabOf(opened.tab.id)?.viewport).toBeNull()
+    const moved = await service.navigate(CONV_A, opened.tab.id, { url: 'http://localhost:5173/next' }, { width: 768, height: 1024 })
+    expect(moved.tab.viewport).toEqual({ width: 768, height: 1024 })
   })
 
   it('gives the browser panel every tab, and the user tabs of their own that no agent sees', async () => {
@@ -186,39 +176,10 @@ describe('BrowserService', () => {
     expect(service.allTabs()).toHaveLength(2)
     expect(events.filter((event) => event.type === 'tabs' && event.conversationId === null)).not.toHaveLength(0)
     await expect(service.snapshot(CONV_A, own.id)).rejects.toMatchObject({ reason: 'browser-tab-not-found' })
-    await service.startView(panel, own.id, {})
-    await service.input(panel, own.id, { type: 'text', text: 'x' })
     const stranger = fakeConnection()
     await expect(service.newTab(stranger, null, undefined)).rejects.toMatchObject({ reason: 'browser-not-watching' })
-    await service.unwatchAll(panel)
+    service.unwatchAll(panel)
     await expect(service.closeTab(panel, own.id)).rejects.toMatchObject({ reason: 'browser-not-watching' })
   })
 
-  it('streams frames only to the connection viewing the tab, two at a time', async () => {
-    const connection = fakeConnection()
-    const other = fakeConnection()
-    const opened = await service.open(CONV_A, 'http://localhost:5173/')
-    service.watch(connection, CONV_A)
-    await expect(service.startView(other, opened.tab.id, {})).rejects.toMatchObject({ reason: 'browser-not-watching' })
-    await service.startView(connection, opened.tab.id, { maxWidth: 640 })
-    expect(host.calls.at(-1)).toMatchObject({ method: 'screencast.start', params: { tabId: opened.tab.id, maxWidth: 640 } })
-    host.frame(opened.tab.id, 1)
-    host.frame(opened.tab.id, 2)
-    host.frame(opened.tab.id, 3)
-    expect(connection.notes.filter((note) => note.name === 'browser.frame').map((note) => note.params)).toMatchObject([{ seq: 1 }, { seq: 2 }])
-    service.views.ack(connection, opened.tab.id, 1)
-    host.frame(opened.tab.id, 4)
-    expect(connection.notes.filter((note) => note.name === 'browser.frame')).toHaveLength(3)
-    // A second tab viewed beside the first keeps both streaming until each is stopped.
-    const second = await service.open(CONV_A, 'http://localhost:5174/')
-    await service.startView(connection, second.tab.id, {})
-    host.frame(second.tab.id, 1)
-    expect(connection.notes.filter((note) => note.name === 'browser.frame')).toHaveLength(4)
-    await service.views.stop(connection, second.tab.id)
-    expect(host.calls.filter((call) => call.method === 'screencast.stop')).toHaveLength(1)
-    host.frame(second.tab.id, 2)
-    expect(connection.notes.filter((note) => note.name === 'browser.frame')).toHaveLength(4)
-    connection.close()
-    await until(() => (host.calls.filter((call) => call.method === 'screencast.stop').length === 2 ? true : undefined))
-  })
 })

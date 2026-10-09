@@ -4,15 +4,15 @@ import {
   browserHostSchemas,
   browserHostUrl,
   type BrowserHostEvent,
-  type BrowserHostListening,
+  type BrowserHostEndpoint,
   type BrowserHostMethod,
   type BrowserHostParams,
   type BrowserHostResult
 } from '@kando/protocol/node'
 import { Rejection } from './rejection'
 
-// Core's side of the browser host's socket. No reconnecting: the socket going is the host going,
-// and the service starts another when one is wanted again.
+// Core's side of the browser host's socket. No reconnecting: the socket going is the app going,
+// and the service connects again when the app writes a new host file.
 export type HostLink = {
   request<M extends BrowserHostMethod>(method: M, params: BrowserHostParams<M>): Promise<BrowserHostResult<M>>
   onEvent(listener: (event: BrowserHostEvent) => void): () => void
@@ -20,11 +20,11 @@ export type HostLink = {
   close(): void
 }
 
-export type HostConnect = (endpoint: BrowserHostListening) => Promise<HostLink>
+export type HostConnect = (endpoint: BrowserHostEndpoint) => Promise<HostLink>
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void }
 
-export function connectBrowserHost(endpoint: BrowserHostListening): Promise<HostLink> {
+export function connectBrowserHost(endpoint: BrowserHostEndpoint): Promise<HostLink> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(browserHostUrl(endpoint), { maxPayload: 32 * 1024 * 1024 })
     const pending = new Map<number, Pending>()

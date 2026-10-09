@@ -1,4 +1,3 @@
-import { rm } from 'node:fs/promises'
 import { z } from 'zod'
 import {
   BROWSER_HOST_DECISION_WAIT_MS,
@@ -7,32 +6,20 @@ import {
   type AttachmentInfo,
   type BrowserAction,
   type BrowserConsole,
-  type BrowserInputEvent,
   type BrowserNavigateTo,
   type BrowserNavigation,
   type BrowserScreenshot,
   type BrowserStatus,
   type BrowserTab,
-  type BrowserViewOptions,
+  type BrowserViewport,
   type ChatDecision,
   type browserActions
 } from '@kando/protocol'
-import {
-  BrowserHostListening,
-  createLineDecoder,
-  type BrowserHostEvent,
-  type BrowserHostParams,
-  type DaemonEvent,
-  type HostTab,
-  type KandoPaths,
-  type SessionInfo
-} from '@kando/protocol/node'
+import { BROWSER_HOST_PROTOCOL_VERSION, type BrowserHostEvent, type BrowserHostParams, type HostTab, type KandoPaths } from '@kando/protocol/node'
 import type { AttachmentStore } from './attachment-store'
 import { connectBrowserHost, type HostConnect, type HostLink } from './browser-host-client'
-import { BrowserViews } from './browser-view'
+import { readBrowserHostEndpoint } from './browser-host-file'
 import { clip } from './chat-items'
-import type { SessionHost } from './daemon-client'
-import { readJsonIfExists, writePrivateJson } from '@kando/protocol/node'
 import { Rejection } from './rejection'
 import type { Connection } from './rpc-server'
 
@@ -53,29 +40,16 @@ function mayBrowse(connection: Connection, tab: Pick<BrowserTab, 'conversationId
 export type HostAsk = (conversationId: string, host: string, url: string) => Promise<ChatDecision>
 
 type ActionParams<K extends keyof typeof browserActions> = z.output<(typeof browserActions)[K]>
-type BrowserPaths = Pick<KandoPaths, 'home' | 'browser' | 'browserBinaries' | 'browserHostFile'>
+type BrowserPaths = Pick<KandoPaths, 'browserHostFile'>
 
-// The host says where to connect within this long of starting, or it is not coming up.
-const START_TIMEOUT_MS = 30_000
-// A host that does not answer a status request this fast is hung: only a refused connection
-// proves a daemon session stale, but this one is ours, and the daemon kills the whole group.
+// A host that does not answer a status request this fast is hung.
 const STATUS_TIMEOUT_MS = 5_000
 // After the user's last input on a tab, the agent's calls on it are refused for this long.
 const DRIVING_MS = 5_000
 const MAX_SNAPSHOT_CHARS = 60_000
-// A host that goes this often is not coming back by itself.
-const CRASH_WINDOW_MS = 60_000
-const CRASH_LIMIT = 3
 
-const HostFile = z.object({ sessionId: z.string().min(1) })
-
-type Host = {
-  sessionId: string
-  link: HostLink | null
-  endpoint: BrowserHostListening | null
-  readLine: (chunk: string) => void
-  listeners: Set<(endpoint: BrowserHostListening) => void>
-}
+const APP_CLOSED: BrowserStatus = { state: 'app-closed', running: false }
+const APP_CLOSED_TEXT = '浏览器在 Kando 应用里运行，请打开 Kando 应用后再试'
 
 function withTimeout<T>(promise: Promise<T>, ms: number, error: () => Error): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -85,13 +59,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, error: () => Error): Pr
   })
 }
 
-// Kando's browser, as core sees it: the host process the daemon runs for it, the tabs it has,
-// which conversation each belongs to, and what the user has allowed each conversation to open.
-// Every agent call names its conversation and reaches only that conversation's tabs.
+// Kando's browser, as core sees it: the host the desktop app runs for it, the tabs it has, which
+// conversation each belongs to, and what the user has allowed each conversation to open. Every
+// agent call names its conversation and reaches only that conversation's tabs. The app says
+// where its host listens through the host file; with no app up there is no browser.
 export class BrowserService {
-  private host: Host | null = null
+  private link: HostLink | null = null
   private starting: Promise<HostLink> | null = null
-  private statusValue: BrowserStatus = { state: 'not-installed', running: false }
+  private statusValue: BrowserStatus = APP_CLOSED
   private tabs = new Map<string, HostTab>()
   private readonly allowed = new Map<string, Set<string>>()
   // Allowed once, for a navigation the host had already given up on when the answer came.
@@ -99,153 +74,75 @@ export class BrowserService {
   private readonly drivingUntil = new Map<string, number>()
   private readonly drivingTimers = new Map<string, NodeJS.Timeout>()
   private readonly acting = new Set<string>()
-  private exits: number[] = []
-  readonly views: BrowserViews
 
   constructor(
-    private readonly daemon: SessionHost,
     private readonly paths: BrowserPaths,
-    private readonly hostCommand: () => string[],
     private readonly attachments: Pick<AttachmentStore, 'put'>,
     private readonly askHost: HostAsk,
     private readonly emit: (event: BrowserEvent) => void,
     private readonly connect: HostConnect = connectBrowserHost,
     private readonly now: () => number = Date.now
-  ) {
-    this.views = new BrowserViews(
-      () => {
-        const link = this.host?.link
-        return link
-          ? {
-              start: async (tabId, options) => {
-                await link.request('screencast.start', { tabId, ...options })
-              },
-              stop: async (tabId) => {
-                await link.request('screencast.stop', { tabId })
-              }
-            }
-          : null
-      },
-      (tabId) => this.tabOf(tabId),
-      mayBrowse
-    )
-  }
+  ) {}
 
-  // ---- the host process
+  // ---- the app's host
 
-  // The host's output comes through the daemon like an agent's; only its first line matters.
-  handleData(event: Extract<DaemonEvent, { event: 'data' }>): void {
-    if (this.host?.sessionId === event.sessionId) this.host.readLine(event.data)
-  }
-
-  handleExit(sessionId: string): void {
-    if (this.host?.sessionId === sessionId) this.hostGone(this.host)
-  }
-
-  // Takes a host left running by an earlier core, or forgets one the daemon no longer has.
-  async reconcile(sessions: readonly SessionInfo[]): Promise<void> {
-    const saved = HostFile.safeParse(await readJsonIfExists(this.paths.browserHostFile))
-    if (!saved.success) return
-    const info = sessions.find((session) => session.sessionId === saved.data.sessionId)
-    if (!info || info.exited) {
-      await rm(this.paths.browserHostFile, { force: true })
-      if (info) await this.daemon.request('release', { sessionId: info.sessionId }).catch(() => {})
-      return
-    }
-    const host = this.track(info.sessionId)
-    this.host = host
-    const attached = await this.daemon.request('attach', { sessionId: info.sessionId })
-    host.readLine(attached.buffer)
-    await this.ensureLink().catch((error: unknown) => console.error('[kando-core] browser host not reachable', error))
-  }
-
-  private track(sessionId: string): Host {
-    const host: Host = {
-      sessionId,
-      link: null,
-      endpoint: null,
-      listeners: new Set(),
-      readLine: createLineDecoder((line) => {
-        if (host.endpoint) return
-        let parsed
-        try {
-          parsed = BrowserHostListening.safeParse(JSON.parse(line))
-        } catch {
-          return
-        }
-        if (!parsed.success) return
-        host.endpoint = parsed.data
-        host.listeners.forEach((listener) => listener(parsed.data))
-        host.listeners.clear()
-      })
-    }
-    return host
+  // The host file may have changed: an app came up, or went. Connects when none is; a link that
+  // is up learns of the app going from its socket.
+  hostFileChanged(): void {
+    if (this.link || this.starting) return
+    void this.ensureLink().catch(() => {})
   }
 
   private ensureLink(): Promise<HostLink> {
-    if (this.host?.link) return Promise.resolve(this.host.link)
+    if (this.link) return Promise.resolve(this.link)
     if (this.starting) return this.starting
-    this.starting = this.startHost().finally(() => {
+    this.starting = this.connectHost().finally(() => {
       this.starting = null
     })
     return this.starting
   }
 
-  private async startHost(): Promise<HostLink> {
-    if (this.exits.filter((at) => at > this.now() - CRASH_WINDOW_MS).length >= CRASH_LIMIT) {
-      throw new Rejection('browser-unavailable', '浏览器宿主反复退出，稍后再试')
+  private async connectHost(): Promise<HostLink> {
+    const endpoint = await readBrowserHostEndpoint(this.paths.browserHostFile)
+    if (!endpoint) {
+      this.noteClosed()
+      throw new Rejection('browser-app-closed', APP_CLOSED_TEXT)
     }
-    let host = this.host
-    if (!host) {
-      const [command, ...args] = this.hostCommand()
-      if (!command) throw new Error('empty browser host command')
-      const { sessionId } = await this.daemon.request('spawnPipe', {
-        command,
-        args,
-        cwd: this.paths.browser,
-        env: { PLAYWRIGHT_BROWSERS_PATH: this.paths.browserBinaries, KANDO_HOME: this.paths.home }
-      })
-      host = this.track(sessionId)
-      this.host = host
-      await writePrivateJson(this.paths.browserHostFile, { sessionId })
+    if (endpoint.protocolVersion !== BROWSER_HOST_PROTOCOL_VERSION) {
+      throw new Rejection('browser-app-outdated', `Kando 应用的浏览器是版本 ${endpoint.protocolVersion}，core 需要 ${BROWSER_HOST_PROTOCOL_VERSION}：请把应用和 core 一起升级`)
     }
-    const endpoint = await this.listening(host).catch(async (error: unknown) => {
-      await this.daemon.request('kill', { sessionId: host.sessionId, force: true }).catch(() => {})
-      this.hostGone(host)
-      throw error
-    })
+    this.setStatus({ state: 'starting', running: false })
     let link: HostLink
     try {
       link = await this.connect(endpoint)
-      link.onEvent((event) => this.handleHostEvent(host, event))
-      link.onClose(() => this.hostGone(host))
-      host.link = link
+    } catch (error) {
+      // A file left by an app that crashed names a port nothing answers on.
+      this.noteClosed()
+      throw error instanceof Rejection ? new Rejection('browser-app-closed', APP_CLOSED_TEXT) : error
+    }
+    link.onEvent((event) => this.handleHostEvent(link, event))
+    link.onClose(() => this.hostGone(link))
+    this.link = link
+    try {
       const status = await withTimeout(link.request('status', {}), STATUS_TIMEOUT_MS, () => new Rejection('browser-unavailable', '浏览器宿主没有响应'))
       this.setStatus({ ...status, running: true })
       this.setTabs((await link.request('tabs.list', {})).tabs)
     } catch (error) {
-      await this.daemon.request('kill', { sessionId: host.sessionId, force: true }).catch(() => {})
-      this.hostGone(host)
+      link.close()
+      this.hostGone(link)
       throw error
     }
     return link
   }
 
-  private listening(host: Host): Promise<BrowserHostListening> {
-    if (host.endpoint) return Promise.resolve(host.endpoint)
-    return withTimeout(
-      new Promise<BrowserHostListening>((resolve) => host.listeners.add(resolve)),
-      START_TIMEOUT_MS,
-      () => new Rejection('browser-start-failed', '浏览器宿主没有启动')
-    )
+  private noteClosed(): void {
+    if (this.statusValue.state !== 'app-closed') this.setStatus(APP_CLOSED)
   }
 
-  private hostGone(host: Host): void {
-    if (this.host !== host) return
-    this.host = null
-    this.exits = [...this.exits.filter((at) => at > this.now() - CRASH_WINDOW_MS), this.now()]
-    host.link?.close()
-    this.views.closeAll()
+  private hostGone(link: HostLink): void {
+    if (this.link !== link) return
+    this.link = null
+    link.close()
     for (const timer of this.drivingTimers.values()) clearTimeout(timer)
     this.drivingTimers.clear()
     this.drivingUntil.clear()
@@ -253,13 +150,11 @@ export class BrowserService {
     const owners = new Set([...this.tabs.values()].map((tab) => tab.conversationId))
     this.tabs = new Map()
     for (const conversationId of owners) this.emitTabs(conversationId)
-    this.setStatus({ ...this.statusValue, running: false })
-    void rm(this.paths.browserHostFile, { force: true }).catch(() => {})
-    void this.daemon.request('release', { sessionId: host.sessionId }).catch(() => {})
+    this.setStatus(APP_CLOSED)
   }
 
-  private handleHostEvent(host: Host, event: BrowserHostEvent): void {
-    if (this.host !== host) return
+  private handleHostEvent(link: HostLink, event: BrowserHostEvent): void {
+    if (this.link !== link) return
     switch (event.event) {
       case 'status':
         this.setStatus({ ...event.status, running: true })
@@ -268,10 +163,7 @@ export class BrowserService {
         this.setTabs(event.tabs)
         return
       case 'hostCheck':
-        void this.hostCheck(host, event)
-        return
-      case 'frame':
-        this.views.handleFrame({ tabId: event.tabId, seq: event.seq, width: event.width, height: event.height, data: event.data })
+        void this.hostCheck(link, event)
     }
   }
 
@@ -284,10 +176,7 @@ export class BrowserService {
     const touched = new Set([...this.tabs.values()].map((tab) => tab.conversationId))
     const gone = [...this.tabs.keys()].filter((id) => !tabs.some((tab) => tab.id === id))
     this.tabs = new Map(tabs.map((tab) => [tab.id, tab]))
-    for (const id of gone) {
-      this.views.tabClosed(id)
-      this.stopDriving(id)
-    }
+    for (const id of gone) this.stopDriving(id)
     for (const tab of tabs) touched.add(tab.conversationId)
     for (const conversationId of touched) this.emitTabs(conversationId)
   }
@@ -300,10 +189,10 @@ export class BrowserService {
 
   // The host met a top-level navigation it has no say over (a link the agent or user clicked, a
   // redirect): it is cleared the same way an agent's own navigation is, within the host's wait.
-  private async hostCheck(host: Host, check: Extract<BrowserHostEvent, { event: 'hostCheck' }>): Promise<void> {
+  private async hostCheck(link: HostLink, check: Extract<BrowserHostEvent, { event: 'hostCheck' }>): Promise<void> {
     const outcome = await this.permit(check.conversationId, check.tabId, check.host, check.url)
     if (outcome === 'done' && check.conversationId !== null) this.allowOnce.get(check.conversationId)?.delete(check.host)
-    await host.link?.request('host.resolve', { checkId: check.checkId, allow: outcome === 'done' }).catch(() => {})
+    await link.request('host.resolve', { checkId: check.checkId, allow: outcome === 'done' }).catch(() => {})
   }
 
   // Whether the conversation may open the site now: by what the user allowed before, by the user
@@ -342,14 +231,8 @@ export class BrowserService {
       await this.ensureLink()
     } catch (error) {
       if (!(error instanceof Rejection)) throw error
-      return { ...this.statusValue, running: false, ...(error.reason === 'daemon-unavailable' ? {} : { message: error.message }) }
+      return { ...this.statusValue, running: false, message: error.message }
     }
-    return this.statusValue
-  }
-
-  async install(): Promise<BrowserStatus> {
-    const link = await this.ensureLink()
-    this.setStatus({ ...(await link.request('install', {})), running: true })
     return this.statusValue
   }
 
@@ -358,9 +241,8 @@ export class BrowserService {
     return this.tabsOf(conversationId)
   }
 
-  async unwatch(connection: Connection, conversationId: string): Promise<void> {
+  unwatch(connection: Connection, conversationId: string): void {
     connection.browsing.delete(conversationId)
-    await this.views.stop(connection)
   }
 
   watchAll(connection: Connection): BrowserTab[] {
@@ -368,9 +250,8 @@ export class BrowserService {
     return this.allTabs()
   }
 
-  async unwatchAll(connection: Connection): Promise<void> {
+  unwatchAll(connection: Connection): void {
     connection.browsing.delete(WATCH_ALL)
-    await this.views.stop(connection)
   }
 
   allTabs(): BrowserTab[] {
@@ -401,20 +282,17 @@ export class BrowserService {
     this.stopDriving(tabId)
   }
 
-  async input(connection: Connection, tabId: string, event: BrowserInputEvent): Promise<void> {
+  // The panel's size presets: the tab held at one, or following the panel again.
+  async userViewport(connection: Connection, tabId: string, viewport: BrowserViewport | null): Promise<BrowserTab> {
     const link = await this.userTab(connection, tabId)
-    this.markDriving(tabId)
-    await link.request('input', { tabId, event })
+    await link.request('viewport', { tabId, viewport })
+    return this.describe({ ...this.checkWatching(connection, tabId), viewport })
   }
 
   async userScreenshot(connection: Connection, tabId: string): Promise<AttachmentInfo> {
     const link = await this.userTab(connection, tabId)
     const shot = await link.request('screenshot', { tabId })
     return this.attachments.put(Buffer.from(shot.jpeg, 'base64'))
-  }
-
-  startView(connection: Connection, tabId: string, options: BrowserViewOptions): Promise<void> {
-    return this.views.start(connection, tabId, options)
   }
 
   private checkWatching(connection: Connection, tabId: string): HostTab {
@@ -469,16 +347,16 @@ export class BrowserService {
     return tab ? this.describe(tab) : null
   }
 
-  async open(conversationId: string, url?: string): Promise<BrowserNavigation> {
+  async open(conversationId: string, url?: string, viewport?: BrowserViewport | null): Promise<BrowserNavigation> {
     const link = await this.ensureLink()
-    const opened = await link.request('tabs.open', { conversationId })
+    const opened = await link.request('tabs.open', { conversationId, ...(viewport !== undefined ? { viewport } : {}) })
     this.tabs.set(opened.tab.id, opened.tab)
     return url ? this.navigate(conversationId, opened.tab.id, { url }) : this.navigation(opened)
   }
 
   // The site is cleared with the user before the page moves, so a refusal leaves the page as it
-  // was rather than on an error page.
-  async navigate(conversationId: string, tabId: string, to: BrowserNavigateTo): Promise<BrowserNavigation> {
+  // was rather than on an error page. A viewport given holds the tab at it from here on.
+  async navigate(conversationId: string, tabId: string, to: BrowserNavigateTo, viewport?: BrowserViewport | null): Promise<BrowserNavigation> {
     const link = await this.agentTab(conversationId, tabId)
     return this.whileActing(tabId, async () => {
       const target = 'url' in to ? to.url : null
@@ -491,8 +369,20 @@ export class BrowserService {
           return { tab, outcome, snapshot: null }
         }
       }
-      return link.request('navigate', { tabId, to })
+      return link.request('navigate', { tabId, to, ...(viewport !== undefined ? { viewport } : {}) })
     }, (result) => this.navigation(result))
+  }
+
+  // Holds the tab at a size for the agent's layout, or lets it follow the panel again.
+  async setViewport(conversationId: string, tabId: string, viewport: BrowserViewport | null): Promise<BrowserTab> {
+    const link = await this.agentTab(conversationId, tabId)
+    return this.whileActing(tabId, async () => {
+      await link.request('viewport', { tabId, viewport })
+      return this.tabs.get(tabId)
+    }, (tab) => {
+      if (!tab) throw new Rejection('browser-tab-not-found', '标签页不存在，先用 browser_tabs 看一下')
+      return this.describe({ ...tab, viewport })
+    })
   }
 
   snapshot(conversationId: string, tabId: string): Promise<BrowserAction> {
@@ -550,7 +440,7 @@ export class BrowserService {
   async closeForConversation(conversationId: string): Promise<void> {
     this.allowed.delete(conversationId)
     this.allowOnce.delete(conversationId)
-    const link = this.host?.link
+    const link = this.link
     if (link && this.tabsOf(conversationId).length) await link.request('tabs.closeAll', { conversationId }).catch(() => {})
   }
 

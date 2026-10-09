@@ -9,7 +9,7 @@ import { browserToolsOverCore, BROWSER_ARGUMENTS } from './mcp-browser-tools'
 const CONV = '8a0b5f7c-5b0e-4e8d-9d1e-0c1c2b3a4d5e'
 const TAB_A = '1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
 const TAB_B = '2b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9'
-const tab = (id: string, url: string, active = true): BrowserTab => ({ id, conversationId: CONV, url, title: 'Page', loading: false, active, userDriving: false, agentActing: false, createdAt: 1 })
+const tab = (id: string, url: string, active = true): BrowserTab => ({ id, conversationId: CONV, url, title: 'Page', loading: false, active, userDriving: false, agentActing: false, viewport: null, createdAt: 1 })
 
 describe('browser tools over core', () => {
   let dir: string
@@ -95,8 +95,8 @@ describe('browser tools over core', () => {
 
   it('turns core\'s refusals into advice', async () => {
     const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
-    failWith = new RpcError('downloading', -32000, 'browser-installing')
-    expect(await tools.call('snapshot', {})).toMatchObject({ isError: true, text: expect.stringContaining('正在下载 Chromium') })
+    failWith = new RpcError('closed', -32000, 'browser-app-closed')
+    expect(await tools.call('snapshot', {})).toMatchObject({ isError: true, text: expect.stringContaining('打开 Kando 应用') })
     failWith = null
     expect(await tools.call('click', { ref: 'e1' })).toMatchObject({ isError: true, text: expect.stringContaining('没有打开的标签页') })
   })
