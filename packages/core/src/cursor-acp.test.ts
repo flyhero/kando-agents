@@ -263,6 +263,18 @@ describe('Cursor ACP', () => {
     expect(items(driver, 'approval').map((approval) => approval.resolution)).toEqual(['allowed', 'allowed'])
   })
 
+  it('shows a Cursor task as a subagent with its brief and time, and acknowledges its end', () => {
+    const driver = opened(); prompt(driver)
+    update(driver, { sessionUpdate: 'tool_call', toolCallId: 'task', title: 'Task: Settings UI', kind: 'other', status: 'pending', rawInput: { _toolName: 'task', prompt: 'Read the settings code', description: 'Settings UI', subagentType: { unspecified: {} } } })
+    update(driver, { sessionUpdate: 'tool_call_update', toolCallId: 'task', status: 'in_progress', rawInput: { prompt: null } })
+    expect(items(driver, 'tool')[0]).toMatchObject({ name: 'Task', title: 'Settings UI', status: 'running', input: expect.stringContaining('"prompt":"Read the settings code"') })
+    update(driver, { sessionUpdate: 'tool_call_update', toolCallId: 'task', status: 'completed', rawOutput: { durationMs: 584426, isBackground: false }, rawInput: { prompt: null } })
+    expect(items(driver, 'tool')[0]).toMatchObject({ name: 'Task', title: 'Settings UI', status: 'done', output: null, metrics: { tools: 0, tokens: 0, durationMs: 584426 }, input: expect.stringContaining('Read the settings code') })
+    receive(driver, { id: 56, method: 'cursor/task', params: { toolCallId: 'task', description: 'Settings UI', prompt: 'Read the settings code', agentId: 'agent', durationMs: 584426 } })
+    expect(due(driver)).toEqual([{ jsonrpc: '2.0', id: 56, result: {} }])
+    for (const item of driver.items.list()) expect(ChatItem.safeParse(item).success).toBe(true)
+  })
+
   it('streams while a question waits and returns stable question/option IDs', () => {
     const driver = opened(); prompt(driver)
     receive(driver, { id: 'question', method: 'cursor/ask_question', params: { toolCallId: 'ask', title: 'Choose', questions: [{ id: 'q', prompt: 'Which?', options: [{ id: 'first', label: 'Same' }, { id: 'second', label: 'Same' }], allowMultiple: true }] } })

@@ -49,8 +49,10 @@ const valuesOf = (config: Config): z.infer<typeof OptionValue>[] => config.optio
 const kandoMode = (mode: string): ChatPermissionMode | null => mode === 'agent' ? 'ask' : mode === 'plan' ? 'plan' : mode === 'ask' ? 'readOnly' : null
 const nativeMode = (mode: string) => mode === 'ask' ? 'agent' : mode === 'readOnly' ? 'ask' : mode
 const toolName = (update: Pick<z.infer<typeof Update>, 'kind' | 'rawInput'>, old: string | undefined): string => {
-  const raw = z.looseObject({ tool: z.string().optional(), toolName: z.string().optional(), providerIdentifier: z.string().optional() }).safeParse(update.rawInput).data
+  const raw = z.looseObject({ tool: z.string().optional(), toolName: z.string().optional(), _toolName: z.string().optional(), providerIdentifier: z.string().optional() }).safeParse(update.rawInput).data
   if (raw?.providerIdentifier && raw.toolName) return `${raw.providerIdentifier}.${raw.toolName}`
+  // Cursor marks its subagent call only in the input; Kando knows a subagent as Task.
+  if (raw?._toolName === 'task') return 'Task'
   return raw?.toolName ?? raw?.tool ?? (update.kind === 'execute' ? 'commandExecution' : update.kind === 'edit' ? 'fileChange' : old ?? update.kind ?? 'tool')
 }
 const PermissionOutcome = z.looseObject({ outcome: z.looseObject({ outcome: z.string(), optionId: z.string().optional() }) })
@@ -527,12 +529,18 @@ export class CursorAcp implements ChatDriver {
     const raw = z.looseObject({ command: z.string().optional(), path: z.string().optional(), tool: z.string().optional(), toolName: z.string().optional(), providerIdentifier: z.string().optional(), args: z.unknown().optional() }).safeParse(update.rawInput).data
     const input = raw?.providerIdentifier && raw.toolName ? raw.args ?? update.rawInput : update.rawInput
     const name = toolName(update, old?.name)
+    // A subagent's later updates send its brief back as { prompt: null } and close with its time,
+    // not its report, which Cursor keeps to the parent agent.
+    const subagent = name === 'Task'
+    const task = subagent ? z.looseObject({ description: z.string().optional() }).safeParse(update.rawInput).data : undefined
+    const timing = subagent ? z.looseObject({ durationMs: z.number() }).safeParse(update.rawOutput).data : undefined
     const status = update.status === 'completed' ? 'done' : update.status === 'failed' ? 'failed' : old?.status ?? 'running'
     const exitCode = z.looseObject({ exitCode: z.number().int().nullish() }).safeParse(update.rawOutput).data?.exitCode ?? null
     this.items.put({
-      id, kind: 'tool', name, title: raw?.command ?? raw?.path ?? update.title ?? old?.title ?? name,
-      input: input === undefined ? old?.input ?? null : clip(JSON.stringify(input)), status,
-      output: output.text ? clip(output.text) : update.rawOutput !== undefined ? clip(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) : old?.output ?? null,
+      id, kind: 'tool', name, title: raw?.command ?? raw?.path ?? task?.description ?? update.title ?? old?.title ?? name,
+      input: input === undefined || (subagent && old) ? old?.input ?? null : clip(JSON.stringify(input)), status,
+      output: output.text ? clip(output.text) : update.rawOutput !== undefined && !subagent ? clip(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) : old?.output ?? null,
+      ...(timing ? { metrics: { tools: 0, tokens: 0, durationMs: timing.durationMs } } : old?.metrics ? { metrics: old.metrics } : {}),
       diffs: content.some((entry) => entry.type === 'diff') ? content.flatMap((entry) => entry.type === 'diff' && entry.path ? [{ path: entry.path, change: entry.oldText == null ? 'add' as const : 'update' as const, patch: clip(`--- ${entry.path}\n+++ ${entry.path}\n@@\n${(entry.oldText ?? '').split('\n').map((line) => `-${line}`).join('\n')}\n${(entry.newText ?? '').split('\n').map((line) => `+${line}`).join('\n')}`, 50_000) }] : []) : old?.diffs ?? [],
       ...(images.length || output.images.length ? { images: [...images, ...output.images] } : old?.images ? { images: old.images } : {}),
       ...(name === 'commandExecution' && (status === 'done' || status === 'failed') ? { execution: { status: status === 'done' ? 'completed' as const : 'failed' as const, exitCode } } : old?.execution ? { execution: old.execution } : {})
@@ -543,6 +551,10 @@ export class CursorAcp implements ChatDriver {
     if (frame.id === undefined) return
     const id = keyOf(frame.id)
     if (this.pending.has(id) || this.owed.has(id)) return
+    // Cursor's word that a subagent ended, which its Task call's own update already carries.
+    if (frame.method === 'cursor/task') {
+      this.owed.set(id, result(frame.id, {})); return
+    }
     if (!['session/request_permission', 'cursor/ask_question', 'cursor/create_plan'].includes(frame.method ?? '')) {
       this.owed.set(id, { jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Kando does not handle this request' } })
       return

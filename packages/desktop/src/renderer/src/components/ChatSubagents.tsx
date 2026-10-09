@@ -2,6 +2,7 @@ import type { ChatItem } from '@kando/protocol'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
 import { formatTokens, subagentBrief } from '../chat-tools'
+import { durationText } from '../stat-format'
 import { ChatMarkdown } from './ChatMarkdown'
 import { CheckIcon, ChevronRightIcon } from './icons'
 import { Spinner } from './Spinner'
@@ -37,6 +38,10 @@ function Subagent({ tool, lane }: { tool: ToolItem; lane: number }) {
         <span className="chat-subagent-prefix">子 Agent:</span>
         {brief.kind && <span className="chat-tool-name">{brief.kind}</span>}
         <span className="chat-subagent-chip" title={tool.title}>{tool.title}</span>
+        {tool.metrics && tool.metrics.tools === 0 && tool.metrics.tokens === 0 && tool.metrics.durationMs > 0 && (
+          // Some agents report a subagent's time alone (Cursor).
+          <span className="chat-subagent-metrics">用了 {durationText(tool.metrics.durationMs)}</span>
+        )}
         {tool.metrics && (tool.metrics.tools > 0 || tool.metrics.tokens > 0) && (
           <span className="chat-subagent-metrics" title={tool.metrics.durationMs ? `用了 ${Math.round(tool.metrics.durationMs / 1000)} 秒` : undefined}>
             {tool.metrics.tools > 0 && <span>{tool.metrics.tools} 工具</span>}
