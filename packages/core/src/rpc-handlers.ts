@@ -139,8 +139,8 @@ export function createRpcHandlers(
     'tasks.diff': ({ id, repo, file }) => service.diff(id, repo, file),
     'conversations.list': ({ includeTasks }) => conversations.list(includeTasks),
     'conversations.get': ({ id }) => conversations.get(id),
-    'conversations.create': ({ agent, projectPaths, worktree, branch, allowBypass, permissionMode, model, effort }) =>
-      conversations.create(agent, projectPaths, allowBypass, { permissionMode, model, effort, worktree, branch }),
+    'conversations.create': ({ agent, projectPaths, worktree, branch, allowBypass, permissionMode, model, effort, deferStart }) =>
+      conversations.create(agent, projectPaths, allowBypass, { permissionMode, model, effort, worktree, branch, deferStart }),
     'conversations.chatCatalog': ({ agent }) => conversations.chatCatalog(agent),
     'conversations.setAdditionalProjects': ({ id, projectPaths }) => conversations.setAdditionalProjects(id, projectPaths),
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
@@ -149,7 +149,7 @@ export function createRpcHandlers(
     'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, allowBypass),
     'conversations.fork': ({ id, stageId, itemId }) => conversations.fork(id, stageId, itemId),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
-    'conversations.send': ({ id, text, images, queue, steer }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer); return OK }),
+    'conversations.send': ({ id, text, images, queue, steer, ref }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer, ref); return OK }),
     'conversations.cancelQueued': ({ id, ref }) => { conversations.cancelQueued(id, ref); return OK },
     'conversations.sendQueued': ({ id, ref, now }) => userActed(id, async () => { await conversations.sendQueued(id, ref, now); return OK }),
     'conversations.setUsageLimitAutoContinue': ({ id, stageId, itemId, autoContinue }) => {

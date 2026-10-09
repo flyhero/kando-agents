@@ -104,6 +104,59 @@ describe('ConversationService', () => {
     expect(execFileSync('git', ['-C', remote, 'log', '-1', '--format=%s', 'refs/heads/main'], { encoding: 'utf8' }).trim()).toBe('feat: add note')
   })
 
+  it('creates a conversation before its agent handshake and keeps the chosen mode for launch', async () => {
+    const created = await service.create('codex', [], false, { permissionMode: 'plan', deferStart: true })
+    expect(created.sessionId).toBeNull()
+    expect(created.chatOptions?.permissionMode).toBe('plan')
+    expect(store.get(created.id)).not.toBeNull()
+    expect(daemon.spawns).toHaveLength(0)
+    expect(service.stages(created.id)).toHaveLength(0)
+
+    let ready = false
+    const starting = service.continue(created.id).then((conversation) => { ready = true; return conversation })
+    await settle()
+    expect(daemon.spawns).toHaveLength(1)
+    expect(ready).toBe(false)
+    expect(service.get(created.id).sessionId).toBe('pipe-1')
+    expect(service.get(created.id).starting).toBe(true)
+    daemon.emit('pipe-1', { id: 'kando-init', result: {} })
+    await settle()
+    daemon.emit('pipe-1', { id: 'kando-thread', result: { thread: { id: 'new-thread' } } })
+    await expect(starting).resolves.toMatchObject({ id: created.id, sessionId: 'pipe-1', starting: false })
+    expect(service.get(created.id).starting).toBe(false)
+  })
+
+  it('keeps a deferred conversation after launch fails and sends a retried message once', async () => {
+    const created = await service.create('claude', [], false, { permissionMode: 'plan', deferStart: true })
+    daemon.answerInit = false
+    const starting = service.continue(created.id)
+    const failed = expect(starting).rejects.toThrow()
+    await settle()
+    daemon.exit('pipe-1', 1)
+    await failed
+    expect(service.get(created.id)).toMatchObject({ sessionId: null, starting: false, chatOptions: { permissionMode: 'plan' } })
+
+    daemon.answerInit = true
+    const continued = await service.continue(created.id)
+    daemon.reply = () => {}
+    const ref = randomUUID()
+    await service.send(created.id, 'first message', [], false, false, ref)
+    await service.send(created.id, 'first message', [], false, false, ref)
+    expect(daemon.written(continued.sessionId!).filter((frame) => JSON.stringify(frame).includes('first message'))).toHaveLength(1)
+    expect(service.chatPage(created.id).items.filter((item) => item.kind === 'user')).toHaveLength(1)
+    await service.stop(created.id)
+    service = serve()
+    const resumed = await service.continue(created.id)
+    await service.send(created.id, 'first message', [], false, false, ref)
+    expect(daemon.written(resumed.sessionId!).filter((frame) => JSON.stringify(frame).includes('first message'))).toHaveLength(0)
+  })
+
+  it('creates a deferred Cursor conversation without starting or checking its CLI', async () => {
+    const created = await service.create('cursor', [], false, { deferStart: true })
+    expect(created).toMatchObject({ agent: 'cursor', sessionId: null })
+    expect(daemon.spawns).toHaveLength(0)
+  })
+
   it('starts in a persistent isolated workspace and restores its native conversation', async () => {
     const created = await service.create('claude', [])
     expect(created.workspacePath).toBe(path.join(root, 'sessions', created.id, 'workspace'))

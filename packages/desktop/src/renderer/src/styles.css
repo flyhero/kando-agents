@@ -5936,6 +5936,8 @@ body.side-panel-resizing * {
 .chat-divider::before,
 .chat-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .chat-notice[data-level='error'] { color: var(--danger); }
+.chat-initial-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chat-initial-error .button { flex-shrink: 0; }
 
 /* While the chat is read: rows in the shape of messages and replies. */
 .chat-skeleton { display: flex; flex-direction: column; gap: 10px; }

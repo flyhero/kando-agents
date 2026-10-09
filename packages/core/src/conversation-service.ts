@@ -323,7 +323,7 @@ export class ConversationService {
     agent: AgentKind,
     projectPaths: readonly string[],
     allowBypass?: boolean,
-    start: { permissionMode?: string; model?: string; effort?: string; worktree?: boolean; branch?: string } = {},
+    start: { permissionMode?: string; model?: string; effort?: string; worktree?: boolean; branch?: string; deferStart?: boolean } = {},
     routine: { id: string; title: string } | null = null,
     id: string = randomUUID()
   ): Promise<Conversation> {
@@ -371,6 +371,7 @@ export class ConversationService {
     if (model || effort) this.store.setChatOptions(id, { [agent]: { model, effort } })
     // The paths as picked, not resolved: the same strings a task stores for them.
     this.projects.remember(picked)
+    if (start.deferStart) return this.changed(this.get(id))
     this.changed(created)
     return this.start(id, agent, '', false)
   }
@@ -566,8 +567,9 @@ export class ConversationService {
     this.launching.set(id, agent)
     try {
       const current = this.get(id)
+      this.changed(current)
       if (current.sessionId) throw new Rejection('conversation-running')
-      if (launch.fork) return await this.startFork(current, agent, launch.fork)
+      if (launch.fork) return { ...await this.startFork(current, agent, launch.fork), starting: false }
       const previous = launch.fresh ? null : this.store.latestStage(id, agent)
       // Kando picks a Claude session id before launch, so a run that died before its first prompt
       // left an id Claude never saved. Only a session that recorded messages can be resumed, and
@@ -589,9 +591,11 @@ export class ConversationService {
       }
       const stageId = randomUUID()
       const stage = this.store.startStage(id, agent, providerSessionId, this.store.maxSequence(id), stageId, launch.planOnly ?? false)
-      return await this.startChat(current, stage, saved !== null, handoffPath, launch.readable ?? [])
+      return { ...await this.startChat(current, stage, saved !== null, handoffPath, launch.readable ?? []), starting: false }
     } finally {
       this.launching.delete(id)
+      const current = this.store.get(id)
+      if (current) this.changed(current)
       this.capacityReleased?.()
     }
   }
@@ -810,9 +814,10 @@ export class ConversationService {
     }
   }
 
-  // `ref` names the message, for a sender that must not send it twice (see ChatHost.send).
+  // A retry may resume in a new stage; its ref still names the original message.
   async send(id: string, text: string, imageIds: readonly string[] = [], queue = false, steer = false, ref?: string): Promise<void> {
     this.get(id)
+    if (ref && this.sentRef(id, ref, 0)) return
     const note = this.switchNote(id)
     await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer, ref)
     if (note) this.store.setSwitchedBranches(id, {})
@@ -1129,7 +1134,7 @@ export class ConversationService {
     // A suggestion is for the idle composer; one the settings turned off since is not shown.
     const suggestion = turn === 'idle' && this.promptSuggestions ? this.chats.suggestion(conversation.id) : null
     const request = turn ? this.chats.request(conversation.id) : null
-    return { ...conversation, chat: turn ? { turn, ...(suggestion ? { suggestion } : {}), ...(request ? { request } : {}) } : null, chatOptions }
+    return { ...conversation, starting: this.launching.has(conversation.id), chat: turn ? { turn, ...(suggestion ? { suggestion } : {}), ...(request ? { request } : {}) } : null, chatOptions }
   }
 
   private changed(value: Conversation): Conversation {

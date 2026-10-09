@@ -9,6 +9,12 @@ const base: Conversation = {
 const label = (patch: Partial<Conversation>) => conversationState({ ...base, ...patch })
 
 describe('conversationState', () => {
+  it('shows startup while the CLI has no session or is still initializing', () => {
+    expect(label({ starting: true })).toMatchObject({ label: '启动中', running: true, failed: false })
+    expect(label({ starting: true, sessionId: 's', chat: { turn: 'idle' } }).label).toBe('启动中')
+    expect(conversationGlyph({ ...base, starting: true }, false)).toBe('running')
+  })
+
   it('tells an agent that waits on the user from one that works', () => {
     expect(label({ sessionId: 's', chat: { turn: 'running' } }).label).toBe('运行中')
     expect(label({ sessionId: 's', chat: { turn: 'awaiting' } }).label).toBe('等待确认')

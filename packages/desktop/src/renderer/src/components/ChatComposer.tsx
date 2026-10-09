@@ -18,6 +18,7 @@ import { SchedulePicker } from './SchedulePicker'
 import { createSchedule } from '../schedules'
 import { ChatMessageRelay } from './chat-message-relay'
 import { composerDraft, saveComposerDraft } from '../composer-drafts'
+import { useInitialMessages } from '../initial-messages'
 
 // Enter sends and Shift+Enter breaks the line; Enter while an input method is composing picks a
 // candidate instead.
@@ -203,6 +204,7 @@ function QueuedList({ queue, held, steerable, ...actions }: {
 // the running stage's, for the options row.
 export function ChatComposer({ conversation, state }: { conversation: Conversation; state: StateItem | null }) {
   const { id } = conversation
+  const initialMessage = useInitialMessages((messages) => messages[id])
   const surface = useChatSurface()
   const beginRelay = useContext(ChatMessageRelay)
   const { value, setText, setValue } = useMentionedText(composerDraft(id))
@@ -239,8 +241,9 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   // An older core takes a message only between turns.
   const queueable = optionsSupported && working
   const stopped = !running
-  const starting = stopped && busy
-  const canTake = (idle || queueable || stopped) && !busy && !surface.sendBlocker && attached.uploading === 0
+  const starting = Boolean(conversation.starting) || (stopped && busy) || Boolean(initialMessage)
+  const initialHint = initialMessage ? initialMessage.phase === 'failed' ? '请先重试上面的首条消息' : initialMessage.phase === 'sending' ? '正在发送首条消息…' : `正在启动 ${AGENT_LABEL[conversation.agent]}…` : null
+  const canTake = (idle || queueable || stopped) && !busy && !starting && !surface.sendBlocker && attached.uploading === 0
   const canSend = canTake && (text.trim() !== '' || attached.images.length > 0 || quotes.length > 0)
   // What the agent guesses comes next, as Claude Code shows it: grey in the empty input, Tab or →
   // takes it, typing anything else puts it away for good.
@@ -340,7 +343,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
           {...mentionMenu.inputProps}
           readOnly={starting}
           placeholder={
-            surface.sendBlocker ?? suggestion ?? (idle || stopped ? `给 Agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
+            surface.sendBlocker ?? initialHint ?? suggestion ?? (idle || stopped ? `给 Agent 发消息，Enter 发送，Shift+Enter 换行${commandEntries.length > 0 ? '，/ 选命令' : ''}${mentionsSupported ? '，@ 引用文件' : ''}`
               : queueable ? `${turn === 'awaiting' ? '先回答上面的请求，' : ''}也可以写下一条，Enter 排到回合结束后发送${steerable ? '，⌘Enter 立刻插入' : ''}；Esc 中断`
               : turn === 'awaiting' ? '先回答上面的请求' : 'Agent 正在处理，可以先写下一条；Esc 中断')
           }
@@ -406,7 +409,7 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
             <StopIcon />
           </button>
         ) : (
-          <button type="button" className="chat-input-button" data-tooltip-side="top-end" aria-label="发送（Enter）" data-tooltip={starting ? `正在启动 ${AGENT_LABEL[conversation.agent]}…` : '发送（Enter）'} disabled={!canSend} onClick={() => void send()}>
+          <button type="button" className="chat-input-button" data-tooltip-side="top-end" aria-label="发送（Enter）" data-tooltip={initialHint ?? (starting ? `正在启动 ${AGENT_LABEL[conversation.agent]}…` : '发送（Enter）')} disabled={!canSend} onClick={() => void send()}>
             <EnterIcon />
           </button>
         )}

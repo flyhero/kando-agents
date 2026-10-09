@@ -1,5 +1,5 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
+import { isBrowserTool, isPlanApproval, isPreviewTool, toolImagePath, type AgentKind, type ChatItem, type Conversation, type ConversationStage } from '@kando/protocol'
 import { firstBrowserCall, shouldOpenBrowser } from '../browser-state'
 import { ChatBrowserCard, ChatShotCard } from './ChatBrowserCard'
 import { foldRowKeys, chatBlocks, dropChat, finalReplies, itemKey, pathShortener, prependChatPage, previousTodos, setChatPage, thoughtDurations, timeline, useChat, type ChatBlock, type TimelineEntry, type TurnFile } from '../chat-state'
@@ -33,6 +33,8 @@ import { effortLabel } from './ChatOptionsBar'
 import { ChatMessageRelay, useMessageRelay } from './chat-message-relay'
 import { cssFontFamily } from '../system-fonts'
 import { freshKeys } from '../chat-motion'
+import { acknowledgeInitialMessage, sendInitialMessage, useInitialMessages, type InitialMessage } from '../initial-messages'
+import { Spinner } from './Spinner'
 import { ArrowDownIcon, ChevronDownIcon, ChevronRightIcon, FileChangesIcon, AgentIcon, ForkIcon } from './icons'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
@@ -186,7 +188,7 @@ function UserQuotes({ quotes }: { quotes: ReturnType<typeof parseQuotes>['quotes
 }
 
 // A long message the user sent, such as a task's first prompt, shows its start until opened.
-function UserMessage({ item }: { item: UserItem }) {
+function UserMessage({ item, pending = false }: { item: UserItem; pending?: boolean }) {
   const [open, setOpen] = useDisclosure(`message:${itemKey(item)}`)
   const { quotes, body } = parseQuotes(item.text)
   const long = body.split('\n').length > 12 || body.length > 1200
@@ -205,7 +207,29 @@ function UserMessage({ item }: { item: UserItem }) {
           </button>
         </div>
       )}
-      <UserMessageFooter item={item} />
+      {!pending && <UserMessageFooter item={item} />}
+    </>
+  )
+}
+
+function InitialMessageEntry({ id, agent, message }: { id: string; agent: AgentKind; message: InitialMessage }) {
+  const rpc = useCore((state) => state.rpc)
+  return (
+    <>
+      <div className="chat-entry" data-user>
+        <UserMessage pending item={{ kind: 'user', id: `u:${message.ref}`, stageId: 'pending', revision: 0, at: message.at, text: message.text, images: message.images }} />
+      </div>
+      {message.phase === 'failed' ? (
+        <div className="chat-initial-error chat-notice" data-level="error" role="alert">
+          <span>首条消息未发送：{message.error}</span>
+          <button type="button" className="button ghost" disabled={!rpc} onClick={() => { if (rpc) void sendInitialMessage(id, rpc) }}>重试</button>
+        </div>
+      ) : (
+        <div className="chat-working" role="status">
+          <Spinner />
+          <span>{message.phase === 'starting' ? `正在启动 ${AGENT_LABEL[agent]}…` : '正在发送首条消息…'}</span>
+        </div>
+      )}
     </>
   )
 }
@@ -442,6 +466,7 @@ function Block({ conversationId, block, task, replies, fresh }: { conversationId
 // unless another is given, as a task's chat does.
 export function ConversationChat({ conversation, surface, onHandoff }: { conversation: Conversation; surface?: ChatSurface; onHandoff?: () => void }) {
   const { id } = conversation
+  const initialMessage = useInitialMessages((messages) => messages[id])
   const width = usePreferences((s) => s.chatWidth)
   const fontSize = usePreferences((s) => s.chatFontSize)
   const font = usePreferences((s) => s.chatFont)
@@ -506,6 +531,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
   }, [rpc, id, conversation.sessionId])
 
   const items = page?.items ?? NO_ITEMS
+  useEffect(() => acknowledgeInitialMessage(id, items), [id, items])
   const entries = useMemo(() => {
     // A plan shows with its approval; the call's own card would only repeat it.
     const plans = new Set(items.flatMap((item) =>
@@ -729,7 +755,7 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
         }}
       >
         {page?.before && <button type="button" className="link-button chat-older" onClick={() => void loadOlder()}>加载更早的聊天记录</button>}
-        {!page && <ChatSkeleton />}
+        {!page && !initialMessage && <ChatSkeleton />}
         {blocks.map((block, index) => {
           const next = blocks[index + 1]
           const sentAt = userAt(block)
@@ -746,6 +772,9 @@ export function ConversationChat({ conversation, surface, onHandoff }: { convers
             </Fragment>
           )
         })}
+        {initialMessage && !items.some((item) => item.kind === 'user' && item.id === `u:${initialMessage.ref}`) && (
+          <InitialMessageEntry id={id} agent={conversation.agent} message={initialMessage} />
+        )}
         {(turn === 'running' || turn === 'awaiting') && (
           <ChatWorking
             phase={running.phase}

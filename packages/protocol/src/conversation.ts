@@ -27,6 +27,8 @@ export const Conversation = z.object({
   projectPaths: z.array(z.string()),
   managedWorkspace: z.boolean(),
   sessionId: z.string().nullable(),
+  // Includes CLI checks and handshake, before the agent can take a message.
+  starting: z.boolean().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
   // How the agent last stopped: code is null when it was stopped rather than exiting on its own.

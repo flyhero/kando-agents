@@ -20,6 +20,7 @@ import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
 import { DraftBranchPicker, useProjectBranches } from './DraftBranchPicker'
 import { composerDraft, saveComposerDraft } from '../composer-drafts'
+import { keepInitialMessage, sendInitialMessage } from '../initial-messages'
 
 // A new conversation while chats are the default: the agent and projects are picked on the page,
 // and the first message creates the conversation and starts the agent, so none is left empty.
@@ -46,6 +47,7 @@ export function ConversationDraft() {
   // Each agent's models, asked for once it is picked; absent while asking, null when core cannot say.
   const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
   const rpc = useCore((s) => s.rpc)
+  const deferStart = rpc?.features.includes('deferred-conversation-start') ?? false
   const optionsSupported = useChatOptionsSupported()
   const imagesSupported = useChatImagesSupported()
   const worktreesSupported = useConversationWorktreesSupported()
@@ -107,10 +109,9 @@ export function ConversationDraft() {
     const chosen = optionsSupported
       ? { permissionMode: mode ?? undefined, ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) }
       : {}
-    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(inWorktree ? { worktree: true } : {}), ...(startBranch ? { branch: startBranch } : {}), ...startOptions(), ...chosen }))
+    return perform((rpc) => rpc.call('conversations.create', { agent, projectPaths, ...(deferStart ? { deferStart: true } : {}), ...(inWorktree ? { worktree: true } : {}), ...(startBranch ? { branch: startBranch } : {}), ...startOptions(), ...chosen }))
   }
-  // Created once the agent is ready, then sent before the page gives way to the conversation, so
-  // a start that fails leaves the message here to try again.
+  // Open before launching; the first message keeps its own delivery and retry state.
   const send = async () => {
     const expanded = commandMenu.expand(written)
     if (expanded !== null) {
@@ -121,6 +122,14 @@ export function ConversationDraft() {
     setBusy(true)
     const created = await create()
     if (created) {
+      if (deferStart && rpc) {
+        keepInitialMessage(created.id, written.trim(), attached.images)
+        saveComposerDraft(null, { text: '', mentions: [] })
+        useCore.setState((state) => ({ conversations: { ...state.conversations, [created.id]: created } }))
+        selectConversation(created.id)
+        void sendInitialMessage(created.id, rpc)
+        return
+      }
       const images = attached.images.map((image) => image.id)
       const sent = await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: written.trim(), ...(images.length ? { images } : {}) }))
       if (sent) saveComposerDraft(null, { text: '', mentions: [] })

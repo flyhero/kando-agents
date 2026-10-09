@@ -56,7 +56,8 @@ const ConversationRef = z.object({ id: z.string().uuid() })
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview'] as const
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start'] as const
+// deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
 // client without it shows the conversations they opened among the others, since it does not read routineId.
 // conversation-fork: a free conversation can be forked at one of its messages into a new one (conversations.fork).
@@ -155,6 +156,7 @@ export const rpcMethods = {
       branch: z.string().trim().min(1).max(500).optional(),
       allowBypass: AllowBypass,
       permissionMode: ChatPermissionMode.optional(),
+      deferStart: z.boolean().optional(),
       model: z.string().trim().min(1).max(200).optional(),
       effort: z.string().trim().min(1).max(200).optional()
     }),
@@ -191,6 +193,7 @@ export const rpcMethods = {
       text: z.string().trim().max(100000),
       images: z.array(AttachmentId).max(MAX_CHAT_IMAGES).optional(),
       queue: z.boolean().optional(),
+      ref: z.string().uuid().optional(),
       steer: z.boolean().optional()
     }).refine((params) => params.text !== '' || (params.images?.length ?? 0) > 0, { message: 'a message needs text or an image' }),
     result: Ok

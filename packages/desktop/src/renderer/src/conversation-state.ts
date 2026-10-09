@@ -9,7 +9,7 @@ export type ConversationGlyph = 'awaiting' | 'running' | 'failed' | 'unseen' | '
 export function conversationGlyph(conversation: Conversation, unseen: boolean): ConversationGlyph {
   const state = conversationState(conversation)
   if (conversation.sessionId && conversation.chat?.turn === 'awaiting') return 'awaiting'
-  if (state.running && conversation.chat?.turn !== 'idle') return 'running'
+  if (state.running && (conversation.starting || conversation.chat?.turn !== 'idle')) return 'running'
   if (state.failed) return 'failed'
   return unseen ? 'unseen' : 'idle'
 }
@@ -32,6 +32,7 @@ export function timeAgo(at: number, now: number): string {
 // last failed, is all there is to say.
 export function conversationState(conversation: Conversation): ConversationState {
   const { sessionId, lastExit, chat } = conversation
+  if (conversation.starting) return { label: '启动中', running: true, failed: false, detail: '正在准备 Agent，完成后发送消息' }
   if (sessionId && chat?.turn === 'awaiting') return { label: '等待确认', running: true, failed: false, detail: 'Agent 在等你允许或回答' }
   if (sessionId && chat?.turn === 'running') return { label: '运行中', running: true, failed: false, detail: null }
   // A question the agent asked in passing, still open after its turn.
