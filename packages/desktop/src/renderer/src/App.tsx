@@ -1,6 +1,6 @@
 import { onBrowserShortcut } from './desktop-bridge'
 import { useEffect } from 'react'
-import { dismissError, setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
+import { setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
 import { NewTaskDialog } from './components/NewTaskDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { SourceInboxView } from './components/SourceInboxView'
@@ -25,6 +25,7 @@ import { RoutinesEntry } from './components/RoutinesEntry'
 import { AttentionEntry } from './components/AttentionEntry'
 import { AttentionView } from './components/AttentionView'
 import { WindowBrand } from './components/WindowBrand'
+import { ErrorToast } from './components/ErrorToast'
 import { usePreferences } from './preferences'
 import { usePortPolling } from './port-state'
 
@@ -173,14 +174,7 @@ export function App() {
       <StatusBar />
       {newTaskOpen && <NewTaskDialog />}
       {loginOpen && <SourceLoginDialog />}
-      {error && !newTaskOpen && (
-        <div className="toast" role="alert">
-          <span>{error}</span>
-          <button type="button" className="button ghost" onClick={dismissError}>
-            知道了
-          </button>
-        </div>
-      )}
+      {error && !newTaskOpen && <ErrorToast message={error} />}
     </div>
   )
 }

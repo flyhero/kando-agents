@@ -4236,21 +4236,48 @@ body.side-panel-resizing * {
 
 .toast {
   position: fixed;
-  bottom: 44px;
+  z-index: 100;
+  bottom: 48px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: var(--text);
-  color: var(--bg);
-  border-radius: var(--radius);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+  gap: 8px;
+  width: max-content;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  line-height: 1.5;
+  pointer-events: none;
+  animation: toast-in 0.18s ease-out;
 }
 
-.toast .button {
-  color: inherit;
+.toast-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--danger);
+}
+
+.toast-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.toast-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
 }
 
 /* Task sources: the sidebar entry, the inbox pane, the link on imported tasks. */
