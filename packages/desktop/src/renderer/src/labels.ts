@@ -79,14 +79,14 @@ const REASON_TEXT: Record<string, string> = {
   'worktree-alone': '有只在它里面的提交',
   'worktree-not-found': '找不到这个 worktree，可能已经删了',
   'worktree-in-use': 'Agent 正在里面工作',
-  'uncommitted-changes': '有未提交的改动，先提交或暂存再切换',
+  'uncommitted-changes': '有未提交的改动，请先提交或暂存',
   'branch-elsewhere': '这个分支已在另一个 worktree 里检出',
   'branch-not-found': '找不到这个分支',
   'branch-switch-failed': '切换分支失败',
   'invalid-branch-name': '分支名不合法',
   'branch-name-taken': '已经有同名的分支',
   'git-no-changes': '没有可以提交的改动',
-  'git-no-branch': '当前处于分离 HEAD，不能推送分支',
+  'git-no-branch': '当前没有检出的本地分支，请先切换或新建分支',
   'git-no-remote': '当前分支没有 upstream，项目也没有 origin',
   'invalid-start': '起点必须是一个分支',
   'start-not-found': '找不到选的起点分支，请在任务详情里重新选择',
@@ -170,7 +170,8 @@ const REASON_WITH_DETAIL: Record<string, string> = {
   // Chromium's own word on it (net::ERR_NAME_NOT_RESOLVED, a certificate), which says what to fix.
   'browser-navigation-failed': '页面打不开',
   'git-commit-failed': '提交失败',
-  'git-push-failed': '提交已经保留在本地，但推送失败'
+  'git-push-failed': '提交已经保留在本地，但推送失败',
+  'git-operation-failed': 'Git 操作失败'
 }
 
 export function reasonText(reason: string, fallback: string): string {

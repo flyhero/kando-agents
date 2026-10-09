@@ -80,6 +80,7 @@ export type CoreState = {
   conversationInspectorTab: InspectorTab
   // The plan its plan tab shows, by item key; null for the newest.
   conversationPlan: string | null
+  gitRevision: number
   inspectorFile: InspectorFile | null
   // The hosted browser as core last reported it; null until core says, or on a core without one.
   browser: BrowserStatus | null
@@ -156,6 +157,7 @@ export const useCore = create<CoreState>()(() => ({
   conversationInspectorOpen: false,
   conversationInspectorTab: 'changes',
   conversationPlan: null,
+  gitRevision: 0,
   inspectorFile: null,
   browser: null,
   awake: null,
@@ -778,6 +780,7 @@ export function startCoreConnection(): void {
         let changedSchedules: ScheduledRun[] | null = null
         let changedRoutines: Routine[] | null = null
         useCore.setState({ attentionSummaryLoading: true, attentionSummaryError: null })
+        rpc.on('git.changed', () => useCore.setState((s) => ({ gitRevision: s.gitRevision + 1 })))
         rpc.on('tasks.changed', ({ task }) => {
           if (!initialized) taskChanges.set(task.id, task)
           useCore.setState((s) => ({ tasks: { ...s.tasks, [task.id]: task } }))

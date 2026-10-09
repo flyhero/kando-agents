@@ -110,6 +110,24 @@ export class ConversationService {
   // Core's chat settings say; main hands them over before any stage starts.
   private promptSuggestions = false
   private readonly launching = new Map<string, AgentKind>()
+  private readonly gitSending = new Map<string, number>()
+  private gitPreparation: (<T>(dirs: readonly string[], run: () => Promise<T>) => Promise<T>) | null = null
+  setGitPreparation(prepare: <T>(dirs: readonly string[], run: () => Promise<T>) => Promise<T>): void { this.gitPreparation = prepare }
+  private gitGuard: ((dirs: readonly string[]) => Promise<void>) | null = null
+
+  isGitPending(id: string): boolean { return this.launching.has(id) || this.gitSending.has(id) }
+
+  setGitGuard(guard: (dirs: readonly string[]) => Promise<void>): void { this.gitGuard = guard }
+
+  async recordGitChange(id: string, project: string, branch: string, resetStart: boolean): Promise<void> {
+    const conversation = this.get(id)
+    if (resetStart && !conversation.taskId) {
+      const head = await folderHead(project)
+      if (head) this.store.setProjectStart(id, project, head)
+    }
+    this.store.setSwitchedBranches(id, { ...this.store.switchedBranches(id), [project]: branch })
+    this.changed(this.get(id))
+  }
   private maxConcurrentAgents = 20
   private agentConcurrency: Partial<Record<AgentKind, number>> = {}
   private capacityReleased: (() => void) | null = null
@@ -348,11 +366,15 @@ export class ConversationService {
     if (branch && !primary) throw new Rejection('missing-repo', 'a branch needs a project')
     // The primary's branch: in a worktree, where its branch starts (a remote one fetched first);
     // in the project itself, switched to before anything else, so a refusal makes nothing.
-    const primaryStart = branch && primary && worktreesRoot ? (await resolveStart(primary, branch, null, Date.now())).commit : undefined
-    if (branch && primary && !worktreesRoot) await switchProjectBranch(primary, branch)
-    const projects = worktreesRoot
-      ? await Promise.all((await prepareConversationWorktrees(id, resolved.projects, worktreesRoot, primaryStart)).map((dir) => realpath(dir)))
-      : resolved.projects
+    const prepare = async () => {
+      const primaryStart = branch && primary && worktreesRoot ? (await resolveStart(primary, branch, null, Date.now())).commit : undefined
+      if (branch && primary && !worktreesRoot) await switchProjectBranch(primary, branch)
+      return worktreesRoot
+        ? await Promise.all((await prepareConversationWorktrees(id, resolved.projects, worktreesRoot, primaryStart)).map((dir) => realpath(dir)))
+        : resolved.projects
+    }
+    const projects = this.gitPreparation && (branch || worktree)
+      ? await this.gitPreparation(resolved.projects, prepare) : await prepare()
     let workspace: string
     if (projects.length === 0) {
       workspace = path.join(this.sessionsRoot, id, 'workspace')
@@ -590,6 +612,7 @@ export class ConversationService {
     this.launching.set(id, agent)
     try {
       const current = this.get(id)
+      await this.gitGuard?.(current.projectPaths)
       this.changed(current)
       if (current.sessionId) throw new Rejection('conversation-running')
       if (launch.fork) return { ...await this.startFork(current, agent, launch.fork), starting: false }
@@ -853,11 +876,14 @@ export class ConversationService {
   }
 
   private async sendNow(id: string, text: string, imageIds: readonly string[], queue: boolean, steer: boolean, ref?: string): Promise<void> {
-    this.get(id)
-    if (ref && this.sentRef(id, ref, 0)) return
-    const note = this.switchNote(id)
-    await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer, ref)
-    if (note) this.store.setSwitchedBranches(id, {})
+    this.gitSending.set(id, (this.gitSending.get(id) ?? 0) + 1)
+    try {
+      await this.gitGuard?.(this.get(id).projectPaths)
+      if (ref && this.sentRef(id, ref, 0)) return
+      const note = this.switchNote(id)
+      await this.chats.send(id, note ? `${note}\n\n${text}` : text, await this.chatImages(imageIds), queue, steer, ref)
+      if (note) this.store.setSwitchedBranches(id, {})
+    } finally { const pending = (this.gitSending.get(id) ?? 1) - 1; if (pending) this.gitSending.set(id, pending); else this.gitSending.delete(id) }
   }
 
   private async withCursorAction<T>(id: string, action: () => Promise<T>): Promise<T> {
@@ -959,8 +985,11 @@ export class ConversationService {
   }
 
   async sendQueued(id: string, ref?: string, now = false): Promise<void> {
-    this.get(id)
-    await this.chats.sendQueued(id, ref, now)
+    this.gitSending.set(id, (this.gitSending.get(id) ?? 0) + 1)
+    try {
+      await this.gitGuard?.(this.get(id).projectPaths)
+      await this.chats.sendQueued(id, ref, now)
+    } finally { const pending = (this.gitSending.get(id) ?? 1) - 1; if (pending) this.gitSending.set(id, pending); else this.gitSending.delete(id) }
   }
 
   // Asks the user, in the running chat, whether the browser may open a site; the card stays

@@ -77,6 +77,17 @@ describe('ConversationService', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it('does not start or send an agent turn while Git holds its repository', async () => {
+    const created = await service.create('claude', [], false, { deferStart: true })
+    service.setGitGuard(async () => { throw new Error('Git is busy') })
+    await expect(service.continue(created.id)).rejects.toThrow('Git is busy')
+    expect(daemon.spawns).toHaveLength(0)
+    expect(service.get(created.id).starting).toBe(false)
+    await expect(service.send(created.id, 'start')).rejects.toThrow('Git is busy')
+    expect(service.isGitPending(created.id)).toBe(false)
+    expect(daemon.spawns).toHaveLength(0)
+  })
+
   it('commits and pushes only a conversation project, while its agent is idle', async () => {
     const repo = path.join(root, 'app')
     const remote = path.join(root, 'origin.git')

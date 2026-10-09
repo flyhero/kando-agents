@@ -11,6 +11,7 @@ export type BranchTarget = { kind: 'task' | 'conversation'; id: string }
 // Asked again on open, when the window regains focus, whenever the task or conversation changes
 // (every agent turn and exit) and when the panel opens. An older core without the method shows nothing.
 export function useProjectHeads(target: BranchTarget, updatedAt: number, opened: number): ProjectHead[] {
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const key = `${target.kind}:${target.id}`
   const [heads, setHeads] = useState<{ key: string; heads: ProjectHead[] }>({ key: '', heads: [] })
@@ -33,7 +34,7 @@ export function useProjectHeads(target: BranchTarget, updatedAt: number, opened:
     return () => {
       current = false
     }
-  }, [rpc, key, updatedAt, focusCount, opened])
+  }, [rpc, key, updatedAt, focusCount, opened, gitRevision])
   return heads.key === key ? heads.heads : []
 }
 

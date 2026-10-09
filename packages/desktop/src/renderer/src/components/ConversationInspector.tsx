@@ -1,8 +1,9 @@
+import { GitInspector } from './GitInspector'
 import { useEffect, useState } from 'react'
 import type { Conversation, FolderChanges } from '@kando/protocol'
 import { pathShortener, usePlans } from '../chat-state'
 import { clearInspectorFile, setConversationInspectorOpen, setConversationInspectorTab, showConversationPlan, showInspectorFile, useCore } from '../core-store'
-import { BranchStatusDetails, ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
+import { ProjectGroups, ProjectRow, useProjectHeads } from './BranchStatus'
 import { ChatPlanView } from './ChatPlan'
 import { ChangedFiles, CommitList, FileDiffView, GIT_TABS, InspectorPanel, useFocusCount, type InspectorTab } from './Inspector'
 import { projectName } from './ProjectPicker'
@@ -13,6 +14,7 @@ import { EMPTY_FILE_TABS, updateFileTabs, useFileTabs } from '../file-tabs'
 // Read again whenever the conversation changes (every agent turn and exit), the window regains
 // focus, or the user refreshes. An older core without the method has nothing to show.
 export function useFolderChanges(id: string, updatedAt: number, refreshCount: number): FolderChanges[] | null {
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const focusCount = useFocusCount()
   const [changes, setChanges] = useState<{ id: string; changes: FolderChanges[] } | null>(null)
@@ -27,7 +29,7 @@ export function useFolderChanges(id: string, updatedAt: number, refreshCount: nu
     return () => {
       current = false
     }
-  }, [rpc, id, updatedAt, focusCount, refreshCount])
+  }, [rpc, id, updatedAt, focusCount, refreshCount, gitRevision])
   return changes?.id === id ? changes.changes : null
 }
 
@@ -64,6 +66,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
 }) {
   const conversationId = conversation.id
   const files = useFileTabs((state) => state[conversationId] ?? EMPTY_FILE_TABS)
+  const gitRevision = useCore((state) => state.gitRevision)
   const rpc = useCore((state) => state.rpc)
   const wanted = useCore((state) => state.conversationInspectorTab)
   const selectedPlan = useCore((state) => state.conversationPlan)
@@ -77,6 +80,9 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
     updateFileTabs(conversationId, (state) => state.maximized ? { ...state, maximized: false } : state)
   }, [conversationId])
   const [refreshCount, setRefreshCount] = useState(0)
+  const [gitMaximized, setGitMaximized] = useState(false)
+  useEffect(() => { setGitMaximized(false) }, [wanted, conversation.id])
+
   const selected = useCore((state) => state.inspectorFile?.kind === 'conversation' && state.inspectorFile.id === conversation.id ? state.inspectorFile : null)
   const changes = useFolderChanges(conversation.id, conversation.updatedAt, refreshCount)
   const heads = useProjectHeads({ kind: 'conversation', id: conversation.id }, conversation.updatedAt, refreshCount)
@@ -89,7 +95,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
   return (
     <InspectorPanel
       label="会话检查器"
-      maximized={tab === 'files' && files.maximized}
+      maximized={(tab === 'files' && files.maximized) || (tab === 'branch' && gitMaximized)}
       ratio={widthRatio}
       onRatioChange={onWidthRatioChange}
       tabs={tabs}
@@ -106,7 +112,7 @@ export function ConversationInspector({ conversation, widthRatio, onWidthRatioCh
       ) : tab === 'plan' ? (
         <ChatPlanView conversationId={conversation.id} plans={plans} selected={selectedPlan} onSelect={showConversationPlan} />
       ) : tab === 'branch' ? (
-        heads.some((head) => head.branch) ? <BranchStatusDetails heads={heads} /> : <p className="inspector-empty muted">这个会话的项目不在 git 仓库里，没有分支。</p>
+        <GitInspector target={{ kind: 'conversation', id: conversation.id }} heads={heads} updatedAt={conversation.updatedAt} refresh={refreshCount} maximized={gitMaximized} onMaximize={() => setGitMaximized((value) => !value)} />
       ) : selected && rpc ? (
         <FileDiffView
           file={pathShortener([selected.project])(selected.file)}

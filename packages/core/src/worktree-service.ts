@@ -108,6 +108,8 @@ async function walkedSize(root: string): Promise<number | null> {
 export class WorktreeService {
   private readonly sizes = new Map<string, { bytes: number; at: number }>()
   private counting = false
+  private gitRemoval: (<T>(dirs: readonly string[], run: () => Promise<T>) => Promise<T>) | null = null
+  setGitRemoval(remove: <T>(dirs: readonly string[], run: () => Promise<T>) => Promise<T>): void { this.gitRemoval = remove }
 
   constructor(
     private readonly root: string,
@@ -143,7 +145,11 @@ export class WorktreeService {
         results.push({ path: worktree.path, removed: false, reason: blocker })
         continue
       }
-      results.push(await this.remove(worktree, task))
+      try {
+        results.push(this.gitRemoval ? await this.gitRemoval([worktree.path], () => this.remove(worktree, task)) : await this.remove(worktree, task))
+      } catch (error) {
+        results.push({ path: worktree.path, removed: false, reason: error instanceof Rejection ? error.reason : 'worktree-failed' })
+      }
     }
     this.changed()
     return results
