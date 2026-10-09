@@ -148,7 +148,6 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
     ? state.permissionModes
     : [...state.permissionModes.filter((mode) => mode !== 'bypass'), ...(allowBypass && agent !== 'cursor' ? ['bypass'] : [])]
   const model = state.models.find((each) => each.id === modelId)
-  const efforts = model?.efforts ?? []
   const modes = withCurrent(offered, permissionMode)
   const models = model || !modelId
     ? state.models
@@ -171,9 +170,8 @@ export function ChatOptionsBar({ conversation, state }: { conversation: Conversa
       <span className="chat-dock-spacer" />
       {models.length > 0 && (
         <ChatModelPicker
-          models={models.map((each) => ({ value: each.id, label: each.label, description: each.description }))}
+          models={models.map((each) => ({ value: each.id, label: each.label, description: each.description, efforts: each.efforts.map((one) => ({ value: one, label: effortLabel(one) })) }))}
           model={modelId}
-          efforts={efforts.map((each) => ({ value: each, label: effortLabel(each) }))}
           effort={effort}
           disabled={!idle}
           title={later ?? (idle ? undefined : '回合结束后才能换模型和推理强度')}

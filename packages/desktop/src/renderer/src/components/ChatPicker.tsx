@@ -7,7 +7,7 @@ export type PickerOption = { value: string; label: string; description?: string 
 // A choice in the composer's toolbar: its value as a small button as wide as its words, and a menu
 // above it. A native select is as wide as its longest option, which left most values far from their
 // arrow.
-function PickerShell({ label, spoken, tone, disabled, title, align, placement = 'above', value, children }: {
+function PickerShell({ label, spoken, tone, disabled, title, align, placement = 'above', value, onClose, children }: {
   label: string
   // The button's name for a screen reader, which cannot see the value's colour or suffix.
   spoken: string
@@ -18,11 +18,15 @@ function PickerShell({ label, spoken, tone, disabled, title, align, placement = 
   // Above in the composer, where below is the rest of it; below for one at the top of a panel.
   placement?: 'above' | 'below'
   value: ReactNode
+  onClose?: () => void
   children: (close: () => void) => ReactNode
 }) {
   const button = useRef<HTMLButtonElement>(null)
   const [at, setAt] = useState<MenuPoint | null>(null)
-  const close = useCallback(() => setAt(null), [])
+  const close = useCallback(() => {
+    setAt(null)
+    onClose?.()
+  }, [onClose])
   const open = () => {
     const box = button.current?.getBoundingClientRect()
     if (box) setAt({ x: align === 'end' ? box.right : box.left, y: placement === 'above' ? box.top : box.bottom + 4 })
@@ -109,20 +113,28 @@ export function ChatPicker({ label, value, placeholder, options, onChange, disab
   )
 }
 
-// The model and how hard it thinks, as one button: "Opus 5.5 · 高". Its menu has the model's
-// efforts as a row of chips, which keep the menu open, above the models to switch to.
-export function ChatModelPicker({ models, model, efforts, effort, onModel, onEffort, disabled = false, title }: {
-  models: readonly PickerOption[]
+export type ModelOption = PickerOption & { efforts: readonly PickerOption[] }
+
+// The model and how hard it thinks, as one button: "Opus 5.5 · 高". Its menu lists the models
+// first, then the picked one's efforts as chips pinned to its foot, so a long list cannot scroll
+// them away. Picking a model that has efforts keeps the menu open for them.
+export function ChatModelPicker({ models, model, effort, onModel, onEffort, disabled = false, title }: {
+  models: readonly ModelOption[]
   model: string | null
-  efforts: readonly PickerOption[]
   effort: string | null
   onModel: (model: string) => void
   onEffort: (effort: string) => void
   disabled?: boolean
   title?: string
 }) {
+  // A switch a running agent has yet to confirm: its efforts show, but wait for it.
+  const [picked, setPicked] = useState<string | null>(null)
+  const switching = picked !== null && picked !== model ? picked : null
+  const shown = models.find((each) => each.value === (switching ?? model))
+  const efforts = shown?.efforts ?? []
   const modelLabel = models.find((each) => each.value === model)?.label ?? '默认模型'
-  const effortLabel = efforts.find((each) => each.value === effort)?.label ?? null
+  const effortLabel = models.find((each) => each.value === model)?.efforts.find((each) => each.value === effort)?.label ?? null
+  const forget = useCallback(() => setPicked(null), [])
   return (
     <PickerShell
       label="模型和推理强度"
@@ -131,11 +143,25 @@ export function ChatModelPicker({ models, model, efforts, effort, onModel, onEff
       title={title}
       align="end"
       value={<>{modelLabel}{effortLabel && <span className="chat-picker-suffix"> · {effortLabel}</span>}</>}
+      onClose={forget}
     >
       {(close) => (
         <>
+          <div className="chat-picker-heading">模型</div>
+          {models.map((option) => (
+            <PickerItem
+              key={option.value}
+              option={option}
+              checked={option.value === (switching ?? model)}
+              onSelect={() => {
+                if (option.efforts.length === 0) close()
+                else setPicked(option.value)
+                if (option.value !== model) onModel(option.value)
+              }}
+            />
+          ))}
           {efforts.length > 0 && (
-            <>
+            <div className="chat-picker-efforts">
               <div className="chat-picker-heading">推理强度</div>
               <div className="chat-picker-chips">
                 {efforts.map((each) => (
@@ -143,8 +169,9 @@ export function ChatModelPicker({ models, model, efforts, effort, onModel, onEff
                     key={each.value}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={each.value === effort}
+                    aria-checked={switching === null && each.value === effort}
                     className="chat-picker-chip"
+                    disabled={switching !== null}
                     onClick={() => {
                       if (each.value !== effort) onEffort(each.value)
                     }}
@@ -153,21 +180,8 @@ export function ChatModelPicker({ models, model, efforts, effort, onModel, onEff
                   </button>
                 ))}
               </div>
-              <div className="menu-separator" role="separator" />
-            </>
+            </div>
           )}
-          <div className="chat-picker-heading">模型</div>
-          {models.map((option) => (
-            <PickerItem
-              key={option.value}
-              option={option}
-              checked={option.value === model}
-              onSelect={() => {
-                close()
-                if (option.value !== model) onModel(option.value)
-              }}
-            />
-          ))}
         </>
       )}
     </PickerShell>

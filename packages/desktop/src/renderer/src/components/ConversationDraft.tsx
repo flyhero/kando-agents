@@ -246,9 +246,8 @@ export function ConversationDraft() {
                     {catalog === undefined && <span className="chat-options-note muted">正在读取模型…</span>}
                     {catalog && (
                       <ChatModelPicker
-                        models={catalog.models.map((each) => ({ value: each.id, label: each.label, description: each.description }))}
+                        models={catalog.models.map((each) => ({ value: each.id, label: each.label, description: each.description, efforts: each.efforts.map((one) => ({ value: one, label: effortLabel(one) })) }))}
                         model={modelId}
-                        efforts={efforts.map((each) => ({ value: each, label: effortLabel(each) }))}
                         effort={effort}
                         disabled={busy}
                         onModel={(value) => {

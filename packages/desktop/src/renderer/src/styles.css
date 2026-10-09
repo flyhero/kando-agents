@@ -6695,7 +6695,16 @@ body.side-panel-resizing * {
 }
 .chat-picker-suffix { color: var(--text-muted); }
 .chat-picker[data-tone] .chat-picker-suffix { color: inherit; opacity: 0.8; }
-/* The model's efforts, one row of chips in the model menu. */
+/* The model's efforts, one row of chips pinned under the model list. The negative margins reach
+   past the menu's padding so the list scrolls behind the whole footer. */
+.chat-picker-efforts {
+  position: sticky;
+  bottom: -4px;
+  margin: 4px -4px -4px;
+  padding: 4px 4px 2px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
 .chat-picker-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 8px 6px; }
 .chat-picker-chip {
   padding: 2px 8px;
@@ -6707,9 +6716,10 @@ body.side-panel-resizing * {
   font-size: 12px;
   cursor: pointer;
 }
-.chat-picker-chip:hover,
+.chat-picker-chip:hover:not(:disabled),
 .chat-picker-chip:focus-visible { background: var(--surface-muted); outline: none; }
 .chat-picker-chip[aria-checked='true'] { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+.chat-picker-chip:disabled { cursor: default; opacity: 0.5; }
 .chat-picker-item { align-items: flex-start; }
 .chat-picker-item-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; }
 .chat-picker-item-label { white-space: nowrap; }
