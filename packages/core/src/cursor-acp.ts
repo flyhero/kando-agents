@@ -570,10 +570,16 @@ export class CursorAcp implements ChatDriver {
         const tool = request.data.toolCall
         // A subagent's call reaches Kando only as this request, never with its result: a card made
         // from it would run until the turn ends. Its approval stands alone, as Claude's does.
-        if (tool.toolCallId && this.items.get(`tool:${tool.toolCallId}`)?.kind === 'tool') this.tool({ ...tool, sessionUpdate: 'tool_call' }, null, at)
+        const announced = tool.toolCallId !== undefined && this.items.get(`tool:${tool.toolCallId}`)?.kind === 'tool'
+        if (announced) this.tool({ ...tool, sessionUpdate: 'tool_call' }, null, at)
         this.pending.set(id, { rawId: frame.id, itemId, kind: 'permission', options: request.data.options })
         const toolItem = tool.toolCallId ? this.items.get(`tool:${tool.toolCallId}`) : null
-        this.items.put({ id: itemId, kind: 'approval', requestId: id, tool: toolItem?.kind === 'tool' ? toolItem.name : toolName(tool, undefined), title: tool.title ?? 'Cursor 工具调用', detail: tool.rawInput === undefined ? null : clip(JSON.stringify(tool.rawInput)), toolItemId: tool.toolCallId ? `tool:${tool.toolCallId}` : null, decisions: ['allow', 'deny'], choices: request.data.options.map((option) => ({ id: option.optionId, label: option.name, decision: option.kind === 'allow_once' ? 'allow' : option.kind === 'allow_always' ? 'allowForSession' : 'deny', grants: option.kind.endsWith('_always') ? [{ kind: 'other', values: [option.name], scope: 'agent', behavior: option.kind === 'reject_always' ? 'deny' : 'allow' }] : [] })), resolution: null }, at)
+        // Cursor's reason for asking, as "Not in allowlist: rg".
+        const reason = z.array(z.looseObject({ content: z.unknown().optional() })).safeParse(tool.content).data?.map((entry) => Content.safeParse(entry.content).data?.text ?? '').find(Boolean)
+        const detail = announced ? (tool.rawInput === undefined ? null : clip(JSON.stringify(tool.rawInput))) : reason ? `子 Agent 的请求：${reason}` : '子 Agent 的请求'
+        // Cursor quotes a command in backticks; the bare command is what the request line names.
+        const title = tool.title?.match(/^`([\s\S]+)`$/)?.[1] ?? tool.title ?? 'Cursor 工具调用'
+        this.items.put({ id: itemId, kind: 'approval', requestId: id, tool: toolItem?.kind === 'tool' ? toolItem.name : toolName(tool, undefined), title, detail, toolItemId: tool.toolCallId ? `tool:${tool.toolCallId}` : null, decisions: ['allow', 'deny'], choices: request.data.options.map((option) => ({ id: option.optionId, label: option.name, decision: option.kind === 'allow_once' ? 'allow' : option.kind === 'allow_always' ? 'allowForSession' : 'deny', grants: option.kind.endsWith('_always') ? [{ kind: 'other', values: [option.name], scope: 'agent', behavior: option.kind === 'reject_always' ? 'deny' : 'allow' }] : [] })), resolution: null }, at)
         return
       }
     } else if (frame.method === 'cursor/ask_question') {

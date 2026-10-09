@@ -255,7 +255,8 @@ describe('Cursor ACP', () => {
     update(driver, { sessionUpdate: 'tool_call', toolCallId: 'task', kind: 'other', title: 'Task: Research', status: 'pending' })
     receive(driver, { id: 2, method: 'session/request_permission', params: { sessionId: 'session', toolCall: { toolCallId: 'inner', title: '`rg -n session`', kind: 'execute', status: 'pending', content: [{ type: 'content', content: { type: 'text', text: 'Not in allowlist: rg' } }] }, options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }] } })
     const inner = items(driver, 'approval')[1]!
-    expect(inner).toMatchObject({ tool: 'commandExecution', title: '`rg -n session`', toolItemId: 'tool:inner', resolution: null })
+    expect(items(driver, 'approval')[0]).toMatchObject({ title: 'cat README.md', detail: null })
+    expect(inner).toMatchObject({ tool: 'commandExecution', title: 'rg -n session', detail: '子 Agent 的请求：Not in allowlist: rg', toolItemId: 'tool:inner', resolution: null })
     send(driver, driver.respond(inner.requestId, { decision: 'allow', choice: 'allow-once' })[0])
     update(driver, { sessionUpdate: 'tool_call_update', toolCallId: 'task', status: 'completed' })
     receive(driver, { id, result: { stopReason: 'end_turn' } })

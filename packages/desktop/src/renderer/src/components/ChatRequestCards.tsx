@@ -177,7 +177,10 @@ export function ChatApprovalCard({ conversationId, item, tool }: { conversationI
           <CommandBlock command={terminal} />
           <p className="chat-request-detail muted">在 Kando 的终端面板里开一个标签运行，你能看到输出，随时可以停掉。{item.tool === TERMINAL_RUN_TOOL && item.detail ? `目录：${item.detail}` : ''}</p>
         </>
-      ) : command && tool?.input
+      ) : command && !tool
+        // A subagent's command has no call in this chat: its title is the command.
+        ? <CommandBlock command={item.title} />
+        : command && tool?.input
         ? <CommandBlock command={tool.input} />
         : tool?.input && <ChatToolInput name={tool.name} input={tool.input} />}
       <div className="chat-approve-options" role="radiogroup" aria-label="怎么回答">
