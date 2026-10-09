@@ -7397,7 +7397,9 @@ body.side-panel-resizing * {
 .chat-file-shot img { height: auto; max-height: 480px; }
 .chat-file-shot-missing { margin: 0; border-top: 1px solid var(--border); }
 
-/* The browser panel: the strip of tabs as its top bar, the address, the live picture, a status line. */
+/* The browser panel: the strip of tabs as its top bar, the address, the page, a status line. The
+   page is a native view main places over the stage; the stage marks where, and frames a tab held
+   at a size of its own. */
 .browser-side-header { padding-left: 6px; }
 .browser-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .browser-tab-strip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; }
@@ -7420,9 +7422,10 @@ body.side-panel-resizing * {
 .browser-address { display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .browser-url { flex: 1; min-width: 0; height: 28px; padding: 0 8px; font-size: 12px; border-radius: var(--radius-sm); }
 .browser-stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); }
-.browser-stage:focus-within { box-shadow: inset 0 0 0 2px var(--focus); }
-.browser-canvas { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; touch-action: none; cursor: default; }
-.browser-keys { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; resize: none; opacity: 0; pointer-events: none; }
+.browser-stage[data-held] { background: var(--surface-muted); }
+.browser-stage-frame { border: 1px solid var(--border); background: var(--bg); pointer-events: none; }
+.browser-stage-note { color: var(--text-3); font-size: 12px; }
+.browser-address .chat-picker { flex-shrink: 0; }
 .browser-status { display: flex; align-items: center; gap: 12px; min-height: 28px; padding: 0 12px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; white-space: nowrap; }
 .browser-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; color: var(--text-muted); font-size: 13px; }
 .browser-empty p { margin: 0; }

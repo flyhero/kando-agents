@@ -121,13 +121,6 @@ ipcMain.on('kando:browser-bounds', (event, bounds: unknown) => {
 ipcMain.handle('kando:browser-occluded', (_event, occluded: unknown) => {
   slot.setOccluded(occluded === true)
 })
-ipcMain.handle('kando:browser-focus', (event, request: unknown) => {
-  const parsed = z.object({ tabId: z.string(), focus: z.boolean() }).safeParse(request)
-  if (!parsed.success) return
-  const view = browserHost?.viewOf(parsed.data.tabId)
-  if (parsed.data.focus) view?.webContents.focus()
-  else event.sender.focus()
-})
 
 // Re-read on every call: core rewrites the file with a new port/token on restart.
 ipcMain.handle('kando:core-endpoint', () => readCoreEndpoint())

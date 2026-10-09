@@ -23,7 +23,6 @@ contextBridge.exposeInMainWorld('kando', {
   browserShow: (tabId: string | null): Promise<unknown> => ipcRenderer.invoke('kando:browser-show', tabId),
   browserBounds: (bounds: { x: number; y: number; width: number; height: number }): void => ipcRenderer.send('kando:browser-bounds', bounds),
   browserOccluded: (occluded: boolean): Promise<unknown> => ipcRenderer.invoke('kando:browser-occluded', occluded),
-  browserFocus: (tabId: string, focus: boolean): Promise<unknown> => ipcRenderer.invoke('kando:browser-focus', { tabId, focus }),
   onBrowserFocused: (listener: (event: unknown) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload)
     ipcRenderer.on('kando:browser-focused', handler)

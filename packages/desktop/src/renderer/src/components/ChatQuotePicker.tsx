@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { addQuote } from '../chat-quotes'
 import { selectedTextIn, type SelectedText } from '../text-selection'
 import { QuoteIcon } from './icons'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 // Text selected within one of the agent's replies offers a button over it that quotes it into
 // the input, where the user can say what about it. The selection stays the browser's own.
@@ -33,6 +34,7 @@ export function ChatQuotePicker({ conversationId, list, enabled = true }: { conv
     }
   }, [list])
 
+  useOccludesBrowser(Boolean(picked && enabled))
   if (!picked || !enabled) return null
   return createPortal(
     <button

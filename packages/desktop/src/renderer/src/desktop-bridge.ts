@@ -16,6 +16,12 @@ declare global {
       notify?(notice: unknown): Promise<unknown>
       setBadge?(count: number): Promise<unknown>
       onNotificationClick?(listener: (target: unknown) => void): () => void
+      // The built-in browser's tab on show, a native view main places over the panel.
+      browserShow?(tabId: string | null): Promise<unknown>
+      browserBounds?(bounds: { x: number; y: number; width: number; height: number }): void
+      browserOccluded?(occluded: boolean): Promise<unknown>
+      onBrowserFocused?(listener: (event: unknown) => void): () => void
+      onBrowserShortcut?(listener: (event: unknown) => void): () => void
     }
   }
 }
@@ -85,6 +91,49 @@ export function onNotificationClick(listener: (target: Notice['target']) => void
     window.kando?.onNotificationClick?.((target) => {
       const parsed = Target.safeParse(target)
       if (parsed.success) listener(parsed.data)
+    }) ?? (() => {})
+  )
+}
+
+// Whether main shows browser tabs natively: in Electron, and one new enough.
+export function canShowNativeBrowser(): boolean {
+  return window.kando?.browserShow !== undefined
+}
+
+// Which tab main puts over the panel; null takes it down.
+export function showNativeBrowserTab(tabId: string | null): void {
+  void window.kando?.browserShow?.(tabId).catch(() => {})
+}
+
+// Where the panel's stage is, in CSS pixels, for main to place the view.
+export function reportBrowserBounds(rect: { x: number; y: number; width: number; height: number }): void {
+  window.kando?.browserBounds?.({ x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+}
+
+export function setBrowserOccluded(occluded: boolean): void {
+  void window.kando?.browserOccluded?.(occluded).catch(() => {})
+}
+
+const Focused = z.object({ tabId: z.string(), focused: z.boolean() })
+
+// The native view taking or losing the keyboard, so the panel can say where keys go.
+export function onBrowserFocused(listener: (tabId: string, focused: boolean) => void): () => void {
+  return (
+    window.kando?.onBrowserFocused?.((event) => {
+      const parsed = Focused.safeParse(event)
+      if (parsed.success) listener(parsed.data.tabId, parsed.data.focused)
+    }) ?? (() => {})
+  )
+}
+
+const Shortcut = z.object({ kind: z.enum(['toggle-browser', 'settings']) })
+
+// An app shortcut pressed while a page had the keyboard; main caught it and passes it on.
+export function onBrowserShortcut(listener: (kind: 'toggle-browser' | 'settings') => void): () => void {
+  return (
+    window.kando?.onBrowserShortcut?.((event) => {
+      const parsed = Shortcut.safeParse(event)
+      if (parsed.success) listener(parsed.data.kind)
     }) ?? (() => {})
   )
 }

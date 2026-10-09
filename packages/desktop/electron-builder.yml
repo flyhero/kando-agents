@@ -15,8 +15,6 @@ extraResources:
     filter: ['*.mjs']
   - from: out/backend/node_modules/node-pty
     to: backend/node_modules/node-pty
-  - from: out/backend/node_modules/playwright-core
-    to: backend/node_modules/playwright-core
 # All native code arrives prebuilt (node-pty via bundle-backend); nothing to rebuild.
 npmRebuild: false
 mac:

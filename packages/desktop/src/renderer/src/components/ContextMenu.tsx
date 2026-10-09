@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckIcon, ChevronRightIcon } from './icons'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 export type MenuPoint = { x: number; y: number }
 
@@ -37,6 +38,7 @@ export function ContextMenu({ at, align = 'start', above = false, trigger, scrol
   onClose: () => void
   children: ReactNode
 }) {
+  useOccludesBrowser()
   const panel = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState(at)
   const [opener] = useState(() => document.activeElement)

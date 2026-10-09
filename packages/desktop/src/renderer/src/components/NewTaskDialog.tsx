@@ -14,6 +14,7 @@ import { imageFilesOf, uploadImageFiles } from '../attachment-images'
 import { AgentIcon, CloseIcon, MaximizeIcon, MoreIcon, RestoreIcon } from './icons'
 import { Popover } from './Popover'
 import { MarkdownEditor } from './MarkdownEditor'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 function PaperclipIcon() {
   return (
@@ -24,6 +25,7 @@ function PaperclipIcon() {
 }
 
 export function NewTaskDialog() {
+  useOccludesBrowser()
   const tasks = useCore((s) => s.tasks)
   const connected = useCore((s) => s.connection === 'connected')
   const error = useCore((s) => s.error)

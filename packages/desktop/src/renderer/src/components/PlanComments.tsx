@@ -5,6 +5,7 @@ import { PLAN_SELECTION_MENU, placeCommentBox } from '../plan-comment-place'
 import { selectedTextIn, type SelectedText } from '../text-selection'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
 import { CommentAddIcon } from './icons'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 // Where each comment's passage lies in the plan, by quote id, for its highlight. A range lasts
 // while the plan's text stays rendered; one whose text is gone simply marks nothing.
@@ -132,6 +133,7 @@ export function PlanComments({ conversationId, planKey, body }: { conversationId
     viewport: { width: window.innerWidth, height: window.innerHeight },
     menu: menu ? { at: menu.at, ...PLAN_SELECTION_MENU } : null
   }) : null
+  useOccludesBrowser(Boolean(draft && place))
   return (
     <>
       {draft && place && createPortal(

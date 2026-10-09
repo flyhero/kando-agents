@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { imageLabel, MAX_IMAGE_NAME_LENGTH, type TaskImage } from '@kando/protocol'
 import { useImageUrl } from '../attachment-images'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 // An image kept in core, or with `src`, one read from elsewhere (a file a reply names), whose size
 // is learned as it loads.
@@ -23,6 +24,7 @@ export function ImageViewer({
   onClose: () => void
   onRename?: (id: string, name: string) => void
 }) {
+  useOccludesBrowser()
   const dialog = useRef<HTMLDialogElement>(null)
   const ids = useId()
   const image = images[index]

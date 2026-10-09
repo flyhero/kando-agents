@@ -35,6 +35,7 @@ import { SourceSettingsSection } from './SourceSettingsSection'
 import { projectName } from './ProjectPicker'
 import { Segmented, SettingsRow, Stepper, Toggle } from './SettingsControls'
 import { PalettePicker } from './PalettePicker'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 function AppearanceSettings() {
   const theme = usePreferences((s) => s.theme)
@@ -171,10 +172,8 @@ function UsageSettings() {
 function browserStatusText(status: BrowserStatus | null): string {
   if (!status) return '正在询问…'
   switch (status.state) {
-    case 'not-installed':
-      return '还没安装，第一次使用要下载 Chromium（约 150MB）'
-    case 'installing':
-      return status.percent !== undefined ? `正在下载 ${status.percent}%` : '正在下载…'
+    case 'app-closed':
+      return '没有连上：浏览器在 Kando 应用里运行'
     case 'starting':
       return '正在启动'
     case 'ready':
@@ -187,24 +186,12 @@ function browserStatusText(status: BrowserStatus | null): string {
 function BrowserRows() {
   const status = useCore((s) => s.browser)
   const openOnTab = usePreferences((s) => s.openBrowserOnTab)
-  const [busy, setBusy] = useState(false)
-  const install = async () => {
-    setBusy(true)
-    await perform((rpc) => rpc.call('browser.install', {}))
-    setBusy(false)
-  }
-  const installable = !status || status.state === 'not-installed' || status.state === 'error'
   return (
     <>
       <SettingsRow
         label="浏览器"
-        description="聊天界面里的 Agent 用 Kando 托管的 Chromium 打开页面、截图、点击；本地开发地址直接打开，其他站点第一次访问时在对话里问你。下载到 ~/.kando/browser。"
-        control={() => (
-          <span className="settings-inline">
-            <span className="muted">{browserStatusText(status)}</span>
-            {installable && <button type="button" className="button" disabled={busy || !status} onClick={() => void install()}>{status?.state === 'error' ? '重试' : '安装'}</button>}
-          </span>
-        )}
+        description="聊天界面里的 Agent 用 Kando 应用自带的浏览器打开页面、截图、点击，页面就显示在右侧的浏览器面板里；本地开发地址直接打开，其他站点第一次访问时在对话里问你。应用关掉时 Agent 用不了浏览器。"
+        control={() => <span className="muted">{browserStatusText(status)}</span>}
       />
       <SettingsRow
         label="Agent 打开页面时自动显示浏览器"
@@ -586,6 +573,7 @@ function matches(section: Section, needle: string): boolean {
 
 // Laid out like Orca's settings: sections on the left, one section at a time on the right.
 export function SettingsPage() {
+  useOccludesBrowser()
   const sources = useCore((s) => s.sources)
   const browser = useBrowserSupported()
   const chatCommands = useChatCommandsSupported()

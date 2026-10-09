@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BrowserTab } from '@kando/protocol'
 import { ALL_TABS, fileUrl, firstBrowserCall, receiveAllBrowserTabs, receiveBrowserTabs, selectAfter, useBrowserTabs, USER_TABS } from './browser-state'
 
-const tab = (id: string, active = false): BrowserTab => ({ id, conversationId: 'c', url: 'http://localhost/', title: '', loading: false, active, userDriving: false, agentActing: false, createdAt: 1 })
+const tab = (id: string, active = false): BrowserTab => ({ id, conversationId: 'c', url: 'http://localhost/', title: '', loading: false, active, userDriving: false, agentActing: false, viewport: null, createdAt: 1 })
 
 describe('selectAfter', () => {
   it('keeps the selection while its tab is open, else follows the agent, else the newest', () => {

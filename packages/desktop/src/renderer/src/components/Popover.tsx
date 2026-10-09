@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 // A non-modal panel by its trigger. It must sit inside the same parent as the trigger (a
 // `.menu-anchor`), so a click on the trigger is not an outside click. It is laid out first where
@@ -7,6 +8,7 @@ import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 // scrolls, and keeps within the window as it grows. `align="end"` puts its right edge on the
 // trigger's, as for a trigger at the end of a row.
 export function Popover({ label, onClose, align = 'start', children }: { label: string; onClose: () => void; align?: 'start' | 'end'; children: ReactNode }) {
+  useOccludesBrowser()
   const panel = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {

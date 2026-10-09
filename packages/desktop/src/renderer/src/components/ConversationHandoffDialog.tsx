@@ -5,8 +5,10 @@ import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
 import { AgentQuotaHint, confirmQuota } from './AgentQuota'
 import { startOptions } from './ConversationActions'
+import { useOccludesBrowser } from '../browser-occlusion'
 
 export function ConversationHandoffDialog({ conversation, onClose }: { conversation: Conversation; onClose: () => void }) {
+  useOccludesBrowser()
   const dialog = useRef<HTMLDialogElement>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)

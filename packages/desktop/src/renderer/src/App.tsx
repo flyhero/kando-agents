@@ -1,3 +1,4 @@
+import { onBrowserShortcut } from './desktop-bridge'
 import { useEffect } from 'react'
 import { dismissError, setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
 import { NewTaskDialog } from './components/NewTaskDialog'
@@ -95,6 +96,13 @@ export function App() {
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [])
+
+  // The same shortcuts pressed while a browser tab has the keyboard: the page's view sees them,
+  // not this window, so main passes them on.
+  useEffect(() => onBrowserShortcut((kind) => {
+    if (kind === 'toggle-browser') toggleBrowserPanel()
+    else setSettingsOpen(!useCore.getState().settingsOpen)
+  }), [])
 
   // Files dragged anywhere but a drop target are swallowed here rather than opened by the window.
   useEffect(() => {
