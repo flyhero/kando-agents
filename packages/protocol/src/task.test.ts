@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkSavePlan, checkStart, checkStartMode, checkSubmit, isStartRef, startKind, type Task } from './task'
+import { checkChangePrimary, checkChatResume, checkContinue, checkEditProjects, checkEditStart, checkMove, checkRedo, checkSavePlan, checkStart, checkStartMode, checkSubmit, checkTaskHandoff, isStartRef, startKind, type Task } from './task'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -145,6 +145,16 @@ describe('a task in the chat view', () => {
     expect(checkChatResume(task({ ...chat, status: 'done' }), unfinished)).toBe('blocked')
     expect(checkChatResume(task({ ...chat, status: 'abandoned' }), done)).toBe('abandoned')
     expect(checkChatResume(task(ready), done)).toBe('no-chat')
+  })
+
+  it('hands a chat to another agent where a message could go on with it, once its agent is idle', () => {
+    const chat = { ...ready, conversationId: 'c' }
+    expect(checkTaskHandoff(task({ ...chat, status: 'running' }), done, 'idle')).toBeNull()
+    expect(checkTaskHandoff(task({ ...chat, status: 'review' }), done, null)).toBeNull()
+    expect(checkTaskHandoff(task({ ...chat, status: 'running' }), done, 'running')).toBe('chat-busy')
+    expect(checkTaskHandoff(task({ ...chat, status: 'running' }), done, 'awaiting')).toBe('chat-busy')
+    expect(checkTaskHandoff(task({ ...chat, status: 'abandoned' }), done, 'idle')).toBe('abandoned')
+    expect(checkTaskHandoff(task(ready), done, null)).toBe('no-chat')
   })
 
   it('keeps a plan for later only while the task cannot run', () => {

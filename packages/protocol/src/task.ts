@@ -224,6 +224,16 @@ export function checkChatResume(task: Task, dependencies: readonly Pick<Task, 's
   return task.agent ? null : 'missing-agent'
 }
 
+export type TaskHandoffBlocker = ChatResumeBlocker | 'chat-busy'
+
+// A task's chat goes to another agent where a message could go on with it, once its agent is idle:
+// the new one picks up from what was said, so a turn cut short would be lost on the way.
+export function checkTaskHandoff(task: Task, dependencies: readonly Pick<Task, 'status'>[], turn: ChatTurnActivity | null): TaskHandoffBlocker | null {
+  const blocker = checkChatResume(task, dependencies)
+  if (blocker) return blocker
+  return turn === 'running' || turn === 'awaiting' ? 'chat-busy' : null
+}
+
 export type SavePlanBlocker = 'not-pending' | 'no-chat'
 
 // Only a task that cannot run yet keeps a plan for later; a running one carries its plan out.

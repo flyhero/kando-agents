@@ -18,6 +18,7 @@ import { StatusIcon } from './StatusIcon'
 import { TaskInspector } from './TaskInspector'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskToolbar } from './TaskActions'
+import { useTaskHandoff } from './TaskHandoff'
 
 // What the task kept of a plan in its chat: saved for when it can run. An approved one reads as its
 // answer already does, so it needs no word.
@@ -30,7 +31,7 @@ function planNote(task: Task, item: PlanItem): string | null {
 // A message to a task's chat goes through the task first unless its agent is at work: the task checks
 // what it may do, lays its worktrees out and goes back to running. A planning agent is checked every
 // time, as the task's projects may change while it plans and it should follow them.
-function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolean, bypassable: boolean): ChatSurface {
+function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolean, bypassable: boolean, handoff: (() => void) | null): ChatSurface {
   const blocker = checkChatResume(task, dependencies)
   return {
     inspector: 'task',
@@ -59,7 +60,7 @@ function taskSurface(task: Task, dependencies: readonly Task[], planOnly: boolea
         }
       : null,
     planNote: (item) => planNote(task, item),
-    handoff: null,
+    handoff,
     fork: null
   }
 }
@@ -77,6 +78,9 @@ export function TaskChat({ taskId }: { taskId: string }) {
   const files = useFileTabs((state) => state[conversationId ?? ''] ?? EMPTY_FILE_TABS)
   const plans = usePlans(conversationId ?? '')
   const wire = useWireLogShown() && conversationId !== null
+  const handoff = useTaskHandoff(task)
+  const { open: openHandoff } = handoff
+  const handoffNow = handoff.available && handoff.blocker === null
 
   useEffect(() => {
     if (conversationId && !conversation) void loadConversation(conversationId)
@@ -93,8 +97,8 @@ export function TaskChat({ taskId }: { taskId: string }) {
     [task, tasks]
   )
   const surface = useMemo(
-    () => (task ? taskSurface(task, dependencies, conversation?.planOnly ?? false, bypassable) : null),
-    [task, dependencies, conversation?.planOnly, bypassable]
+    () => (task ? taskSurface(task, dependencies, conversation?.planOnly ?? false, bypassable, handoffNow ? () => openHandoff() : null) : null),
+    [task, dependencies, conversation?.planOnly, bypassable, handoffNow, openHandoff]
   )
   if (!task || !surface) {
     return null
@@ -144,6 +148,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
           />
         )}
       </div>
+      {handoff.dialog}
     </section>
   )
 }

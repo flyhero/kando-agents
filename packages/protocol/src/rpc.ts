@@ -60,7 +60,8 @@ const UsageParams = z.object({ windowKinds: z.array(z.string()).optional() })
 // file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
 // git-commit-branches: core lists the branches holding a commit (git.containing).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management', 'git-commit-branches'] as const
+// task-handoff: a task's chat can go to another agent (tasks.handoff), and one going on with another agent is handed the chat.
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management', 'git-commit-branches', 'task-handoff'] as const
 // task-launch-options: tasks.start accepts the first stage's mode, model and reasoning effort.
 // deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
@@ -141,6 +142,8 @@ export const rpcMethods = {
   'tasks.start': { params: TaskRef.extend({ allowBypass: AllowBypass }).extend(TaskLaunchOptions.shape), result: Task },
   'tasks.resumeChat': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
   'tasks.submit': { params: TaskRef, result: Task },
+  // Gives the task to another agent, which goes on with its chat at once from a handoff (see checkTaskHandoff).
+  'tasks.handoff': { params: TaskRef.extend({ agent: AgentKind, note: z.string().max(10000), allowBypass: AllowBypass }), result: Task },
   'tasks.savePlan': { params: TaskRef.extend({ stageId: z.string().uuid(), requestId: z.string().min(1).max(200) }), result: Task },
   'tasks.delete': { params: TaskRef, result: Ok },
   // Appended on the server, so uploads that finish together do not overwrite each other.

@@ -29,7 +29,7 @@ export type ChatSurface = {
   savePlan: ((item: PlanItem) => Promise<void>) | null
   // A word on a plan the chat's owner kept, or null.
   planNote(item: PlanItem): string | null
-  // Opens the handoff to the other agent; null where the chat cannot be handed off (a task's).
+  // Opens the handoff to the other agent; null where the chat cannot be handed off now.
   handoff: (() => void) | null
   // Forks the conversation at a message into a new one; null where it cannot be (a task's, or
   // a core without forks).

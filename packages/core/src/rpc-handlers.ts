@@ -143,6 +143,7 @@ export function createRpcHandlers(
       return conversationId ? userActed(conversationId, () => service.resumeChat(id, allowBypass)) : service.resumeChat(id, allowBypass)
     },
     'tasks.submit': ({ id }) => service.submit(id),
+    'tasks.handoff': ({ id, agent, note, allowBypass }) => service.handoff(id, agent, note, allowBypass),
     'tasks.savePlan': ({ id, stageId, requestId }) => service.savePlan(id, stageId, requestId),
     'tasks.delete': async ({ id }) => {
       await service.delete(id)

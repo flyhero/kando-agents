@@ -22,6 +22,7 @@ import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, InspectorIcon,
 import { Popover } from './Popover'
 import { cleanWithConfirm } from './WorktreeManager'
 import { SchedulePicker } from './SchedulePicker'
+import { useTaskHandoff, type TaskHandoff } from './TaskHandoff'
 import { createSchedule, openRunForTask, scheduleState } from '../schedules'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
@@ -304,7 +305,7 @@ function useWorktreeCleaning(task: Task): (() => void) | null {
   return () => void cleanWithConfirm(paths, paths.length > 1 ? `这个任务的 ${paths.length} 个 worktree` : '这个任务的 worktree')
 }
 
-function MoreMenu({ task }: { task: Task }) {
+function MoreMenu({ task, handoff }: { task: Task; handoff: TaskHandoff }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   const clean = useWorktreeCleaning(task)
@@ -334,6 +335,21 @@ function MoreMenu({ task }: { task: Task }) {
             复制任务 id
             <span className="menu-item-path mono">{shortTaskId(task.id)}…</span>
           </button>
+          {handoff.available && (
+            <button
+              type="button"
+              className="menu-item"
+              disabled={handoff.blocker !== null}
+              title={handoff.blocker ?? undefined}
+              onClick={() => {
+                close()
+                handoff.open()
+              }}
+            >
+              移交给其他智能体…
+              {handoff.blocker && <span className="menu-item-path">{handoff.blocker}</span>}
+            </button>
+          )}
           {clean && (
             <button
               type="button"
@@ -403,12 +419,19 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const worktree = task.repos.some((repo) => repo.worktreePath !== null)
   const hasFiles = useFileTabs((state) => (state[task.conversationId ?? '']?.tabs.length ?? 0) > 0)
   const wire = useWireLogShown()
+  const handoff = useTaskHandoff(task)
+  // A running task's agent changes only by handing its chat over; otherwise the next start or
+  // message takes the new one, which a chat already begun is handed to.
+  const handsOff = task.status === 'running' && handoff.available
   return (
     <div className="toolbar">
       <AgentPicker
         agent={task.agent}
-        locked={task.status === 'running' || task.status === 'abandoned'}
-        onChange={(agent) => void updateTask(task.id, { agent })}
+        locked={task.status === 'abandoned' || (task.status === 'running' && !handsOff)}
+        onChange={(agent) => {
+          if (!handsOff) void updateTask(task.id, { agent })
+          else if (agent) handoff.open(agent)
+        }}
       />
       {task.status === 'pending' && <StartButton task={task} dependencies={dependencies} />}
       {task.status === 'pending' && <ScheduleButton task={task} dependencies={dependencies} />}
@@ -432,11 +455,12 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       {isFinished(task.status) && <RedoButton task={task} />}
       {task.conversationId && (worktree || wire || hasFiles) && <InspectorToggle view={view} />}
       {task.conversationId && <ViewToggle view={view} />}
-      <MoreMenu task={task} />
+      <MoreMenu task={task} handoff={handoff} />
       <span className="toolbar-separator" aria-hidden="true" />
       <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectTask(null)}>
         <CloseIcon />
       </button>
+      {handoff.dialog}
     </div>
   )
 }

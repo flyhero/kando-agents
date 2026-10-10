@@ -11,6 +11,7 @@ import {
   checkStart,
   checkStartMode,
   checkSubmit,
+  checkTaskHandoff,
   imageLabel,
   isStartRef,
   MAX_CHAT_IMAGES,
@@ -382,34 +383,51 @@ export class TaskService {
   // in the worktrees (laid out again, so one the user removed comes back), on the same session. A
   // finished task goes back to running, as continuing it does.
   async resumeChat(id: string, allowBypass?: boolean): Promise<Task> {
-    const chats = this.requireChats()
     const task = this.get(id)
     const dependencies = this.dependenciesOf(task)
     const blocker = checkChatResume(task, dependencies)
     if (blocker) {
       throw new Rejection(blocker)
     }
-    const { agent } = task
-    if (!agent) {
+    if (!task.agent) {
       throw new Rejection('invalid-task')
     }
+    return this.goOnChatting(task, dependencies, task.agent, allowBypass)
+  }
+
+  // Gives a chat task to another agent, which goes on at once from a handoff of what was said.
+  async handoff(id: string, agent: AgentKind, note: string, allowBypass?: boolean): Promise<Task> {
+    const chats = this.requireChats()
+    const task = this.get(id)
+    if (agent === task.agent) throw new Rejection('conversation-same-agent')
+    const turn = task.conversationId ? (chats.get(task.conversationId).chat?.turn ?? null) : null
+    const dependencies = this.dependenciesOf(task)
+    const blocker = checkTaskHandoff(task, dependencies, turn)
+    if (blocker) throw new Rejection(blocker)
+    return this.goOnChatting(task, dependencies, agent, allowBypass, note)
+  }
+
+  // The agent is the task's from here on once it has started.
+  private async goOnChatting(task: Task, dependencies: readonly Task[], agent: AgentKind, allowBypass?: boolean, handoffNote?: string): Promise<Task> {
+    const chats = this.requireChats()
     if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
       const images = await this.images(task)
+      const kept = () => agent === task.agent ? this.get(task.id) : this.changed(this.store.update(task.id, { agent }))
       if (task.status === 'pending') {
         const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot, { refresh: false })
         await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'resume',
-          readable: images.readable, allowBypass
+          readable: images.readable, allowBypass, handoffNote
         })
-        return this.get(task.id)
+        return kept()
       }
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.readable, allowBypass
+        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.readable, allowBypass, handoffNote
       })
-      return task.status === 'running' ? this.get(task.id) : this.changed(this.save(task.id, { status: 'running', awaitingInput: false }))
+      return task.status === 'running' ? kept() : this.changed(this.save(task.id, { agent, status: 'running', awaitingInput: false }))
     })
   }
 

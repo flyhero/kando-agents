@@ -629,6 +629,11 @@ export function useFileMentionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('file-mentions') ?? false)
 }
 
+// Whether a task's chat can go to another agent (tasks.handoff).
+export function useTaskHandoffSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('task-handoff') ?? false)
+}
+
 // Whether a new conversation can work in worktrees of its projects rather than in them.
 export function useConversationWorktreesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('conversation-worktrees') ?? false)

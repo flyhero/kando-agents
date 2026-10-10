@@ -541,6 +541,32 @@ describe('TaskService', () => {
     expect(readFileSync(path.join(primary ?? '', 'draft.txt'), 'utf8')).toBe('keep me')
   })
 
+  it('hands its chat to another agent once its agent is idle, which goes on from what was said', async () => {
+    const repo = initRepo('app')
+    const running = await service.start(readyTask('Hand on', [repo]).id)
+    await expect(service.handoff(running.id, 'claude', '')).rejects.toMatchObject({ reason: 'conversation-same-agent' })
+    daemon.reply = () => {}
+    await conversations.send(running.conversationId ?? '', 'still going')
+    await expect(service.handoff(running.id, 'codex', '')).rejects.toMatchObject({ reason: 'chat-busy' })
+    daemon.emit(sessionOf(running.id), turnEnd)
+    await settle()
+    const reviewing = await handIn(running.id)
+    // Answers Codex's start like app-server: the handshake, then its thread.
+    const handing = service.handoff(reviewing.id, 'codex', 'Check the tests')
+    const codexSession = `pipe-${daemon.spawns.length + 1}`
+    const asked = (method: string) => daemon.written(codexSession).some((frame) => JSON.stringify(frame).includes(`"method":"${method}"`))
+    while (!asked('initialize')) await settle()
+    daemon.emit(codexSession, { id: 'kando-init', result: {} })
+    while (!asked('thread/start')) await settle()
+    daemon.emit(codexSession, { id: 'kando-thread', result: { thread: { id: 'thread-1' } } })
+    const handed = await handing
+    expect(handed).toMatchObject({ agent: 'codex', status: 'running' })
+    expect(conversations.get(handed.conversationId ?? '').agent).toBe('codex')
+    const file = /移交文件 (\S+?)，/.exec(JSON.stringify(daemon.written(codexSession)))?.[1] ?? ''
+    expect(readFileSync(file, 'utf8')).toEqual(expect.stringContaining('Check the tests'))
+    expect(readFileSync(file, 'utf8')).toEqual(expect.stringContaining('still going'))
+  })
+
   it('lets its chat drop an additional project, leaving that worktree on disk', async () => {
     const api = initRepo('api')
     const web = initRepo('web')
