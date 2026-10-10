@@ -358,13 +358,11 @@ export function imageMarker(image: ChatImage): string {
   return `[kando-image ${image.id} ${image.width}x${image.height}]`
 }
 const IMAGE_MARKER = /^\[kando-image ([0-9a-f]{64}\.(?:png|jpg|gif|webp)) (\d+)x(\d+)\][ \t]*$/gm
-// The images a tool's text names, and the text without the markers. An id is the picture's own
-// hash, so one named twice is one picture: logs from before 0.14.4 name Kando's screenshot twice,
-// once where its block was and once in the text the tool itself wrote.
+// The images a tool's text names, and the text without the markers.
 export function takeImageMarkers(text: string): { text: string; images: ChatImage[] } {
   const images: ChatImage[] = []
   const rest = text.replace(IMAGE_MARKER, (_line, id: string, width: string, height: string) => {
-    if (!images.some((image) => image.id === id)) images.push({ id, width: Number(width), height: Number(height) })
+    images.push({ id, width: Number(width), height: Number(height) })
     return ''
   })
   return { text: images.length ? rest.replace(/\n{3,}/g, '\n\n').trim() : text, images }

@@ -66,12 +66,6 @@ describe('image markers', () => {
     expect(taken.text).toBe('一段说明')
   })
 
-  it('takes a picture named twice once: the screenshot itself, and the tool\'s text naming it', () => {
-    const marker = imageMarker({ id, width: 1400, height: 1100 })
-    const text = `${marker}\n截图已保存，用户在对话里能看到这张图。\nhttp://127.0.0.1:47613/index.html\n${marker}`
-    expect(takeImageMarkers(text)).toEqual({ text: '截图已保存，用户在对话里能看到这张图。\nhttp://127.0.0.1:47613/index.html', images: [{ id, width: 1400, height: 1100 }] })
-  })
-
   it('returns text without markers untouched', () => {
     expect(takeImageMarkers('[kando-image nope 1x1]\nplain')).toEqual({ text: '[kando-image nope 1x1]\nplain', images: [] })
   })
