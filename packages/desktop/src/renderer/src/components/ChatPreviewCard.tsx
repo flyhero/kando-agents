@@ -50,10 +50,13 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
   const browsable = useBrowserSupported() && !isPreviewImage(path)
   const shorten = useContext(ChatPaths)
   const [generation, setGeneration] = useState(0)
+  // A page's script may focus a field as it loads, which pulls the chat to the card every time the
+  // conversation opens. The frame takes no focus until the pointer first comes over the card.
+  const [awake, setAwake] = useState(false)
   const refused = item.status === 'failed' || item.status === 'denied'
   const src = `kando-preview://file${path}?v=${generation}`
   return (
-    <div className="chat-preview" data-status={item.status}>
+    <div className="chat-preview" data-status={item.status} onPointerEnter={() => setAwake(true)}>
       <div className="chat-preview-head">
         <ChatToolIcon name={item.name} status={item.status} />
         <span className="chat-preview-title">{title ?? shorten(path)}</span>
@@ -72,7 +75,7 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
         ? <p className="chat-preview-note muted">{item.output ?? '没能展示这个文件。'}</p>
         : isPreviewImage(path)
           ? <PreviewImage key={generation} path={path} src={`${previewUrl(path)}?v=${generation}`} label={title ?? path} />
-          : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" />}
+          : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" inert={!awake} />}
     </div>
   )
 }
