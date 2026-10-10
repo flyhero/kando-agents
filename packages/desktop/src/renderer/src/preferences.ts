@@ -50,6 +50,8 @@ const Preferences = z.object({
   // Creation order preserves the task list's original behavior.
   taskSort: z.enum(TASK_SORTS).catch('created'),
   conversationGroup: z.enum(CONVERSATION_GROUPS).catch('none'),
+  // Conversation groups folded in the sidebar, by grouping and group ("project:group:kando").
+  foldedConversationGroups: z.array(z.string()).catch([]),
   conversationSort: z.enum(CONVERSATION_SORTS).catch('recent')
 })
 export type Preferences = z.infer<typeof Preferences>

@@ -542,7 +542,13 @@ body.stacked-panel-resizing * {
 [data-collapsed='true'] .sidebar-collapse-icon { opacity: 1; }
 @media (hover: none) { .sidebar-collapse-icon { opacity: 1; } }
 .conversation-list ul { margin: 0; padding: 0 8px 12px; list-style: none; }
-.conversation-group-title { display: flex; gap: 6px; margin: 0; padding: 4px 20px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.conversation-group-title { margin: 0; padding: 0 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+/* A group's heading folds it; the chevron sits where the rows' icons do. */
+.conversation-group-title button { width: 100%; display: flex; align-items: center; gap: 6px; padding: 4px 12px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.conversation-group-title button:hover { background: var(--surface-muted); color: var(--text); }
+.conversation-group-title button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.conversation-group-title svg { width: 12px; height: 12px; flex-shrink: 0; transition: transform 0.15s; }
+.conversation-group-title button[aria-expanded='false'] svg { transform: rotate(-90deg); }
 /* Centered in the row's 16px icon column, on the title's first line, like a task's status icon. */
 /* The mark before a conversation's name: a ring when nothing is going on, a spinner while its agent
    works, a dot for what wants the user: amber and pulsing when it waits on them, red when it failed,

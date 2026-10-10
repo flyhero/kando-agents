@@ -8,7 +8,7 @@ import { ConversationContextMenu, newConversation, renameConversation } from './
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { ConversationStatus } from './ConversationStatus'
 import { ContextMenu, menuPoint, MenuRadioItem, MenuSubmenu, type MenuPoint } from './ContextMenu'
-import { ChatIcon, SlidersIcon } from './icons'
+import { ChatIcon, ChevronDownIcon, SlidersIcon } from './icons'
 import { projectName, projectNames } from './ProjectPicker'
 import { SidebarCollapseButton } from './SidebarCollapseButton'
 import { SidebarSearchField, SidebarSearchToggle } from './SidebarSearch'
@@ -175,6 +175,14 @@ export function ConversationList() {
     ? all.filter((conversation) => matches(conversation, needle) || snippets?.has(conversation.id))
     : all
   const groups = arrange(visible, groupBy, sortBy)
+  // A search opens every group, so nothing it found is folded away.
+  const folded = usePreferences((p) => p.foldedConversationGroups)
+  const foldKey = (key: string) => `${groupBy}:${key}`
+  const isFolded = (key: string) => !searching && folded.includes(foldKey(key))
+  const toggleFold = (key: string) => {
+    const id = foldKey(key)
+    setPreference('foldedConversationGroups', folded.includes(id) ? folded.filter((each) => each !== id) : [...folded, id])
+  }
   const [menu, setMenu] = useState<{ id: string; at: MenuPoint } | null>(null)
   const closeMenu = useCallback(() => setMenu(null), [])
   const [viewAt, setViewAt] = useState<MenuPoint | null>(null)
@@ -252,8 +260,14 @@ export function ConversationList() {
         groups.map((group) => group.label === null
           ? <ul key={group.key}>{group.items.map(row)}</ul>
           : <section key={group.key} className="conversation-group" aria-label={group.label}>
-            <h3 className="conversation-group-title">{group.label}<span className="count">{group.items.length}</span></h3>
-            <ul>{group.items.map(row)}</ul>
+            <h3 className="conversation-group-title">
+              <button type="button" aria-expanded={!isFolded(group.key)} onClick={() => toggleFold(group.key)}>
+                <ChevronDownIcon />
+                {group.label}
+                <span className="count">{group.items.length}</span>
+              </button>
+            </h3>
+            {!isFolded(group.key) && <ul>{group.items.map(row)}</ul>}
           </section>)}
       </div>
       {viewAt && <ViewMenu at={viewAt} trigger={viewButton.current} onClose={closeView} />}
