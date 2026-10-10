@@ -7920,15 +7920,21 @@ body.side-panel-resizing * {
 /* The columns share the width down to a readable one, past which the board scrolls sideways; each
    scrolls down by itself, so a long done column does not push the others out of view. */
 .task-board-columns { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; padding: 4px 20px 20px; overflow-x: auto; overflow-y: hidden; }
-.task-board-column { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.task-board-column-title { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; height: 32px; padding: 0 4px; background: var(--surface); font-size: 12px; font-weight: 600; }
+/* Each column a wash of its status colour, as Multica's board has, the cards sitting on it. The
+   sticky title lays the same wash over the surface, so it stays opaque over cards scrolling under. */
+.task-board-column { --column-tint: color-mix(in srgb, var(--status-pending) 7%, transparent); min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 0 8px 8px; border-radius: var(--radius-lg); background: var(--column-tint); }
+.task-board-column[data-status='running'] { --column-tint: color-mix(in srgb, var(--status-running) 6%, transparent); }
+.task-board-column[data-status='review'] { --column-tint: color-mix(in srgb, var(--status-review) 8%, transparent); }
+.task-board-column[data-status='done'] { --column-tint: color-mix(in srgb, var(--status-done) 6%, transparent); }
+.task-board-column[data-status='abandoned'] { --column-tint: color-mix(in srgb, var(--status-abandoned) 8%, transparent); }
+.task-board-column-title { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin: 0 -8px; height: 40px; padding: 0 12px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; background: linear-gradient(var(--column-tint), var(--column-tint)), var(--surface); font-size: 12px; font-weight: 600; }
 .task-board-column-title .count { font-weight: 400; color: var(--text-3); }
 .task-board-column-empty { display: grid; place-items: center; height: 64px; margin: 0; border: 1px dashed var(--border-2); border-radius: var(--radius-lg); font-size: 12px; color: var(--text-3); }
 .task-board-more { height: 32px; border: 1px dashed var(--border-2); border-radius: var(--radius); background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; cursor: pointer; }
 .task-board-more:hover { background: var(--fill); }
 
-.task-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); cursor: pointer; }
-.task-card:hover, .task-card[data-menu-open] { border-color: var(--border-2); background: var(--fill); }
+.task-card { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); cursor: pointer; }
+.task-card:hover, .task-card[data-menu-open] { border-color: var(--border-2); background: linear-gradient(var(--fill), var(--fill)), var(--surface); }
 .task-card:focus-within { border-color: var(--border-2); }
 .task-card[data-fresh] { animation: task-card-arrive 1.2s ease-out; }
 @keyframes task-card-arrive { from { background: var(--fill-2); } }
