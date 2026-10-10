@@ -236,6 +236,13 @@ function History({ target, gitRef, query, refreshKey, selected, pick }: { target
   </ReadState></div>
 }
 
+// The subject line stands out from the body, as a heading over it.
+function CommitMessage({ message }: { message: string }) {
+  const end = message.indexOf('\n')
+  const subject = end < 0 ? message : message.slice(0, end)
+  return <pre className="git-commit-message"><strong className="git-commit-headline">{subject}</strong>{end < 0 ? '' : message.slice(end)}</pre>
+}
+
 function CommitDetail({ target, sha, refreshKey, retry }: { target: GitTarget; sha: string; refreshKey: string; retry: () => void }) {
   const rpc = useCore((s) => s.rpc)
   const [parent, setParent] = useState<string | undefined>()
@@ -250,7 +257,7 @@ function CommitDetail({ target, sha, refreshKey, retry }: { target: GitTarget; s
   return <ReadState error={result?.error ?? null} retry={retry}>
     {!detail ? <p className="git-message muted">正在读取提交…</p> : <>
       <div className="git-detail-meta"><button className="button mono" title="复制完整 SHA" onClick={() => void navigator.clipboard.writeText(sha)}>{sha.slice(0, 8)}</button><span>{detail.commit.author}</span><time>{new Date(detail.commit.date).toLocaleString()}</time></div>
-      <pre className="git-commit-message">{detail.message}</pre>
+      <CommitMessage message={detail.message} />
       {detail.commit.parents.length > 1 && <label className="git-parent">比较父提交 <select className="input" value={detail.parent ?? ''} onChange={(event) => { setParent(event.target.value); setFile(null) }}>{detail.commit.parents.map((parent, index) => <option key={parent} value={parent}>父提交 {index + 1} · {parent.slice(0, 8)}</option>)}</select></label>}
       <CommitFiles files={detail.files} select={setFile} />
       {file && rpc && <FileDiffView file={file} loadKey={`${key}:${file}`} load={() => rpc.call('git.diff', { ...target, sha, base: detail.parent, file })} onBack={() => setFile(null)} />}

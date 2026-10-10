@@ -7835,6 +7835,7 @@ body.side-panel-resizing * {
 .git-detail-back { margin: 8px; }
 .git-detail-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; align-items: center; color: var(--text-muted); font-size: var(--chat-font-small, 12px); }
 .git-commit-message { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 0; padding: 8px 12px; }
+.git-commit-headline { font-weight: 600; }
 .git-parent { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; font-size: var(--chat-font-small, 12px); }
 .git-parent select { min-width: 0; }
 .git-commit-files, .git-comparison-commits { padding: 8px; border-top: 1px solid var(--border); }
