@@ -7809,9 +7809,21 @@ body.side-panel-resizing * {
 .git-commit-row { display: flex; align-items: center; height: 32px; gap: 8px; min-width: 100%; width: max-content; max-width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); padding: 0 8px; font: inherit; font-size: var(--chat-font-small, 12px); cursor: pointer; }
 .git-commit-row:hover { background: var(--fill); }
 .git-commit-row[data-selected] { background: var(--fill-2); }
-.git-graph { flex-shrink: 0; color: var(--text-muted); }
-.git-graph path { fill: none; stroke: currentColor; stroke-width: 1; }
-.git-graph circle { fill: var(--surface); stroke: currentColor; stroke-width: 1.5; }
+/* One colour per branch, as IDEA's log has: borrowed from the code colours, so each palette tints
+   the lines its own way and they read in light and dark alike. */
+.git-graph {
+  flex-shrink: 0; color: var(--text-muted);
+  --graph-1: var(--code-title); --graph-2: var(--code-string); --graph-3: var(--code-keyword);
+  --graph-4: var(--code-number); --graph-5: var(--code-variable); --graph-6: var(--code-type);
+}
+.git-graph [data-color='0'] { --graph-line: var(--graph-1); }
+.git-graph [data-color='1'] { --graph-line: var(--graph-2); }
+.git-graph [data-color='2'] { --graph-line: var(--graph-3); }
+.git-graph [data-color='3'] { --graph-line: var(--graph-4); }
+.git-graph [data-color='4'] { --graph-line: var(--graph-5); }
+.git-graph [data-color='5'] { --graph-line: var(--graph-6); }
+.git-graph path { fill: none; stroke: var(--graph-line, currentColor); stroke-width: 1.5; }
+.git-graph circle { fill: var(--surface); stroke: var(--graph-line, currentColor); stroke-width: 1.5; }
 .git-commit-row[data-selected] .git-graph circle { stroke: var(--accent); }
 .git-commit-subject { flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-ref-label { margin-right: 4px; }

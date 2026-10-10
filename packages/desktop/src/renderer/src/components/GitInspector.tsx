@@ -226,7 +226,7 @@ function History({ target, gitRef, query, refreshKey, selected, pick }: { target
   const width = Math.max(16, ...graph.map((row) => row.width))
   return <div className="git-history-list"><ReadState error={error} retry={() => setRetry((n) => n + 1)}>
     {history?.commits.map((commit, index) => <button key={commit.sha} className="git-commit-row" data-selected={selected === commit.sha || undefined} onClick={() => pick(commit.sha)} title={`${commit.sha}\n${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString()}`}>
-      <svg className="git-graph" width={width} height="32" aria-hidden="true">{graph[index]?.paths.map((d, i) => <path key={i} d={d} />)}<circle cx={8 + (graph[index]?.lane ?? 0) * 12} cy="16" r="3" /></svg>
+      <svg className="git-graph" width={width} height="32" aria-hidden="true">{graph[index]?.paths.map((path, i) => <path key={i} d={path.d} data-color={path.color} />)}<circle cx={8 + (graph[index]?.lane ?? 0) * 12} cy="16" r="3" data-color={graph[index]?.color} /></svg>
       <span className="git-commit-subject">{commit.refs.length > 0 && <span className="git-ref-label">{commit.refs.join(' · ')}</span>}{commit.subject}</span>
       <span className="git-commit-author muted">{commit.author}</span><span className="git-commit-date muted">{new Date(commit.date).toLocaleDateString()}</span><span className="mono muted">{commit.sha.slice(0, 8)}</span>
     </button>)}
