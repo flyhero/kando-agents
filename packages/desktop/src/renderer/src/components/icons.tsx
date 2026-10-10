@@ -28,12 +28,13 @@ export function CheckIcon() {
   )
 }
 
-// Handing work in: an arrow down into a tray.
+// Handing work in for review: a checked clipboard. An arrow into a tray read as a download.
 export function SubmitIcon() {
   return (
     <svg {...stroked}>
-      <path d="M3.5 11.5v3.2a1.3 1.3 0 0 0 1.3 1.3h10.4a1.3 1.3 0 0 0 1.3-1.3v-3.2" />
-      <path d="M10 3.5v8.5M6.6 8.6 10 12l3.4-3.4" />
+      <path d="M7 4H5.8A1.3 1.3 0 0 0 4.5 5.3v10.4A1.3 1.3 0 0 0 5.8 17h8.4a1.3 1.3 0 0 0 1.3-1.3V5.3A1.3 1.3 0 0 0 14.2 4H13" />
+      <rect x="7" y="2.8" width="6" height="2.6" rx=".8" />
+      <path d="M7.3 11.2l1.9 1.9 3.6-3.8" />
     </svg>
   )
 }
