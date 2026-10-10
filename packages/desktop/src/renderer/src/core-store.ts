@@ -778,8 +778,11 @@ export function updateTask(id: string, patch: Omit<RpcParams<'tasks.update'>, 'i
 const RETRY_MS = 1000
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// One loop for the app's lifetime; survives core restarts (new port and token).
-export function startCoreConnection(): void {
+// One loop for the app's lifetime; survives core restarts (new port and token). The card of
+// waiting requests needs only tasks and chats: it asks for nothing else, and starts nothing (the
+// browser host) that the main window already does.
+export function startCoreConnection(scope: 'app' | 'requests' = 'app'): void {
+  const full = scope === 'app'
   void (async () => {
     for (;;) {
       const endpoint = await resolveCoreEndpoint()
@@ -869,19 +872,19 @@ export function startCoreConnection(): void {
         } catch (error) {
           summaryError = error instanceof Error ? error.message : String(error)
         }
-        const usage = await rpc.call('usage.list', { windowKinds: [...USAGE_WINDOW_KINDS] }).catch(() => null)
-        const sources = await rpc.call('sources.list', {})
-        const inboxes = await rpc.call('sources.inbox', {})
-        const terminals = await rpc.call('terminals.list', {}).catch(() => [])
-        const terminalCommands = rpc.features.includes('terminal-commands') ? await rpc.call('terminalCommands.list', {}).catch(() => []) : []
+        const usage = full ? await rpc.call('usage.list', { windowKinds: [...USAGE_WINDOW_KINDS] }).catch(() => null) : null
+        const sources = full ? await rpc.call('sources.list', {}) : []
+        const inboxes = full ? await rpc.call('sources.inbox', {}) : []
+        const terminals = full ? await rpc.call('terminals.list', {}).catch(() => []) : []
+        const terminalCommands = full && rpc.features.includes('terminal-commands') ? await rpc.call('terminalCommands.list', {}).catch(() => []) : []
         // Asked only of a core that has one, and never waited for: it starts the host when it is down.
-        if (rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
-        if (rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
-        if (rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
-        const schedules = rpc.features.includes('schedules') ? await rpc.call('schedules.list', {}).catch(() => []) : []
-        const routines = rpc.features.includes('routines') ? await rpc.call('routines.list', {}).catch(() => []) : []
-        if (rpc.features.includes('chat-commands')) void rpc.call('chatCommands.list', {}).then((chatCommands) => useCore.setState({ chatCommands })).catch(() => {})
-        if (rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
+        if (full && rpc.features.includes('browser')) void rpc.call('browser.status', {}).then((status) => useCore.setState({ browser: status })).catch(() => {})
+        if (full && rpc.features.includes('keep-awake')) void rpc.call('system.awakeStatus', {}).then((awake) => useCore.setState({ awake })).catch(() => {})
+        if (full && rpc.features.includes('prompt-suggestions')) void rpc.call('system.chatSettings', {}).then((chatSettings) => useCore.setState({ chatSettings })).catch(() => {})
+        const schedules = full && rpc.features.includes('schedules') ? await rpc.call('schedules.list', {}).catch(() => []) : []
+        const routines = full && rpc.features.includes('routines') ? await rpc.call('routines.list', {}).catch(() => []) : []
+        if (full && rpc.features.includes('chat-commands')) void rpc.call('chatCommands.list', {}).then((chatCommands) => useCore.setState({ chatCommands })).catch(() => {})
+        if (full && rpc.features.includes('environment')) void rpc.call('system.environment', {}).then((environment) => useCore.setState({ environment })).catch(() => {})
         useCore.setState((s) => ({
           rpc,
           connection: 'connected',

@@ -18,7 +18,7 @@ export type Snapshot = {
   routines?: readonly Routine[]
 }
 
-const waiting = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'awaiting'
+export const waiting = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'awaiting'
 // The turn is over with a question the agent asked in passing still open.
 const asking = (conversation: Conversation) => conversation.sessionId !== null && conversation.chat?.turn === 'idle' && conversation.chat.request?.async === true
 const working = (conversation: Conversation) => conversation.chat?.turn === 'running' || conversation.chat?.turn === 'awaiting'
@@ -131,8 +131,9 @@ function named(conversation: Conversation, tasks: Snapshot['tasks']): { title: s
 
 // What to tell the user about between two states: an agent now waiting on them, a turn over, or
 // an agent gone. Judged on the turn, not the task, so a task's chat is told of once. A routine's
-// conversation is told of through its run (routineNoticesBetween), not here.
-export function noticesBetween(prev: Snapshot, next: Snapshot): Notice[] {
+// conversation is told of through its run (routineNoticesBetween), not here. Without tellWaiting
+// an agent now waiting goes untold: the card of waiting requests shows it instead.
+export function noticesBetween(prev: Snapshot, next: Snapshot, tellWaiting = true): Notice[] {
   const notices: Notice[] = []
   for (const conversation of Object.values(next.conversations)) {
     const before = prev.conversations[conversation.id]
@@ -141,7 +142,7 @@ export function noticesBetween(prev: Snapshot, next: Snapshot): Notice[] {
     if (crashed(conversation) && !crashed(before)) {
       notices.push({ title, body: `Agent 异常退出（code ${conversation.lastExit?.code}），发消息会重新启动它`, target })
     } else if (waiting(conversation) && !waiting(before)) {
-      notices.push({ title, body: 'Agent 在等你允许或回答', target })
+      if (tellWaiting) notices.push({ title, body: 'Agent 在等你允许或回答', target })
     } else if (working(before) && !working(conversation)) {
       notices.push({ title, body: asking(conversation) ? 'Agent 这一轮做完了，有个问题等你回答' : 'Agent 这一轮做完了', target })
     }

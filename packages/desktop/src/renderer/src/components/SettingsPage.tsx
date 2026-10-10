@@ -10,7 +10,7 @@ import { useInstalledAgents } from '../installed-agents'
 import { InstalledAgentsSettings } from './InstalledAgentsSettings'
 import { ChatFontPicker } from './ChatFontPicker'
 import { AGENT_LABEL } from '../labels'
-import { canNotify } from '../desktop-bridge'
+import { canNotify, canShowRequestPopup } from '../desktop-bridge'
 import { formatBytes } from '../wire-entries'
 import {
   ArrowLeftIcon,
@@ -128,12 +128,24 @@ function AppearanceSettings() {
 
 function NotificationSettings() {
   const notifications = usePreferences((s) => s.notifications)
+  const requestPopup = usePreferences((s) => s.requestPopup)
   return (
-    <SettingsRow
-      label="系统通知"
-      description="窗口不在前台时，Agent 等你允许或回答、这一轮做完、异常退出，以及定时任务的一次运行做完或没能开始，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话、任务和没看过的定时任务运行有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
-      control={(labelId) => <Toggle labelId={labelId} checked={notifications} onChange={(next) => setPreference('notifications', next)} />}
-    />
+    <>
+      {canNotify() && (
+        <SettingsRow
+          label="系统通知"
+          description="窗口不在前台时，Agent 等你允许或回答、这一轮做完、异常退出，以及定时任务的一次运行做完或没能开始，都发一条系统通知，点它回到那条会话或任务。关掉也不影响 Dock 图标上的数字：那是等你处理的会话、任务和没看过的定时任务运行有几个（macOS 和 Linux）。macOS 第一次会问要不要允许 Kando 通知。"
+          control={(labelId) => <Toggle labelId={labelId} checked={notifications} onChange={(next) => setPreference('notifications', next)} />}
+        />
+      )}
+      {canShowRequestPopup() && (
+        <SettingsRow
+          label="离开时在屏幕顶部弹出待处理的请求"
+          description="你在别的应用里时，Agent 等你允许、回答问题或批准计划，屏幕顶部会弹出一张卡片，直接在上面选；不会抢走你正在打字的窗口。回到 Kando 窗口或点 ✕ 它就收起。打开时，这类请求不再另发系统通知。"
+          control={(labelId) => <Toggle labelId={labelId} checked={requestPopup} onChange={(next) => setPreference('requestPopup', next)} />}
+        />
+      )}
+    </>
   )
 }
 
@@ -479,7 +491,7 @@ const SECTIONS: readonly Section[] = [
     group: '界面',
     title: '通知',
     description: 'Agent 需要你的时候，怎么告诉你。',
-    keywords: ['通知', '提醒', '角标', 'dock', '前台', '等待', '确认', '做完', '异常退出'],
+    keywords: ['通知', '提醒', '角标', 'dock', '前台', '等待', '确认', '做完', '异常退出', '弹窗', '卡片', '顶部', '审批', '允许'],
     Icon: BellIcon,
     Body: NotificationSettings
   },
@@ -580,7 +592,7 @@ export function SettingsPage() {
   const wireLog = useWireLogSupported()
   const sections = useMemo(() => {
     const about = SECTIONS.filter((section) => section.id === 'about')
-    const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify()))
+    const own = SECTIONS.filter((section) => section.id !== 'about' && (section.id !== 'notifications' || canNotify() || canShowRequestPopup()))
       .flatMap((section) => (section.id === 'agents' && chatCommands ? [section, CHAT_COMMANDS_SECTION] : [section]))
     return [...own, ...sourceSections(sources ?? []), ...(browser ? [BROWSER_SECTION] : []), ...(wireLog ? [DEBUG_SECTION] : []), ...about]
   }, [sources, browser, chatCommands, wireLog])

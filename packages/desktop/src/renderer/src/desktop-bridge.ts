@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Notice } from './attention'
+import type { ActionableTarget, Notice } from './attention'
 
 // What the Electron preload exposes; absent when the UI runs in a plain browser.
 declare global {
@@ -16,6 +16,10 @@ declare global {
       notify?(notice: unknown): Promise<unknown>
       setBadge?(count: number): Promise<unknown>
       onNotificationClick?(listener: (target: unknown) => void): () => void
+      requestPopup?(wanted: boolean): Promise<unknown>
+      onRequestPopupWanted?(listener: (wanted: boolean) => void): () => void
+      requestPopupLayout?(layout: { visible: boolean; height: number }): void
+      openFromRequestPopup?(target: unknown): Promise<unknown>
       // The built-in browser's tab on show, a native view main places over the panel.
       browserShow?(tabId: string | null): Promise<unknown>
       browserBounds?(bounds: { x: number; y: number; width: number; height: number }): void
@@ -93,6 +97,31 @@ export function onNotificationClick(listener: (target: Notice['target']) => void
       if (parsed.success) listener(parsed.data)
     }) ?? (() => {})
   )
+}
+
+// Whether main can put up the card of waiting requests (request-popup.ts): in Electron, and one
+// new enough.
+export function canShowRequestPopup(): boolean {
+  return window.kando?.requestPopup !== undefined
+}
+
+// Asked for when a request comes in while the user is away; put away when it should go.
+export function wantRequestPopup(wanted: boolean): void {
+  void window.kando?.requestPopup?.(wanted).catch(() => {})
+}
+
+export function onRequestPopupWanted(listener: (wanted: boolean) => void): () => void {
+  return window.kando?.onRequestPopupWanted?.(listener) ?? (() => {})
+}
+
+// From the card: whether it has anything to show, and how tall it is in CSS pixels.
+export function layoutRequestPopup(visible: boolean, height: number): void {
+  window.kando?.requestPopupLayout?.({ visible, height })
+}
+
+// From the card: the main window, brought up on a task or conversation.
+export function openFromRequestPopup(target: ActionableTarget): void {
+  void window.kando?.openFromRequestPopup?.(target).catch(() => {})
 }
 
 // Whether main shows browser tabs natively: in Electron, and one new enough.

@@ -19,6 +19,15 @@ contextBridge.exposeInMainWorld('kando', {
     ipcRenderer.on('kando:notification-click', handler)
     return () => ipcRenderer.removeListener('kando:notification-click', handler)
   },
+  // The card of waiting requests: the main window asks for it, the card lays itself out.
+  requestPopup: (wanted: boolean): Promise<unknown> => ipcRenderer.invoke('kando:request-popup', wanted),
+  onRequestPopupWanted: (listener: (wanted: boolean) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, wanted: unknown) => listener(wanted === true)
+    ipcRenderer.on('kando:request-popup-wanted', handler)
+    return () => ipcRenderer.removeListener('kando:request-popup-wanted', handler)
+  },
+  requestPopupLayout: (layout: { visible: boolean; height: number }): void => ipcRenderer.send('kando:request-popup-layout', layout),
+  openFromRequestPopup: (target: unknown): Promise<unknown> => ipcRenderer.invoke('kando:request-popup-open', target),
   // The built-in browser's tab on show, placed over the panel by main.
   browserShow: (tabId: string | null): Promise<unknown> => ipcRenderer.invoke('kando:browser-show', tabId),
   browserBounds: (bounds: { x: number; y: number; width: number; height: number }): void => ipcRenderer.send('kando:browser-bounds', bounds),

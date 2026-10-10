@@ -5,6 +5,7 @@ import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, protoco
 import { z } from 'zod'
 import { kandoPaths, readCoreEndpoint } from '@kando/protocol/node'
 import { ensureBackend } from './backend'
+import { popupWindowOptions, RequestPopup } from './request-popup'
 import { startBrowserHost, type BrowserHost } from './browser/browser-host'
 import { WindowSlot } from './browser/window-slot'
 
@@ -12,6 +13,8 @@ import { WindowSlot } from './browser/window-slot'
 // never touches a page an agent is on. The slot puts the one on show into the current window.
 const slot = new WindowSlot()
 let browserHost: BrowserHost | null = null
+let mainWindow: BrowserWindow | null = null
+const PRELOAD = join(__dirname, '../preload/index.js')
 
 // Files an agent wrote, served to the preview frames in the chat: kando-preview://file/<path>.
 // Registered before the app is ready, as a standard scheme so relative links inside a page resolve.
@@ -67,12 +70,13 @@ function createWindow(): void {
     trafficLightPosition: insetTitleBar ? { x: 20, y: 19 } : undefined,
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: PRELOAD,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false
     }
   })
+  mainWindow = win
   win.once('ready-to-show', () => win.show())
   if (insetTitleBar) {
     // Fullscreen hides the traffic lights, so the renderer drops the space kept for them.
@@ -82,6 +86,18 @@ function createWindow(): void {
     win.on('leave-full-screen', sendFullScreen)
     win.webContents.on('did-finish-load', sendFullScreen)
   }
+  // Back in the window, the user sees what waits in its chat; the card has done its job.
+  win.on('focus', () => requestPopup.want(false))
+  // The card is the window's: it goes with it, so a closed window leaves nothing on screen.
+  win.once('closed', () => {
+    if (mainWindow === win) mainWindow = null
+    requestPopup.destroy()
+  })
+  loadRenderer(win)
+  slot.attachWindow(win)
+}
+
+function loadRenderer(win: BrowserWindow, hash?: string): void {
   // A file dropped outside a drop target would otherwise replace the app with that file.
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== win.webContents.getURL()) {
@@ -97,12 +113,27 @@ function createWindow(): void {
     return { action: 'deny' }
   })
   if (process.env.ELECTRON_RENDERER_URL) {
-    void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+    void win.loadURL(hash ? `${process.env.ELECTRON_RENDERER_URL}#${hash}` : process.env.ELECTRON_RENDERER_URL)
   } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : {})
   }
-  slot.attachWindow(win)
 }
+
+// Brings the main window up, on a page the renderer is told of when there is one.
+function revealMainWindow(target?: unknown): void {
+  const win = mainWindow
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  if (target !== undefined) win.webContents.send('kando:notification-click', target)
+}
+
+const requestPopup = new RequestPopup(() => {
+  const win = new BrowserWindow(popupWindowOptions(PRELOAD))
+  loadRenderer(win, 'request-popup')
+  return win
+})
 
 // The browser panel's say over the tab on show: which one, where it sits, whether something is
 // over it. Bounds arrive as the renderer's CSS pixels; the window's zoom turns them into points.
@@ -180,19 +211,12 @@ const Notice = z.object({ title: z.string().max(200), body: z.string().max(1000)
 // A system notification from the renderer, which decides what is worth one; clicking it brings
 // the window up and tells the renderer where to go. Main only relays: what is said is the
 // renderer's, so an older or newer renderer changes nothing here.
-ipcMain.handle('kando:notify', (event, notice: unknown) => {
+ipcMain.handle('kando:notify', (_event, notice: unknown) => {
   const parsed = Notice.safeParse(notice)
   if (!Notification.isSupported() || !parsed.success) return false
   const { title, body, target } = parsed.data
   const notification = new Notification({ title, body })
-  notification.on('click', () => {
-    const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getAllWindows()[0]
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
-    win.webContents.send('kando:notification-click', target)
-  })
+  notification.on('click', () => revealMainWindow(target))
   notification.show()
   return true
 })
@@ -203,13 +227,32 @@ ipcMain.handle('kando:set-badge', (_event, count: unknown) => {
   if (typeof count === 'number' && Number.isInteger(count) && count >= 0) app.setBadgeCount(count)
 })
 
+// The card of waiting requests (request-popup.ts). Only the main window asks for it or puts it
+// away, and only the card says how it is laid out or where a click on it leads.
+ipcMain.handle('kando:request-popup', (event, wanted: unknown) => {
+  if (event.sender !== mainWindow?.webContents || typeof wanted !== 'boolean') return
+  requestPopup.want(wanted)
+})
+const PopupLayout = z.object({ visible: z.boolean(), height: z.number().finite().min(0).max(10_000) })
+ipcMain.on('kando:request-popup-layout', (event, layout: unknown) => {
+  const parsed = PopupLayout.safeParse(layout)
+  if (!requestPopup.owns(event.sender) || !parsed.success) return
+  requestPopup.layout(parsed.data.visible, parsed.data.height)
+})
+// The target goes to the main window as a notification's would, which checks it the same way.
+ipcMain.handle('kando:request-popup-open', (event, target: unknown) => {
+  if (!requestPopup.owns(event.sender)) return
+  requestPopup.want(false)
+  revealMainWindow(target)
+})
+
 // Packaged, a second launch would race the first for daemon and core; hand it to the open window.
 const primary = !app.isPackaged || app.requestSingleInstanceLock()
 if (!primary) {
   app.quit()
 }
 app.on('second-instance', () => {
-  const win = BrowserWindow.getAllWindows()[0]
+  const win = mainWindow
   if (win) {
     if (win.isMinimized()) win.restore()
     win.focus()
@@ -219,6 +262,8 @@ app.on('second-instance', () => {
 void app.whenReady().then(() => {
   if (!primary) return
   protocol.handle(PREVIEW_SCHEME, servePreview)
+  // Windows names a notification's sender by this id, the installer's shortcut carries the same.
+  if (process.platform === 'win32') app.setAppUserModelId('dev.kando.desktop')
   void ensureBackend()
   createWindow()
   startBrowserHost(slot, kandoPaths().browserHostFile).then(
@@ -226,7 +271,7 @@ void app.whenReady().then(() => {
     (error: unknown) => console.error('[kando] the browser host did not start', error)
   )
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow) {
       createWindow()
     }
   })

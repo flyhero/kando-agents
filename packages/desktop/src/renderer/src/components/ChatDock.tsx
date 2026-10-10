@@ -55,7 +55,7 @@ function RequestTabLabel({ item }: { item: RequestItem }) {
 
 // The requests waiting on the user, in the composer's place: one at a time, behind a tab each when
 // there are several, so the newest cannot push the rest out of reach.
-function PendingRequests({ conversation, pending, tools, modes }: { conversation: Conversation; pending: readonly RequestItem[]; tools: ReadonlyMap<string, ToolItem>; modes: readonly string[] }) {
+export function PendingRequests({ conversation, pending, tools, modes }: { conversation: Conversation; pending: readonly RequestItem[]; tools: ReadonlyMap<string, ToolItem>; modes: readonly string[] }) {
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const shown = pending.find((item) => itemKey(item) === activeKey) ?? pending[0]
   if (!shown) return null

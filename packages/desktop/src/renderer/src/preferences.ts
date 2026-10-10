@@ -27,6 +27,9 @@ const Preferences = z.object({
   showUsage: z.boolean().catch(true),
   // Off, nothing is said when the window is not in front; the dock count stays.
   notifications: z.boolean().catch(true),
+  // On, an agent held up on the user while they are in another app comes up on a card at the top
+  // of the screen, to answer there.
+  requestPopup: z.boolean().catch(true),
   usageDisplay: z.enum(['used', 'remaining']).catch('used'),
   // 'recent' reuses whichever agent the newest task picked.
   defaultAgent: z.enum(['recent', 'claude', 'codex', 'cursor', 'none']).catch('recent'),
@@ -71,6 +74,14 @@ function load(): Preferences {
 }
 
 export const usePreferences = create<Preferences>()(() => load())
+
+// Another window of the app changed them (the card of waiting requests follows the main window's
+// theme and settings); storage events come only from other windows.
+export function followPreferences(): void {
+  window.addEventListener('storage', (event) => {
+    if (event.key === STORAGE_KEY) usePreferences.setState(load())
+  })
+}
 
 usePreferences.subscribe((preferences) => {
   try {

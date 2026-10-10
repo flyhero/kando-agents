@@ -48,6 +48,8 @@
   --radius-lg: 12px;
   /* Dark has no shadows: a transparent one reads as none. */
   --shadow: 0 1px 2px light-dark(rgb(0 0 0 / 6%), transparent);
+  /* Something floating over other apps' windows (the card of waiting requests). */
+  --shadow-float: 0 6px 20px light-dark(rgb(0 0 0 / 16%), transparent);
   --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
@@ -8002,3 +8004,53 @@ body.side-panel-resizing * {
 .sidebar-tasks-active .task-row { grid-template-columns: 16px minmax(0, 1fr) auto; padding: 5px 12px; }
 .sidebar-tasks-active .task-row-tags { grid-column: 2 / span 2; }
 .active-task-awaiting { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--accent); }
+
+/* The card of waiting requests, alone in its own window at the top of the screen (main's
+   request-popup.ts). The window is clear: the card draws its edge and shadow inside a margin, and
+   the window is as tall as the frame, so a taller card scrolls the page rather than squeezing. */
+:root[data-window='request-popup'] body { background: transparent; overflow-y: auto; }
+.request-popup-frame { padding: 8px 24px 32px; }
+.request-popup.chat-view {
+  flex: none;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.request-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 4px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--chat-font-small);
+  white-space: nowrap;
+}
+.request-popup-label { flex-shrink: 0; color: var(--accent); font-weight: 600; }
+.request-popup-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.request-popup-agent { flex-shrink: 0; color: var(--text-3); }
+.request-popup-spacer { flex: 1; }
+.request-popup-pager { display: flex; flex-shrink: 0; align-items: center; gap: 4px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.request-popup-header .link-button { flex-shrink: 0; margin-left: 4px; }
+.request-popup-step,
+.request-popup-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.request-popup-step { width: 24px; height: 24px; }
+.request-popup-step:hover,
+.request-popup-close:hover { background: var(--fill); color: var(--text); }
+.request-popup-step[data-direction='previous'] svg { transform: scaleX(-1); }
+.request-popup .chat-intervention { max-height: none; border: 0; border-radius: 0; }
+.request-popup-error { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--danger); font-size: var(--chat-font-small); }
+.request-popup-loading { margin: 0; padding: 12px; color: var(--text-3); }
