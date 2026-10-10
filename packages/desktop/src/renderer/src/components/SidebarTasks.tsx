@@ -46,7 +46,7 @@ export function SidebarTasks() {
           }}
         >
           <StatusIcon status={task.status} />
-          <span className="task-row-title">{task.title}</span>
+          <span className="task-row-title" title={task.title}>{task.title}</span>
           <AwaitingDot task={task} />
           {hasTaskAlerts(task) && <span className="task-row-tags"><TaskAlerts task={task} /></span>}
         </button>

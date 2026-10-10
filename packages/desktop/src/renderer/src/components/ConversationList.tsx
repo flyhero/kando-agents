@@ -206,7 +206,7 @@ export function ConversationList() {
           }}
         >
           <ConversationStatus conversation={conversation} />
-          <span className="task-row-title">{conversation.title}</span>
+          <span className="task-row-title" title={conversation.title}>{conversation.title}</span>
           <span className="conversation-age">{timeAgo(conversation.updatedAt, now)}</span>
           <span className="task-row-meta" title={conversation.projectPaths.join('\n')}>{conversationMeta(conversation)}</span>
           {snippet && <span className="conversation-snippet"><Highlighted text={snippet} query={needle} /></span>}
