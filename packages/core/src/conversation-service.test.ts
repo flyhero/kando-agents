@@ -606,6 +606,16 @@ describe('ConversationService', () => {
     await expect(service.create('claude', [], false, { model: 'haiku', effort: 'low' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
   })
 
+  it('hands off to the model and effort picked, refusing one the agent does not list before stopping anything', async () => {
+    const created = await service.create('claude', [])
+    const codex = await codexOpens(service.handoff(created.id, 'codex', '', false))
+    await expect(service.handoff(created.id, 'claude', '', true, undefined, { model: 'opus' })).rejects.toMatchObject({ reason: 'chat-option-invalid' })
+    expect(service.get(created.id)).toMatchObject({ agent: 'codex', sessionId: codex.sessionId })
+    await service.handoff(created.id, 'claude', '', true, undefined, { model: 'haiku' })
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--model', 'haiku']))
+    expect(service.get(created.id).chatOptions).toMatchObject({ model: 'haiku' })
+  })
+
   it('takes options for the next start while no agent runs, from what the last stage offered', async () => {
     const created = await service.create('claude', [])
     await service.stop(created.id)

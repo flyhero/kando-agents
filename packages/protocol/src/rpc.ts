@@ -61,7 +61,8 @@ const UsageParams = z.object({ windowKinds: z.array(z.string()).optional() })
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
 // git-commit-branches: core lists the branches holding a commit (git.containing).
 // task-handoff: a task's chat can go to another agent (tasks.handoff), and one going on with another agent is handed the chat.
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management', 'git-commit-branches', 'task-handoff'] as const
+// handoff-model: a handoff takes the model and effort the agent starts in (conversations.handoff, tasks.handoff).
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management', 'git-commit-branches', 'task-handoff', 'handoff-model'] as const
 // task-launch-options: tasks.start accepts the first stage's mode, model and reasoning effort.
 // deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
@@ -71,6 +72,8 @@ export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'work
 // Whether a start may offer running with nothing asked and nothing sandboxed; the conversation
 // keeps what its latest start said.
 const AllowBypass = z.boolean().optional()
+// The model and effort an agent takes over with; absent keeps what it last ran in this chat.
+const HandoffModel = TaskLaunchOptions.pick({ model: true, effort: true })
 // One page of a conversation's chat history; `before` fetches the page older than it, null when none is left.
 const ChatPage = z.object({ items: ChatItemList, before: z.string().nullable() })
 // Browser calls from an agent name the conversation they act for, and a tab of that conversation.
@@ -143,7 +146,7 @@ export const rpcMethods = {
   'tasks.resumeChat': { params: TaskRef.extend({ allowBypass: AllowBypass }), result: Task },
   'tasks.submit': { params: TaskRef, result: Task },
   // Gives the task to another agent, which goes on with its chat at once from a handoff (see checkTaskHandoff).
-  'tasks.handoff': { params: TaskRef.extend({ agent: AgentKind, note: z.string().max(10000), allowBypass: AllowBypass }), result: Task },
+  'tasks.handoff': { params: TaskRef.extend({ agent: AgentKind, note: z.string().max(10000), allowBypass: AllowBypass }).extend(HandoffModel.shape), result: Task },
   'tasks.savePlan': { params: TaskRef.extend({ stageId: z.string().uuid(), requestId: z.string().min(1).max(200) }), result: Task },
   'tasks.delete': { params: TaskRef, result: Ok },
   // Appended on the server, so uploads that finish together do not overwrite each other.
@@ -194,7 +197,7 @@ export const rpcMethods = {
   'conversations.setPinned': { params: ConversationRef.extend({ pinned: z.boolean() }), result: Conversation },
   'conversations.continue': { params: ConversationRef.extend({ allowBypass: AllowBypass }), result: Conversation },
   'conversations.handoff': {
-    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), allowBypass: AllowBypass }),
+    params: ConversationRef.extend({ agent: AgentKind, note: z.string().max(10000), stopRunning: z.boolean(), allowBypass: AllowBypass }).extend(HandoffModel.shape),
     result: Conversation
   },
   // A new conversation with the same agent and projects, holding the chat up to a message: through

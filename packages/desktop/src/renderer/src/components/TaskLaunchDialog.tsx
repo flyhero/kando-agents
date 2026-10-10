@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChatPermissionMode, checkStart, checkStartMode, type AgentKind, type ChatCatalog, type Task } from '@kando/protocol'
+import { ChatPermissionMode, checkStart, checkStartMode, type AgentKind, type Task } from '@kando/protocol'
+import { resolveModel, useAgentCatalog, type ModelChoice } from '../agent-models'
 import { dismissError, perform, selectTask, showView, updateTask, useCore } from '../core-store'
 import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL, reasonText } from '../labels'
@@ -9,7 +10,6 @@ import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
 import { effortLabel, modeOptions, startModes } from './ChatOptionsBar'
 import { CloseIcon } from './icons'
 
-type ModelChoice = { model?: string; effort?: string }
 
 function closeTaskLaunch() {
   dismissError()
@@ -36,8 +36,8 @@ function LaunchForm({ task }: { task: Task }) {
   const dependencies = task.dependsOn.flatMap((id) => tasks[id] ? [tasks[id]] : [])
   const [busy, setBusy] = useState(false)
   const [inPlace, setInPlace] = useState(false)
-  const [catalogs, setCatalogs] = useState<Partial<Record<AgentKind, ChatCatalog | null>>>({})
   const conversation = useCore((s) => s.conversations[task.conversationId ?? ''])
+  const catalog = useAgentCatalog(agent, supported)
   const [choices, setChoices] = useState<Partial<Record<AgentKind, ModelChoice>>>(() =>
     task.agent && conversation?.agent === task.agent ? { [task.agent]: {
       model: conversation.chatOptions?.model ?? undefined,
@@ -52,15 +52,6 @@ function LaunchForm({ task }: { task: Task }) {
     return () => element?.close()
   }, [])
   useEffect(() => {
-    if (!agent || !rpc || !supported || agent in catalogs) return
-    let current = true
-    const settle = (catalog: ChatCatalog | null) => {
-      if (current) setCatalogs((known) => ({ ...known, [agent]: catalog }))
-    }
-    rpc.call('conversations.chatCatalog', { agent }).then(settle, () => settle(null))
-    return () => { current = false }
-  }, [agent, rpc, supported, catalogs])
-  useEffect(() => {
     if (!rpc?.features.includes('task-start')) return
     let current = true
     rpc.call('tasks.startOptions', { id: task.id }).then((repos) => {
@@ -69,14 +60,8 @@ function LaunchForm({ task }: { task: Task }) {
     return () => { current = false }
   }, [rpc, task.id, task.repos])
 
-  const catalog = agent ? catalogs[agent] : null
   const choice = agent ? choices[agent] ?? {} : {}
-  const defaultModel = catalog?.models.find((each) => each.isDefault)
-  const model = catalog?.models.find((each) => each.id === choice.model)
-    ?? defaultModel
-  const modelId = catalog?.models.some((each) => each.id === choice.model) ? choice.model : undefined
-  const efforts = model?.efforts ?? []
-  const effort = choice.effort && efforts.includes(choice.effort) ? choice.effort : undefined
+  const { defaultModel, model, modelId, efforts, effort } = resolveModel(catalog, choice)
   const offered = agent ? startModes(agent, model, allowBypass) : []
   const requestedMode = agent ? modes[agent] : 'plan'
   const mode = supported && offered.includes(requestedMode) && !checkStartMode(dependencies, requestedMode) ? requestedMode : 'plan'

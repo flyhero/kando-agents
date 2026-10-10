@@ -48,6 +48,9 @@ export type ChatStageRef = { conversationId: string; taskId: string | null; stag
 // How a task's chat starts a stage: where its agent works (worktrees once the task runs, its projects
 // while it only plans), and whether it goes on with the last session or takes one of its own (a first
 // start, or planning giving way to carrying the plan out).
+// What a model choice holds: see TaskLaunchOptions.
+export type ModelChoice = Pick<TaskLaunchOptions, 'model' | 'effort'>
+
 export type TaskChatLaunch = TaskLaunchOptions & {
   cwd: string
   extraDirs: readonly string[]
@@ -470,15 +473,7 @@ export class ConversationService {
     if (launch.allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass: launch.allowBypass })
     // A stage of its own plans first; one going on keeps the mode it was left in.
     if (launch.session === 'new') this.store.setChatOptions(id, { permissionMode: launch.permissionMode ?? 'plan' })
-    if (launch.model !== undefined || launch.effort !== undefined) {
-      const previous = this.store.chatOptions(id)[task.agent] ?? {}
-      this.store.setChatOptions(id, { [task.agent]: {
-        model: launch.model === undefined ? previous.model : launch.model ?? undefined,
-        effort: launch.effort === undefined
-          ? (launch.model !== undefined && launch.model !== previous.model ? undefined : previous.effort)
-          : launch.effort ?? undefined
-      } })
-    }
+    this.pickModel(id, task.agent, launch)
     return this.start(id, task.agent, launch.handoffNote ?? '', switched, {
       fresh: launch.session === 'new',
       moved,
@@ -529,15 +524,30 @@ export class ConversationService {
     return this.start(id, current.agent, '', false)
   }
 
-  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, allowBypass?: boolean): Promise<Conversation> {
+  async handoff(id: string, agent: AgentKind, note: string, stopRunning: boolean, allowBypass?: boolean, choice: ModelChoice = {}): Promise<Conversation> {
     const current = this.free(id)
     if (agent === current.agent) throw new Rejection('conversation-same-agent')
+    await this.validateStartOptions(agent, choice)
     if (allowBypass !== undefined) this.store.setChatOptions(id, { allowBypass })
     if (this.launching.has(id)) throw new Rejection('conversation-running')
     if (current.sessionId && !stopRunning && !this.chats.idle(id)) throw new Rejection('conversation-running')
     if (!this.capacityAvailable(agent, id)) throw new Rejection('agent-capacity')
     if (current.sessionId) await this.stop(id)
+    this.pickModel(id, agent, choice)
     return this.start(id, agent, note, true)
+  }
+
+  // The model and effort an agent starts in: each as picked, null back to the default, absent as it
+  // last ran here. A new model drops an effort it was not picked with, which it may not take.
+  private pickModel(id: string, agent: AgentKind, choice: ModelChoice): void {
+    if (choice.model === undefined && choice.effort === undefined) return
+    const previous = this.store.chatOptions(id)[agent] ?? {}
+    this.store.setChatOptions(id, { [agent]: {
+      model: choice.model === undefined ? previous.model : choice.model ?? undefined,
+      effort: choice.effort === undefined
+        ? (choice.model !== undefined && choice.model !== previous.model ? undefined : previous.effort)
+        : choice.effort ?? undefined
+    } })
   }
 
   // A new conversation holding this one's chat up to a message, for the same agent in the same

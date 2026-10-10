@@ -143,7 +143,7 @@ export function createRpcHandlers(
       return conversationId ? userActed(conversationId, () => service.resumeChat(id, allowBypass)) : service.resumeChat(id, allowBypass)
     },
     'tasks.submit': ({ id }) => service.submit(id),
-    'tasks.handoff': ({ id, agent, note, allowBypass }) => service.handoff(id, agent, note, allowBypass),
+    'tasks.handoff': ({ id, agent, note, allowBypass, model, effort }) => service.handoff(id, agent, note, allowBypass, { model, effort }),
     'tasks.savePlan': ({ id, stageId, requestId }) => service.savePlan(id, stageId, requestId),
     'tasks.delete': async ({ id }) => {
       await service.delete(id)
@@ -164,7 +164,7 @@ export function createRpcHandlers(
     'conversations.rename': ({ id, title }) => conversations.rename(id, title),
     'conversations.setPinned': ({ id, pinned }) => conversations.setPinned(id, pinned),
     'conversations.continue': ({ id, allowBypass }) => userActed(id, () => conversations.continue(id, allowBypass)),
-    'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass }) => conversations.handoff(id, agent, note, stopRunning, allowBypass),
+    'conversations.handoff': ({ id, agent, note, stopRunning, allowBypass, model, effort }) => conversations.handoff(id, agent, note, stopRunning, allowBypass, { model, effort }),
     'conversations.fork': ({ id, stageId, itemId }) => conversations.fork(id, stageId, itemId),
     'conversations.setOption': async ({ id, option, value }) => { await conversations.setOption(id, option, value); return OK },
     'conversations.send': ({ id, text, images, queue, steer, ref }) => userActed(id, async () => { await conversations.send(id, text, images, queue, steer, ref); return OK }),

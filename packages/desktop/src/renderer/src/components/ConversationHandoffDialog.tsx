@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentKind, Conversation, Task } from '@kando/protocol'
+import { resolveModel, useAgentCatalog, type ModelChoice } from '../agent-models'
 import { dismissError, perform, setSettingsOpen, useCore } from '../core-store'
 import { useInstalledAgents } from '../installed-agents'
 import { AGENT_LABEL } from '../labels'
-import { AgentQuotaHint, confirmQuota } from './AgentQuota'
+import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
+import { effortLabel } from './ChatOptionsBar'
 import { startOptions } from './ConversationActions'
 import { useOccludesBrowser } from '../browser-occlusion'
 
@@ -31,13 +33,22 @@ export function ConversationHandoffDialog({ conversation, task, initial = null, 
   const targets = useInstalledAgents().filter((agent) => agent !== from)
   const [selected, setSelected] = useState<AgentKind | null>(initial)
   const target = targets.find((agent) => agent === selected) ?? targets[0] ?? null
+  // What the new agent starts in, kept per agent while the target is switched back and forth.
+  const modelsSupported = useCore((s) => s.rpc?.features.includes('handoff-model') ?? false)
+  const catalog = useAgentCatalog(target, modelsSupported)
+  const [choices, setChoices] = useState<Partial<Record<AgentKind, ModelChoice>>>({})
+  const { defaultModel, model, modelId, efforts, effort } = resolveModel(catalog, target ? choices[target] ?? {} : {})
+  const choose = (next: ModelChoice) => {
+    if (target) setChoices((known) => ({ ...known, [target]: next }))
+  }
+  const picked = modelsSupported ? { model: modelId ?? null, effort: effort ?? null } : {}
   useEffect(() => { dialog.current?.showModal(); dismissError(); return () => dialog.current?.close() }, [])
   const submit = async () => {
-    if (!target || busy || blocker || (mustConfirm && !confirmed) || !confirmQuota(target)) return
+    if (!target || busy || blocker || (mustConfirm && !confirmed) || !confirmQuota(target, modelText(model))) return
     setBusy(true)
     const result = task
-      ? await perform((rpc) => rpc.call('tasks.handoff', { id: task.id, agent: target, note, ...startOptions() }))
-      : await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions() }))
+      ? await perform((rpc) => rpc.call('tasks.handoff', { id: task.id, agent: target, note, ...startOptions(), ...picked }))
+      : await perform((rpc) => rpc.call('conversations.handoff', { id: conversation.id, agent: target, note, stopRunning: confirmed, ...startOptions(), ...picked }))
     setBusy(false)
     if (result) onClose()
   }
@@ -57,7 +68,21 @@ export function ConversationHandoffDialog({ conversation, task, initial = null, 
         ? '会传递可见消息和补充说明，新 Agent 在任务的 worktree 里接着做，之后这个任务都由它执行。隐藏推理和 provider 私有上下文无法移交；新 Agent 应检查文件、Git 状态和测试结果。'
         : '会传递可见消息、补充说明和所选项目目录（无项目时为 Kando 托管目录）。隐藏推理和 provider 私有上下文无法移交；新 Agent 应检查文件、Git 状态和测试结果。'}</p>
       <label className="modal-field"><span className="modal-label">目标 Agent</span><select className="input" value={target} onChange={(event) => { const next = targets.find((agent) => agent === event.target.value); if (next) setSelected(next) }}>{targets.map((agent) => <option key={agent} value={agent}>{AGENT_LABEL[agent]}</option>)}</select></label>
-      <AgentQuotaHint agent={target} />
+      {modelsSupported && <>
+        <label className="modal-field"><span className="modal-label">模型</span>
+          <select className="input" value={modelId ?? ''} disabled={!catalog?.models.length} onChange={(event) => choose({ model: event.target.value || undefined })}>
+            <option value="">{catalog === undefined ? '正在读取模型…' : defaultModel ? `Agent 默认 · ${defaultModel.label}` : 'Agent 默认'}</option>
+            {catalog?.models.map((each) => <option key={each.id} value={each.id}>{each.label}</option>)}
+          </select>
+        </label>
+        {efforts.length > 0 && <label className="modal-field"><span className="modal-label">推理级别</span>
+          <select className="input" value={effort ?? ''} onChange={(event) => choose({ model: modelId, effort: event.target.value || undefined })}>
+            <option value="">模型默认</option>
+            {efforts.map((each) => <option key={each} value={each}>{effortLabel(each)}</option>)}
+          </select>
+        </label>}
+      </>}
+      <AgentQuotaHint agent={target} model={modelText(model)} />
       <label className="modal-field"><span className="modal-label">补充说明 <span className="modal-optional">[可选]</span></span>
         <textarea className="input modal-textarea" rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
       </label>

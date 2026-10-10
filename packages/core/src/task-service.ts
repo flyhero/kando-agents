@@ -37,7 +37,7 @@ import {
 import { chatPlanPrompt, chatStartPrompt, type PromptImages } from './agent-prompt'
 import type { AgentRunStore } from './agent-run-store'
 import type { AttachmentStore } from './attachment-store'
-import type { ConversationService } from './conversation-service'
+import type { ConversationService, ModelChoice } from './conversation-service'
 import type { ProjectRegistry } from './project-registry'
 import { Rejection } from './rejection'
 import { fileDiff, repoChanges } from './task-changes'
@@ -396,7 +396,7 @@ export class TaskService {
   }
 
   // Gives a chat task to another agent, which goes on at once from a handoff of what was said.
-  async handoff(id: string, agent: AgentKind, note: string, allowBypass?: boolean): Promise<Task> {
+  async handoff(id: string, agent: AgentKind, note: string, allowBypass?: boolean, choice: ModelChoice = {}): Promise<Task> {
     const chats = this.requireChats()
     const task = this.get(id)
     if (agent === task.agent) throw new Rejection('conversation-same-agent')
@@ -404,11 +404,12 @@ export class TaskService {
     const dependencies = this.dependenciesOf(task)
     const blocker = checkTaskHandoff(task, dependencies, turn)
     if (blocker) throw new Rejection(blocker)
-    return this.goOnChatting(task, dependencies, agent, allowBypass, note)
+    await chats.validateStartOptions(agent, choice)
+    return this.goOnChatting(task, dependencies, agent, allowBypass, note, choice)
   }
 
   // The agent is the task's from here on once it has started.
-  private async goOnChatting(task: Task, dependencies: readonly Task[], agent: AgentKind, allowBypass?: boolean, handoffNote?: string): Promise<Task> {
+  private async goOnChatting(task: Task, dependencies: readonly Task[], agent: AgentKind, allowBypass?: boolean, handoffNote?: string, choice: ModelChoice = {}): Promise<Task> {
     const chats = this.requireChats()
     if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
@@ -418,14 +419,14 @@ export class TaskService {
         const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot, { refresh: false })
         await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'resume',
-          readable: images.readable, allowBypass, handoffNote
+          readable: images.readable, allowBypass, handoffNote, ...choice
         })
         return kept()
       }
       const workspace = await prepareWorkspace(task, dependencies, this.worktreesRoot)
       this.store.update(task.id, { repos: workspace.repos })
       await chats.startForTask({ id: task.id, title: task.title, agent }, {
-        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.readable, allowBypass, handoffNote
+        cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'resume', readable: images.readable, allowBypass, handoffNote, ...choice
       })
       return task.status === 'running' ? kept() : this.changed(this.save(task.id, { agent, status: 'running', awaitingInput: false }))
     })
