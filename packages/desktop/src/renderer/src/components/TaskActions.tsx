@@ -8,6 +8,7 @@ import {
   manualMoves,
   shortTaskId,
   startKind,
+  type ChatTurnActivity,
   type Task,
   type TaskStatus
 } from '@kando/protocol'
@@ -133,11 +134,38 @@ async function submitTask(taskId: string): Promise<void> {
 }
 
 // What a chat task's agent is doing, for the rule that it is not handed in mid-turn.
-function useChatTurn(task: Task) {
+export function useChatTurn(task: Task) {
   return useCore((s) => {
     const conversation = task.conversationId ? s.conversations[task.conversationId] : undefined
     return conversation?.sessionId ? (conversation.chat?.turn ?? null) : null
   })
+}
+
+// The one step a task's card on the board offers, under the toolbar's rules: what moves the task
+// on from where it stands, or the chat where its agent waits for an answer.
+export type CardAction = { label: string; reason: string | null; run: () => void }
+
+export function cardAction(task: Task, dependencies: readonly Task[], turn: ChatTurnActivity | null): CardAction | null {
+  switch (task.status) {
+    case 'pending': {
+      const blocker = checkStart(task, dependencies)
+      if (blocker === 'planning') return { label: '查看规划', reason: null, run: () => selectTask(task.id) }
+      return {
+        label: startKind(dependencies) === 'plan' ? '开始规划' : '开始执行',
+        reason: blocker && blockerText(blocker, unfinished(dependencies)),
+        run: () => void startTask(task.id)
+      }
+    }
+    case 'running': {
+      if (turn === 'awaiting') return { label: '回答', reason: null, run: () => selectTask(task.id) }
+      const blocker = checkSubmit(task, turn)
+      return { label: '提交验收', reason: blocker && reasonText(blocker, blocker), run: () => void submitTask(task.id) }
+    }
+    case 'review':
+      return { label: '接受', reason: moveBlocker(task, 'done'), run: () => void moveTask(task.id, 'done') }
+    default:
+      return null
+  }
 }
 
 // Deleting stops a live agent, so it asks first. Worktrees stay on disk either way.

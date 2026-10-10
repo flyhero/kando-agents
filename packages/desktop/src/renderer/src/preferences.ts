@@ -6,7 +6,6 @@ import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from './s
 
 export const CONVERSATION_GROUPS = ['none', 'project', 'agent', 'status'] as const
 export const CONVERSATION_SORTS = ['recent', 'created', 'title'] as const
-export const TASK_GROUPS = ['none', 'project', 'agent', 'status'] as const
 export const TASK_SORTS = ['recent', 'created', 'title'] as const
 
 // This window's UI preferences. They shape how the desktop looks and behaves,
@@ -46,9 +45,8 @@ const Preferences = z.object({
   sidebarHidden: z.boolean().catch(false),
   // As the user dragged it, before the cap a small window puts on it.
   sidebarWidth: z.number().int().min(MIN_SIDEBAR_WIDTH).max(MAX_SIDEBAR_WIDTH).catch(DEFAULT_SIDEBAR_WIDTH),
-  // Off, the sidebar lists only pending and running tasks.
-  showAllTasks: z.boolean().catch(false),
-  taskGroup: z.enum(TASK_GROUPS).catch('none'),
+  // On, the task board has a column for abandoned tasks.
+  showAbandonedTasks: z.boolean().catch(false),
   // Creation order preserves the task list's original behavior.
   taskSort: z.enum(TASK_SORTS).catch('created'),
   conversationGroup: z.enum(CONVERSATION_GROUPS).catch('none'),

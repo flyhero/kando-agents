@@ -1,12 +1,14 @@
 import { onBrowserShortcut } from './desktop-bridge'
 import { useEffect } from 'react'
-import { setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
+import { selectTask, setNewTaskOpen, setSettingsOpen, toggleBrowserPanel, toggleTerminalPanel, useCore } from './core-store'
 import { NewTaskDialog } from './components/NewTaskDialog'
 import { SettingsPage } from './components/SettingsPage'
 import { SourceInboxView } from './components/SourceInboxView'
 import { SourceLoginDialog } from './components/SourceLoginDialog'
 import { TaskDetail } from './components/TaskDetail'
-import { TaskList } from './components/TaskList'
+import { ActiveTaskList } from './components/ActiveTaskList'
+import { TaskBoard } from './components/TaskBoard'
+import { TaskBoardEntry } from './components/TaskBoardEntry'
 import { TaskChat } from './components/TaskChat'
 import { ConversationList } from './components/ConversationList'
 import { Sidebar } from './components/Sidebar'
@@ -29,6 +31,16 @@ import { ErrorToast } from './components/ErrorToast'
 import { TaskLaunchDialog } from './components/TaskLaunchDialog'
 import { usePreferences } from './preferences'
 import { usePortPolling } from './port-state'
+
+// Esc goes from a task back to the board, unless it is meant for what has the focus: typing (the
+// composer interrupts the agent with it), a terminal, or a menu or dialog, which close first.
+function leavesTask(event: KeyboardEvent): boolean {
+  const s = useCore.getState()
+  if (event.defaultPrevented || s.section !== 'tasks' || s.selectedId === null) return false
+  if (s.settingsOpen || s.newTaskOpen || s.taskLaunchId || s.inboxOpen || s.worktreesOpen || s.schedulesOpen || s.routinesOpen || s.dashboardOpen || s.attentionOpen) return false
+  const typing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .xterm, [role="menu"], dialog')
+  return !typing && !document.querySelector('dialog[open]')
+}
 
 export function App() {
   usePortPolling()
@@ -75,6 +87,8 @@ export function App() {
         setSettingsOpen(!useCore.getState().settingsOpen)
       } else if (event.key === 'Escape' && useCore.getState().settingsOpen && !useCore.getState().newTaskOpen) {
         setSettingsOpen(false)
+      } else if (event.key === 'Escape' && leavesTask(event)) {
+        selectTask(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -133,8 +147,9 @@ export function App() {
               <AttentionEntry />
               <DashboardEntry />
               <RoutinesEntry />
+              <TaskBoardEntry />
               <EnvironmentNotice />
-              <TaskList />
+              <ActiveTaskList />
               <ConversationList />
             </Sidebar>
             {attentionOpen ? (
@@ -158,7 +173,7 @@ export function App() {
             ) : selectedId ? (
               <TaskDetail key={selectedId} taskId={selectedId} />
             ) : (
-              <section className="detail-empty">选择左侧的任务，查看和编辑详情</section>
+              <TaskBoard />
             )}
           </>
         )}

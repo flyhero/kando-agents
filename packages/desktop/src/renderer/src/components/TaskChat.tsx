@@ -18,6 +18,7 @@ import { StatusIcon } from './StatusIcon'
 import { TaskInspector } from './TaskInspector'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskToolbar } from './TaskActions'
+import { BoardCrumb } from './TaskBoard'
 import { useTaskHandoff } from './TaskHandoff'
 
 // What the task kept of a plan in its chat: saved for when it can run. An approved one reads as its
@@ -109,6 +110,7 @@ export function TaskChat({ taskId }: { taskId: string }) {
   return (
     <section className="detail terminal-view" aria-label={`${task.title} 的聊天`}>
       <header className="detail-header task-terminal-header">
+        <BoardCrumb />
         <StatusIcon status={task.status} waiting={waitingOn(task, tasks)} decorative />
         <div className="header-meta">
           <span className="terminal-view-title" title={task.title}>

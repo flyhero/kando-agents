@@ -287,6 +287,17 @@ export function CoffeeIcon() {
   )
 }
 
+// Three columns of cards, the task board.
+export function BoardIcon() {
+  return (
+    <svg {...stroked}>
+      <rect x="3" y="3.5" width="4" height="13" rx="1.2" />
+      <rect x="8.5" y="3.5" width="4" height="9" rx="1.2" />
+      <rect x="14" y="3.5" width="3" height="11" rx="1.2" />
+    </svg>
+  )
+}
+
 // A list of lines, each with a mark in front.
 export function ListIcon() {
   return (

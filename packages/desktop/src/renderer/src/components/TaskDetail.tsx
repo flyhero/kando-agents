@@ -8,6 +8,7 @@ import { MarkdownEditor } from './MarkdownEditor'
 import { SourceLink } from './SourceLink'
 import { SourceSnapshotCard } from './SourceSnapshotCard'
 import { StatusIcon } from './StatusIcon'
+import { BoardCrumb } from './TaskBoard'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskPlanCard } from './TaskPlanCard'
 import { TaskImages, useImageAdder } from './TaskImages'
@@ -91,6 +92,7 @@ function TaskDetailBody({ task }: { task: Task }) {
   return (
     <section className="detail task-detail" aria-label="任务详情" {...images.handlers}>
       <header className="detail-header">
+        <BoardCrumb />
         <span className="status-pill" data-status={task.status}>
           <StatusIcon status={task.status} waiting={waitingOn(task, tasks)} decorative />
           {STATUS_LABEL[task.status]}

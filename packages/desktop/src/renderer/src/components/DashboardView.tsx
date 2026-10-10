@@ -73,10 +73,10 @@ export function DashboardView() {
   const days = report?.stats.days.slice(-range) ?? []
   const empty = report !== null && report.stats.days.every((day) => day.runs === 0 && day.turns === 0)
   return (
-    <section className="worktrees-page dashboard-page" aria-label="看板">
+    <section className="worktrees-page dashboard-page" aria-label="统计">
       <header className="worktrees-header">
         <div className="worktrees-heading">
-          <h2>看板</h2>
+          <h2>统计</h2>
           <p className="muted">
             任务运行和对话的用量，按这台电脑的日期计{report && ` · 更新于 ${TIME.format(report.at)}`}
           </p>

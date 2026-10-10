@@ -629,6 +629,12 @@ export function useFileMentionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('file-mentions') ?? false)
 }
 
+// The task board stands where a task would: the tasks section with none open and no page over it.
+export function useTaskBoardOpen(): boolean {
+  return useCore((s) => s.section === 'tasks' && s.selectedId === null && !s.inboxOpen && !s.worktreesOpen && !s.schedulesOpen
+    && !s.routinesOpen && !s.dashboardOpen && !s.attentionOpen && !s.settingsOpen)
+}
+
 // Whether a task's chat can go to another agent (tasks.handoff).
 export function useTaskHandoffSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('task-handoff') ?? false)
