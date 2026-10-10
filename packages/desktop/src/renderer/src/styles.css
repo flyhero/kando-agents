@@ -7898,6 +7898,9 @@ body.side-panel-resizing * {
    one raised thing on it, a hairline each; colour goes only to the step a card offers and to an
    agent waiting for the user. */
 .task-board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+/* Header and columns share one rail, capped and centred as Orca's agent board is: past four
+   readable columns more width only stretches the cards. Below the cap it is the whole pane. */
+.task-board-header, .task-board-columns { width: 100%; max-width: 1440px; margin-inline: auto; }
 .task-board-header { display: flex; align-items: center; gap: 8px; padding: 16px 20px 12px; flex-wrap: wrap; }
 .task-board-header h2 { margin: 0 8px 0 0; font-size: 18px; }
 .task-board-search { flex: 0 1 220px; min-width: 120px; width: auto; height: 28px; padding: 0 10px; font-size: 12px; }
