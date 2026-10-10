@@ -120,6 +120,17 @@ export class GitService {
     return { commits, tips, next: more ? scanned : null }
   }
 
+  // Local branches first, then remote ones; a remote's HEAD only points at one of its branches.
+  async containing(target: GitTarget, ref: string): Promise<{ name: string; remote: boolean }[]> {
+    const dir = this.directory(target)
+    const sha = await commitRef(dir, ref)
+    const refs = await git(dir, ['for-each-ref', '--contains', sha, '--format=%(refname)%00%(symref)', 'refs/heads', 'refs/remotes'])
+    return refs.split('\n').flatMap((line) => {
+      const [name = '', symref = ''] = line.split('\0')
+      return name && !symref ? [{ name: name.replace(/^refs\/(heads|remotes)\//, ''), remote: name.startsWith('refs/remotes/') }] : []
+    })
+  }
+
   async detail(target: GitTarget, ref: string, requestedParent?: string): Promise<GitDetail> {
     const dir = this.directory(target)
     const sha = await commitRef(dir, ref)

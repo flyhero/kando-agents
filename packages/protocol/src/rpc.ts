@@ -59,7 +59,8 @@ const UsageParams = z.object({ windowKinds: z.array(z.string()).optional() })
 // file-mentions: core searches projects' files and folders for the composer's @ menu (projects.searchFiles).
 // file-preview: core resolves chat file references and reads their text (files.resolve, files.read).
 // dashboard: core adds up runs and turns by day for the dashboard (dashboard.stats).
-export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management'] as const
+// git-commit-branches: core lists the branches holding a commit (git.containing).
+export const CORE_FEATURES = ['chat-options', 'chat-images', 'task-start', 'worktrees', 'conversation-branches', 'conversation-commit-push', 'find-file', 'conversation-projects', 'browser', 'keep-awake', 'terminal-commands', 'usage-limit', 'agent-stats', 'conversation-stats', 'prompt-suggestions', 'environment', 'conversation-pin', 'schedules', 'chat-commands', 'file-mentions', 'plan-modes', 'agent-terminals', 'schedule-images', 'dashboard', 'task-conversation-summaries', 'routines', 'ports', 'conversation-fork', 'conversation-commit-steps', 'conversation-worktrees', 'conversation-start-branch', 'wire-log', 'file-preview', 'deferred-conversation-start', 'agent-cli-installation', 'task-launch-options', 'git-management', 'git-commit-branches'] as const
 // task-launch-options: tasks.start accepts the first stage's mode, model and reasoning effort.
 // deferred-conversation-start: create can return before launching; send takes a ref for safe retries.
 // routines: core runs routines, rules that open a conversation on a schedule, and keeps their runs (routines.*). A
@@ -79,6 +80,9 @@ export const rpcMethods = {
   'git.status': { params: GitTarget, result: GitStatus },
   'git.history': { params: GitTarget.extend({ ref: z.string(), query: z.string().max(500).default(''), offset: z.number().int().nonnegative().default(0), tips: z.array(z.string()).optional() }), result: GitHistory },
   'git.detail': { params: GitTarget.extend({ sha: z.string(), parent: z.string().optional() }), result: GitDetail },
+  // The local and remote branches holding a commit, apart from its detail: on a large repository
+  // walking every branch takes a moment the detail need not wait for.
+  'git.containing': { params: GitTarget.extend({ sha: z.string() }), result: z.array(z.object({ name: z.string(), remote: z.boolean() })) },
   'git.diff': { params: GitTarget.extend({ base: z.string().nullable(), sha: z.string(), file: z.string() }), result: FileDiff },
   'git.compare': { params: GitTarget.extend({ ref: z.string(), direct: z.boolean().default(false) }), result: GitComparison },
   'git.execute': { params: GitTarget.extend({ action: GitAction }), result: GitResult },

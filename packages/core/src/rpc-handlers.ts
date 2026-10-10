@@ -89,6 +89,7 @@ export function createRpcHandlers(
     'git.status': (target) => git.status(target),
     'git.history': ({ ref, offset, query, tips, ...target }) => git.history(target, ref, offset, query, tips),
     'git.detail': ({ sha, parent, ...target }) => git.detail(target, sha, parent),
+    'git.containing': ({ sha, ...target }) => git.containing(target, sha),
     'git.diff': ({ base, sha, file, ...target }) => git.diff(target, base, sha, file),
     'git.compare': ({ ref, direct, ...target }) => git.compare(target, ref, direct),
     'git.execute': ({ action, ...target }) => git.execute(target, action),

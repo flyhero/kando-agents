@@ -7848,6 +7848,7 @@ body.side-panel-resizing * {
 .git-ref-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-ref-more { flex-shrink: 0; padding: 0 4px; border-radius: var(--radius-xs); background: var(--fill); color: var(--text-muted); }
 .git-ref-list { display: grid; gap: 6px; margin: 0; padding: 4px 6px; list-style: none; font-size: var(--chat-font-small, 12px); }
+.git-commit-branches { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 0 12px 8px; font-size: var(--chat-font-small, 12px); }
 .git-commit-author, .git-commit-date { display: none; }
 .git-load-more { margin: 8px; }
 .git-details { display: none; min-width: 0; min-height: 0; overflow: auto; }

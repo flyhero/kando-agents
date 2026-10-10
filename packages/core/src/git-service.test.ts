@@ -38,6 +38,18 @@ describe('Git management', () => {
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
+  it('lists the local and remote branches holding a commit, leaving out a remote HEAD', async () => {
+    const base = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'switch', '-q', '-c', 'feature')
+    const ahead = commit('feature.txt', 'feature\n', 'feature work')
+    git(repo, 'push', '-q', 'origin', 'feature')
+    git(repo, 'remote', 'set-head', 'origin', 'main')
+    const local = (name: string) => ({ name, remote: false })
+    const remote = (name: string) => ({ name, remote: true })
+    expect(await service.containing(target, base)).toEqual([local('feature'), local('main'), remote('origin/feature'), remote('origin/main')])
+    expect(await service.containing(target, ahead)).toEqual([local('feature'), remote('origin/feature')])
+  })
+
   it('holds a repository lock across preparation or cleanup and blocks agent starts in subdirectories', async () => {
     const child = path.join(repo, 'child'); mkdirSync(child)
     let release = () => {}

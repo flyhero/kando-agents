@@ -7,7 +7,7 @@ import { commitRefs } from '../git-refs'
 import { openResolvedFile, showResolvedFile } from '../file-actions'
 import { useOccludesBrowser } from '../browser-occlusion'
 import { BranchStatusDetails, type BranchTarget } from './BranchStatus'
-import { GitRefLabel } from './GitRefLabel'
+import { GitRefLabel, GitRefName } from './GitRefLabel'
 import { ContextMenu, MenuItem, menuPoint, type MenuPoint } from './ContextMenu'
 import { FileDiffView, FileList, useFocusCount } from './Inspector'
 import { BranchIcon, MoreIcon, MaximizeIcon, RestoreIcon, CheckIcon } from './icons'
@@ -245,6 +245,36 @@ function CommitMessage({ message }: { message: string }) {
   return <pre className="git-commit-message"><strong className="git-commit-headline">{subject}</strong>{end < 0 ? '' : message.slice(end)}</pre>
 }
 
+// The branches a commit is on, local then remote, under its message, as IDEA's "In 2 branches".
+// Asked apart from the detail, which need not wait for every branch to be walked.
+function CommitBranches({ target, sha, refreshKey }: { target: GitTarget; sha: string; refreshKey: string }) {
+  const rpc = useCore((s) => s.rpc)
+  const supported = rpc?.features.includes('git-commit-branches') ?? false
+  const [found, setFound] = useState<{ key: string; branches: { name: string; remote: boolean }[] | null } | null>(null)
+  const key = `${sha}:${refreshKey}`
+  useEffect(() => {
+    if (!rpc || !supported) return
+    let live = true
+    void rpc.call('git.containing', { ...target, sha }).then((branches) => { if (live) setFound({ key, branches }) }, () => { if (live) setFound({ key, branches: null }) })
+    return () => { live = false }
+  }, [rpc, supported, key])
+  if (!supported) return null
+  const branches = found?.key === key ? found.branches : undefined
+  if (branches === null) return null
+  return (
+    <div className="git-commit-branches">
+      {branches === undefined
+        ? <span className="muted">正在查找所在分支…</span>
+        : branches.length === 0
+          ? <span className="muted">不在任何分支上</span>
+          : <>
+              <span className="muted">在 {branches.length} 个分支上：</span>
+              {branches.map(({ name, remote }) => <GitRefName key={name} item={{ name, kind: remote ? 'remote' : 'local', current: false }} />)}
+            </>}
+    </div>
+  )
+}
+
 function CommitDetail({ target, sha, refreshKey, retry }: { target: GitTarget; sha: string; refreshKey: string; retry: () => void }) {
   const rpc = useCore((s) => s.rpc)
   const [parent, setParent] = useState<string | undefined>()
@@ -260,6 +290,7 @@ function CommitDetail({ target, sha, refreshKey, retry }: { target: GitTarget; s
     {!detail ? <p className="git-message muted">正在读取提交…</p> : <>
       <div className="git-detail-meta"><button className="button mono" title="复制完整 SHA" onClick={() => void navigator.clipboard.writeText(sha)}>{sha.slice(0, 8)}</button><span>{detail.commit.author}</span><time>{new Date(detail.commit.date).toLocaleString()}</time></div>
       <CommitMessage message={detail.message} />
+      <CommitBranches target={target} sha={sha} refreshKey={refreshKey} />
       {detail.commit.parents.length > 1 && <label className="git-parent">比较父提交 <select className="input" value={detail.parent ?? ''} onChange={(event) => { setParent(event.target.value); setFile(null) }}>{detail.commit.parents.map((parent, index) => <option key={parent} value={parent}>父提交 {index + 1} · {parent.slice(0, 8)}</option>)}</select></label>}
       <CommitFiles files={detail.files} select={setFile} />
       {file && rpc && <FileDiffView file={file} loadKey={`${key}:${file}`} load={() => rpc.call('git.diff', { ...target, sha, base: detail.parent, file })} onBack={() => setFile(null)} />}
