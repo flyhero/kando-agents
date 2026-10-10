@@ -351,18 +351,20 @@ export function isBrowserTool(name: string): boolean {
   return browserToolKind(name) !== null
 }
 
-// A Kando tool that returns an image also names its stored copy in a text block, one marker per
-// image on a line of its own, so a driver can show it from the store and the log can leave the
-// bytes out.
+// What a driver logs in place of a picture a tool brought back, once it has put the bytes in the
+// store: one marker per image on a line of its own, so a replay shows it from the store and the
+// log leaves the bytes out.
 export function imageMarker(image: ChatImage): string {
   return `[kando-image ${image.id} ${image.width}x${image.height}]`
 }
 const IMAGE_MARKER = /^\[kando-image ([0-9a-f]{64}\.(?:png|jpg|gif|webp)) (\d+)x(\d+)\][ \t]*$/gm
-// The images a tool's text names, and the text without the markers.
+// The images a tool's text names, and the text without the markers. An id is the picture's own
+// hash, so one named twice is one picture: logs from before 0.14.4 name Kando's screenshot twice,
+// once where its block was and once in the text the tool itself wrote.
 export function takeImageMarkers(text: string): { text: string; images: ChatImage[] } {
   const images: ChatImage[] = []
   const rest = text.replace(IMAGE_MARKER, (_line, id: string, width: string, height: string) => {
-    images.push({ id, width: Number(width), height: Number(height) })
+    if (!images.some((image) => image.id === id)) images.push({ id, width: Number(width), height: Number(height) })
     return ''
   })
   return { text: images.length ? rest.replace(/\n{3,}/g, '\n\n').trim() : text, images }

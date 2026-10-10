@@ -676,6 +676,25 @@ describe('ClaudeStream usage limits', () => {
     const replayed = replay(logged.flatMap((frame) => (frame === null ? [] : [{ dir: 'in' as const, at: 1, frame }])))
     expect(replayed.items.get('t:t1')).toMatchObject({ output: 'saved', images: [{ id, width: 8, height: 6 }] })
   })
+
+  it("shows Kando's own screenshot once, from its image block like any tool's picture", () => {
+    const id = `${'c'.repeat(64)}.jpg`
+    const taken: string[] = []
+    const driver = new ClaudeStream('stage-1', { ...OPTIONS, keepImage: (data) => { taken.push(data); return { id, width: 1400, height: 1100 } } })
+    const call = { type: 'assistant', message: { id: 'm-shot', content: [{ type: 'tool_use', id: 'shot', name: 'mcp__kando__browser_screenshot', input: {} }] }, parent_tool_use_id: null }
+    const result = { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'shot', content: [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } },
+      { type: 'text', text: '截图已保存，用户在对话里能看到这张图。' }
+    ] }] }, parent_tool_use_id: null }
+    const logged = [call, result].map((frame) => {
+      driver.apply({ dir: 'in', at: 1, frame })
+      return driver.logged(frame)
+    })
+    expect(taken).toEqual(['AAAA'])
+    expect(driver.items.get('t:shot')).toMatchObject({ output: '截图已保存，用户在对话里能看到这张图。', images: [{ id, width: 1400, height: 1100 }] })
+    expect(JSON.stringify(logged).split('[kando-image').length - 1).toBe(1)
+    expect(JSON.stringify(logged)).not.toContain('AAAA')
+  })
 })
 
 describe('ClaudeStream background tasks, as recorded', () => {

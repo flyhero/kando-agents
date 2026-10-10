@@ -5,7 +5,6 @@ import {
   browserToolName,
   BrowserUrl, BrowserViewport,
   describeBrowserPage,
-  imageMarker,
   RpcError,
   SnapshotRef,
   type BrowserAction,
@@ -376,7 +375,8 @@ export function browserToolsOverCore(
         const shot = await rpc.call('browser.screenshot', { conversationId, tabId: await tabFor(rpc, tabId), ...options })
         const file = await attachments.pathOf(shot.image.id)
         const image = file ? { data: (await readFile(file)).toString('base64'), mimeType: MIME[shot.image.id.split('.').pop() ?? ''] ?? 'image/jpeg' } : undefined
-        return { text: `截图已保存，用户在对话里能看到这张图。\n${describePage(shot.tab, null)}\n${imageMarker(shot.image)}`, ...(image ? { image } : {}) }
+        // The picture goes back as an image block, which the agent's driver shows like any tool's.
+        return { text: `截图已保存，用户在对话里能看到这张图。\n${describePage(shot.tab, null)}`, ...(image ? { image } : {}) }
       }
       case 'click':
       case 'type':

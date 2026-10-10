@@ -59,10 +59,17 @@ describe('image markers', () => {
   })
 
   it('takes several markers and leaves the rest of the text as it was', () => {
-    const text = `${imageMarker({ id, width: 1, height: 2 })}\n\n一段说明\n${imageMarker({ id, width: 3, height: 4 })}\n`
+    const other = `${'b'.repeat(64)}.png`
+    const text = `${imageMarker({ id, width: 1, height: 2 })}\n\n一段说明\n${imageMarker({ id: other, width: 3, height: 4 })}\n`
     const taken = takeImageMarkers(text)
-    expect(taken.images).toEqual([{ id, width: 1, height: 2 }, { id, width: 3, height: 4 }])
+    expect(taken.images).toEqual([{ id, width: 1, height: 2 }, { id: other, width: 3, height: 4 }])
     expect(taken.text).toBe('一段说明')
+  })
+
+  it('takes a picture named twice once: the screenshot itself, and the tool\'s text naming it', () => {
+    const marker = imageMarker({ id, width: 1400, height: 1100 })
+    const text = `${marker}\n截图已保存，用户在对话里能看到这张图。\nhttp://127.0.0.1:47613/index.html\n${marker}`
+    expect(takeImageMarkers(text)).toEqual({ text: '截图已保存，用户在对话里能看到这张图。\nhttp://127.0.0.1:47613/index.html', images: [{ id, width: 1400, height: 1100 }] })
   })
 
   it('returns text without markers untouched', () => {

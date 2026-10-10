@@ -70,12 +70,12 @@ describe('browser tools over core', () => {
     expect(await tools.call('navigate', { url: 'https://example.com/x' })).toMatchObject({ isError: true, text: '用户拒绝了访问 example.com。' })
   })
 
-  it('returns a screenshot as a picture and names its stored copy', async () => {
+  it('returns a screenshot as a picture alone, naming no stored copy in its text', async () => {
     const tools = browserToolsOverCore(withCore, CONV, new AttachmentStore(dir))
     tabs = [tab(TAB_A, 'http://localhost/')]
     const shot = await tools.call('screenshot', { fullPage: true })
     expect(shot.image).toEqual({ data: Buffer.from([0xff, 0xd8, 0xff]).toString('base64'), mimeType: 'image/jpeg' })
-    expect(shot.text).toContain(`[kando-image ${'d'.repeat(64)}.jpg 4x2]`)
+    expect(shot.text).not.toContain('[kando-image')
     expect(calls.at(-1)).toMatchObject({ method: 'browser.screenshot', params: { tabId: TAB_A, fullPage: true } })
   })
 
