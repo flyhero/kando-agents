@@ -19,7 +19,7 @@ import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { confirmQuota } from './AgentQuota'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
-import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
+import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, HandoffIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
 import { Popover } from './Popover'
 import { cleanWithConfirm } from './WorktreeManager'
 import { SchedulePicker } from './SchedulePicker'
@@ -333,7 +333,7 @@ function useWorktreeCleaning(task: Task): (() => void) | null {
   return () => void cleanWithConfirm(paths, paths.length > 1 ? `这个任务的 ${paths.length} 个 worktree` : '这个任务的 worktree')
 }
 
-function MoreMenu({ task, handoff }: { task: Task; handoff: TaskHandoff }) {
+function MoreMenu({ task }: { task: Task }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
   const clean = useWorktreeCleaning(task)
@@ -363,21 +363,6 @@ function MoreMenu({ task, handoff }: { task: Task; handoff: TaskHandoff }) {
             复制任务 id
             <span className="menu-item-path mono">{shortTaskId(task.id)}…</span>
           </button>
-          {handoff.available && (
-            <button
-              type="button"
-              className="menu-item"
-              disabled={handoff.blocker !== null}
-              title={handoff.blocker ?? undefined}
-              onClick={() => {
-                close()
-                handoff.open()
-              }}
-            >
-              移交给其他智能体…
-              {handoff.blocker && <span className="menu-item-path">{handoff.blocker}</span>}
-            </button>
-          )}
           {clean && (
             <button
               type="button"
@@ -440,6 +425,26 @@ function InspectorToggle({ view }: { view: TaskView }) {
   )
 }
 
+// Beside the agent, as a free conversation has it: looks disabled while the agent works, and
+// says why when pressed.
+function HandoffButton({ handoff }: { handoff: TaskHandoff }) {
+  const { blocker } = handoff
+  return (
+    <button
+      type="button"
+      className="tool-button launch-button"
+      aria-label="移交给其他智能体"
+      aria-disabled={blocker !== null}
+      data-tooltip={blocker ? `还不能移交：${blocker}` : '移交给其他智能体'}
+      onClick={() => {
+        if (!blocker) handoff.open()
+      }}
+    >
+      <HandoffIcon />
+    </button>
+  )
+}
+
 // One toolbar for both panes of a task, so its controls never move when switching.
 export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
   const tasks = useCore((s) => s.tasks)
@@ -461,6 +466,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
           else if (agent) handoff.open(agent)
         }}
       />
+      {handoff.available && <HandoffButton handoff={handoff} />}
       {task.status === 'pending' && <StartButton task={task} dependencies={dependencies} />}
       {task.status === 'pending' && <ScheduleButton task={task} dependencies={dependencies} />}
       {task.status === 'running' && <SubmitButton task={task} />}
@@ -483,7 +489,7 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       {isFinished(task.status) && <RedoButton task={task} />}
       {task.conversationId && (worktree || wire || hasFiles) && <InspectorToggle view={view} />}
       {task.conversationId && <ViewToggle view={view} />}
-      <MoreMenu task={task} handoff={handoff} />
+      <MoreMenu task={task} />
       <span className="toolbar-separator" aria-hidden="true" />
       <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectTask(null)}>
         <CloseIcon />
