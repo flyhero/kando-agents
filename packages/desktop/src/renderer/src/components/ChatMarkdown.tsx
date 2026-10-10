@@ -8,6 +8,7 @@ import { canRevealFile, revealFile } from '../desktop-bridge'
 import { fileCandidates, fileReference, isImagePath, linkTarget, previewUrl, type FileReference, type LinkTarget } from '../file-links'
 import { CopyButton } from './CopyButton'
 import { ChatCodeRun, ChatRunnable } from './ChatCodeRun'
+import { ChatDiagram } from './ChatDiagram'
 import { blockCommand } from '../code-commands'
 import { FILE_MANAGER, showChatFile, useFilePreviewSupported } from '../file-actions'
 import { useChatFiles } from './ChatContextMenu'
@@ -133,6 +134,9 @@ type HastChild = HastElement['children'][number]
 // Code is coloured by its fence's language; one highlight.js does not know stays plain.
 const rehypePlugins = [rehypeHighlight]
 
+// Whether the text is final: a reply still streaming draws no diagram, it would redraw at every delta.
+const ChatSettled = createContext(true)
+
 function textOf(node: HastElement | HastChild): string {
   if (node.type === 'text') return node.value
   return 'children' in node ? node.children.map(textOf).join('') : ''
@@ -198,6 +202,7 @@ const components: Components = {
     const language = languageOf(code)
     const text = code ? textOf(code) : ''
     const command = blockCommand(language, text)
+    if (language === 'mermaid') return <SettledDiagram source={text} code={<pre {...props} />} />
     return (
       <div className="chat-code">
         <div className="chat-code-header">
@@ -213,15 +218,21 @@ const components: Components = {
   }
 }
 
+function SettledDiagram({ source, code }: { source: string; code: ReactNode }) {
+  return useContext(ChatSettled) ? <ChatDiagram source={source} code={code} /> : <div className="chat-code"><div className="chat-code-header"><span className="chat-code-language">mermaid</span></div>{code}</div>
+}
+
 // A reply still streaming is left uncoloured: it would be highlighted again at every delta.
 // runnable: its shell blocks may be run in the conversation's terminal (see ChatRunScope).
 export function ChatMarkdown({ text, highlight = true, runnable = false }: { text: string; highlight?: boolean; runnable?: boolean }) {
   return (
     <div className="chat-markdown">
       <ChatRunnable.Provider value={runnable}>
-        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={highlight ? rehypePlugins : []} components={components} urlTransform={urlTransform}>
-          {text}
-        </Markdown>
+        <ChatSettled.Provider value={highlight}>
+          <Markdown remarkPlugins={remarkPlugins} rehypePlugins={highlight ? rehypePlugins : []} components={components} urlTransform={urlTransform}>
+            {text}
+          </Markdown>
+        </ChatSettled.Provider>
       </ChatRunnable.Provider>
     </div>
   )

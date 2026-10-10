@@ -6,3 +6,14 @@ export function withAlpha(color: string, alpha: number): string {
   if (!match) return color
   return `rgba(${match[1]}, ${match[2]}, ${match[3]}, ${alpha})`
 }
+
+// A token's colour as the page shows it. The tokens are written with light-dark(), which only
+// resolves where a colour is used, so the value is read off an element that uses it.
+export function tokenColor(name: string): string {
+  const probe = document.createElement('span')
+  probe.style.color = `var(${name})`
+  document.documentElement.append(probe)
+  const color = getComputedStyle(probe).color
+  probe.remove()
+  return color
+}

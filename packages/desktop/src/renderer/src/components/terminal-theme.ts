@@ -1,6 +1,6 @@
 import type { ITheme } from '@xterm/xterm'
 import { isDarkTheme } from '../appearance'
-import { withAlpha } from '../css-color'
+import { tokenColor as token, withAlpha } from '../css-color'
 
 type AnsiPalette = Pick<
   ITheme,
@@ -62,17 +62,6 @@ const LIGHT_ANSI: AnsiPalette = {
   brightMagenta: '#a052cc',
   brightCyan: '#248f8f',
   brightWhite: '#8a8578'
-}
-
-// A token's colour as the page shows it. The tokens are written with light-dark(), which only
-// resolves where a colour is used, so the value is read off an element that uses it.
-function token(name: string): string {
-  const probe = document.createElement('span')
-  probe.style.color = `var(${name})`
-  document.documentElement.append(probe)
-  const color = getComputedStyle(probe).color
-  probe.remove()
-  return color
 }
 
 // Chrome colors come from the app's CSS tokens, so the terminal reads as part of the page.
