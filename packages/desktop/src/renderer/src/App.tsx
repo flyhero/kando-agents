@@ -6,9 +6,8 @@ import { SettingsPage } from './components/SettingsPage'
 import { SourceInboxView } from './components/SourceInboxView'
 import { SourceLoginDialog } from './components/SourceLoginDialog'
 import { TaskDetail } from './components/TaskDetail'
-import { ActiveTaskList } from './components/ActiveTaskList'
 import { TaskBoard } from './components/TaskBoard'
-import { TaskBoardEntry } from './components/TaskBoardEntry'
+import { SidebarTasks } from './components/SidebarTasks'
 import { TaskChat } from './components/TaskChat'
 import { ConversationList } from './components/ConversationList'
 import { Sidebar } from './components/Sidebar'
@@ -147,9 +146,8 @@ export function App() {
               <AttentionEntry />
               <DashboardEntry />
               <RoutinesEntry />
-              <TaskBoardEntry />
               <EnvironmentNotice />
-              <ActiveTaskList />
+              <SidebarTasks />
               <ConversationList />
             </Sidebar>
             {attentionOpen ? (

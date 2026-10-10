@@ -7897,10 +7897,10 @@ body.side-panel-resizing * {
 /* The task board: a column per status, scrolling sideways when the window is narrow. Cards are the
    one raised thing on it, a hairline each; colour goes only to the step a card offers and to an
    agent waiting for the user. */
-.task-board { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+.task-board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
 .task-board-header { display: flex; align-items: center; gap: 8px; padding: 16px 20px 12px; flex-wrap: wrap; }
 .task-board-header h2 { margin: 0 8px 0 0; font-size: 18px; }
-.task-board-search { width: 220px; height: 28px; padding: 0 10px; font-size: 12px; }
+.task-board-search { flex: 0 1 220px; min-width: 120px; width: auto; height: 28px; padding: 0 10px; font-size: 12px; }
 .task-board-spacer { flex: 1; }
 .task-board-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px solid var(--border-2); border-radius: var(--radius); background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .task-board-chip:hover { background: var(--fill); color: var(--text); }
@@ -7910,8 +7910,10 @@ body.side-panel-resizing * {
 .task-board-new { height: 28px; font-size: 12px; }
 .task-board-key { opacity: 0.7; }
 .task-board-empty { margin: 48px auto; max-width: 360px; text-align: center; font-size: 13px; }
-.task-board-columns { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 4px 20px 20px; overflow: auto; align-items: flex-start; }
-.task-board-column { width: 272px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+/* The columns share the width down to a readable one, past which the board scrolls sideways; each
+   scrolls down by itself, so a long done column does not push the others out of view. */
+.task-board-columns { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; padding: 4px 20px 20px; overflow-x: auto; overflow-y: hidden; }
+.task-board-column { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .task-board-column-title { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; height: 32px; padding: 0 4px; background: var(--surface); font-size: 12px; font-weight: 600; }
 .task-board-column-title .count { font-weight: 400; color: var(--text-3); }
 .task-board-column-empty { display: grid; place-items: center; height: 64px; margin: 0; border: 1px dashed var(--border-2); border-radius: var(--radius-lg); font-size: 12px; color: var(--text-3); }
@@ -7951,9 +7953,13 @@ body.side-panel-resizing * {
 .board-crumb-sep { color: var(--text-3); }
 
 /* The sidebar's way to the board, and under it the tasks someone is at. */
-.sidebar-tasks { margin: 0 8px 4px; }
+.sidebar-tasks { flex: 0 1 auto; min-height: 0; max-height: 45%; display: flex; flex-direction: column; margin-bottom: 4px; }
+.sidebar-tasks-entry { position: relative; display: flex; }
+.sidebar-tasks-entry .inbox-entry { margin: 0 8px; padding-right: 40px; }
+.sidebar-tasks-add { position: absolute; top: 50%; right: 14px; transform: translateY(-50%); }
 .sidebar-tasks-counts { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
-.task-list.active-task-list { flex: 0 1 auto; max-height: 40%; }
-.active-task-list .task-row { grid-template-columns: 16px 1fr auto; }
-.active-task-list .task-row-tags { grid-column: 2 / span 2; }
+/* Hung from the entry: each row's status icon sits under the entry's name. */
+.sidebar-tasks-active { min-height: 0; overflow-y: auto; margin: 2px 8px 0 36px; padding: 0; list-style: none; }
+.sidebar-tasks-active .task-row { grid-template-columns: 16px 1fr auto; padding: 5px 10px; }
+.sidebar-tasks-active .task-row-tags { grid-column: 2 / span 2; }
 .active-task-awaiting { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--accent); }
