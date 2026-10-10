@@ -54,6 +54,9 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
   // conversation opens. The frame takes no focus until the pointer first comes over the card.
   const [awake, setAwake] = useState(false)
   const refused = item.status === 'failed' || item.status === 'denied'
+  // The call arrives before it runs, and the file it names may still be on its way (written by a
+  // call beside it); the tool checks it is there, so the page loads once the call is done.
+  const pending = item.status === 'running'
   const src = `kando-preview://file${path}?v=${generation}`
   return (
     <div className="chat-preview" data-status={item.status} onPointerEnter={() => setAwake(true)}>
@@ -73,9 +76,11 @@ export function ChatPreviewCard({ conversationId, item }: { conversationId: stri
       </div>
       {refused
         ? <p className="chat-preview-note muted">{item.output ?? '没能展示这个文件。'}</p>
-        : isPreviewImage(path)
-          ? <PreviewImage key={generation} path={path} src={`${previewUrl(path)}?v=${generation}`} label={title ?? path} />
-          : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" inert={!awake} />}
+        : pending
+          ? <p className="chat-preview-note muted">正在准备预览…</p>
+          : isPreviewImage(path)
+            ? <PreviewImage key={generation} path={path} src={`${previewUrl(path)}?v=${generation}`} label={title ?? path} />
+            : <iframe key={generation} className="chat-preview-frame" title={title ?? path} src={src} sandbox="allow-scripts" referrerPolicy="no-referrer" inert={!awake} />}
     </div>
   )
 }
