@@ -7978,10 +7978,10 @@ body.side-panel-resizing * {
 .sidebar-tasks-entry .inbox-entry { margin: 0 8px; padding-right: 40px; }
 .sidebar-tasks-add { position: absolute; top: 50%; right: 14px; transform: translateY(-50%); }
 .sidebar-tasks-counts { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
-/* Hung from the entry: each row's status icon sits under the entry's name. */
+/* Lined up with the conversations' rows: the 任务 heading above says whose they are. */
 /* Six one-line rows at most (a line, 10px of padding and the border each), then it scrolls: the
    board holds the rest, and the conversations keep their room. */
-.sidebar-tasks-active { min-height: 0; max-height: calc(6 * (1.5em + 12px)); overflow-y: auto; margin: 2px 8px 0 36px; padding: 0; list-style: none; }
-.sidebar-tasks-active .task-row { grid-template-columns: 16px minmax(0, 1fr) auto; padding: 5px 10px; }
+.sidebar-tasks-active { min-height: 0; max-height: calc(6 * (1.5em + 12px)); overflow-y: auto; margin: 2px 8px 0; padding: 0; list-style: none; }
+.sidebar-tasks-active .task-row { grid-template-columns: 16px minmax(0, 1fr) auto; padding: 5px 12px; }
 .sidebar-tasks-active .task-row-tags { grid-column: 2 / span 2; }
 .active-task-awaiting { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--accent); }
