@@ -258,9 +258,6 @@ importers:
       playwright-core:
         specifier: 'catalog:'
         version: 1.63.0
-      remark-cjk-friendly:
-        specifier: 2.3.2
-        version: 2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@7.2.0))(unified@11.0.5)
     devDependencies:
       '@codemirror/commands':
         specifier: 6.11.1
@@ -343,6 +340,9 @@ importers:
       remark-breaks:
         specifier: 4.0.0
         version: 4.0.0
+      remark-cjk-friendly:
+        specifier: 2.3.2
+        version: 2.3.2(@types/mdast@4.0.4)(micromark-util-types@2.0.3)(micromark@4.0.3(supports-color@7.2.0))(unified@11.0.5)
       remark-gfm:
         specifier: 4.0.1
         version: 4.0.1(supports-color@7.2.0)

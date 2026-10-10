@@ -17,8 +17,7 @@
     "dist:mac": "electron-vite build && node scripts/bundle-backend.mjs && electron-builder --mac --publish never"
   },
   "dependencies": {
-    "playwright-core": "catalog:",
-    "remark-cjk-friendly": "2.3.2"
+    "playwright-core": "catalog:"
   },
   "devDependencies": {
     "@codemirror/commands": "6.11.1",
@@ -48,6 +47,7 @@
     "react-markdown": "10.1.0",
     "rehype-highlight": "7.0.2",
     "remark-breaks": "4.0.0",
+    "remark-cjk-friendly": "2.3.2",
     "remark-gfm": "4.0.1",
     "typescript": "catalog:",
     "vite": "^7.3.0",
