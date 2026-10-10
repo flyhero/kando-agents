@@ -4,7 +4,8 @@ import { perform, selectTask, setInboxTab, setSettingsOpen, useCore } from '../c
 import { defaultAgent } from '../default-agent'
 import { sourceProblemText } from '../labels'
 import { activeInboxes, inboxTab, type ActiveInbox } from '../source-inboxes'
-import { GearIcon, InboxIcon, RefreshIcon } from './icons'
+import { CloseIcon, GearIcon, InboxIcon, RefreshIcon } from './icons'
+import { BoardCrumb } from './TaskBoard'
 
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -169,6 +170,21 @@ function InboxSection({
 }
 
 // Every task source that is set up and signed in: one section, or a tab each once there are two.
+// Opened from the task board, so it leads back there, as a task's header does.
+function InboxHeader() {
+  return (
+    <header className="detail-header">
+      <BoardCrumb />
+      <h2 className="inbox-title">收件箱</h2>
+      <span className="toolbar">
+        <button type="button" className="tool-button" aria-label="关闭" data-tooltip="回到任务看板 Esc" onClick={() => selectTask(null)}>
+          <CloseIcon />
+        </button>
+      </span>
+    </header>
+  )
+}
+
 export function SourceInboxView() {
   const sources = useCore((s) => s.sources)
   const inboxes = useCore((s) => s.inboxes)
@@ -189,9 +205,7 @@ export function SourceInboxView() {
     const first = sources?.[0]
     return (
       <section className="detail inbox" aria-label="收件箱">
-        <header className="detail-header">
-          <h2 className="inbox-title">收件箱</h2>
-        </header>
+        <InboxHeader />
         <div className="inbox-setup">
           <InboxIcon />
           <p>还没有连接任务来源。在设置里填好地址并登录后，分给你的 issue 会自动出现在这里。</p>
@@ -205,9 +219,7 @@ export function SourceInboxView() {
 
   return (
     <section className="detail inbox" aria-label="收件箱">
-      <header className="detail-header">
-        <h2 className="inbox-title">收件箱</h2>
-      </header>
+      <InboxHeader />
       {imported && (
         <p className="restore-bar" role="status">
           已导入为任务「{imported.title}」，下一步给它选上项目。

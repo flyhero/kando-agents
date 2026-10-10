@@ -31,12 +31,12 @@ import { TaskLaunchDialog } from './components/TaskLaunchDialog'
 import { usePreferences } from './preferences'
 import { usePortPolling } from './port-state'
 
-// Esc goes from a task back to the board, unless it is meant for what has the focus: typing (the
-// composer interrupts the agent with it), a terminal, or a menu or dialog, which close first.
+// Esc goes from a task or the inbox back to the board, unless it is meant for what has the focus:
+// typing (the composer interrupts the agent with it), a terminal, or a menu or dialog, which close first.
 function leavesTask(event: KeyboardEvent): boolean {
   const s = useCore.getState()
-  if (event.defaultPrevented || s.section !== 'tasks' || s.selectedId === null) return false
-  if (s.settingsOpen || s.newTaskOpen || s.taskLaunchId || s.inboxOpen || s.worktreesOpen || s.schedulesOpen || s.routinesOpen || s.dashboardOpen || s.attentionOpen) return false
+  if (event.defaultPrevented || s.section !== 'tasks' || (s.selectedId === null && !s.inboxOpen)) return false
+  if (s.settingsOpen || s.newTaskOpen || s.taskLaunchId || s.worktreesOpen || s.schedulesOpen || s.routinesOpen || s.dashboardOpen || s.attentionOpen) return false
   const typing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .xterm, [role="menu"], dialog')
   return !typing && !document.querySelector('dialog[open]')
 }
