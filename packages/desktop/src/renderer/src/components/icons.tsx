@@ -503,6 +503,15 @@ export function ImageIcon() {
   )
 }
 
+export function TagIcon() {
+  return (
+    <svg {...stroked}>
+      <path d="M3.5 3.5h6.2l6.8 6.8-6.2 6.2-6.8-6.8z" />
+      <circle cx="7.2" cy="7.2" r="1.2" />
+    </svg>
+  )
+}
+
 export function BranchIcon() {
   return (
     <svg {...stroked}>

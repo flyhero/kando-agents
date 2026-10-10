@@ -3,9 +3,11 @@ import type { GitAction, GitBranch, GitComparison, GitDetail, GitHistory, GitSta
 import { checkGitOperation } from '@kando/protocol'
 import { perform, openTerminal, useCore } from '../core-store'
 import { gitGraph } from '../git-graph'
+import { commitRefs } from '../git-refs'
 import { openResolvedFile, showResolvedFile } from '../file-actions'
 import { useOccludesBrowser } from '../browser-occlusion'
 import { BranchStatusDetails, type BranchTarget } from './BranchStatus'
+import { GitRefLabel } from './GitRefLabel'
 import { ContextMenu, MenuItem, menuPoint, type MenuPoint } from './ContextMenu'
 import { FileDiffView, FileList, useFocusCount } from './Inspector'
 import { BranchIcon, MoreIcon, MaximizeIcon, RestoreIcon, CheckIcon } from './icons'
@@ -134,7 +136,7 @@ function GitRepository({ target, updatedAt, refresh }: { target: GitTarget; upda
           <div className="git-history-tools"><span className="mono" title={ref}>{ref === 'all' ? '全部分支' : ref === 'HEAD' ? '当前分支' : ref.replace(/^refs\/(heads|remotes)\//, '')}</span>
             <input className="input" aria-label="搜索提交" placeholder="标题、作者或 SHA" value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
-          <History target={target} gitRef={ref} query={query} refreshKey={refreshKey} selected={selectedCommit} pick={(sha) => { setSelectedCommit(sha); setComparison(false); setDetailView(true) }} />
+          <History target={target} gitRef={ref} query={query} refreshKey={refreshKey} remotes={status.remotes} selected={selectedCommit} pick={(sha) => { setSelectedCommit(sha); setComparison(false); setDetailView(true) }} />
         </div>
         <div className="git-details">
           <button className="button git-detail-back" onClick={() => setDetailView(false)}>← 返回历史</button>
@@ -197,7 +199,7 @@ function BranchTree({ branches, selected, current, pick, actions }: { branches: 
   </>
 }
 
-function History({ target, gitRef, query, refreshKey, selected, pick }: { target: GitTarget; gitRef: string; query: string; refreshKey: string; selected: string | null; pick: (sha: string) => void }) {
+function History({ target, gitRef, query, refreshKey, remotes, selected, pick }: { target: GitTarget; gitRef: string; query: string; refreshKey: string; remotes: readonly string[]; selected: string | null; pick: (sha: string) => void }) {
   const rpc = useCore((s) => s.rpc)
   const key = `${gitRef}:${query}:${refreshKey}`
   const [page, setPage] = useState<{ key: string; history: GitHistory } | null>(null)
@@ -227,7 +229,7 @@ function History({ target, gitRef, query, refreshKey, selected, pick }: { target
     {history?.commits.map((commit, index) => <button key={commit.sha} className="git-commit-row" data-selected={selected === commit.sha || undefined} onClick={() => pick(commit.sha)} title={`${commit.sha}\n${commit.subject}\n${commit.author} · ${new Date(commit.date).toLocaleString()}`}>
       {/* Each row as wide as its own lanes, as IDEA's log: a busy stretch does not push every subject right. */}
       <svg className="git-graph" width={Math.max(16, graph[index]?.width ?? 0)} height="32" aria-hidden="true">{graph[index]?.paths.map((path, i) => <path key={i} d={path.d} data-color={path.color} />)}<circle cx={8 + (graph[index]?.lane ?? 0) * 12} cy="16" r="3" data-color={graph[index]?.color} /></svg>
-      <span className="git-commit-subject">{commit.refs.length > 0 && <span className="git-ref-label">{commit.refs.join(' · ')}</span>}{commit.subject}</span>
+      <span className="git-commit-subject"><GitRefLabel refs={commitRefs(commit.refs, remotes)} />{commit.subject}</span>
       <span className="git-commit-author muted">{commit.author}</span><span className="git-commit-date muted">{new Date(commit.date).toLocaleDateString()}</span><span className="mono muted">{commit.sha.slice(0, 8)}</span>
     </button>)}
     {!busy && history?.commits.length === 0 && <p className="git-message muted">没有匹配的提交。</p>}

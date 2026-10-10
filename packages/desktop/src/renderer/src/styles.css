@@ -7809,7 +7809,7 @@ body.side-panel-resizing * {
 .git-branch-row svg { width: 12px; height: 12px; flex-shrink: 0; }
 .git-branch-row:hover, .git-tree-filter:hover { background: var(--fill); }
 .git-branch-row[data-selected], .git-tree-filter[aria-pressed='true'] { background: var(--fill-2); }
-.git-branch-badge, .git-ref-label { color: var(--text-muted); font-size: var(--chat-font-small, 12px); border-radius: var(--radius-xs); background: var(--fill); padding: 0 4px; }
+.git-branch-badge { color: var(--text-muted); font-size: var(--chat-font-small, 12px); border-radius: var(--radius-xs); background: var(--fill); padding: 0 4px; }
 .git-tree-filter { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--chat-font-small, 12px); padding: 8px; cursor: pointer; border-radius: var(--radius-xs); }
 .git-history { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .git-history-tools { display: flex; gap: 8px; padding: 8px; align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--border); }
@@ -7836,7 +7836,18 @@ body.side-panel-resizing * {
 .git-graph circle { fill: var(--surface); stroke: var(--graph-line, currentColor); stroke-width: 1.5; }
 .git-commit-row[data-selected] .git-graph circle { stroke: var(--accent); }
 .git-commit-subject { flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.git-ref-label { margin-right: 4px; }
+/* A commit's branches and tags: the first and how many more in its row, all of them on hover and
+   under its detail, coloured by kind as IDEA's log is. */
+.git-ref-label { display: inline-flex; align-items: center; gap: 4px; max-width: 50%; margin-right: 6px; vertical-align: middle; }
+.git-ref { display: inline-flex; align-items: center; gap: 3px; min-width: 0; color: var(--text-muted); }
+.git-ref svg { flex-shrink: 0; width: 12px; height: 12px; }
+.git-ref[data-kind='local'] svg, .git-ref[data-kind='head'] svg { color: var(--code-string); }
+.git-ref[data-kind='remote'] svg { color: var(--code-keyword); }
+.git-ref[data-kind='tag'] svg { color: var(--code-number); }
+.git-ref[data-current] .git-ref-name { color: var(--text); font-weight: 600; }
+.git-ref-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-ref-more { flex-shrink: 0; padding: 0 4px; border-radius: var(--radius-xs); background: var(--fill); color: var(--text-muted); }
+.git-ref-list { display: grid; gap: 6px; margin: 0; padding: 4px 6px; list-style: none; font-size: var(--chat-font-small, 12px); }
 .git-commit-author, .git-commit-date { display: none; }
 .git-load-more { margin: 8px; }
 .git-details { display: none; min-width: 0; min-height: 0; overflow: auto; }
