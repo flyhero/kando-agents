@@ -56,6 +56,8 @@ export type TaskChatLaunch = TaskLaunchOptions & {
   // Files the agent may read without asking, such as the task's images.
   readable?: readonly string[]
   allowBypass?: boolean
+  // What the user adds for the next agent when the task's agent changes on the way.
+  handoffNote?: string
 }
 
 // What a stage's start takes beyond the agent: see TaskChatLaunch; moved says the agent works
@@ -457,7 +459,9 @@ export class ConversationService {
     const moved = conversation.workspacePath !== cwd
     const regrouped = moved || conversation.projectPaths.join('\n') !== projectPaths.join('\n')
     const live = conversation.sessionId !== null && this.chats.activity(id) !== null
-    const same = !regrouped && conversation.agent === task.agent && (conversation.planOnly ?? false) === launch.planOnly
+    // Going on with another agent than the chat had, it is handed what was said, as a handoff is.
+    const switched = launch.session === 'resume' && conversation.agent !== task.agent
+    const same = !regrouped && !switched && (conversation.planOnly ?? false) === launch.planOnly
     if (live && launch.session === 'resume' && same) return this.withChat(conversation)
     if (conversation.sessionId && !this.chats.idle(id)) throw new Rejection('chat-busy', 'the agent is still working')
     if (conversation.sessionId) await this.stop(id)
@@ -475,7 +479,7 @@ export class ConversationService {
           : launch.effort ?? undefined
       } })
     }
-    return this.start(id, task.agent, '', false, {
+    return this.start(id, task.agent, launch.handoffNote ?? '', switched, {
       fresh: launch.session === 'new',
       moved,
       planOnly: launch.planOnly,

@@ -751,6 +751,23 @@ describe('ConversationService', () => {
     expect(service.stages(moved.id).map((each) => each.planOnly)).toEqual([true, false])
   })
 
+  it('hands the chat to another agent the task goes on with, with a word from the user', async () => {
+    const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
+    await service.send(started.id, 'Build an API')
+    await settle()
+    const codex = await codexOpens(service.startForTask({ ...task, agent: 'codex' }, {
+      cwd: root, extraDirs: [], planOnly: false, session: 'resume', handoffNote: 'Check the tests'
+    }))
+    expect(codex.agent).toBe('codex')
+    const handed = handoffFile(codex.sessionId!)
+    expect(handed).toContain('Build an API')
+    expect(handed).toContain('Check the tests')
+    // A stage of its own starts afresh, with nothing handed on.
+    await service.stop(started.id)
+    const fresh = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
+    expect(JSON.stringify(daemon.written(fresh.sessionId!))).not.toContain('移交文件')
+  })
+
   it('goes on with the same Claude session when only another directory is added', async () => {
     const web = mkdtempSync(path.join(root, 'web-'))
     const started = await service.startForTask(task, { cwd: root, extraDirs: [], planOnly: false, session: 'new' })
