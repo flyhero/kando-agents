@@ -2,8 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import Markdown, { defaultUrlTransform, type Components, type ExtraProps } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
-import remarkBreaks from 'remark-breaks'
-import remarkGfm from 'remark-gfm'
+import { remarkPlugins } from '../markdown-syntax'
 import { perform, showError, useFindFileSupported } from '../core-store'
 import { canRevealFile, revealFile } from '../desktop-bridge'
 import { fileCandidates, fileReference, isImagePath, linkTarget, previewUrl, type FileReference, type LinkTarget } from '../file-links'
@@ -131,8 +130,6 @@ function ReplyImage({ src, alt }: { src?: string; alt?: string }) {
 type HastElement = NonNullable<ExtraProps['node']>
 type HastChild = HastElement['children'][number]
 
-// A newline in a reply is a line break, as it is in the agent's terminal, not a space.
-const remarkPlugins = [remarkGfm, remarkBreaks]
 // Code is coloured by its fence's language; one highlight.js does not know stays plain.
 const rehypePlugins = [rehypeHighlight]
 

@@ -17,7 +17,8 @@
     "dist:mac": "electron-vite build && node scripts/bundle-backend.mjs && electron-builder --mac --publish never"
   },
   "dependencies": {
-    "playwright-core": "catalog:"
+    "playwright-core": "catalog:",
+    "remark-cjk-friendly": "2.3.2"
   },
   "devDependencies": {
     "@codemirror/commands": "6.11.1",
