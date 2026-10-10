@@ -10,7 +10,7 @@ import { ConversationInspector } from './ConversationInspector'
 import { ConversationStatus } from './ConversationStatus'
 import { ConversationHandoffDialog } from './ConversationHandoffDialog'
 import { renameConversation } from './ConversationActions'
-import { CloseIcon, HandoffIcon, InspectorIcon, PencilIcon } from './icons'
+import { CloseIcon, HandoffIcon, InspectorIcon } from './icons'
 import { DEFAULT_SIDE_PANEL_RATIO } from './side-panel-size'
 import { EMPTY_FILE_TABS, useFileTabs } from '../file-tabs'
 import { TitleEditor } from './TitleEditor'
@@ -71,7 +71,7 @@ export function ConversationView({ id }: { id: string }) {
       <div className="header-meta">
         {renaming
           ? <TitleEditor title={conversation.title} label="会话标题" onSave={rename} onDone={() => setRenaming(false)} />
-          : <span className="terminal-view-title" title={conversation.title}>{conversation.title}</span>}
+          : <button type="button" className="terminal-view-title conversation-title" title={`${conversation.title}\n点击重命名`} disabled={busy} onClick={() => setRenaming(true)}>{conversation.title}</button>}
         <span className="muted">{AGENT_LABEL[conversation.agent]}</span>
         <span className="muted" title={conversation.projectPaths.join('\n') || conversation.workspacePath}>{primaryProjectName(conversation.projectPaths)}</span>
         <BranchStatus target={{ kind: 'conversation', id }} updatedAt={conversation.updatedAt} />
@@ -85,7 +85,6 @@ export function ConversationView({ id }: { id: string }) {
         )}
       </div>
       <div className="toolbar">
-        <button type="button" className="tool-button" aria-label="重命名" data-tooltip="重命名" disabled={busy || renaming} onClick={() => setRenaming(true)}><PencilIcon /></button>
         <button type="button" className="tool-button" aria-label="移交给其他智能体" data-tooltip="移交给其他智能体" disabled={busy} onClick={() => setHandoffOpen(true)}><HandoffIcon /></button>
         {hasPanel && (
           <button

@@ -2303,6 +2303,11 @@ button.task-tag:hover {
   font-weight: 600;
 }
 
+/* A conversation's title is renamed in place, by a click on it. */
+.conversation-title { margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--radius-xs); background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: text; }
+.conversation-title:hover:not(:disabled) { background: var(--fill); }
+.conversation-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+
 .terminal-view-empty {
   margin: auto;
 }
