@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { create } from 'zustand'
 import { AGENT_KINDS, type AgentKind, type Task } from '@kando/protocol'
 import { timeAgo } from '../conversation-state'
@@ -15,6 +15,7 @@ import { projectName, projectNames } from './ProjectPicker'
 import { StatusIcon } from './StatusIcon'
 import { cardAction, TaskContextMenu, useChatTurn } from './TaskActions'
 import { TaskAlerts } from './TaskAlerts'
+import { openQuickAdd, TaskQuickAdd } from './TaskQuickAdd'
 import { TitleEditor } from './TitleEditor'
 
 // The way back from a task to the board, at the start of its header; Esc goes there too.
@@ -50,6 +51,21 @@ export function TaskBoard() {
   const menuTask = menu ? tasks[menu.id] : undefined
   const narrowed = filter.query.trim() !== '' || filter.project !== null || filter.agent !== null
   const now = Date.now()
+  // The task just written down, lit for a moment where it lands.
+  const [freshId, setFreshId] = useState<string | null>(null)
+
+  // N writes a task down, unless it is being typed somewhere or a dialog or menu is up.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key.toLowerCase() !== 'n' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], .xterm, [role="menu"], dialog')) return
+      if (document.querySelector('dialog[open]')) return
+      event.preventDefault()
+      openQuickAdd()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <section className="task-board" aria-label="任务">
@@ -80,28 +96,25 @@ export function TaskBoard() {
           新建任务 <span className="task-board-key">{PRIMARY_KEY_LABEL}N</span>
         </button>
       </header>
-      {list.length === 0 ? (
-        <p className="task-board-empty muted">还没有任务。点右上角的「新建任务」，写下要做的事，交给 Agent 去执行。</p>
-      ) : (
-        <div className="task-board-columns">
-          {columns.map((column) => (
-            <Column key={column.status} column={column} narrowed={narrowed}>
-              {column.tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  tasks={tasks}
-                  now={now}
-                  renaming={renamingId === task.id}
-                  menuOpen={menu?.id === task.id}
-                  onRenamed={() => setRenamingId(null)}
-                  onMenu={(at) => setMenu({ id: task.id, at })}
-                />
-              ))}
-            </Column>
-          ))}
-        </div>
-      )}
+      <div className="task-board-columns">
+        {columns.map((column) => (
+          <Column key={column.status} column={column} narrowed={narrowed} top={column.status === 'pending' && <TaskQuickAdd onCreated={setFreshId} />}>
+            {column.tasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                tasks={tasks}
+                now={now}
+                fresh={freshId === task.id}
+                renaming={renamingId === task.id}
+                menuOpen={menu?.id === task.id}
+                onRenamed={() => setRenamingId(null)}
+                onMenu={(at) => setMenu({ id: task.id, at })}
+              />
+            ))}
+          </Column>
+        ))}
+      </div>
       {menu && menuTask && (
         <TaskContextMenu task={menuTask} at={menu.at} onClose={closeMenu} onRename={() => setRenamingId(menuTask.id)} />
       )}
@@ -109,7 +122,7 @@ export function TaskBoard() {
   )
 }
 
-function Column({ column, narrowed, children }: { column: BoardColumn; narrowed: boolean; children: ReactNode }) {
+function Column({ column, narrowed, top, children }: { column: BoardColumn; narrowed: boolean; top?: ReactNode; children: ReactNode }) {
   const hidden = column.total - column.tasks.length
   return (
     <section className="task-board-column" aria-label={STATUS_LABEL[column.status]} data-status={column.status}>
@@ -118,7 +131,8 @@ function Column({ column, narrowed, children }: { column: BoardColumn; narrowed:
         <span>{STATUS_LABEL[column.status]}</span>
         <span className="count">{column.total}</span>
       </h3>
-      {column.total === 0 ? <p className="task-board-column-empty">{narrowed ? '没有匹配的任务' : '空'}</p> : children}
+      {top}
+      {column.total === 0 ? !top && <p className="task-board-column-empty">{narrowed ? '没有匹配的任务' : '空'}</p> : children}
       {hidden > 0 && (
         <button type="button" className="task-board-more" onClick={() => useBoardFilter.setState({ allDone: true })}>
           显示更早的 {hidden} 个
@@ -128,10 +142,11 @@ function Column({ column, narrowed, children }: { column: BoardColumn; narrowed:
   )
 }
 
-function TaskCard({ task, tasks, now, renaming, menuOpen, onRenamed, onMenu }: {
+function TaskCard({ task, tasks, now, fresh, renaming, menuOpen, onRenamed, onMenu }: {
   task: Task
   tasks: Readonly<Record<string, Task>>
   now: number
+  fresh: boolean
   renaming: boolean
   menuOpen: boolean
   onRenamed: () => void
@@ -147,6 +162,7 @@ function TaskCard({ task, tasks, now, renaming, menuOpen, onRenamed, onMenu }: {
     <article
       className="task-card"
       data-menu-open={menuOpen || undefined}
+      data-fresh={fresh || undefined}
       data-abandoned={task.status === 'abandoned' || undefined}
       onClick={(event) => {
         if (!renaming && !(event.target instanceof Element && event.target.closest('.task-card-action'))) selectTask(task.id)

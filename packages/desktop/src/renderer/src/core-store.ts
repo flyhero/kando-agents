@@ -91,6 +91,8 @@ export type CoreState = {
   // What core found of git and the agent CLIs; null until it says, or on a core that does not look.
   environment: Environment | null
   newTaskOpen: boolean
+  // What the new task dialog starts from when it opens on a task already begun, as the board's quick add hands over.
+  newTaskDraft: NewTaskDraft | null
   taskLaunchId: string | null
   settingsOpen: boolean
   // Which settings section to show when settings open; null keeps the first.
@@ -165,6 +167,7 @@ export const useCore = create<CoreState>()(() => ({
   chatSettings: null,
   environment: null,
   newTaskOpen: false,
+  newTaskDraft: null,
   taskLaunchId: null,
   settingsOpen: false,
   settingsSection: null,
@@ -482,8 +485,10 @@ export function showView(view: TaskView): void {
   useCore.setState({ view })
 }
 
-export function setNewTaskOpen(open: boolean): void {
-  useCore.setState({ newTaskOpen: open })
+export type NewTaskDraft = { title: string; repos: readonly string[]; agent: AgentKind | null }
+
+export function setNewTaskOpen(open: boolean, draft: NewTaskDraft | null = null): void {
+  useCore.setState({ newTaskOpen: open, newTaskDraft: open ? draft : null })
 }
 
 export function setSettingsOpen(open: boolean, section: string | null = null): void {

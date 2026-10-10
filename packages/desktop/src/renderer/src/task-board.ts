@@ -54,3 +54,9 @@ export function boardProjects(tasks: readonly Task[]): string[] {
 export function activeTasks(tasks: readonly Task[]): Task[] {
   return tasks.filter((task) => task.status === 'running' || task.status === 'review').sort(COMPARE.recent)
 }
+
+// A task written on the board goes where the latest one went, as its agent does (see defaultAgent).
+export function latestProjects(tasks: readonly Task[]): string[] {
+  const latest = [...tasks].sort((a, b) => b.createdAt - a.createdAt).find((task) => task.repos.length > 0)
+  return latest ? latest.repos.map((repo) => repo.path) : []
+}
