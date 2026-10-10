@@ -7444,8 +7444,12 @@ body.side-panel-resizing * {
 .branch-push-what { margin: 0; font-size: 13px; }
 
 /* The browser card: a screenshot shown whole under the call's header, opening the viewer. */
-.chat-browser-shot { display: block; width: 100%; max-height: 480px; padding: 0; border: 0; border-top: 1px solid var(--border); background: var(--bg); cursor: zoom-in; }
+.chat-browser-shot { position: relative; display: block; width: 100%; max-height: 480px; padding: 0; border: 0; border-top: 1px solid var(--border); background: var(--bg); cursor: zoom-in; overflow: hidden; }
 .chat-browser-shot img { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* Too tall for the frame: its top at the card's width, fading out over a note that it goes on. */
+.chat-browser-shot[data-cropped] img { object-fit: cover; object-position: top center; }
+.chat-browser-shot[data-cropped]::after { content: ''; position: absolute; inset: auto 0 0; height: 72px; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
+.chat-browser-shot-more { position: absolute; left: 50%; bottom: 10px; z-index: 1; transform: translateX(-50%); padding: 2px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 /* A picture read from disk comes without its size: it takes its own height, up to the shot's cap. */
 .chat-file-shot img { height: auto; max-height: 480px; }
 .chat-file-shot-missing { margin: 0; border-top: 1px solid var(--border); }

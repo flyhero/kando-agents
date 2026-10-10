@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react'
+import { useContext, useEffect, useRef, useState, type RefObject } from 'react'
 import { browserToolKind, parseBrowserPage, toolImagePath, type ChatItem } from '@kando/protocol'
 import { useImageUrl } from '../attachment-images'
 import { useBrowserTabs, ALL_TABS } from '../browser-state'
@@ -17,12 +17,32 @@ import { ChatToolRun } from './ChatToolCard'
 
 type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
-// A page as the agent saw it: the picture is the point, so it is shown whole, not as a thumbnail.
+// Whether the shot's frame cuts the picture short: a full-page capture is far taller than the
+// frame lets a shot be, and shrunk to fit it would be a sliver nobody can read.
+function useCropped(frame: RefObject<HTMLElement | null>, ratio: number): boolean {
+  const [cropped, setCropped] = useState(false)
+  useEffect(() => {
+    const element = frame.current
+    if (!element) return
+    const measure = () => setCropped(element.offsetWidth * ratio > element.offsetHeight + 1)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [frame, ratio])
+  return cropped
+}
+
+// A page as the agent saw it: the picture is the point, so it is shown at the card's width, not as
+// a thumbnail. One too tall for the frame shows its top, the way the page reads, and opens whole.
 function BrowserShot({ image, onOpen }: { image: NonNullable<ToolItem['images']>[number]; onOpen: () => void }) {
   const url = useImageUrl(image.id)
+  const frame = useRef<HTMLButtonElement>(null)
+  const cropped = useCropped(frame, image.height / image.width)
   return (
-    <button type="button" className="chat-browser-shot" style={{ aspectRatio: `${image.width} / ${image.height}` }} aria-label="查看截图" onClick={onOpen}>
+    <button ref={frame} type="button" className="chat-browser-shot" data-cropped={cropped || undefined} style={{ aspectRatio: `${image.width} / ${image.height}` }} aria-label={cropped ? '查看完整的长截图' : '查看截图'} onClick={onOpen}>
       {url && <img src={url} alt="" draggable={false} />}
+      {cropped && <span className="chat-browser-shot-more">长截图 · 点击看全图</span>}
     </button>
   )
 }
