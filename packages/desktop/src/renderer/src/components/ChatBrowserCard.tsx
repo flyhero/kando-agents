@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState, type RefObject } from 'react'
 import { browserToolKind, parseBrowserPage, toolImagePath, type ChatItem } from '@kando/protocol'
 import { useImageUrl } from '../attachment-images'
+import { useNearView } from '../near-view'
 import { useBrowserTabs, ALL_TABS } from '../browser-state'
 import { useDisclosure } from '../chat-disclosure'
 import { itemKey } from '../chat-state'
@@ -36,8 +37,8 @@ function useCropped(frame: RefObject<HTMLElement | null>, ratio: number): boolea
 // A page as the agent saw it: the picture is the point, so it is shown at the card's width, not as
 // a thumbnail. One too tall for the frame shows its top, the way the page reads, and opens whole.
 function BrowserShot({ image, onOpen }: { image: NonNullable<ToolItem['images']>[number]; onOpen: () => void }) {
-  const url = useImageUrl(image.id)
   const frame = useRef<HTMLButtonElement>(null)
+  const url = useImageUrl(useNearView(frame) ? image.id : '')
   const cropped = useCropped(frame, image.height / image.width)
   return (
     <button ref={frame} type="button" className="chat-browser-shot" data-cropped={cropped || undefined} style={{ aspectRatio: `${image.width} / ${image.height}` }} aria-label={cropped ? '查看完整的长截图' : '查看截图'} onClick={onOpen}>

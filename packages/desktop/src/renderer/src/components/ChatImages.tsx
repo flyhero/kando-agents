@@ -3,6 +3,7 @@ import { IMAGE_MIME_TYPES, MAX_CHAT_IMAGES, type ChatImage } from '@kando/protoc
 import { copyImageToClipboard, imageFilesOf, uploadImageFiles, useImageUrl } from '../attachment-images'
 import { useCore } from '../core-store'
 import { fitChatImage } from '../image-fit'
+import { useNearView } from '../near-view'
 import { CheckIcon, CloseIcon, CopyIcon, ImageIcon, PlusIcon, SearchIcon } from './icons'
 import { ImageViewer } from './ImageViewer'
 import { Popover } from './Popover'
@@ -110,7 +111,8 @@ export function ChatAddMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (f
 
 // Every thumbnail can be opened or copied; one in the composer can also be removed.
 function Thumb({ image, onOpen, onRemove }: { image: ChatImage; onOpen: () => void; onRemove?: () => void }) {
-  const url = useImageUrl(image.id)
+  const frame = useRef<HTMLButtonElement>(null)
+  const url = useImageUrl(useNearView(frame) ? image.id : '')
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -119,7 +121,7 @@ function Thumb({ image, onOpen, onRemove }: { image: ChatImage; onOpen: () => vo
   }, [copied])
   return (
     <span className="chat-image">
-      <button type="button" className="chat-image-button" aria-label="查看图片" style={{ aspectRatio: `${image.width} / ${image.height}` }} onClick={onOpen}>
+      <button ref={frame} type="button" className="chat-image-button" aria-label="查看图片" style={{ aspectRatio: `${image.width} / ${image.height}` }} onClick={onOpen}>
         {url && <img src={url} alt="" draggable={false} />}
       </button>
       <span className="chat-image-actions">
