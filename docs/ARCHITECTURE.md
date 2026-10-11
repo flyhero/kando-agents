@@ -265,7 +265,7 @@ pnpm install
 pnpm dist:mac     # 产物在 packages/desktop/dist/Kando-<版本>-arm64.dmg
 ```
 
-`dist:mac` 依次执行 electron-vite 构建、`bundle-backend`（esbuild 把 core、daemon、MCP 服务和浏览器宿主各打成一个 JS，附上 node-pty 的 macOS 预编译）和 electron-builder。打包的 App 由 Electron 自带的 Node 运行这些文件（`ELECTRON_RUN_AS_NODE`），所以**装了 App 的机器不需要 Node 和 pnpm**，只需要 `claude` / `codex` CLI 本身。
+`dist:mac` 依次执行 electron-vite 构建、`bundle-backend`（esbuild 把 core、daemon 和 MCP 服务各打成一个 JS，附上 node-pty 的 macOS 预编译）和 electron-builder。打包的 App 由 Electron 自带的 Node 运行这些文件（`ELECTRON_RUN_AS_NODE`），所以**装了 App 的机器不需要 Node 和 pnpm**，只需要 `claude` / `codex` CLI 本身。
 
 安装：打开 dmg，把 Kando 拖进「应用程序」。启动时 App 会检查 `~/.kando/core.json`，没有在运行的 core 就自动拉起随附的 daemon 和 core（日志在 `~/.kando/logs/`）；Agent 的查找用的是登录 shell 的 PATH，所以 CLI 装在 Homebrew 或 `~/.local/bin` 都能找到。和从源码运行时一样，关闭或退出 App 不会停掉 core、daemon 和正在跑的 Agent。
 
