@@ -7,14 +7,17 @@ import { AgentIcon, CheckIcon, ChevronDownIcon } from './icons'
 import { Popover } from './Popover'
 
 // Locked while running (the session already started with this agent) and once abandoned.
+// `labelled` names the agent beside its mark, for a row of labelled buttons.
 export function AgentPicker({
   agent,
   locked,
-  onChange
+  onChange,
+  labelled = false
 }: {
   agent: AgentKind | null
   locked: boolean
   onChange: (agent: AgentKind | null) => void
+  labelled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
@@ -33,15 +36,16 @@ export function AgentPicker({
     <span className="menu-anchor">
       <button
         type="button"
-        className="tool-button agent-button"
+        className={labelled ? 'button agent-button-labelled' : 'tool-button agent-button'}
         aria-label={`Agent：${label}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-disabled={locked}
-        data-tooltip={locked ? `Agent：${label}` : `Agent：${label}（点击切换）`}
+        data-tooltip={labelled ? undefined : locked ? `Agent：${label}` : `Agent：${label}（点击切换）`}
         onClick={() => !locked && setOpen((current) => !current)}
       >
         <AgentIcon agent={agent} />
+        {labelled && label}
         <span className="agent-button-chevron">
           <ChevronDownIcon />
         </span>

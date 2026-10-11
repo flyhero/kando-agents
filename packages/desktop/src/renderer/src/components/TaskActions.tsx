@@ -13,8 +13,9 @@ import {
   type TaskStatus
 } from '@kando/protocol'
 import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWireLogShown, useWorktreesSupported, type TaskView } from '../core-store'
-import { reasonText } from '../labels'
+import { reasonText, STATUS_HINT, STATUS_LABEL } from '../labels'
 import { useFileTabs } from '../file-tabs'
+import { waitingOn } from '../task-waiting'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
 import { confirmQuota } from './AgentQuota'
@@ -23,6 +24,7 @@ import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, HandoffIcon, I
 import { Popover } from './Popover'
 import { cleanWithConfirm } from './WorktreeManager'
 import { SchedulePicker } from './SchedulePicker'
+import { StatusIcon } from './StatusIcon'
 import { useTaskHandoff, type TaskHandoff } from './TaskHandoff'
 import { createSchedule, openRunForTask, scheduleState } from '../schedules'
 
@@ -33,13 +35,13 @@ function blockerText(blocker: string, waitingOn: readonly Task[]): string {
   return reasonText(blocker, blocker)
 }
 
-type MoveAction = { label: string; Icon: () => ReactElement; className?: string }
+type MoveAction = { label: string; Icon: () => ReactElement; primary: boolean }
 
 // Manual moves only ever close a task; continuing and redoing have their own buttons.
 // Closing a task under review is accepting its result, the step that frees its dependents.
 function moveAction(from: TaskStatus, to: TaskStatus): MoveAction | null {
   if (to !== 'done') return null
-  return from === 'review' ? { label: '接受', Icon: CheckIcon, className: 'run-button' } : { label: '标记完成', Icon: CheckIcon }
+  return from === 'review' ? { label: '接受', Icon: CheckIcon, primary: true } : { label: '标记完成', Icon: CheckIcon, primary: false }
 }
 
 async function moveTask(taskId: string, status: TaskStatus): Promise<void> {
@@ -53,18 +55,21 @@ function moveBlocker(task: Task, status: TaskStatus): string | null {
 
 // Looks disabled while blocked but still answers a click with the reason:
 // a dead button that never says why is the confusing kind.
+// `labelled` says what it does in words, for a row in the page rather than a header of icons.
 function LaunchButton({
   label,
   className,
   Icon,
   reason,
-  launch
+  launch,
+  labelled = false
 }: {
   label: string
   className?: string
   Icon: () => ReactElement
   reason: string | null
   launch: () => Promise<void>
+  labelled?: boolean
 }) {
   const [explaining, setExplaining] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -75,13 +80,14 @@ function LaunchButton({
     <span className="menu-anchor">
       <button
         type="button"
-        className={`tool-button launch-button ${className ?? ''}`}
+        className={`${labelled ? 'button' : 'tool-button'} launch-button ${className ?? ''}`}
         aria-label={label}
         aria-disabled={blocked}
         aria-busy={starting}
         aria-haspopup={blocked ? 'dialog' : undefined}
         aria-expanded={blocked ? explaining : undefined}
-        data-tooltip={reason ? `还不能${label}：${reason}` : label}
+        data-tooltip={reason ? `还不能${label}：${reason}` : labelled ? undefined : label}
+        data-tooltip-align={labelled ? 'start' : undefined}
         onClick={async () => {
           if (blocked) {
             setExplaining((open) => !open)
@@ -93,6 +99,7 @@ function LaunchButton({
         }}
       >
         <Icon />
+        {labelled && label}
       </button>
       {explaining && reason && (
         <Popover label={`还不能${label}`} onClose={close}>
@@ -184,7 +191,7 @@ function unfinished(dependencies: readonly Task[]): Task[] {
 }
 
 // Redoing gives up this attempt, so it asks first, and takes the reason along to the next one.
-function RedoButton({ task }: { task: Task }) {
+function RedoButton({ task, labelled }: { task: Task; labelled: boolean }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -202,14 +209,16 @@ function RedoButton({ task }: { task: Task }) {
     <span className="menu-anchor">
       <button
         type="button"
-        className="tool-button"
+        className={labelled ? 'button' : 'tool-button'}
         aria-label="重做"
         aria-haspopup="dialog"
         aria-expanded={open}
         data-tooltip="重做：废弃这次结果，新建一个继承它的任务"
+        data-tooltip-align={labelled ? 'start' : undefined}
         onClick={() => setOpen((current) => !current)}
       >
         <ReopenIcon />
+        {labelled && '重做'}
       </button>
       {open && (
         <Popover label="重做任务" onClose={close}>
@@ -242,10 +251,15 @@ function RedoButton({ task }: { task: Task }) {
 }
 
 // While a task can only plan and already has a chat, return to it instead of launching again.
-function StartButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
+function StartButton({ task, dependencies, labelled }: { task: Task; dependencies: readonly Task[]; labelled: boolean }) {
   const blocker = checkStart(task, dependencies)
   if (blocker === 'planning') {
-    return (
+    return labelled ? (
+      <button type="button" className="button primary" onClick={() => showView('chat')}>
+        <ChatIcon />
+        规划中，查看对话
+      </button>
+    ) : (
       <button type="button" className="tool-button run-button" aria-pressed="true" aria-label="规划中，查看对话" data-tooltip="规划中，查看对话" onClick={() => showView('chat')}>
         <ChatIcon />
       </button>
@@ -255,17 +269,18 @@ function StartButton({ task, dependencies }: { task: Task; dependencies: readonl
   return (
     <LaunchButton
       label={plan ? '开始规划' : '开始执行'}
-      className="run-button"
+      className={labelled ? 'primary' : 'run-button'}
       Icon={plan ? ChatIcon : PlayIcon}
       reason={blocker && blockerText(blocker, unfinished(dependencies))}
       launch={() => startTask(task.id)}
+      labelled={labelled}
     />
   )
 }
 
 // Carrying the task out later, unattended: once its time comes and its agent has quota again.
 // Once scheduled, the button says when and leads to the page of scheduled runs.
-function ScheduleButton({ task, dependencies }: { task: Task; dependencies: readonly Task[] }) {
+function ScheduleButton({ task, dependencies, labelled }: { task: Task; dependencies: readonly Task[]; labelled: boolean }) {
   const supported = useSchedulesSupported() && task.agent !== 'cursor'
   const scheduled = useCore((s) => openRunForTask(s.schedules, task.id))
   const [open, setOpen] = useState(false)
@@ -273,7 +288,12 @@ function ScheduleButton({ task, dependencies }: { task: Task; dependencies: read
   if (!supported) return null
   if (scheduled) {
     const state = scheduleState(scheduled, Date.now())
-    return (
+    return labelled ? (
+      <button type="button" className="button task-scheduled" data-tooltip="查看预约的执行" data-tooltip-align="start" onClick={() => setSchedulesOpen(true)}>
+        <ClockIcon />
+        已预约：{state}
+      </button>
+    ) : (
       <button type="button" className="tool-button task-scheduled" aria-pressed="true" aria-label={`已预约：${state}`} data-tooltip={`已预约：${state}`} onClick={() => setSchedulesOpen(true)}>
         <ClockIcon />
       </button>
@@ -285,15 +305,17 @@ function ScheduleButton({ task, dependencies }: { task: Task; dependencies: read
     <span className="menu-anchor">
       <button
         type="button"
-        className="tool-button"
+        className={labelled ? 'button launch-button' : 'tool-button'}
         aria-label="预约执行"
         aria-disabled={reason !== null}
         aria-haspopup="dialog"
         aria-expanded={open}
         data-tooltip={reason ? `还不能预约：${reason}` : '预约执行：额度恢复后或到点自动开始'}
+        data-tooltip-align={labelled ? 'start' : undefined}
         onClick={() => setOpen((current) => !current)}
       >
         <ClockIcon />
+        {labelled && '预约'}
       </button>
       {open && (reason ? (
         <Popover label="还不能预约" onClose={close}>
@@ -311,15 +333,31 @@ function ScheduleButton({ task, dependencies }: { task: Task; dependencies: read
   )
 }
 
-function SubmitButton({ task }: { task: Task }) {
+function SubmitButton({ task, labelled }: { task: Task; labelled: boolean }) {
   const blocker = checkSubmit(task, useChatTurn(task))
   return (
     <LaunchButton
       label="提交验收"
-      className="run-button"
+      className={labelled ? 'primary' : 'run-button'}
       Icon={SubmitIcon}
       reason={blocker && reasonText(blocker, blocker)}
       launch={() => submitTask(task.id)}
+      labelled={labelled}
+    />
+  )
+}
+
+function MoveButton({ task, to, labelled }: { task: Task; to: TaskStatus; labelled: boolean }) {
+  const action = moveAction(task.status, to)
+  if (!action) return null
+  return (
+    <LaunchButton
+      label={action.label}
+      className={action.primary ? (labelled ? 'primary' : 'run-button') : undefined}
+      Icon={action.Icon}
+      reason={moveBlocker(task, to)}
+      launch={() => moveTask(task.id, to)}
+      labelled={labelled}
     />
   )
 }
@@ -427,66 +465,90 @@ function InspectorToggle({ view }: { view: TaskView }) {
 
 // Beside the agent, as a free conversation has it: looks disabled while the agent works, and
 // says why when pressed.
-function HandoffButton({ handoff }: { handoff: TaskHandoff }) {
+function HandoffButton({ handoff, labelled }: { handoff: TaskHandoff; labelled: boolean }) {
   const { blocker } = handoff
   return (
     <button
       type="button"
-      className="tool-button launch-button"
+      className={`${labelled ? 'button' : 'tool-button'} launch-button`}
       aria-label="移交给其他智能体"
       aria-disabled={blocker !== null}
       data-tooltip={blocker ? `还不能移交：${blocker}` : '移交给其他智能体'}
+      data-tooltip-align={labelled ? 'start' : undefined}
       onClick={() => {
         if (!blocker) handoff.open()
       }}
     >
       <HandoffIcon />
+      {labelled && '移交'}
     </button>
   )
 }
 
-// One toolbar for both panes of a task, so its controls never move when switching.
-export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
+// Who carries the task out and what moves it on. Icons in the chat's header; in the details, a row of
+// labelled buttons under the title, led by the one step the task waits for. There, closing a task by
+// hand is left to its status, unless it is the accepting that a task under review waits for.
+export function TaskSteps({ task, labelled = false }: { task: Task; labelled?: boolean }) {
   const tasks = useCore((s) => s.tasks)
   const dependencies = task.dependsOn.map((id) => tasks[id]).filter((dependency) => dependency !== undefined)
-  const worktree = task.repos.some((repo) => repo.worktreePath !== null)
-  const hasFiles = useFileTabs((state) => (state[task.conversationId ?? '']?.tabs.length ?? 0) > 0)
-  const wire = useWireLogShown()
   const handoff = useTaskHandoff(task)
   // A running task's agent changes only by handing its chat over; otherwise the next start or
   // message takes the new one, which a chat already begun is handed to.
   const handsOff = task.status === 'running' && handoff.available
+  const agent = (
+    <AgentPicker
+      agent={task.agent}
+      locked={task.status === 'abandoned' || (task.status === 'running' && !handsOff)}
+      labelled={labelled}
+      onChange={(agent) => {
+        if (!handsOff) void updateTask(task.id, { agent })
+        else if (agent) handoff.open(agent)
+      }}
+    />
+  )
+  const moves = labelled ? manualMoves(task.status).filter((status) => moveAction(task.status, status)?.primary) : manualMoves(task.status)
+  const start = task.status === 'pending' && <StartButton task={task} dependencies={dependencies} labelled={labelled} />
+  const submit = task.status === 'running' && <SubmitButton task={task} labelled={labelled} />
+  const moveButtons = moves.map((status) => <MoveButton key={status} task={task} to={status} labelled={labelled} />)
+  // A finished task goes on by a message in its chat.
+  const redo = isFinished(task.status) && <RedoButton task={task} labelled={labelled} />
+  const handoffButton = handoff.available && <HandoffButton handoff={handoff} labelled={labelled} />
+  const schedule = task.status === 'pending' && <ScheduleButton task={task} dependencies={dependencies} labelled={labelled} />
+  return labelled ? (
+    <>
+      {start}
+      {submit}
+      {moveButtons}
+      {redo}
+      {agent}
+      {handoffButton}
+      {schedule}
+      {handoff.dialog}
+    </>
+  ) : (
+    <>
+      {agent}
+      {handoffButton}
+      {start}
+      {schedule}
+      {submit}
+      {moveButtons}
+      {redo}
+      {handoff.dialog}
+    </>
+  )
+}
+
+// The task's header. The chat has no title row of its own, so the steps ride in it there; the
+// details have theirs under the title. Where to look and closing end the row in both panes, so
+// switching between them never moves those.
+export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
+  const worktree = task.repos.some((repo) => repo.worktreePath !== null)
+  const hasFiles = useFileTabs((state) => (state[task.conversationId ?? '']?.tabs.length ?? 0) > 0)
+  const wire = useWireLogShown()
   return (
     <div className="toolbar">
-      <AgentPicker
-        agent={task.agent}
-        locked={task.status === 'abandoned' || (task.status === 'running' && !handsOff)}
-        onChange={(agent) => {
-          if (!handsOff) void updateTask(task.id, { agent })
-          else if (agent) handoff.open(agent)
-        }}
-      />
-      {handoff.available && <HandoffButton handoff={handoff} />}
-      {task.status === 'pending' && <StartButton task={task} dependencies={dependencies} />}
-      {task.status === 'pending' && <ScheduleButton task={task} dependencies={dependencies} />}
-      {task.status === 'running' && <SubmitButton task={task} />}
-      {manualMoves(task.status).map((status) => {
-        const action = moveAction(task.status, status)
-        return (
-          action && (
-            <LaunchButton
-              key={status}
-              label={action.label}
-              className={action.className}
-              Icon={action.Icon}
-              reason={moveBlocker(task, status)}
-              launch={() => moveTask(task.id, status)}
-            />
-          )
-        )
-      })}
-      {/* A finished task goes on by a message in its chat. */}
-      {isFinished(task.status) && <RedoButton task={task} />}
+      {view === 'chat' && <TaskSteps task={task} />}
       {task.conversationId && (worktree || wire || hasFiles) && <InspectorToggle view={view} />}
       {task.conversationId && <ViewToggle view={view} />}
       <MoreMenu task={task} />
@@ -494,8 +556,49 @@ export function TaskToolbar({ task, view }: { task: Task; view: TaskView }) {
       <button type="button" className="tool-button" aria-label="关闭" data-tooltip="关闭" onClick={() => selectTask(null)}>
         <CloseIcon />
       </button>
-      {handoff.dialog}
     </div>
+  )
+}
+
+// The task's status as a line of the details. Opening it says what the status means and offers
+// the moves the user may make from it by hand.
+export function TaskStatusMenu({ task }: { task: Task }) {
+  const tasks = useCore((s) => s.tasks)
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const waiting = waitingOn(task, tasks)
+  const moves = manualMoves(task.status).flatMap((to) => {
+    const action = moveAction(task.status, to)
+    return action ? [{ to, action }] : []
+  })
+  return (
+    <span className="menu-anchor">
+      <button type="button" className="task-prop" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <StatusIcon status={task.status} waiting={waiting} decorative />
+        {STATUS_LABEL[task.status]}
+      </button>
+      {open && (
+        <Popover label="状态" onClose={close}>
+          <p className="menu-note">{waiting > 0 ? `等待 ${waiting} 个任务完成` : STATUS_HINT[task.status]}</p>
+          {moves.length > 0 && <div className="menu-separator" />}
+          {moves.map(({ to, action }) => (
+            <button
+              key={to}
+              type="button"
+              className="menu-item"
+              disabled={moveBlocker(task, to) !== null}
+              onClick={() => {
+                close()
+                void moveTask(task.id, to)
+              }}
+            >
+              <action.Icon />
+              <span className="menu-item-title">{action.label}</span>
+            </button>
+          ))}
+        </Popover>
+      )}
+    </span>
   )
 }
 

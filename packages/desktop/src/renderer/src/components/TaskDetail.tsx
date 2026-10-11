@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { checkChangePrimary, checkEditProjects, shortTaskId, type Task } from '@kando/protocol'
 import { selectTask, updateTask, useCore } from '../core-store'
-import { dayAndTime, STATUS_LABEL } from '../labels'
-import { waitingOn } from '../task-waiting'
+import { dayAndTime } from '../labels'
 import { saveTaskText, unsavedTaskText, useTaskSaveState, type SaveState } from '../unsaved-edits'
 import { MarkdownEditor } from './MarkdownEditor'
 import { SourceLink } from './SourceLink'
 import { SourceSnapshotCard } from './SourceSnapshotCard'
-import { StatusIcon } from './StatusIcon'
 import { BoardCrumb } from './TaskBoard'
 import { TaskAlerts } from './TaskAlerts'
 import { TaskPlanCard } from './TaskPlanCard'
 import { TaskImages, useImageAdder } from './TaskImages'
-import { TaskToolbar } from './TaskActions'
+import { TaskStatusMenu, TaskSteps, TaskToolbar } from './TaskActions'
 import { DependencyPicker, TaskDependents } from './DependencyPicker'
 import { ProjectPicker } from './ProjectPicker'
 import { TaskStarts } from './TaskStarts'
@@ -93,12 +91,8 @@ function TaskDetailBody({ task }: { task: Task }) {
     <section className="detail task-detail" aria-label="任务详情" {...images.handlers}>
       <header className="detail-header">
         <BoardCrumb />
-        <span className="status-pill" data-status={task.status}>
-          <StatusIcon status={task.status} waiting={waitingOn(task, tasks)} decorative />
-          {STATUS_LABEL[task.status]}
-        </span>
-        <TaskAlerts task={task} />
         <span className="muted mono">{shortTaskId(task.id)}</span>
+        <TaskAlerts task={task} />
         <SourceLink task={task} />
         <SaveIndicator taskId={task.id} />
         <TaskToolbar task={task} view="detail" />
@@ -108,9 +102,15 @@ function TaskDetailBody({ task }: { task: Task }) {
         <div className="task-detail-heading">
           <input className="input title-input" {...title} maxLength={200} aria-label="标题" />
           <Lineage task={task} tasks={tasks} />
+          <div className="task-detail-actions">
+            <TaskSteps task={task} labelled />
+          </div>
         </div>
 
         <aside className="task-detail-side" aria-label="任务属性">
+          <div className="task-props">
+            <TaskStatusMenu task={task} />
+          </div>
           <dl className="props">
             <dt>项目</dt>
             <dd>

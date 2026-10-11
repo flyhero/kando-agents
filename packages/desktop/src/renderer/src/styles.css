@@ -1382,7 +1382,8 @@ button.task-tag:hover {
 }
 
 /* Task detail: what the agent reads on the left, the task's metadata in a column beside it.
-   A narrow pane stacks them back into title, properties, details. */
+   A narrow pane stacks them back into title, properties, details, the short properties lined up
+   as chips. */
 .task-detail {
   container-type: inline-size;
 }
@@ -1399,7 +1400,8 @@ button.task-tag:hover {
   grid-template-areas:
     'heading side'
     'main side';
-  gap: 12px 24px;
+  gap: 24px 40px;
+  padding-top: 12px;
 }
 
 .task-detail-heading,
@@ -1421,8 +1423,85 @@ button.task-tag:hover {
 .task-detail-side {
   grid-area: side;
   min-width: 0;
-  padding-left: 20px;
-  border-left: 1px solid var(--border);
+}
+
+/* Led by the one step the task waits for, then who carries it out. */
+.task-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-detail-actions .button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.button.primary[aria-disabled='true'],
+.button.primary[aria-disabled='true']:hover:not(:disabled) {
+  background: var(--fill);
+  border-color: var(--border-2);
+  color: var(--text-muted);
+}
+
+.button.agent-button-labelled[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+.agent-button-labelled .agent-button-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agent-button-labelled[aria-disabled='true'] .agent-button-chevron {
+  display: none;
+}
+
+.button.task-scheduled svg {
+  color: var(--accent);
+}
+
+/* Short properties read as lines of the page, an icon and a value that fills on hover; the
+   negative margin lines the icon up with the labels below. */
+.task-props {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 16px;
+}
+
+.task-props > .menu-anchor {
+  display: flex;
+}
+
+.task-prop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 16px);
+  height: 30px;
+  margin-inline: -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.task-prop:hover,
+.task-prop[aria-expanded='true'] {
+  background: var(--fill-2);
+}
+
+.task-prop:focus-visible {
+  outline: 2px solid var(--focus);
 }
 
 .task-detail-side .props {
@@ -1456,9 +1535,19 @@ button.task-tag:hover {
       'main';
   }
 
-  .task-detail-side {
-    padding-left: 0;
-    border-left: 0;
+  .task-props {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 16px;
+  }
+
+  .task-prop {
+    width: auto;
+    height: 28px;
+    margin-inline: 0;
+    padding: 0 10px 0 8px;
+    background: var(--fill);
   }
 
   .task-detail-side .props {
