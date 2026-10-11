@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { AgentKind } from './agent'
 import { TaskImage } from './attachments'
-import type { ChatTurnActivity } from './chat'
+import { TaskLaunchOptions, type ChatTurnActivity } from './chat'
 import { SourceSnapshot, TaskSource } from './source'
 
 // pending: not handed to an agent yet · running: an agent works on it in the task's chat
@@ -10,9 +11,7 @@ export const TASK_STATUSES = ['pending', 'running', 'review', 'done', 'abandoned
 export const TaskStatus = z.enum(TASK_STATUSES)
 export type TaskStatus = z.infer<typeof TaskStatus>
 
-export const AGENT_KINDS = ['claude', 'codex', 'cursor'] as const
-export const AgentKind = z.enum(AGENT_KINDS)
-export type AgentKind = z.infer<typeof AgentKind>
+export { AGENT_KINDS, AgentKind } from './agent'
 
 export const MAX_TASK_REPOS = 10
 export const MAX_DETAILS_LENGTH = 100_000
@@ -105,6 +104,9 @@ export const Task = z.object({
   // The chat the task runs in, made when it starts; null before then.
   conversationId: z.string().nullable().default(null),
   plan: TaskPlan.nullable().default(null),
+  // The mode, model and effort a start by hand uses when it names none; a scheduled run takes the
+  // model and effort, and the unattended mode. Older cores leave it out.
+  launch: TaskLaunchOptions.default({}),
   createdAt: z.number(),
   updatedAt: z.number()
 })

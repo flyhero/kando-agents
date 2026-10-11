@@ -35,6 +35,7 @@ const task = (id: string, patch: Partial<Task> = {}): Task => ({
   awaitingInput: false,
   conversationId: null,
   plan: null,
+  launch: {},
   createdAt: 0,
   updatedAt: 0,
   ...patch

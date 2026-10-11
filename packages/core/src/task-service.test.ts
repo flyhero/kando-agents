@@ -225,6 +225,32 @@ describe('TaskService', () => {
     expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--model', 'sonnet', '--effort', 'high']))
   })
 
+  it('keeps what a start by hand chose, and a scheduled run takes its model and effort but not its mode', async () => {
+    await conversations.create('claude', [])
+    const repo = initRepo('app')
+    const planned = readyTask('Plan first', [repo])
+    await service.start(planned.id, false, undefined, { permissionMode: 'plan', model: 'sonnet' })
+    expect(store.get(planned.id)?.launch).toEqual({ permissionMode: 'plan', model: 'sonnet' })
+
+    const task = readyTask('Nightly', [repo])
+    expect(service.update({ id: task.id, launch: { permissionMode: 'plan', model: 'sonnet', effort: 'high' } }).launch)
+      .toEqual({ permissionMode: 'plan', model: 'sonnet', effort: 'high' })
+    await service.start(task.id, undefined, 'acceptEdits')
+    expect(daemon.spawns.at(-1)?.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--model', 'sonnet', '--effort', 'high']))
+    expect(store.get(task.id)?.launch.permissionMode).toBe('plan')
+  })
+
+  it('forgets the launch when the agent changes, and hands it to a redo', () => {
+    const task = readyTask('Switch agents', [initRepo('app')])
+    service.update({ id: task.id, launch: { permissionMode: 'acceptEdits', model: 'sonnet' } })
+    expect(service.update({ id: task.id, agent: 'claude' }).launch).toEqual({ permissionMode: 'acceptEdits', model: 'sonnet' })
+    store.update(task.id, { status: 'done' })
+    expect(service.redo(task.id, undefined).launch).toEqual({ permissionMode: 'acceptEdits', model: 'sonnet' })
+    const other = readyTask('Other agent', [initRepo('lib')])
+    service.update({ id: other.id, launch: { model: 'sonnet' } })
+    expect(service.update({ id: other.id, agent: 'codex' }).launch).toEqual({})
+  })
+
   it('rejects invalid selections before creating a task worktree or conversation', async () => {
     await conversations.create('claude', [])
     const task = readyTask('Invalid config', [initRepo('app')])

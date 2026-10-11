@@ -198,9 +198,11 @@ export class TaskService {
     return this.changed(this.store.update(task.id, { sourceSnapshot: snapshot }))
   }
 
-  update({ id, title, details, repos, dependsOn, agent, starts }: RpcParsedParams<'tasks.update'>): Task {
+  update({ id, title, details, repos, dependsOn, agent, starts, launch }: RpcParsedParams<'tasks.update'>): Task {
     const task = this.get(id)
-    const patch: TaskPatch = { title, details, agent }
+    const patch: TaskPatch = { title, details, agent, launch }
+    // Another agent has models and modes of its own, so what was picked for the last one goes.
+    if (agent !== undefined && agent !== task.agent && launch === undefined) patch.launch = {}
     if (repos !== undefined) {
       const blocker = checkEditProjects(task, this.launching.has(task.id))
       if (blocker) throw new Rejection(blocker)
@@ -311,7 +313,8 @@ export class TaskService {
       derivedFrom: task.id,
       source: task.source,
       sourceSnapshot: task.sourceSnapshot,
-      images: task.images
+      images: task.images,
+      launch: task.launch
     })
     // The abandoned attempt will never be done, so whatever waited on it waits on the redo.
     this.store.dependents(task.id).forEach((dependent) => {
@@ -327,6 +330,7 @@ export class TaskService {
   // Planning is the default; direct execution uses the chosen permission mode. Before dependencies
   // are accepted, the task can only plan read-only. Resolves once the first message is on its way.
   // unattended: a scheduled run, which carries the task out in that mode without planning first.
+  // What `options` leaves out comes from the task's launch, which a start by hand then keeps.
   async start(id: string, allowBypass?: boolean, unattended?: UnattendedMode, options: TaskLaunchOptions = {}): Promise<Task> {
     const chats = this.requireChats()
     const task = this.get(id)
@@ -341,18 +345,20 @@ export class TaskService {
     }
     if (!chats.capacityAvailable(agent, task.conversationId)) throw new Rejection('agent-capacity')
     return this.launchChat(task, async () => {
-      const permissionMode = unattended ?? options.permissionMode ?? 'plan'
+      const launch = { ...task.launch, ...options }
+      const permissionMode = unattended ?? launch.permissionMode ?? 'plan'
       const modeBlocker = checkStartMode(dependencies, permissionMode)
       if (modeBlocker) throw new Rejection(modeBlocker)
       if (permissionMode === 'bypass' && !allowBypass && unattended !== 'bypass') throw new Rejection('chat-option-invalid', '全部放行需要先在设置中开启')
-      await chats.validateStartOptions(agent, { ...options, permissionMode })
+      await chats.validateStartOptions(agent, { ...launch, permissionMode })
+      if (!unattended) this.changed(this.store.update(task.id, { launch: { ...launch, permissionMode } }))
       const images = await this.images(task)
       const imageIds = this.chatImageIds(task, images.prompt)
       if (startKind(dependencies) === 'plan') {
         const workspace = await prepareRefineWorkspace(task, dependencies, this.worktreesRoot)
         const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
           cwd: workspace.cwd, extraDirs: workspace.dirs.filter((dir) => dir !== workspace.cwd), planOnly: true, session: 'new',
-          readable: images.readable, allowBypass, ...options, permissionMode
+          readable: images.readable, allowBypass, ...launch, permissionMode
         })
         await chats.send(conversation.id, chatPlanPrompt(task, workspace, dependencies, this.predecessorOf(task), images.prompt), imageIds)
         return this.changed(this.get(task.id))
@@ -362,7 +368,7 @@ export class TaskService {
       this.store.update(task.id, { repos: workspace.repos })
       const conversation = await chats.startForTask({ id: task.id, title: task.title, agent }, {
         cwd: workspace.cwd, extraDirs: workspace.extraDirs, planOnly: false, session: 'new', readable: images.readable,
-        allowBypass: unattended === 'bypass' || allowBypass, ...options, permissionMode
+        allowBypass: unattended === 'bypass' || allowBypass, ...launch, permissionMode
       })
       // The planning agent stopped for the new stage, so nothing reads there any more.
       await removePlanningCheckouts(task.id, this.worktreesRoot)

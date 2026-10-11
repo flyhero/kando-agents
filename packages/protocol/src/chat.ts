@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { AttachmentId } from './attachments'
-import { AgentKind } from './task'
+import { AgentKind } from './agent'
 
 // idle: the agent waits for a message · running: a turn is under way · awaiting: the turn waits
 // on the user to approve or answer something

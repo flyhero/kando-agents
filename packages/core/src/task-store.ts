@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { z } from 'zod'
-import { SourceSnapshot, Task, TaskImage, TaskPlan, TaskSource, TaskStart, type TaskStatus } from '@kando/protocol'
+import { SourceSnapshot, Task, TaskImage, TaskLaunchOptions, TaskPlan, TaskSource, TaskStart, type TaskStatus } from '@kando/protocol'
 
 // Append-only: each entry upgrades PRAGMA user_version by one.
 export const MIGRATIONS = [
@@ -252,13 +252,15 @@ export const MIGRATIONS = [
    CREATE INDEX scheduled_runs_routine ON scheduled_runs(routine_id, created_at DESC) WHERE routine_id IS NOT NULL;
    ALTER TABLE conversations ADD COLUMN routine_id TEXT;`,
   // The conversation a fork was made from; kept after the source is deleted, as a name only.
-  `ALTER TABLE conversations ADD COLUMN forked_from_id TEXT;`
+  `ALTER TABLE conversations ADD COLUMN forked_from_id TEXT;`,
+  // The mode, model and effort a task starts in when a start names none (Task.launch, JSON).
+  `ALTER TABLE tasks ADD COLUMN launch TEXT;`
 ]
 
 
 const SELECT = `SELECT id, title, details, status, agent,
   derived_from AS derivedFrom, abandon_reason AS abandonReason, source, source_snapshot AS sourceSnapshot, images,
-  awaiting_input AS awaitingInput, plan,
+  awaiting_input AS awaitingInput, plan, launch,
   (SELECT id FROM conversations WHERE task_id = tasks.id ORDER BY created_at DESC LIMIT 1) AS conversationId,
   created_at AS createdAt, updated_at AS updatedAt FROM tasks`
 
@@ -270,13 +272,15 @@ const TaskRow = Task.omit({
   sourceSnapshot: true,
   images: true,
   awaitingInput: true,
-  plan: true
+  plan: true,
+  launch: true
 }).extend({
   source: z.string().nullable(),
   sourceSnapshot: z.string().nullable(),
   images: z.string().nullable(),
   awaitingInput: z.number(),
-  plan: z.string().nullable()
+  plan: z.string().nullable(),
+  launch: z.string().nullable()
 })
 const TaskImages = z.array(TaskImage)
 
@@ -326,6 +330,7 @@ export type TaskPatch = Partial<
     | 'images'
     | 'awaitingInput'
     | 'plan'
+    | 'launch'
     | 'repos'
     | 'dependsOn'
   >
@@ -424,6 +429,7 @@ export class TaskStore {
       images: parseColumn(TaskImages, row.images, `images of task ${row.id}`) ?? [],
       awaitingInput: row.awaitingInput !== 0,
       plan: parseColumn(TaskPlan, row.plan, `plan of task ${row.id}`),
+      launch: parseColumn(TaskLaunchOptions, row.launch, `launch of task ${row.id}`) ?? {},
       repos: (repos.get(row.id) ?? []).map(({ path, worktreePath, branch, startRef, start }) => ({
         path, worktreePath, branch, startRef, start: parseColumn(TaskStart, start, `start of ${path} in task ${row.id}`)
       })),
@@ -524,6 +530,10 @@ export class TaskStore {
       if (patch.plan !== undefined) {
         sets.push('plan = ?')
         values.push(patch.plan === null ? null : JSON.stringify(patch.plan))
+      }
+      if (patch.launch !== undefined) {
+        sets.push('launch = ?')
+        values.push(JSON.stringify(patch.launch))
       }
       sets.push('updated_at = ?')
       values.push(this.now())
