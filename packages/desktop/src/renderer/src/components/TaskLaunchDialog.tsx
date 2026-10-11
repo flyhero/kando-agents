@@ -9,6 +9,7 @@ import { useOccludesBrowser } from '../browser-occlusion'
 import { AgentQuotaHint, confirmQuota, modelText } from './AgentQuota'
 import { effortLabel, modeOptions, startModes } from './ChatOptionsBar'
 import { CloseIcon } from './icons'
+import { useEditsInPlace } from './TaskLaunch'
 
 
 function closeTaskLaunch() {
@@ -35,15 +36,22 @@ function LaunchForm({ task }: { task: Task }) {
   const tasks = useCore((s) => s.tasks)
   const dependencies = task.dependsOn.flatMap((id) => tasks[id] ? [tasks[id]] : [])
   const [busy, setBusy] = useState(false)
-  const [inPlace, setInPlace] = useState(false)
+  const inPlace = useEditsInPlace(task)
   const conversation = useCore((s) => s.conversations[task.conversationId ?? ''])
   const catalog = useAgentCatalog(agent, supported)
-  const [choices, setChoices] = useState<Partial<Record<AgentKind, ModelChoice>>>(() =>
-    task.agent && conversation?.agent === task.agent ? { [task.agent]: {
-      model: conversation.chatOptions?.model ?? undefined,
-      effort: conversation.chatOptions?.effort ?? undefined
-    } } : {})
-  const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>({ claude: 'plan', codex: 'plan', cursor: 'plan' })
+  // What the task keeps (a core with Task.launch), else what its chat last ran in.
+  const [choices, setChoices] = useState<Partial<Record<AgentKind, ModelChoice>>>(() => {
+    if (!task.agent) return {}
+    const chat = conversation?.agent === task.agent ? conversation.chatOptions : null
+    return { [task.agent]: {
+      model: task.launch.model ?? chat?.model ?? undefined,
+      effort: task.launch.effort ?? chat?.effort ?? undefined
+    } }
+  })
+  const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>(() => {
+    const modes: Record<AgentKind, ChatPermissionMode> = { claude: 'plan', codex: 'plan', cursor: 'plan' }
+    return task.agent && task.launch.permissionMode ? { ...modes, [task.agent]: task.launch.permissionMode } : modes
+  })
 
   useEffect(() => {
     const element = dialog.current
@@ -51,14 +59,6 @@ function LaunchForm({ task }: { task: Task }) {
     dismissError()
     return () => element?.close()
   }, [])
-  useEffect(() => {
-    if (!rpc?.features.includes('task-start')) return
-    let current = true
-    rpc.call('tasks.startOptions', { id: task.id }).then((repos) => {
-      if (current) setInPlace(repos.some((repo) => !repo.git))
-    }, () => {})
-    return () => { current = false }
-  }, [rpc, task.id, task.repos])
 
   const choice = agent ? choices[agent] ?? {} : {}
   const { defaultModel, model, modelId, efforts, effort } = resolveModel(catalog, choice)

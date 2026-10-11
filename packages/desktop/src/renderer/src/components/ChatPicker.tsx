@@ -7,7 +7,7 @@ export type PickerOption = { value: string; label: string; description?: string 
 // A choice in the composer's toolbar: its value as a small button as wide as its words, and a menu
 // above it. A native select is as wide as its longest option, which left most values far from their
 // arrow.
-function PickerShell({ label, spoken, tone, disabled, title, align, placement = 'above', value, onClose, children }: {
+function PickerShell({ label, spoken, tone, disabled, title, align, placement = 'above', size, value, onClose, children }: {
   label: string
   // The button's name for a screen reader, which cannot see the value's colour or suffix.
   spoken: string
@@ -17,6 +17,8 @@ function PickerShell({ label, spoken, tone, disabled, title, align, placement = 
   align: 'start' | 'end'
   // Above in the composer, where below is the rest of it; below for one at the top of a panel.
   placement?: 'above' | 'below'
+  // Large: as tall as a button, for a row of buttons rather than the composer's toolbar.
+  size?: 'large'
   value: ReactNode
   onClose?: () => void
   children: (close: () => void) => ReactNode
@@ -38,6 +40,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, placement = 
         type="button"
         className="chat-picker"
         data-tone={tone}
+        data-size={size}
         aria-haspopup="menu"
         aria-expanded={at !== null}
         aria-label={spoken}
@@ -57,7 +60,7 @@ function PickerShell({ label, spoken, tone, disabled, title, align, placement = 
   )
 }
 
-function PickerItem({ option, checked, onSelect }: { option: PickerOption; checked: boolean; onSelect: () => void }) {
+export function PickerItem({ option, checked, onSelect }: { option: PickerOption; checked: boolean; onSelect: () => void }) {
   return (
     <button
       type="button"
@@ -118,7 +121,7 @@ export type ModelOption = PickerOption & { efforts: readonly PickerOption[] }
 // The model and how hard it thinks, as one button: "Opus 5.5 · 高". Its menu lists the models
 // first, then the picked one's efforts as chips pinned to its foot, so a long list cannot scroll
 // them away. Picking a model that has efforts keeps the menu open for them.
-export function ChatModelPicker({ models, model, effort, onModel, onEffort, disabled = false, title }: {
+export function ChatModelPicker({ models, model, effort, onModel, onEffort, disabled = false, title, align = 'end', placement, size }: {
   models: readonly ModelOption[]
   model: string | null
   effort: string | null
@@ -126,6 +129,9 @@ export function ChatModelPicker({ models, model, effort, onModel, onEffort, disa
   onEffort: (effort: string) => void
   disabled?: boolean
   title?: string
+  align?: 'start' | 'end'
+  placement?: 'above' | 'below'
+  size?: 'large'
 }) {
   // A switch a running agent has yet to confirm: its efforts show, but wait for it.
   const [picked, setPicked] = useState<string | null>(null)
@@ -141,7 +147,9 @@ export function ChatModelPicker({ models, model, effort, onModel, onEffort, disa
       spoken={`模型：${modelLabel}${effortLabel ? `，推理强度：${effortLabel}` : ''}`}
       disabled={disabled}
       title={title}
-      align="end"
+      align={align}
+      placement={placement}
+      size={size}
       value={<>{modelLabel}{effortLabel && <span className="chat-picker-suffix"> · {effortLabel}</span>}</>}
       onClose={forget}
     >

@@ -3,29 +3,35 @@ import {
   checkMove,
   checkScheduleTask,
   checkStart,
+  checkStartMode,
   checkSubmit,
   isFinished,
   manualMoves,
   shortTaskId,
   startKind,
+  type ChatPermissionMode,
   type ChatTurnActivity,
   type Task,
   type TaskStatus
 } from '@kando/protocol'
-import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useWireLogShown, useWorktreesSupported, type TaskView } from '../core-store'
+import { perform, selectTask, setInspectorOpen, setSchedulesOpen, showTaskChanges, showView, updateTask, useChatOptionsSupported, useCore, useSchedulesSupported, useTaskLaunchSupported, useWireLogShown, useWorktreesSupported, type TaskView } from '../core-store'
+import { resolveModel, useAgentCatalog } from '../agent-models'
 import { reasonText, STATUS_HINT, STATUS_LABEL } from '../labels'
 import { useFileTabs } from '../file-tabs'
 import { waitingOn } from '../task-waiting'
 import { usePreferences } from '../preferences'
 import { AgentPicker } from './AgentPicker'
-import { confirmQuota } from './AgentQuota'
+import { confirmQuota, modelText } from './AgentQuota'
+import { PickerItem } from './ChatPicker'
+import { effortLabel, modeLabel, modeOptions } from './ChatOptionsBar'
 import { ContextMenu, MenuItem, type MenuPoint } from './ContextMenu'
-import { ChatIcon, CheckIcon, ClockIcon, CloseIcon, DocumentIcon, HandoffIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
+import { ChatIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DocumentIcon, HandoffIcon, InspectorIcon, MoreIcon, PlayIcon, ReopenIcon, SubmitIcon } from './icons'
 import { Popover } from './Popover'
 import { cleanWithConfirm } from './WorktreeManager'
 import { SchedulePicker } from './SchedulePicker'
 import { StatusIcon } from './StatusIcon'
 import { useTaskHandoff, type TaskHandoff } from './TaskHandoff'
+import { launchOptions, TaskModelPicker, useEditsInPlace, useTaskLaunch, type TaskLaunch } from './TaskLaunch'
 import { createSchedule, openRunForTask, scheduleState } from '../schedules'
 
 function blockerText(blocker: string, waitingOn: readonly Task[]): string {
@@ -62,7 +68,8 @@ function LaunchButton({
   Icon,
   reason,
   launch,
-  labelled = false
+  labelled = false,
+  tooltip
 }: {
   label: string
   className?: string
@@ -70,6 +77,8 @@ function LaunchButton({
   reason: string | null
   launch: () => Promise<void>
   labelled?: boolean
+  // What a labelled button says on hover beyond its label.
+  tooltip?: string
 }) {
   const [explaining, setExplaining] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -86,7 +95,7 @@ function LaunchButton({
         aria-busy={starting}
         aria-haspopup={blocked ? 'dialog' : undefined}
         aria-expanded={blocked ? explaining : undefined}
-        data-tooltip={reason ? `还不能${label}：${reason}` : labelled ? undefined : label}
+        data-tooltip={reason ? `还不能${label}：${reason}` : labelled ? tooltip : label}
         data-tooltip-align={labelled ? 'start' : undefined}
         onClick={async () => {
           if (blocked) {
@@ -285,6 +294,11 @@ function ScheduleButton({ task, dependencies, labelled }: { task: Task; dependen
   const scheduled = useCore((s) => openRunForTask(s.schedules, task.id))
   const [open, setOpen] = useState(false)
   const close = useCallback(() => setOpen(false), [])
+  // A scheduled run takes the task's model and effort (its mode is the unattended one).
+  const launchSupported = useTaskLaunchSupported()
+  const catalog = useAgentCatalog(task.agent, open && launchSupported)
+  const { model, effort } = resolveModel(catalog, { model: task.launch.model ?? undefined, effort: task.launch.effort ?? undefined })
+  const runsIn = model ? `用 ${model.label}${effort ? ` · ${effortLabel(effort)}` : ''}。` : ''
   if (!supported) return null
   if (scheduled) {
     const state = scheduleState(scheduled, Date.now())
@@ -324,12 +338,96 @@ function ScheduleButton({ task, dependencies, labelled }: { task: Task; dependen
       ) : (
         <SchedulePicker
           title="预约执行"
-          note={task.plan ? '到点后按保存的计划直接实现，不再先规划。' : '到点后按任务详情直接实现，不再先规划。'}
+          note={`${task.plan ? '到点后按保存的计划直接实现，不再先规划。' : '到点后按任务详情直接实现，不再先规划。'}${runsIn}`}
           onSchedule={async (notBefore) => (await createSchedule({ kind: 'task', taskId: task.id }, notBefore)) !== null}
           onClose={close}
         />
       ))}
     </span>
+  )
+}
+
+// Started from the details as the task keeps its launch, so the dialog is not needed there.
+async function startNow(task: Task, launch: TaskLaunch): Promise<void> {
+  if (!task.agent || !confirmQuota(task.agent, modelText(launch.model))) return
+  const bypass = useCore.getState().rpc?.features.includes('chat-options') ? { allowBypass: usePreferences.getState().allowBypass } : {}
+  if (await perform((rpc) => rpc.call('tasks.start', { id: task.id, ...bypass, ...launchOptions(launch) }))) showChatFor(task.id)
+}
+
+function startLabel(mode: ChatPermissionMode): string {
+  return mode === 'plan' ? '开始规划' : mode === 'readOnly' ? '开始分析' : '直接执行'
+}
+
+// Starts at once in the mode the task keeps; the menu beside it picks that mode, planning first or
+// carrying the task out directly, and how freely the agent then acts.
+function StartSplitButton({ task, dependencies, launch }: { task: Task; dependencies: readonly Task[]; launch: TaskLaunch }) {
+  const [open, setOpen] = useState(false)
+  const close = useCallback(() => setOpen(false), [])
+  const writes = launch.mode !== 'plan' && launch.mode !== 'readOnly'
+  const inPlace = useEditsInPlace(task)
+  const agent = task.agent
+  if (!agent) return null
+  const blocker = checkStart(task, dependencies)
+  const options = modeOptions(agent, launch.offered, launch.offered.filter((mode) => !checkStartMode(dependencies, mode)))
+  const option = (mode: string) => options.find((each) => each.value === mode)
+  const item = (mode: ChatPermissionMode) => {
+    const each = option(mode)
+    return each && (
+      <PickerItem
+        key={mode}
+        option={each}
+        checked={mode === launch.mode}
+        onSelect={() => {
+          close()
+          if (mode !== launch.mode) void updateTask(task.id, { launch: { ...task.launch, permissionMode: mode } })
+        }}
+      />
+    )
+  }
+  const direct = launch.offered.filter((mode) => mode !== 'plan' && mode !== 'readOnly')
+  const described = option(launch.mode)
+  return (
+    <>
+      <span className="split-button">
+        <LaunchButton
+          label={startLabel(launch.mode)}
+          className="primary"
+          Icon={launch.mode === 'plan' ? ChatIcon : PlayIcon}
+          reason={blocker && blockerText(blocker, unfinished(dependencies))}
+          launch={() => startNow(task, launch)}
+          labelled
+          tooltip={described?.description ? `${modeLabel(agent, launch.mode)}：${described.description}` : undefined}
+        />
+        <span className="menu-anchor">
+          <button
+            type="button"
+            className={`button split-button-toggle ${blocker ? '' : 'primary'}`}
+            aria-label="选择怎么开始"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={() => setOpen((current) => !current)}
+          >
+            <ChevronDownIcon />
+          </button>
+          {open && (
+            <Popover label="怎么开始" onClose={close}>
+              {launch.planOnly && <p className="menu-note">依赖的任务还没完成，现在只能先规划。</p>}
+              <div className="chat-picker-heading">先规划</div>
+              {item('plan')}
+              {direct.length > 0 && <div className="chat-picker-heading">直接执行</div>}
+              {direct.map(item)}
+              {launch.offered.includes('readOnly') && (
+                <>
+                  <div className="menu-separator" />
+                  {item('readOnly')}
+                </>
+              )}
+            </Popover>
+          )}
+        </span>
+      </span>
+      {writes && inPlace && <p className="task-launch-note">此项目不是 Git 仓库，修改会直接写入原目录。</p>}
+    </>
   )
 }
 
@@ -506,8 +604,12 @@ export function TaskSteps({ task, labelled = false }: { task: Task; labelled?: b
       }}
     />
   )
+  // From the details a task starts at once as it keeps its launch; a planning task's chat is open.
+  const launch = useTaskLaunch(task, dependencies, labelled && task.status === 'pending' && checkStart(task, dependencies) !== 'planning')
   const moves = labelled ? manualMoves(task.status).filter((status) => moveAction(task.status, status)?.primary) : manualMoves(task.status)
-  const start = task.status === 'pending' && <StartButton task={task} dependencies={dependencies} labelled={labelled} />
+  const start = task.status === 'pending' && (launch
+    ? <StartSplitButton task={task} dependencies={dependencies} launch={launch} />
+    : <StartButton task={task} dependencies={dependencies} labelled={labelled} />)
   const submit = task.status === 'running' && <SubmitButton task={task} labelled={labelled} />
   const moveButtons = moves.map((status) => <MoveButton key={status} task={task} to={status} labelled={labelled} />)
   // A finished task goes on by a message in its chat.
@@ -521,6 +623,7 @@ export function TaskSteps({ task, labelled = false }: { task: Task; labelled?: b
       {moveButtons}
       {redo}
       {agent}
+      {launch && <TaskModelPicker task={task} launch={launch} />}
       {handoffButton}
       {schedule}
       {handoff.dialog}

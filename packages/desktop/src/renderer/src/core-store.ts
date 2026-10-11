@@ -630,6 +630,11 @@ export function usePlanModesSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('plan-modes') ?? false)
 }
 
+// A core that keeps the mode, model and effort a task starts in (Task.launch).
+export function useTaskLaunchSupported(): boolean {
+  return useCore((s) => s.rpc?.features.includes('task-launch') ?? false)
+}
+
 export function useFileMentionsSupported(): boolean {
   return useCore((s) => s.rpc?.features.includes('file-mentions') ?? false)
 }
