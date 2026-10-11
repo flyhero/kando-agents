@@ -9,9 +9,9 @@ import { ImageViewer } from './ImageViewer'
 import { Popover } from './Popover'
 
 // Images the composer holds for its next message, uploaded as they come from a paste, a drop or
-// the picker, so that sending only names them.
-export function useComposerImages() {
-  const [images, setImages] = useState<ChatImage[]>([])
+// the picker, so that sending only names them. `initial`: those of a draft kept from before.
+export function useComposerImages(initial: readonly ChatImage[] = []) {
+  const [images, setImages] = useState<ChatImage[]>(() => [...initial])
   const [uploading, setUploading] = useState(0)
   const add = (files: File[]) => {
     if (images.length + uploading >= MAX_CHAT_IMAGES) {

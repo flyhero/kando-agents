@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { composerDraft, saveComposerDraft } from './composer-drafts'
+import { composerDraft, EMPTY_DRAFT, saveComposerDraft } from './composer-drafts'
 
 const mention = {
   start: 2,
@@ -8,29 +8,38 @@ const mention = {
 }
 
 afterEach(() => {
-  saveComposerDraft('one', { text: '', mentions: [] })
-  saveComposerDraft('two', { text: '', mentions: [] })
-  saveComposerDraft(null, { text: '', mentions: [] })
+  saveComposerDraft('one', EMPTY_DRAFT)
+  saveComposerDraft('two', EMPTY_DRAFT)
+  saveComposerDraft(null, EMPTY_DRAFT)
 })
 
 describe('composer drafts', () => {
   it('keeps text and mentions separately for every conversation', () => {
-    saveComposerDraft('one', { text: '看 a.ts', mentions: [mention] })
-    saveComposerDraft('two', { text: '另一个输入', mentions: [] })
+    saveComposerDraft('one', { text: '看 a.ts', mentions: [mention], images: [] })
+    saveComposerDraft('two', { text: '另一个输入', mentions: [], images: [] })
 
-    expect(composerDraft('one')).toEqual({ text: '看 a.ts', mentions: [mention] })
-    expect(composerDraft('two')).toEqual({ text: '另一个输入', mentions: [] })
-    expect(composerDraft('missing')).toEqual({ text: '', mentions: [] })
+    expect(composerDraft('one')).toEqual({ text: '看 a.ts', mentions: [mention], images: [] })
+    expect(composerDraft('two')).toEqual({ text: '另一个输入', mentions: [], images: [] })
+    expect(composerDraft('missing')).toEqual(EMPTY_DRAFT)
   })
 
   it('keeps a new conversation separate and drops a sent draft', () => {
-    saveComposerDraft(null, { text: '第一条消息', mentions: [] })
-    saveComposerDraft('one', { text: '下一条消息', mentions: [] })
+    saveComposerDraft(null, { text: '第一条消息', mentions: [], images: [] })
+    saveComposerDraft('one', { text: '下一条消息', mentions: [], images: [] })
 
-    saveComposerDraft('one', { text: '', mentions: [] })
+    saveComposerDraft('one', EMPTY_DRAFT)
 
-    expect(composerDraft('one')).toEqual({ text: '', mentions: [] })
+    expect(composerDraft('one')).toEqual(EMPTY_DRAFT)
     expect(composerDraft(null).text).toBe('第一条消息')
+  })
+
+  it('keeps attached images, even with no text', () => {
+    const image = { id: `${'a'.repeat(64)}.png`, width: 640, height: 480 }
+    saveComposerDraft('one', { text: '看这张图', mentions: [], images: [image] })
+    saveComposerDraft('two', { text: '', mentions: [], images: [image] })
+
+    expect(composerDraft('one').images).toEqual([image])
+    expect(composerDraft('two')).toEqual({ text: '', mentions: [], images: [image] })
   })
 
   it('restores a draft after the module reloads', async () => {
@@ -47,8 +56,9 @@ describe('composer drafts', () => {
       vi.resetModules()
       const reloaded = await import('./composer-drafts')
 
-      expect(reloaded.composerDraft('reloaded').text).toBe('窗口重开后还在')
-      reloaded.saveComposerDraft('reloaded', { text: '', mentions: [] })
+      // Kept before drafts held images.
+      expect(reloaded.composerDraft('reloaded')).toEqual({ text: '窗口重开后还在', mentions: [], images: [] })
+      reloaded.saveComposerDraft('reloaded', EMPTY_DRAFT)
     } finally {
       vi.unstubAllGlobals()
     }

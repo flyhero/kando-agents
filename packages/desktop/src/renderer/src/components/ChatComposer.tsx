@@ -207,7 +207,8 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const initialMessage = useInitialMessages((messages) => messages[id])
   const surface = useChatSurface()
   const beginRelay = useContext(ChatMessageRelay)
-  const { value, setText, setValue } = useMentionedText(composerDraft(id))
+  const [draft] = useState(() => composerDraft(id))
+  const { value, setText, setValue } = useMentionedText({ text: draft.text, mentions: draft.mentions })
   const { text } = value
   const [busy, setBusy] = useState(false)
   const quotes = useQuotes(id)
@@ -216,8 +217,8 @@ export function ChatComposer({ conversation, state }: { conversation: Conversati
   const schedulesSupported = useSchedulesSupported()
   const scheduleImagesSupported = useScheduleImagesSupported()
   const mentionsSupported = useFileMentionsSupported()
-  const attached = useComposerImages()
-  useEffect(() => saveComposerDraft(id, value), [id, value])
+  const attached = useComposerImages(draft.images)
+  useEffect(() => saveComposerDraft(id, { ...value, images: attached.images }), [id, value, attached.images])
   // A message left here for the user, as a fork leaves the message it stopped before.
   useEffect(() => {
     const draft = takeDraft(id)

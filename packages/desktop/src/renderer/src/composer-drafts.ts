@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { ChatImage } from '@kando/protocol'
 import type { MentionedText } from './chat-mentions'
 
 // Unsent input belongs to the conversation it was written in. The new-conversation page has its
 // own slot. Kept locally so changing pages, closing the window, or a renderer reload loses none of
-// what the user has typed; a successful send removes it.
+// what the user has typed or attached; a successful send removes it. Images are kept by their ids
+// in core's attachment store, which holds them already once uploaded.
 
 const MentionTarget = z.object({
   kind: z.enum(['file', 'directory', 'project']),
@@ -15,20 +17,23 @@ const Mention = z.object({
   end: z.number().int().nonnegative(),
   target: MentionTarget
 })
-const Draft = z.object({ text: z.string(), mentions: z.array(Mention) }).refine(
+// Drafts kept before images were have none.
+const Draft = z.object({ text: z.string(), mentions: z.array(Mention), images: z.array(ChatImage).default([]) }).refine(
   (draft) => draft.mentions.every((mention) => mention.start <= mention.end && mention.end <= draft.text.length)
 )
 const Drafts = z.record(z.string(), Draft)
 
 const STORAGE_KEY = 'kando.composer-drafts'
 const NEW_CONVERSATION = 'new-conversation'
-const EMPTY: MentionedText = { text: '', mentions: [] }
+export type ComposerDraft = MentionedText & { images: readonly ChatImage[] }
+
+export const EMPTY_DRAFT: ComposerDraft = { text: '', mentions: [], images: [] }
 
 function keyOf(conversationId: string | null): string {
   return conversationId === null ? NEW_CONVERSATION : `conversation:${conversationId}`
 }
 
-function load(): Record<string, MentionedText> {
+function load(): Record<string, ComposerDraft> {
   try {
     const parsed = Drafts.safeParse(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'))
     return parsed.success ? parsed.data : {}
@@ -47,13 +52,13 @@ function persist(): void {
   }
 }
 
-export function composerDraft(conversationId: string | null): MentionedText {
-  return drafts[keyOf(conversationId)] ?? EMPTY
+export function composerDraft(conversationId: string | null): ComposerDraft {
+  return drafts[keyOf(conversationId)] ?? EMPTY_DRAFT
 }
 
-export function saveComposerDraft(conversationId: string | null, value: MentionedText): void {
+export function saveComposerDraft(conversationId: string | null, value: ComposerDraft): void {
   const key = keyOf(conversationId)
-  if (value.text === '') {
+  if (value.text === '' && value.images.length === 0) {
     const { [key]: _removed, ...rest } = drafts
     drafts = rest
   } else {

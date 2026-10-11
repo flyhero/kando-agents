@@ -19,7 +19,7 @@ import { ChatModelPicker, ChatPicker } from './ChatPicker'
 import { AgentIcon, CloseIcon, EnterIcon } from './icons'
 import { ProjectPicker } from './ProjectPicker'
 import { DraftBranchPicker, useProjectBranches } from './DraftBranchPicker'
-import { composerDraft, saveComposerDraft } from '../composer-drafts'
+import { composerDraft, EMPTY_DRAFT, saveComposerDraft } from '../composer-drafts'
 import { keepInitialMessage, sendInitialMessage } from '../initial-messages'
 
 // A new conversation while chats are the default: the agent and projects are picked on the page,
@@ -36,10 +36,10 @@ export function ConversationDraft() {
   })
   const [projectPaths, setProjectPaths] = useState<string[]>([])
   const [worktree, setWorktree] = useState(false)
-  const { value, setText, setValue } = useMentionedText(composerDraft(null))
+  const [draft] = useState(() => composerDraft(null))
+  const { value, setText, setValue } = useMentionedText({ text: draft.text, mentions: draft.mentions })
   const { text } = value
   const [busy, setBusy] = useState(false)
-  useEffect(() => saveComposerDraft(null, value), [value])
   // Kept per agent, so switching back finds the mode picked for it.
   const [modes, setModes] = useState<Record<AgentKind, ChatPermissionMode>>(DEFAULT_START_MODES)
   // A model or effort left unpicked is the agent's own default, which the start does not pass.
@@ -60,7 +60,8 @@ export function ConversationDraft() {
   const [branch, setBranch] = useState<string | null>(null)
   useEffect(() => setBranch(null), [primary])
   const startBranch = branches.options?.git ? branch : null
-  const attached = useComposerImages()
+  const attached = useComposerImages(draft.images)
+  useEffect(() => saveComposerDraft(null, { ...value, images: attached.images }), [value, attached.images])
   const allowBypass = usePreferences((s) => s.allowBypass)
   const width = usePreferences((s) => s.chatWidth)
   const fontSize = usePreferences((s) => s.chatFontSize)
@@ -124,7 +125,7 @@ export function ConversationDraft() {
     if (created) {
       if (deferStart && rpc) {
         keepInitialMessage(created.id, written.trim(), attached.images)
-        saveComposerDraft(null, { text: '', mentions: [] })
+        saveComposerDraft(null, EMPTY_DRAFT)
         useCore.setState((state) => ({ conversations: { ...state.conversations, [created.id]: created } }))
         selectConversation(created.id)
         void sendInitialMessage(created.id, rpc)
@@ -132,7 +133,7 @@ export function ConversationDraft() {
       }
       const images = attached.images.map((image) => image.id)
       const sent = await perform((rpc) => rpc.call('conversations.send', { id: created.id, text: written.trim(), ...(images.length ? { images } : {}) }))
-      if (sent) saveComposerDraft(null, { text: '', mentions: [] })
+      if (sent) saveComposerDraft(null, EMPTY_DRAFT)
       selectConversation(created.id)
       return
     }
