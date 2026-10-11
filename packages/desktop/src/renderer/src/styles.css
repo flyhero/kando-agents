@@ -607,7 +607,10 @@ body.stacked-panel-resizing * {
 .task-terminal-header > .status-icon { flex-shrink: 0; }
 /* The list row's top offset lines the dot up with the first line; the header already centers it. */
 .conversation-header .conversation-status { margin-top: 0; flex-shrink: 0; }
-.conversation-header .title-editor { width: auto; flex: 0 1 320px; min-width: 120px; font-weight: 600; }
+/* Renaming keeps the title as it reads: same size, weight and line, as wide as its text, so the
+   header neither grows nor shifts what follows. A ring and a wash say it is being edited. */
+.conversation-header .title-editor { field-sizing: content; flex: 0 1 auto; width: auto; min-width: 4em; max-width: 100%; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--radius-xs); background: var(--fill); font-size: inherit; font-weight: 600; line-height: inherit; }
+.conversation-header .title-editor:focus { outline: 0; box-shadow: 0 0 0 2px var(--focus); }
 .conversation-confirm { display: flex; gap: 8px; align-items: center; font-size: 13px; }
 
 .task-list {
