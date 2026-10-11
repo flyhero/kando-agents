@@ -7,7 +7,7 @@
 一块看板管理 Claude Code、Codex 和 Cursor：每个任务在独立的 worktree 里跑，<br/>
 先出计划再动手，做完交回来由你验收。
 
-[![Version](https://img.shields.io/badge/version-0.15.3-blue?style=flat)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.15.4-blue?style=flat)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green?style=flat)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?style=flat)
 ![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor-8A2BE2?style=flat)
@@ -252,7 +252,7 @@ pnpm dist:mac     # 产物在 packages/desktop/dist/Kando-<版本>-arm64.dmg
 
 ## 现状
 
-Kando 目前是**开发者预览版**（0.15.3），主要在 macOS 上开发和测试，需要从源码运行或自行打包。接下来的重点是验收闭环：按项目配置的测试命令在 worktree 里跑，把结果作为验收证据放进检查器，再到 PR 和合并。完整规划见 [ROADMAP.md](ROADMAP.md)。
+Kando 目前是**开发者预览版**（0.15.4），主要在 macOS 上开发和测试，需要从源码运行或自行打包。接下来的重点是验收闭环：按项目配置的测试命令在 worktree 里跑，把结果作为验收证据放进检查器，再到 PR 和合并。完整规划见 [ROADMAP.md](ROADMAP.md)。
 
 ## 名字
 
