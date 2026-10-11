@@ -1,6 +1,6 @@
 # Kando
 
-Task-first multi-agent manager. See README.md for the architecture diagram.
+Task-first multi-agent manager. See docs/ARCHITECTURE.md for the architecture diagram and implementation details.
 
 ## Process boundaries
 
