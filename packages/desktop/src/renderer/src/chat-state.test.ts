@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, ConversationStage } from '@kando/protocol'
 import {
   appendText,
   chatBlocks,
   finalReplies,
+  flushChatDeltas,
   foldRowKeys,
   mergeItems,
   pathShortener,
@@ -53,6 +54,37 @@ describe('chat items', () => {
     receiveChatDelta('c', 'chat-stage', 'b', '!')
     prependChatPage('c', { items: [text('a', 'old'), text('b', 'stale')], before: null })
     expect(useChat.getState().c).toEqual({ items: [text('a', 'old'), text('b', 'new!')], before: null })
+  })
+})
+
+describe('streamed deltas', () => {
+  beforeEach(() => {
+    flushChatDeltas()
+    useChat.setState({ c: { items: [text('a', 'he'), text('b', 'x')], before: null } }, true)
+  })
+
+  it('are gathered and applied together, in order, once the flush comes', () => {
+    vi.useFakeTimers()
+    try {
+      const before = useChat.getState().c
+      receiveChatDelta('c', 'chat-stage', 'a', 'l')
+      receiveChatDelta('c', 'chat-stage', 'a', 'lo')
+      receiveChatDelta('c', 'chat-stage', 'b', 'y')
+      receiveChatDelta('c', 'chat-stage', 'a', '!')
+      expect(useChat.getState().c).toBe(before)
+      vi.runAllTimers()
+      expect(useChat.getState().c?.items).toEqual([text('a', 'hello!'), text('b', 'xy')])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('land before anything else that changes the chat', () => {
+    receiveChatDelta('c', 'chat-stage', 'a', 'llo')
+    receiveChatItems('c', [text('a', 'hello, revised', 'chat-stage', 2)])
+    receiveChatDelta('c', 'chat-stage', 'a', '!')
+    flushChatDeltas()
+    expect(useChat.getState().c?.items[0]).toEqual(text('a', 'hello, revised!', 'chat-stage', 2))
   })
 })
 

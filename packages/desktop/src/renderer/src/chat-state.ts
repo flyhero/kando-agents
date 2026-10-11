@@ -55,12 +55,65 @@ export function appendText(items: readonly ChatItem[], stageId: string | undefin
   )
 }
 
+// Deltas come dozens of times a second, and each re-renders the reply it grows, at a cost that
+// grows with the reply: applied one by one, a long reply falls further and further behind, and a
+// window coming back from the background froze while it caught up. So they are gathered and applied
+// together, once a frame, or about once a second while the window is hidden and draws no frames.
+// Anything else that changes a chat applies them first, so nothing lands out of order.
+type Delta = { conversationId: string; stageId: string | undefined; itemId: string; append: string }
+const FLUSH_FALLBACK_MS = 100
+let pendingDeltas: Delta[] = []
+let flushScheduled = false
+
+export function flushChatDeltas(): void {
+  flushScheduled = false
+  if (pendingDeltas.length === 0) return
+  const deltas = pendingDeltas
+  pendingDeltas = []
+  useChat.setState((state) => {
+    const changed: Record<string, ChatPage> = {}
+    for (const { conversationId, stageId, itemId, append } of joinDeltas(deltas)) {
+      const current = changed[conversationId] ?? state[conversationId]
+      if (current) changed[conversationId] = { ...current, items: appendText(current.items, stageId, itemId, append) }
+    }
+    return changed
+  })
+}
+
+// Runs of deltas to the same item become one append.
+function joinDeltas(deltas: readonly Delta[]): Delta[] {
+  const joined: Delta[] = []
+  for (const delta of deltas) {
+    const last = joined.at(-1)
+    if (last && last.conversationId === delta.conversationId && last.stageId === delta.stageId && last.itemId === delta.itemId) {
+      joined[joined.length - 1] = { ...last, append: last.append + delta.append }
+    } else joined.push(delta)
+  }
+  return joined
+}
+
+// A frame when the window draws them; else the timer, which a hidden window runs about once a second.
+function scheduleFlush(): void {
+  if (flushScheduled) return
+  flushScheduled = true
+  let frame: number | undefined
+  const run = () => {
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    clearTimeout(timer)
+    if (flushScheduled) flushChatDeltas()
+  }
+  const timer = setTimeout(run, FLUSH_FALLBACK_MS)
+  if (typeof requestAnimationFrame === 'function') frame = requestAnimationFrame(run)
+}
+
 export function setChatPage(conversationId: string, page: ChatPage): void {
+  flushChatDeltas()
   useChat.setState({ [conversationId]: page })
 }
 
 // An older page goes in front; anything it shares with what is shown keeps the newer copy.
 export function prependChatPage(conversationId: string, page: ChatPage): void {
+  flushChatDeltas()
   useChat.setState((state) => {
     const current = state[conversationId]
     if (!current) return {}
@@ -70,6 +123,7 @@ export function prependChatPage(conversationId: string, page: ChatPage): void {
 }
 
 export function receiveChatItems(conversationId: string, items: readonly ChatItem[]): void {
+  flushChatDeltas()
   useChat.setState((state) => {
     const current = state[conversationId]
     return current ? { [conversationId]: { ...current, items: mergeItems(current.items, items) } } : {}
@@ -77,13 +131,12 @@ export function receiveChatItems(conversationId: string, items: readonly ChatIte
 }
 
 export function receiveChatDelta(conversationId: string, stageId: string | undefined, itemId: string, append: string): void {
-  useChat.setState((state) => {
-    const current = state[conversationId]
-    return current ? { [conversationId]: { ...current, items: appendText(current.items, stageId, itemId, append) } } : {}
-  })
+  pendingDeltas.push({ conversationId, stageId, itemId, append })
+  scheduleFlush()
 }
 
 export function dropChat(conversationId: string): void {
+  flushChatDeltas()
   useChat.setState((state) => {
     const { [conversationId]: _dropped, ...rest } = state
     return rest
