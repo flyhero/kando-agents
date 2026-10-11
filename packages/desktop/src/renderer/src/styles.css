@@ -8035,12 +8035,15 @@ body.side-panel-resizing * {
 /* The task board: a column per status, scrolling sideways when the window is narrow. Cards are the
    one raised thing on it, a hairline each; colour goes only to the step a card offers and to an
    agent waiting for the user. */
-.task-board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+.task-board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); container-type: inline-size; }
 /* Header and columns share one rail, capped and centred as Orca's agent board is: past four
    readable columns more width only stretches the cards. Below the cap it is the whole pane. */
 .task-board-header, .task-board-columns { width: 100%; max-width: 1440px; margin-inline: auto; }
 .task-board-header { display: flex; align-items: center; gap: 8px; padding: 16px 20px 12px; flex-wrap: wrap; }
 .task-board-header h2 { margin: 0 8px 0 0; font-size: 18px; }
+/* With the sidebar away the header shares the window's corner with the app's name and switch, and
+   keeps clear of them by what the rail's centring leaves short. */
+.app[data-sidebar-hidden] .task-board-header { padding-left: max(20px, calc(var(--window-brand-end) - max(0px, (100cqw - 1440px) / 2))); }
 .task-board-search { flex: 0 1 220px; min-width: 120px; width: auto; height: 28px; padding: 0 10px; font-size: 12px; }
 .task-board-spacer { flex: 1; }
 .task-board-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px solid var(--border-2); border-radius: var(--radius); background: transparent; color: var(--text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
